@@ -16,6 +16,25 @@ One five-minute Debris Belt flight with Vanguard, four automatic weapons, six ac
 - **Saves:** existing cores and the original Hull/Armory/Shield Lab ranks carry forward. Saves retain fixed-step state, RNG, the exact card hand, all six cooldowns, healing/time-field/overdrive effects, and draft tools. Web saves belong to that browser and origin.
 - **Audio:** independent music/effects toggles, original cruise/boss scores, weapon and engine audio, and distinct activation/ready cues for every active ability.
 
+## Combat variety and loadouts (next playable)
+
+StarRun now has **six pilot choices** and **six ships**. Vanguard and Vale are free starters. All other hulls and pilots are permanent core unlocks, separately from the refundable Hangar upgrades. Equip one of each before launch; an already-suspended flight keeps its previous configuration.
+
+| Hull | Starting style |
+| --- | --- |
+| Vanguard | Balanced Pulse Cannon, Seekers and defenses |
+| Kestrel | Fast-turning interceptor with boosted Pulse fire and little armor |
+| Bulwark | Slower armored fortress with large hull/shields |
+| Wraith | Seeker-focused missile boat, starts without Pulse |
+| Arcwing | Chain-lightning fighter with Arc Coil already installed |
+| Haven | Support carrier, starts with Repair Drones and Seekers |
+
+Pilots add different starting advantages: Vale (baseline), Vega (Pulse accuracy/damage), Patch (shield repair), Orion (missile specialization), Scrap (XP and cores), and Nyx (ability cooldowns and a draft reroll). Ship/pilot choices persist in your profile and flight snapshots.
+
+The five-minute flight now passes through **five visually different regions**: Debris Belt, Ion Nebula, Wreck Field, Dark Rift and Harvester Zone. The combat director can deploy nine regular enemy archetypes, including dodging interceptors, rushers, missile bombers, drone carriers, shielded ships and minelayers, plus destroyable boulders and turret stations. Enemy missiles home with amber exhaust; mines flash a fuse warning and can be shot down.
+
+During flight, tap **BUILD** (keyboard **B**) to pause and inspect everything installed. Icons appear on the six abilities, level-up cards and Hangar upgrades. The **0.5× / 1× / 2× / 3×** speed control (keyboard **Tab**) changes game-time progression, not the fixed simulation step; it persists in your profile.
+
 ## Builds
 
 Pinned to **Godot 4.6.3 standard**, GDScript and the Compatibility renderer. Open `project.godot` in that version. GitHub Actions runs simulation checks and automatically produces web, Windows, and Linux playtest artifacts on pushes and pull requests. See the **Playable build** workflow's artifacts.
@@ -38,7 +57,7 @@ Serve the web folder over HTTP(S); it needs WebGL2. It is single-threaded and do
 - `scripts/main.gd`: responsive presentation and input. The 9:16 playfield scales into the space left after HUD and controls, including on 16:9 phones.
 - `data/content.json`: enemy, ability, and card definitions.
 - `scripts/platform_services.gd`: atomic save adapter. Ads and store methods honestly report unavailable until native integrations are proven.
-- `tests/run.gd`: defense, interruption, targeting, frozen drafts, deterministic disk/checkpoint round trips, and 12 matched seeds for three input policies.
+- `tests/run.gd`: defense, interruption, targeting, frozen drafts, deterministic disk/checkpoint round trips, 12 matched seeds for three input policies, and ship/pilot, mines, destructible hazards, save/resume, and speed invariance.
 
 ## Scope and remaining gates
 
