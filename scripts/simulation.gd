@@ -239,7 +239,9 @@ func _update_enemies() -> void:
 				enemy.p.x += sin(time * 1.8 + enemy.phase) * 12.0 * DT * pace
 			enemy.p.x = clampf(enemy.p.x, 35, 505)
 		if kind == "boulder":
-			if enemy.p.distance_to(ship_position()) < 44.0:
+			if enemy.p.y > 945.0:
+				enemy.hp = -1.0
+			elif enemy.p.distance_to(ship_position()) < 44.0:
 				_hit(17.0, "hazard", "Boulder collision")
 				enemy.hp = -1.0
 			continue
@@ -422,7 +424,7 @@ func _update_shots() -> void:
 					shot.v = shot.v.lerp((enemy.p - shot.p).normalized() * 650, DT * 8.0)
 		if shot.weapon == "seeker" and shot.target == -2:
 			for bullet in bullets:
-				if bullet.kind == "ordnance":
+				if bullet.kind in ["ordnance", "mine"]:
 					shot.v = shot.v.lerp((bullet.p - shot.p).normalized() * 650, DT * 8.0)
 					break
 		shot.p += shot.v * DT
