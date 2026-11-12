@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050914">
+<meta name="description" content="StarRun: build your ship, read the threat, and choose your moment. Play the first flight.">
+<title>StarRun — First Flight</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050914;color:#eaf9ff;font-family:system-ui,sans-serif;touch-action:none}canvas{display:block;width:100%;height:100%;outline:none}#loading{position:fixed;inset:0;display:grid;place-content:center;gap:20px;padding:30px;text-align:center;background:#050914}h1{font-size:38px;font-weight:500;letter-spacing:.22em;color:#66f5df;margin:0}p{color:#8797ad;font-size:14px}progress{width:min(320px,80vw);height:4px;accent-color:#66f5df}#error{max-width:480px;white-space:pre-wrap;line-height:1.6;color:#ffc078}a{color:#66f5df}
+</style>
+$GODOT_HEAD_INCLUDE
+</head>
+<body>
+<canvas id="canvas" tabindex="0" aria-label="StarRun game. Abilities: key 1 or controller A for Aegis, key 2 or controller X for Nova; Escape pauses."></canvas>
+<div id="loading"><h1>STAR/RUN</h1><p id="message">Preparing your flight</p><progress id="progress"></progress><div id="error" role="alert"></div></div>
+<noscript>StarRun needs JavaScript enabled to run.</noscript>
+<script src="$GODOT_URL"></script>
+<script>
+const config=$GODOT_CONFIG;
+const engine=new Engine(config);
+const missing=Engine.getMissingFeatures({threads:false});
+if(missing.length){document.querySelector('#error').textContent='This browser is missing: '+missing.join(', ');document.querySelector('#message').textContent='Please try a current browser.';}
+else engine.startGame({onProgress(current,total){const p=document.querySelector('#progress');if(total){p.max=total;p.value=current;}}}).then(()=>document.querySelector('#loading').remove()).catch(error=>{document.querySelector('#message').textContent='Flight could not start';document.querySelector('#error').textContent=String(error);});
+</script>
+</body></html>

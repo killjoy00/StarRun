@@ -1,0 +1,68 @@
+name: Playable build
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: playable-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  simulation:
+    name: Simulation and checkpoint checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Check first scene
+        run: godot --headless --path . --quit-after 10
+      - name: Phone and Steam Deck layout checks
+        run: godot --headless --path . --script tests/ui_smoke.gd
+      - name: Replay, fairness, draft, save, and matched-seed balance checks
+        run: godot --headless --path . --script tests/run.gd
+  exports:
+    name: Web, Windows, and Linux builds
+    needs: simulation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/share/godot/export_templates/4.6.3.stable
+          key: godot-4.6.3-starrun-templates-v1
+        id: templates
+      - name: Install pinned Godot and templates
+        run: tools/install-godot.sh ${{ steps.templates.outputs.cache-hit != 'true' && '--templates' || '' }}
+      - name: Build all playtest targets
+        run: |
+          mkdir -p build/web build/windows build/linux
+          godot --headless --path . --editor --import --quit
+          godot --headless --path . --export-release Web build/web/index.html
+          python3 tools/package-web.py build/web
+          godot --headless --path . --export-release Windows build/windows/StarRun.exe
+          godot --headless --path . --export-release Linux build/linux/StarRun.x86_64
+          build/linux/StarRun.x86_64 --headless --quit-after 10
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-web
+          path: build/web
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-Windows
+          path: build/windows
+          retention-days: 30
+      - name: Archive Linux executable with its permissions
+        run: tar -C build/linux -czf build/StarRun-Linux.tar.gz StarRun.x86_64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-Linux
+          path: build/StarRun-Linux.tar.gz
+          retention-days: 30

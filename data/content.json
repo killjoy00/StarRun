@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "duration": 300,
+  "boss_at": 240,
+  "abilities": {
+    "aegis": {"name": "Aegis", "cooldown": 8.0, "duration": 1.8},
+    "nova": {"name": "Nova", "cooldown": 12.0, "damage": 65.0}
+  },
+  "enemies": {
+    "drone": {"hp": 18, "speed": 30, "xp": 3, "interval": 3.1},
+    "gunship": {"hp": 45, "speed": 19, "xp": 6, "interval": 3.8},
+    "sniper": {"hp": 36, "speed": 15, "xp": 7, "interval": 6.0}
+  },
+  "cards": [
+    {"id": "pulse", "name": "Pulse cannon", "tag": "WEAPON", "description": "+24% pulse damage. At level 5: twin barrels.", "max": 5},
+    {"id": "seeker", "name": "Seeker pods", "tag": "WEAPON", "description": "+30% missile damage. Prioritizes charging enemies.", "max": 5},
+    {"id": "armor", "name": "Reactive armor", "tag": "SYSTEM", "description": "Reduces each chaff hit by 0.35. Heavy beams bypass armor.", "max": 5},
+    {"id": "regen", "name": "Regenerator", "tag": "SYSTEM", "description": "+0.35 shield regenerated per second.", "max": 5},
+    {"id": "hull", "name": "Hull plating", "tag": "SYSTEM", "description": "+18 maximum hull and repairs 18 hull.", "max": 5},
+    {"id": "coolant", "name": "Coolant loop", "tag": "SYSTEM", "description": "Abilities recharge 8% faster per level.", "max": 5},
+    {"id": "aegis", "name": "Aegis field", "tag": "ABILITY", "description": "+0.25 seconds of protection. Level 5 reflects beams.", "max": 5},
+    {"id": "nova", "name": "Nova pulse", "tag": "ABILITY", "description": "+25% nova damage. Cancels every charging beam.", "max": 5}
+  ]
+}

@@ -1,6 +1,8 @@
 # StarRun: Game Design Document
 
-Status: Draft v0.1, 2026-11-12. Working title is the repo name.
+Status: Draft v0.2, 2026-11-12. Working title is the repo name.
+
+The review changes were accepted on 2026-11-12. [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) records the implemented first-playable rules and overrides older proposal numbers for that slice. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
 
 How to read this doc: every item is tagged by where it came from.
 
@@ -28,7 +30,7 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 | Platforms | iOS and Steam | Decided |
 | iOS business model | Free with ads, one purchase removes them | Decided |
 | Steam business model | Paid, with a free demo containing one level | Decided |
-| Art style | Neon vector | Decided |
+| Art style | Illustrated hard-surface ships, deep-space painting, neon combat effects | Revised by user, 2026-11-12 |
 | Engine | Godot 4, gated by a tech spike (section 14) | Proposed |
 | Full-clear run length | 24 to 28 minutes | Assumption |
 | Team size | Solo or very small team | Assumption |
@@ -42,7 +44,7 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 
 ## 3. Core loops
 
-**Second to second.** The ship weaves and fires. Enemies arrive from the top. The player watches for telegraphed threats and presses an ability. Target: a meaningful ability press every 5 to 8 seconds in mid-run (Proposed).
+**Second to second.** The ship weaves and fires. Enemies arrive from the top. The player watches for telegraphed threats and presses an ability. Target: meaningful opportunities every 5 to 8 seconds. Holding a ready ability for a threat should outperform pressing it immediately; button frequency alone is not the fun gate.
 
 **Minute to minute.** Kills grant XP. Each level-up pauses the game and offers cards. Target: one level-up roughly every 30 seconds, faster early and slower late (Proposed).
 
@@ -54,8 +56,8 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 
 ### 4.1 Movement (Decided: predictable autopilot)
 
-- The ship holds a fixed height at about 80% of the way down the playfield and moves only horizontally.
-- Horizontal position follows a fixed periodic flight pattern. The pattern never reacts to threats.
+- The ship holds a lower flight band, roughly 79–84% down the playfield, with gentle vertical drift.
+- Position follows a seeded flight plan with variable-length legs, smooth course corrections and occasional straight stretches. It never reacts to threats. Banking and differential exhaust sell forward flight; periodic edge-to-edge oscillation was rejected in playtest.
 - A faint **flight path preview** shows where the ship will be over the next 2 seconds. This is the single most important readability feature: it lets the player see that the ship is about to sweep into a laser lane and press a defensive ability in time.
 - The world scrolls downward to sell forward motion.
 
@@ -63,9 +65,9 @@ Each ship has its own pattern, which is a large part of its identity (Proposed):
 
 | Ship | Flight pattern | Profile | Starts with |
 |---|---|---|---|
-| Vanguard (default) | Smooth sine weave across the middle 70% of the width, 6 second period | Balanced | Pulse Cannon, Aegis |
-| Bulwark (unlock) | Slow, narrow weave near the center line | High hull and armor, low fire rate | Flak Screen, Nanite Repair |
-| Wraith (unlock) | Fast edge-to-edge sweep | Low hull, high shield regen | Arc Coil, Chrono Field |
+| Vanguard (default) | Smooth seeded arcs and steady stretches, gently banked turns | Balanced | Pulse Cannon, Aegis |
+| Bulwark (unlock) | Steady heading with small, slow corrections | High hull and armor, low fire rate | Flak Screen, Nanite Repair |
+| Wraith (unlock) | Brisk, wider banked course changes | Low hull, high shield regen | Arc Coil, Chrono Field |
 
 Three ships at launch is an assumption. One ship is enough for the first playable.
 
@@ -121,7 +123,7 @@ Launch target: 8 weapons. Four are available from the first run; four unlock thr
 
 Decided: cooldown buttons with no aiming. Each ability levels 1 to 5 through cards. The level-5 upgrade adds a new effect.
 
-Ability slots: 2 at base, 3 with a Hangar upgrade. A ship starts with its signature ability; the rest come from cards. Starting with two buttons keeps the first runs simple, and the third slot should be one of the cheapest early Hangar purchases so the active layer fills in quickly.
+Ability slots: 2 at base, 3 with a Hangar upgrade. A ship starts with its signature ability and a complementary second ability; additional options come from cards. Start with two usable buttons so the core interaction is present in the first flight. In the first playable these are Aegis and Nova; the third slot remains a later Hangar purchase.
 
 | Ability | Role | Level 1 effect | Base cooldown | Level 5 addition |
 |---|---|---|---|---|
@@ -174,7 +176,7 @@ Card economy tools, all bought in the Hangar (Decided in principle, details Prop
 
 ### 8.3 Build capacity
 
-At full slots there are 63 pickable levels (4 weapons, 3 abilities, 6 systems, 5 levels each, minus the two starting items). A full run should deliver about 40 level-ups. A run therefore fills roughly two thirds of capacity, which forces specialization.
+At full slots there are 63 pickable levels (4 weapons, 3 abilities, 6 systems, 5 levels each, minus the original two starting items; the revised start includes a third item). The base-slot ship has 43 available picks before accounting for starting a second ability (42 with that change); the expanded ship has 62 with three starting items. Forty picks would nearly fill the base capacity. Target separate base and expanded budgets before implementing the full game. The first playable uses a smaller explicit 36-pick pool and approximately 14–20 draft choices; see FIRST_PLAYABLE.md.
 
 ### 8.4 Prototypes (Proposed)
 
@@ -237,7 +239,9 @@ These are constraints on all content, not suggestions.
 2. Bullet classes are distinguishable by shape, not only by color.
 3. The flight path preview is always visible.
 4. No single unavoidable hit may deal more than 35% of base hull at the level it appears in.
-5. The results screen shows damage taken by class (chaff, heavy, ordnance, hazard) and damage dealt by weapon, so the player can see what to fix in the next build.
+5. The results screen shows damage by class and weapon plus the final ten seconds: damage sources, shield breaks, ability use, and cooldown availability at death.
+6. Limit simultaneous heavy threats and budget burst windows as well as average damage. The first playable allows one heavy charge at a time, globally spaced by 8.5 seconds or more. Every prototype threat has a specified available counter.
+7. Target-priority challenges must be answerable through documented weapon priorities or abilities. Seekers prioritize charging sources, then ordnance, then nearest enemies. Nova interrupts boss charges.
 
 ## 12. Meta-progression: the Hangar
 
@@ -313,7 +317,7 @@ Gameplay happens in a fixed 9:16 logical playfield, identical on every device, s
 
 ### 14.3 Sessions
 
-A 25 minute run is long for a phone. The run is checkpointed at the start of every wave segment, and closing the app resumes from the last checkpoint. The app auto-pauses on interruption.
+A 25 minute run is long for a phone. Save the exact run state every ten seconds and on pause or interruption, including the random generator, current card hand, pending choices, projectiles, and cooldowns. Resume that state without redrawing cards. The app auto-pauses on interruption.
 
 ### 14.4 Accessibility
 
@@ -321,7 +325,7 @@ Shape-coded bullets, screen shake and flash toggles, reduced glow mode, scalable
 
 ## 15. Art and audio
 
-**Art (Decided: neon vector).** Glowing geometric shapes on dark space. Color is reserved for meaning: one hue family for the player, one for chaff, one for Heavy, one for ordnance. Backgrounds stay low-contrast so they never compete with bullets. Glow is a style choice that must degrade gracefully, because readability rule 2 requires shapes to carry the information.
+**Art (revised after first playtest).** Illustrated metallic ships and industrial enemies over a dark painted debris belt, with neon weapon, shield, and engine effects. Color is reserved for meaning: one hue family for the player, one for chaff, one for Heavy, one for ordnance. Backgrounds stay low-contrast so they never compete with bullets. Glow is a style choice that must degrade gracefully, because readability rule 2 requires shapes to carry the information.
 
 **Audio (Proposed).** Synth-driven soundtrack that adds layers as threat rises. The sound design priority order is: Heavy telegraph, ability ready, shield break, low hull, then everything else. Weapon fire is constant, so it sits low in the mix.
 
@@ -386,7 +390,7 @@ No dates, because team size and availability are unknown.
 | # | Milestone | Exit criteria |
 |---|---|---|
 | 0 | Tech spike | Section 16.2 passes, or the engine changes |
-| 1 | Grey-box prototype | 1 ship, 2 weapons, 2 abilities, 3 enemies, card draft. Passes the fun gate below. |
+| 1 | First playable | 1 ship, 2 weapons, 2 abilities from launch, 3 enemies, card draft, one boss, causal death recap, exact saves, early matched-seed balance harness and automated playable exports. Passes the human fun gate below. |
 | 2 | Vertical slice | Level 1 complete with boss, final art direction, audio, Hangar skeleton. This is also the Steam demo content. |
 | 3 | Content complete | All four levels, full launch scope |
 | 4 | Platform and monetization | Ads, purchase, restore, Steam features, saves, controller support |
@@ -395,7 +399,7 @@ No dates, because team size and availability are unknown.
 
 **Fun gate for Milestone 1.** The whole premise is unproven until this passes. Testers who have never seen the game should:
 
-- press an ability every 5 to 8 seconds without being told to,
+- recognize and act on meaningful ability opportunities, with deliberate timing improving outcomes over immediate activation,
 - be able to say why they died,
 - start another run unprompted.
 

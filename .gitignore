@@ -1,0 +1,9 @@
+.godot/
+build/
+dist/
+*.tmp
+*.zip
+*.tpz
+
+__pycache__/
+*.pyc
