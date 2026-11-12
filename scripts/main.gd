@@ -50,6 +50,7 @@ var card_selection := 0
 var banner_text := ""
 var banner_clock := 0.0
 var last_sector := ""
+var build_return_mode := "playing"
 var old_size := Vector2.ZERO
 
 func _ready() -> void:
@@ -381,7 +382,7 @@ func _process(delta: float) -> void:
 func _update_hud() -> void:
 	hud.text = "HULL %03d   SHIELD %02d   LV %02d" % [sim.hull, sim.shield, sim.level]
 	var seconds := int(sim.time)
-	status.text = "%02d:%02d" % [seconds / 60, seconds % 60] if get_viewport_rect().size.x < 780 else "%02d:%02d  /  %s" % [seconds / 60, seconds % 60, "HARVESTER" if sim.boss_spawned else _sector_name(sim.time)]
+	status.text = "%02d:%02d" % [seconds / 60, seconds % 60]
 	for i in range(Catalog.ABILITIES.size()):
 		var id: String = Catalog.ABILITIES[i]
 		var button: Button = ability_buttons[id]
@@ -398,7 +399,7 @@ func _update_hud() -> void:
 			if card.tag == tag and sim.upgrades[card.id] > 0:
 				build_label.text += "%s  %d/5\n" % [card.name, sim.upgrades[card.id]]
 		build_label.text += "\n"
-	report_label.text = "F L I G H T   D A T A\n\nSECTOR 01 / 04\nDEBRIS BELT\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % ["HARVESTER ENGAGED" if sim.boss_spawned else _sector_name(sim.time) + " · Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), "HARVESTER ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
 func _activate(id: String) -> void:
 	if mode == "playing" and sim.activate(id):
@@ -467,9 +468,12 @@ func _choose(index: int) -> void:
 
 func _toggle_pause() -> void:
 	if mode == "build":
-		mode = "playing"
-		_clear_overlay()
-		accumulator = 0.0
+		if build_return_mode == "paused":
+			_show_pause()
+		else:
+			mode = "playing"
+			_clear_overlay()
+			accumulator = 0.0
 	elif mode == "playing":
 		_show_pause()
 	elif mode == "paused":
@@ -759,6 +763,8 @@ func _cycle_speed() -> void:
 func _show_build() -> void:
 	if mode not in ["playing", "paused", "build"]:
 		return
+	if mode in ["playing", "paused"]:
+		build_return_mode = mode
 	mode = "build"
 	_save_run()
 	var box := _panel(500)
@@ -799,6 +805,9 @@ func _show_loadout() -> void:
 	_label(box, "FLIGHT CREW & FLEET", 26, CYAN)
 	_wrapped(box, "Unlocks are permanent. Equip one ship and one pilot; both apply to your next new flight. Suspended runs remain unchanged.", 13)
 	_label(box, "AVAILABLE CORES  %d" % profile.cores, 17, AMBER)
+	var nav := HBoxContainer.new()
+	box.add_child(nav)
+	_button(nav, "‹ Hangar", _show_hangar)
 	var tabs := HBoxContainer.new()
 	box.add_child(tabs)
 	for tab in ["Ships", "Pilots"]:
