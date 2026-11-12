@@ -4,16 +4,17 @@ A roguelite autoshooter where you build the ship and time its abilities. The shi
 
 ## First playable
 
-One five-minute Debris Belt flight: Vanguard, Pulse Cannon, Seeker Pods, Aegis, Nova, three enemy types, eight upgrade tracks, the Harvester boss, a small Hangar, and a flight recorder. Illustrated metal ships, a painted debris belt, parallax rocks, banking, engine trails, layered combat effects, and an original stereo synth score give the flight its atmosphere. No external asset or service is needed to play.
+One five-minute Debris Belt flight with Vanguard, four automatic weapons, six active abilities, eleven passive systems, Harvester, a 22-track Hangar, exact saves, and a flight recorder.
 
-- **Flight:** a seeded course of smooth arcs, gentle vertical drift, and straight stretches; the ship banks and uses its thrusters through turns. The dotted path remains an exact two-second preview.
-- **Audio:** independent music/effects toggles, a cruise score that crossfades into a more intense boss arrangement, weapon and engine audio, layered explosions, and distinct ready cues. Threat warnings duck the music.
-- **Aegis:** 1 / Space / controller A. Blocks damage. Hold it for the beam.
-- **Nova:** 2 / controller X. Clears projectiles, damages enemies, and interrupts charging beams.
-- **Upgrades:** tap or click, 1–3, or controller navigation and confirm.
-- **Pause:** Escape / P / controller Start. Pauses on interruption too.
-- **Resume:** exact fixed-step state, random generator, card hand, and cooldowns persist. Saved automatically every ten seconds and on pause/exit. Web saves are local to that browser and origin.
-- **Hangar:** modest permanent upgrades with a free full refund. Every completed or failed flight pays at least five cores. The base ship can clear the belt.
+- **Flight:** the player ship is 22% smaller. Faster, broader banked course changes cover more horizontal and vertical space, while the dotted path remains an exact two-second preview. New flights use this course; old suspended flights keep theirs.
+- **Pace:** scrolling painted space, faster star streaks and debris, faster enemies and projectiles, quicker automatic fire. The five-minute encounter schedule and 1.8-second heavy warnings remain readable.
+- **Weapons:** Pulse Cannon now gently steers toward nearby forward targets. Seekers still prioritize charging sources and missiles. Arc Coil chains lightning; Prism Lance pierces enemies along an automatically aimed beam. Both new weapons are learned through cards.
+- **Abilities:** start with Aegis and Nova. Learn Barrage, Overdrive, Chrono Field and Repair Drones in level-up drafts. The first draft always offers a new active; later drafts regularly offer more. All six can be carried at once, and none require a Hangar purchase.
+- **Controls:** keys **1–6** use the six fixed ability slots; **Space** always uses Aegis. Controller **A / X / Y / B / LB / RB** matches slots 1–6. Click/tap also works. Keys 1–4 choose draft cards. Escape/P/Start pauses.
+- **Hangar:** illustrated ship-service bay, category tabs, rank indicators and scrolling upgrade cards. Twenty-two permanent tracks cover hull, shields, damage, fire rate, guidance, starting weapons, cooldowns, ability strength, emergency protection, draft tools and salvage. Free refunds return the exact total paid. Purchases affect new flights; suspended flights retain their loadout.
+- **Draft tools:** buy a fourth card choice, up to three rerolls, banishes and repair skips per flight. A banish removes that entire track from the current flight's pool. Draft hands and remaining tools survive saving.
+- **Saves:** existing cores and the original Hull/Armory/Shield Lab ranks carry forward. Saves retain fixed-step state, RNG, the exact card hand, all six cooldowns, healing/time-field/overdrive effects, and draft tools. Web saves belong to that browser and origin.
+- **Audio:** independent music/effects toggles, original cruise/boss scores, weapon and engine audio, and distinct activation/ready cues for every active ability.
 
 ## Builds
 
@@ -45,4 +46,4 @@ This is the first playable, not the full four-level release. iOS/TestFlight, Ste
 
 Saved flights from v0.1 preserve their original course; launch a new flight to use the new pilot. Original art prompts and the reproducible score are documented in [art/audio notes](docs/ART_AUDIO.md).
 
-See [the updated design](docs/DESIGN.md), [first-playable decisions](docs/FIRST_PLAYABLE.md), and [native delivery gates](docs/NATIVE_DELIVERY.md).
+See [the updated design](docs/DESIGN.md), [current prototype decisions](docs/FIRST_PLAYABLE.md), and [native delivery gates](docs/NATIVE_DELIVERY.md).

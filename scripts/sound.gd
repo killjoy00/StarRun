@@ -22,7 +22,7 @@ func _ready() -> void:
 		var player := AudioStreamPlayer.new()
 		add_child(player)
 		players.append(player)
-	for id in ["pulse", "seeker", "explosion", "boss-explosion", "ready-aegis", "ready-nova", "aegis", "nova", "hit", "shield-break", "card", "start", "warning", "low-hull", "victory", "defeat"]:
+	for id in ["pulse", "seeker", "explosion", "boss-explosion", "ready-aegis", "ready-nova", "aegis", "nova", "hit", "shield-break", "card", "start", "warning", "low-hull", "victory", "defeat", "barrage", "overdrive", "chrono", "mend", "ready-barrage", "ready-overdrive", "ready-chrono", "ready-mend"]:
 		sounds[id] = load("res://assets/audio/" + id + ".wav")
 	cruise = _loop("score-cruise")
 	boss = _loop("score-boss")

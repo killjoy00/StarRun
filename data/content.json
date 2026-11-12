@@ -1,24 +1,200 @@
 {
-  "version": 1,
+  "version": 3,
   "duration": 300,
   "boss_at": 240,
   "abilities": {
-    "aegis": {"name": "Aegis", "cooldown": 8.0, "duration": 1.8},
-    "nova": {"name": "Nova", "cooldown": 12.0, "damage": 65.0}
+    "aegis": {
+      "name": "Aegis",
+      "cooldown": 7.0
+    },
+    "nova": {
+      "name": "Nova",
+      "cooldown": 10.0
+    },
+    "barrage": {
+      "name": "Barrage",
+      "cooldown": 14.0
+    },
+    "overdrive": {
+      "name": "Overdrive",
+      "cooldown": 18.0
+    },
+    "chrono": {
+      "name": "Chrono",
+      "cooldown": 20.0
+    },
+    "mend": {
+      "name": "Repair drones",
+      "cooldown": 24.0
+    }
   },
   "enemies": {
-    "drone": {"hp": 18, "speed": 30, "xp": 3, "interval": 3.1},
-    "gunship": {"hp": 45, "speed": 19, "xp": 6, "interval": 3.8},
-    "sniper": {"hp": 36, "speed": 15, "xp": 7, "interval": 6.0}
+    "drone": {
+      "hp": 18,
+      "speed": 50,
+      "xp": 3,
+      "interval": 2.7
+    },
+    "gunship": {
+      "hp": 45,
+      "speed": 32,
+      "xp": 6,
+      "interval": 3.3
+    },
+    "sniper": {
+      "hp": 36,
+      "speed": 26,
+      "xp": 7,
+      "interval": 5.2
+    }
   },
   "cards": [
-    {"id": "pulse", "name": "Pulse cannon", "tag": "WEAPON", "description": "+24% pulse damage. At level 5: twin barrels.", "max": 5},
-    {"id": "seeker", "name": "Seeker pods", "tag": "WEAPON", "description": "+30% missile damage. Prioritizes charging enemies.", "max": 5},
-    {"id": "armor", "name": "Reactive armor", "tag": "SYSTEM", "description": "Reduces each chaff hit by 0.35. Heavy beams bypass armor.", "max": 5},
-    {"id": "regen", "name": "Regenerator", "tag": "SYSTEM", "description": "+0.35 shield regenerated per second.", "max": 5},
-    {"id": "hull", "name": "Hull plating", "tag": "SYSTEM", "description": "+18 maximum hull and repairs 18 hull.", "max": 5},
-    {"id": "coolant", "name": "Coolant loop", "tag": "SYSTEM", "description": "Abilities recharge 8% faster per level.", "max": 5},
-    {"id": "aegis", "name": "Aegis field", "tag": "ABILITY", "description": "+0.25 seconds of protection. Level 5 reflects beams.", "max": 5},
-    {"id": "nova", "name": "Nova pulse", "tag": "ABILITY", "description": "+25% nova damage. Cancels every charging beam.", "max": 5}
+    {
+      "id": "pulse",
+      "name": "Pulse cannon",
+      "tag": "WEAPON",
+      "description": "+24% pulse damage. Gentle homing. At level 5: twin barrels.",
+      "max": 5
+    },
+    {
+      "id": "seeker",
+      "name": "Seeker pods",
+      "tag": "WEAPON",
+      "description": "+30% missile damage. Prioritizes charging enemies.",
+      "max": 5
+    },
+    {
+      "id": "armor",
+      "name": "Reactive armor",
+      "tag": "SYSTEM",
+      "description": "Reduces each chaff hit by 0.35. Heavy beams bypass armor.",
+      "max": 5
+    },
+    {
+      "id": "regen",
+      "name": "Regenerator",
+      "tag": "SYSTEM",
+      "description": "+0.35 shield regenerated per second.",
+      "max": 5
+    },
+    {
+      "id": "hull",
+      "name": "Hull plating",
+      "tag": "SYSTEM",
+      "description": "+18 maximum hull and repairs 18 hull.",
+      "max": 5
+    },
+    {
+      "id": "coolant",
+      "name": "Coolant loop",
+      "tag": "SYSTEM",
+      "description": "Abilities recharge 8% faster per level.",
+      "max": 5
+    },
+    {
+      "id": "aegis",
+      "name": "Aegis field",
+      "tag": "ABILITY",
+      "description": "+0.25 seconds of protection. Level 5 reflects beams.",
+      "max": 5
+    },
+    {
+      "id": "nova",
+      "name": "Nova pulse",
+      "tag": "ABILITY",
+      "description": "+25% nova damage. Cancels every charging beam.",
+      "max": 5
+    },
+    {
+      "id": "barrage",
+      "name": "Barrage",
+      "tag": "ABILITY",
+      "description": "Unlock: launch 7 guided rockets. Higher levels add rockets and damage.",
+      "max": 5
+    },
+    {
+      "id": "overdrive",
+      "name": "Overdrive",
+      "tag": "ABILITY",
+      "description": "Unlock: +75% weapon fire rate for 4 seconds. Upgrades extend duration.",
+      "max": 5
+    },
+    {
+      "id": "chrono",
+      "name": "Chrono field",
+      "tag": "ABILITY",
+      "description": "Unlock: enemies and bullets move at 45% speed for 4 seconds.",
+      "max": 5
+    },
+    {
+      "id": "mend",
+      "name": "Repair drones",
+      "tag": "ABILITY",
+      "description": "Unlock: repair 24 hull over 4 seconds. +6 healing per level.",
+      "max": 5
+    },
+    {
+      "id": "arc",
+      "name": "Arc coil",
+      "tag": "WEAPON",
+      "description": "Install an automatic chain-lightning weapon. More damage and chains per level.",
+      "max": 5
+    },
+    {
+      "id": "lance",
+      "name": "Prism lance",
+      "tag": "WEAPON",
+      "description": "Install an automatic piercing beam aimed at a charging source or nearest enemy.",
+      "max": 5
+    },
+    {
+      "id": "shield",
+      "name": "Shield capacitor",
+      "tag": "SYSTEM",
+      "description": "+10 maximum shield and restore 10 shield.",
+      "max": 5
+    },
+    {
+      "id": "autoloader",
+      "name": "Autoloader",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons fire 8% faster per level.",
+      "max": 5
+    },
+    {
+      "id": "munitions",
+      "name": "Munitions",
+      "tag": "SYSTEM",
+      "description": "All automatic weapon damage increases by 8% per level.",
+      "max": 5
+    },
+    {
+      "id": "repair_bots",
+      "name": "Repair bots",
+      "tag": "SYSTEM",
+      "description": "Continuously repair 0.15 hull per second per level.",
+      "max": 5
+    },
+    {
+      "id": "harvester",
+      "name": "Data collector",
+      "tag": "SYSTEM",
+      "description": "Gain 8% more XP from every kill per level.",
+      "max": 5
+    },
+    {
+      "id": "targeting",
+      "name": "Targeting computer",
+      "tag": "SYSTEM",
+      "description": "+5% chance per level for weapons to deal double damage.",
+      "max": 5
+    },
+    {
+      "id": "amplifier",
+      "name": "Ability amplifier",
+      "tag": "SYSTEM",
+      "description": "Ability damage, duration and healing increase by 6% per level.",
+      "max": 5
+    }
   ]
 }

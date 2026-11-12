@@ -3,6 +3,8 @@ const Simulation = preload("res://scripts/simulation.gd")
 const Services = preload("res://scripts/platform_services.gd")
 const Sound = preload("res://scripts/sound.gd")
 const Playfield = preload("res://scripts/playfield.gd")
+const Catalog = preload("res://scripts/catalog.gd")
+const HangarBay = preload("res://scripts/hangar_bay.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -27,6 +29,9 @@ var build_label: Label
 var report_label: Label
 var ability_a: Button
 var ability_b: Button
+var ability_buttons: Dictionary = {}
+var hangar_category := "Hull"
+var hangar_scroll: ScrollContainer
 var pause_button: Button
 var sound_button: Button
 var music_button: Button
@@ -44,6 +49,9 @@ func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
 	if not saved.is_empty():
 		profile.merge(saved, true)
+	var hangar := Catalog.defaults()
+	hangar.merge(profile.hangar, true)
+	profile.hangar = hangar
 	sound = Sound.new()
 	add_child(sound)
 	sound.enabled = profile.sound
@@ -108,8 +116,12 @@ func _build_ui() -> void:
 	status = _label(root, "", 13, MUTED)
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
-	ability_a = _button(root, "1  AEGIS", func(): _activate("aegis"), true)
-	ability_b = _button(root, "2  NOVA", func(): _activate("nova"))
+	for id in Catalog.ABILITIES:
+		ability_buttons[id] = _button(root, "", _activate.bind(id), id == "aegis")
+		ability_buttons[id].focus_mode = Control.FOCUS_NONE
+		previous_ready[id] = true
+	ability_a = ability_buttons.aegis
+	ability_b = ability_buttons.nova
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
 	sound_button = _button(root, "Effects", _toggle_sound)
 	music_button = _button(root, "Music", _toggle_music)
@@ -122,7 +134,7 @@ func _layout() -> void:
 	var size := get_viewport_rect().size
 	old_size = size
 	root.size = size
-	var usable_height := maxf(280, size.y - 164)
+	var usable_height := maxf(240, size.y - 222)
 	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 75), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
@@ -132,15 +144,31 @@ func _layout() -> void:
 	hud.size = Vector2(field.size.x, 24)
 	status.position = Vector2(field.position.x, 43)
 	status.size = Vector2(field.size.x, 22)
-	var button_width := (field.size.x - 72) / 2
-	ability_a.position = Vector2(field.position.x, field.end.y + 12)
-	ability_a.size = Vector2(button_width, 58)
-	ability_a.add_theme_font_size_override("font_size", 14)
-	ability_b.add_theme_font_size_override("font_size", 14)
-	ability_b.position = ability_a.position + Vector2(button_width + 8, 0)
-	ability_b.size = ability_a.size
-	pause_button.position = ability_b.position + Vector2(button_width + 8, 0)
-	pause_button.size = Vector2(48, 58)
+	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
+	var controls_x := (size.x - controls_width) / 2
+	var button_width := (controls_width - 12) / 3
+	for i in range(Catalog.ABILITIES.size()):
+		var button: Button = ability_buttons[Catalog.ABILITIES[i]]
+		button.position = Vector2(controls_x + (i % 3) * (button_width + 6), field.end.y + 9 + int(i / 3) * 56)
+		button.size = Vector2(button_width, 50)
+		button.custom_minimum_size.y = 50
+		button.add_theme_font_size_override("font_size", 12)
+		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
+		for state in ["normal", "hover", "pressed", "disabled"]:
+			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
+			compact_style.content_margin_left = 6
+			compact_style.content_margin_right = 6
+			compact_style.content_margin_top = 6
+			compact_style.content_margin_bottom = 6
+			button.add_theme_stylebox_override(state, compact_style)
+	pause_button.position = Vector2(field.end.x - 42, 31)
+	pause_button.size = Vector2(42, 36)
+	pause_button.custom_minimum_size.y = 36
+	pause_button.add_theme_font_size_override("font_size", 14)
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		var compact_style: StyleBoxFlat = pause_button.get_theme_stylebox(state).duplicate()
+		compact_style.set_content_margin_all(6)
+		pause_button.add_theme_stylebox_override(state, compact_style)
 	var wide := size.x > 950
 	build_label.visible = wide
 	report_label.visible = wide
@@ -194,7 +222,12 @@ func _panel(width: float = 440.0) -> VBoxContainer:
 	center.add_child(panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 12)
-	panel.add_child(box)
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size.y = minf(620, screen.y - 60)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	panel.add_child(scroll)
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(box)
 	return box
 
 func _wrapped(parent: Node, value: String, size: int = 15, color: Color = MUTED) -> Label:
@@ -208,7 +241,7 @@ func _show_menu() -> void:
 	_label(box, "S T A R / R U N", 38, CYAN)
 	_label(box, "DEBRIS BELT   /   FLIGHT 01", 13, AMBER)
 	_wrapped(box, "Build the ship. Read the threat. Choose your moment.", 19, Color.WHITE)
-	_wrapped(box, "Your ship flies and fires itself. Aegis blocks incoming damage; Nova clears missiles and interrupts charging beams. Choose an upgrade whenever you level up.")
+	_wrapped(box, "Your ship flies and fires itself. Start with Aegis and Nova, then learn four more active abilities and build new weapons as you level up.")
 	_wrapped(box, "About five minutes. One boss. No steering.", 14)
 	if not services.read_save(Services.RUN).is_empty():
 		_button(box, "Resume flight", _resume_run, true)
@@ -221,7 +254,7 @@ func _show_menu() -> void:
 	var glow_toggle := _button(row, "Glow " + ("low" if profile.reduced else "full"), _toggle_fx)
 	for toggle in [effects_toggle, music_toggle, glow_toggle]:
 		toggle.add_theme_font_size_override("font_size", 12)
-	_label(box, "Keys 1 / 2 · Controller A / X · Esc: pause", 12, MUTED)
+	_wrapped(box, "Keys 1–6 · Controller A / X / Y / B / LB / RB · Esc: pause", 12, MUTED)
 
 func _new_run() -> void:
 	profile.runs += 1
@@ -245,7 +278,8 @@ func _start_flight() -> void:
 	accumulator = 0.0
 	last_hull = sim.hull
 	previous_warning = false
-	previous_ready = {"aegis": sim.cooldowns.aegis <= 0, "nova": sim.cooldowns.nova <= 0}
+	for id in Catalog.ABILITIES:
+		previous_ready[id] = sim.cooldowns[id] <= 0
 	banner_text = "AEGIS blocks. NOVA interrupts."
 	banner_clock = 5.0
 	sound.play("start")
@@ -270,7 +304,7 @@ func _process(delta: float) -> void:
 			sound.play("warning")
 		previous_warning = warning
 		for key in previous_ready:
-			var ready: bool = sim.cooldowns[key] <= 0
+			var ready: bool = sim.cooldowns[key] <= 0 and sim.upgrades[key] > 0
 			if ready and not previous_ready[key]:
 				sound.play("ready-" + key)
 			previous_ready[key] = ready
@@ -293,14 +327,25 @@ func _process(delta: float) -> void:
 	world.queue_redraw()
 
 func _update_hud() -> void:
-	hud.text = "HULL %03d    SHIELD %02d    LV %02d" % [sim.hull, sim.shield, sim.level]
+	hud.text = "HULL %03d   SHIELD %02d   LV %02d" % [sim.hull, sim.shield, sim.level]
 	var seconds := int(sim.time)
-	status.text = "%02d:%02d  /  DEBRIS BELT%s" % [seconds / 60, seconds % 60, "  ·  BOSS" if sim.boss_spawned else ""]
-	for pair in [[ability_a, "aegis", "1  AEGIS"], [ability_b, "nova", "2  NOVA"]]:
-		var cooldown: float = sim.cooldowns[pair[1]]
-		pair[0].text = pair[2] + ("\n%.1fs" % cooldown if cooldown > 0 else "\nREADY")
-		pair[0].disabled = mode != "playing" or cooldown > 0
-	build_label.text = "V A N G U A R D\nAUTOPILOT ONLINE\n\nWEAPONS\n\nPulse cannon   %d / 5\nSeeker pods    %d / 5\n\nSeeker priority:\nCharging source\n→ Missile → Nearest\n\nSYSTEMS\n\nArmor         %d / 5\nRegenerator   %d / 5\nHull plating  %d / 5\nCoolant loop  %d / 5\n\nABILITIES\n\nAegis field   %d / 5\nNova pulse    %d / 5" % [sim.upgrades.pulse, sim.upgrades.seeker, sim.upgrades.armor, sim.upgrades.regen, sim.upgrades.hull, sim.upgrades.coolant, sim.upgrades.aegis, sim.upgrades.nova]
+	status.text = "%02d:%02d  /  %s" % [seconds / 60, seconds % 60, "HARVESTER" if sim.boss_spawned else "DEBRIS BELT"]
+	for i in range(Catalog.ABILITIES.size()):
+		var id: String = Catalog.ABILITIES[i]
+		var button: Button = ability_buttons[id]
+		var cooldown: float = sim.cooldowns[id]
+		var learned: bool = sim.upgrades[id] > 0
+		var title: String = "DRONES" if id == "mend" else sim.content.abilities[id].name.to_upper()
+		button.text = "%d  %s\n%s" % [i + 1, title if learned else "EMPTY", ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "LEVEL-UP"]
+		button.disabled = mode != "playing" or cooldown > 0 or not learned
+		button.tooltip_text = sim.content.abilities[id].name + (" · Level %d" % sim.upgrades[id] if learned else " · Find this ability in an upgrade draft")
+	build_label.text = "V A N G U A R D\nAUTOPILOT ONLINE\n\n"
+	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
+		build_label.text += tag + "S\n"
+		for card in sim.content.cards:
+			if card.tag == tag and sim.upgrades[card.id] > 0:
+				build_label.text += "%s  %d/5\n" % [card.name, sim.upgrades[card.id]]
+		build_label.text += "\n"
 	report_label.text = "F L I G H T   D A T A\n\nSECTOR 01 / 04\nDEBRIS BELT\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % ["HARVESTER ENGAGED" if sim.boss_spawned else "Harvester at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
 func _activate(id: String) -> void:
@@ -320,16 +365,38 @@ func _show_cards() -> void:
 	for i in range(sim.cards.size()):
 		var card: Dictionary = sim.cards[i]
 		var current: int = int(sim.upgrades.get(card.id, 0))
-		var title := "%d   %s    %s\n%s" % [i + 1, card.name.to_upper(), "LV %d → %d" % [current, current + 1] if card.id != "repair" else "", card.description]
+		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, "NEW ABILITY" if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, current + 1] if card.id != "repair" else "REPAIR"), card.description]
 		var button := _button(box, title, _choose.bind(i))
 		button.add_theme_font_size_override("font_size", 14)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size.y = 96
+		button.custom_minimum_size.y = 88
 		card_buttons.append(button)
+		if sim.banishes_left > 0 and card.id != "repair":
+			var banish := _button(box, "Banish %s · %d left" % [card.name, sim.banishes_left], _draft_action.bind("banish", i))
+			banish.custom_minimum_size.y = 30
+			banish.add_theme_font_size_override("font_size", 12)
+	var tools := HBoxContainer.new()
+	box.add_child(tools)
+	if sim.rerolls_left > 0:
+		_button(tools, "Reroll (%d)" % sim.rerolls_left, _draft_action.bind("reroll", 0))
+	if sim.skips_left > 0:
+		_button(tools, "Skip + repair (%d)" % sim.skips_left, _draft_action.bind("skip", 0))
 	if not card_buttons.is_empty():
 		card_buttons[0].grab_focus()
 	sound.play("card")
+
+func _draft_action(action: String, index: int) -> void:
+	var changed: bool = sim.reroll_cards() if action == "reroll" else (sim.banish_card(index) if action == "banish" else sim.skip_cards())
+	if not changed:
+		return
+	if sim.cards.is_empty():
+		mode = "playing"
+		_clear_overlay()
+		accumulator = -0.25
+		_save_run()
+	else:
+		_show_cards()
 
 func _choose(index: int) -> void:
 	if mode == "cards" and sim.choose_card(index):
@@ -374,7 +441,7 @@ func _show_results() -> void:
 	_label(box, "SECTOR CLEARED" if sim.won else "SIGNAL LOST", 32, CYAN if sim.won else AMBER)
 	_wrapped(box, "Harvester destroyed. The belt is behind you." if sim.won else "The flight recorder survived. Here's what happened.", 16, Color.WHITE)
 	_label(box, "%02d:%02d survived · %d kills · +%d cores" % [int(sim.time) / 60, int(sim.time) % 60, sim.kills, sim.payout()], 14, CYAN)
-	_wrapped(box, "DAMAGE RECEIVED\nChaff %.0f   Heavy %.0f   Missiles %.0f   Hazards %.0f\n\nWEAPON DAMAGE\nPulse %.0f   Seekers %.0f   Nova %.0f\n\n%d beams cancelled · %.0f damage blocked" % [sim.damage_taken.chaff, sim.damage_taken.heavy, sim.damage_taken.ordnance, sim.damage_taken.hazard, sim.damage_dealt.pulse, sim.damage_dealt.seeker, sim.damage_dealt.nova, sim.beams_cancelled, sim.prevented], 14)
+	_wrapped(box, "DAMAGE RECEIVED\nChaff %.0f   Heavy %.0f   Missiles %.0f   Hazards %.0f\n\nWEAPON DAMAGE\nPulse %.0f   Seekers %.0f   Arc %.0f\nLance %.0f   Nova %.0f   Barrage %.0f\n\n%d beams cancelled · %.0f damage blocked" % [sim.damage_taken.chaff, sim.damage_taken.heavy, sim.damage_taken.ordnance, sim.damage_taken.hazard, sim.damage_dealt.pulse, sim.damage_dealt.seeker, sim.damage_dealt.arc, sim.damage_dealt.lance, sim.damage_dealt.nova, sim.damage_dealt.barrage, sim.beams_cancelled, sim.prevented], 14)
 	var recap := "FINAL 10 SECONDS"
 	var count := 0
 	for i in range(sim.events.size() - 1, -1, -1):
@@ -388,28 +455,137 @@ func _show_results() -> void:
 
 func _show_hangar() -> void:
 	mode = "hangar"
-	var box := _panel()
-	_label(box, "VANGUARD HANGAR", 26, CYAN)
-	_label(box, "%d CORES AVAILABLE" % profile.cores, 14, AMBER)
-	_wrapped(box, "Small upgrades between flights. The belt can be cleared without them. Respec returns every core.")
-	for entry in [["hull", "Hull bay", "+10 starting hull"], ["damage", "Armory", "+8% weapon damage"], ["regen", "Shield lab", "+0.25 shield / second"]]:
-		var bought: int = int(profile.hangar[entry[0]])
-		var button := _button(box, "%s %d / 3 · %s\n5 cores" % [entry[1], bought, entry[2]], _purchase.bind(entry[0]))
-		button.disabled = profile.cores < 5 or bought >= 3
-	_button(box, "Respec · refund all upgrades", _respec)
-	_button(box, "Back to flight deck", _show_menu, true).grab_focus()
+	_clear_overlay()
+	var screen := get_viewport_rect().size
+	var compact := screen.x < 760
+	var shade := ColorRect.new()
+	shade.color = Color(0.015, 0.025, 0.045, 1.0)
+	shade.size = screen
+	overlay.add_child(shade)
+	var margin := MarginContainer.new()
+	margin.position = Vector2(18, 18)
+	margin.size = screen - Vector2(36, 36)
+	overlay.add_child(margin)
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 12)
+	margin.add_child(layout)
+	var header := HBoxContainer.new()
+	layout.add_child(header)
+	var heading := VBoxContainer.new()
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(heading)
+	_label(heading, "VANGUARD / DOCK 07", 11, CYAN)
+	_label(heading, "Hangar", 34, Color.WHITE)
+	var wallet := VBoxContainer.new()
+	header.add_child(wallet)
+	_label(wallet, "%d" % profile.cores, 30, AMBER)
+	_label(wallet, "CORES", 11, MUTED)
+	var body: BoxContainer = VBoxContainer.new() if compact else HBoxContainer.new()
+	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_theme_constant_override("separation", 18)
+	layout.add_child(body)
+	var hero := VBoxContainer.new()
+	hero.custom_minimum_size.x = 0 if compact else 280
+	body.add_child(hero)
+	var bay := HangarBay.new()
+	bay.custom_minimum_size = Vector2(0 if compact else 280, 126 if compact else 290)
+	bay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hero.add_child(bay)
+	if not compact:
+		_label(hero, "Flight configuration", 20, Color.WHITE)
+		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [100 + profile.hangar.hull * 10, 50 + profile.hangar.shield * 8, profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
+		_wrapped(hero, "22 upgrade tracks. Every purchase applies to your next flight. Your current suspended flight keeps its loadout.", 14)
+		_wrapped(hero, "Abilities are learned during flight. All six are available from your first run.", 14)
+	var workshop := VBoxContainer.new()
+	workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	workshop.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	body.add_child(workshop)
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 4)
+	workshop.add_child(tabs)
+	for group in Catalog.GROUPS:
+		var tab := _button(tabs, group, _hangar_tab.bind(group), group == hangar_category)
+		tab.custom_minimum_size = Vector2(0, 38)
+		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tab.add_theme_font_size_override("font_size", 11 if compact else 13)
+		for style in ["normal", "hover", "pressed", "disabled"]:
+			var box: StyleBoxFlat = tab.get_theme_stylebox(style).duplicate()
+			box.content_margin_left = 6
+			box.content_margin_right = 6
+			tab.add_theme_stylebox_override(style, box)
+	hangar_scroll = ScrollContainer.new()
+	hangar_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hangar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	workshop.add_child(hangar_scroll)
+	var grid := GridContainer.new()
+	grid.columns = 1 if compact else 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	hangar_scroll.add_child(grid)
+	var index := 0
+	for entry in Catalog.HANGAR:
+		if entry.group != hangar_category:
+			continue
+		index += 1
+		var bought: int = int(profile.hangar[entry.id])
+		var maxed: bool = bought >= int(entry.max)
+		var price := Catalog.price(entry.id, bought)
+		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.custom_minimum_size.x = 0 if compact else 220
+		panel.add_theme_stylebox_override("panel", _style(Color("101f2b"), Color("49736b") if bought > 0 else Color("293d50")))
+		grid.add_child(panel)
+		var card := VBoxContainer.new()
+		card.add_theme_constant_override("separation", 8)
+		panel.add_child(card)
+		_label(card, "%02d   /   %s" % [index, entry.group.to_upper()], 10, AMBER)
+		_wrapped(card, entry.name, 20, Color.WHITE)
+		_wrapped(card, entry.description, 13, MUTED)
+		var pips := HBoxContainer.new()
+		pips.add_theme_constant_override("separation", 4)
+		card.add_child(pips)
+		for tier in range(int(entry.max)):
+			var pip := ColorRect.new()
+			pip.color = CYAN if tier < bought else Color("23394a")
+			pip.custom_minimum_size = Vector2(20, 4)
+			pips.add_child(pip)
+		var buy := _button(card, "FULLY INSTALLED" if maxed else "Install · %d cores    %d / %d" % [price, bought, entry.max], _purchase.bind(entry.id))
+		buy.custom_minimum_size.y = 38
+		buy.add_theme_font_size_override("font_size", 12)
+		buy.disabled = maxed or profile.cores < price
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 8)
+	layout.add_child(footer)
+	var launch := _button(footer, "Launch", _new_run, true)
+	launch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var refund := _button(footer, "Refund · %d" % Catalog.refund(profile.hangar), _respec)
+	refund.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	refund.add_theme_font_size_override("font_size", 13)
+	var back := _button(footer, "Back", _show_menu)
+	back.add_theme_font_size_override("font_size", 13)
+	launch.grab_focus()
+
+func _hangar_tab(group: String) -> void:
+	hangar_category = group
+	_show_hangar()
 
 func _purchase(id: String) -> void:
-	if profile.cores >= 5 and profile.hangar[id] < 3:
-		profile.cores -= 5
-		profile.hangar[id] += 1
+	var entry := Catalog.entry(id)
+	if entry.is_empty():
+		return
+	var rank: int = int(profile.hangar.get(id, 0))
+	var price := Catalog.price(id, rank)
+	if profile.cores >= price and rank < int(entry.max):
+		profile.cores -= price
+		profile.hangar[id] = rank + 1
 		_save_profile()
+		sound.play("card")
 		_show_hangar()
 
 func _respec() -> void:
-	for key in profile.hangar:
-		profile.cores += int(profile.hangar[key]) * 5
-		profile.hangar[key] = 0
+	profile.cores += Catalog.refund(profile.hangar)
+	profile.hangar = Catalog.defaults()
 	_save_profile()
 	_show_hangar()
 
@@ -456,28 +632,32 @@ func _notification(what: int) -> void:
 		_save_run()
 		get_tree().quit()
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
 	if event.keycode in [KEY_ESCAPE, KEY_P]:
 		_toggle_pause()
+		get_viewport().set_input_as_handled()
 	elif mode == "playing":
 		if event.keycode in [KEY_1, KEY_SPACE]:
 			_activate("aegis")
-		elif event.keycode == KEY_2:
-			_activate("nova")
-	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3]:
+			get_viewport().set_input_as_handled()
+		elif event.keycode >= KEY_2 and event.keycode <= KEY_6:
+			_activate(Catalog.ABILITIES[event.keycode - KEY_1])
+			get_viewport().set_input_as_handled()
+	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
 		_choose(event.keycode - KEY_1)
+		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventJoypadButton and event.pressed:
 		if event.button_index == JOY_BUTTON_START:
 			_toggle_pause()
 		elif mode == "playing":
-			if event.button_index == JOY_BUTTON_A:
-				_activate("aegis")
-			elif event.button_index == JOY_BUTTON_X:
-				_activate("nova")
+			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B, JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]
+			var index := bindings.find(event.button_index)
+			if index >= 0:
+				_activate(Catalog.ABILITIES[index])
 
 func _draw() -> void:
 	if sim == null or field.size.x == 0:
@@ -487,5 +667,5 @@ func _draw() -> void:
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
 		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "S T A R / R U N", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, CYAN)
-		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FIRST FLIGHT  /  0.2", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FIRST FLIGHT  /  0.3", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)

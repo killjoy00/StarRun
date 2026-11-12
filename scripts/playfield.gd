@@ -23,16 +23,22 @@ func _draw() -> void:
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
 	draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
-	draw_texture_rect(SPACE, Rect2(Vector2(-35, -55) + drift, Vector2(610, 1070)), false, Color(0.83, 0.87, 0.97))
+	var scroll := visual_time * 65.0
+	for tile in range(-1, 2):
+		var y := tile * 1070.0 + fposmod(scroll, 1070.0) - 55
+		var flipped := posmod(tile - floori(scroll / 1070.0), 2) == 1
+		draw_set_transform(Vector2(-35 + drift.x, y + (1070 if flipped else 0)), 0, Vector2(1, -1 if flipped else 1))
+		draw_texture_rect(SPACE, Rect2(0, 0, 610, 1070), false, Color(0.72, 0.79, 0.90))
+	draw_set_transform(Vector2.ZERO)
 	# Three depths of moving starlight sell forward flight without steering the player.
 	for i in range(90):
 		var depth := 0.35 + (i % 4) * 0.24
-		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (24 + depth * 58), 960))
+		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.65, 0.82, 1.0, 0.16 + depth * 0.25)
-		draw_line(p, p + Vector2(-velocity.x * 0.015, 2.0 + depth * 3), color, 1)
+		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
 	for i in range(9):
 		var depth := 0.35 + (i % 3) * 0.3
-		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (30 + depth * 34), 1120) - 80)
+		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
 	_draw_threats()
 	# Exact two-second preview remains fair on curved flight paths.
@@ -51,7 +57,7 @@ func _draw() -> void:
 			_glow(bullet.p, 3.0, Color("ff738f"))
 			draw_circle(bullet.p, 1.1, Color("fff0d6"))
 	for shot in sim.shots:
-		var color := CYAN if shot.weapon == "pulse" else AMBER
+		var color := CYAN if shot.weapon == "pulse" else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
 		var direction: Vector2 = shot.v.normalized()
 		if not profile.reduced:
 			draw_line(shot.p - direction * 27, shot.p, Color(color, 0.12), 8, true)
@@ -73,35 +79,45 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
 func _draw_player(ship: Vector2, velocity: Vector2) -> void:
-	var bank := clampf(velocity.x * 0.006, -0.23, 0.23)
-	var thrust := 24.0 + minf(velocity.length(), 40) * 0.25
+	var bank := clampf(velocity.x * 0.004, -0.32, 0.32)
+	var thrust := 30.0 + minf(velocity.length(), 120) * 0.20
 	if not profile.reduced:
 		for side in [-1, 1]:
 			for i in range(12, 0, -1):
 				var age := i * 0.035
 				var past: Vector2 = sim.ship_position(maxf(0, sim.time - age))
-				var p := past + Vector2(side * 13, 35 + age * 170)
+				var p := past + Vector2(side * 10, 26 + age * 290)
 				draw_circle(p, maxf(1, 5 - i * 0.3), Color(0.35, 0.85, 1.0, (13 - i) * 0.012))
 	draw_set_transform(ship, bank)
 	for side in [-1, 1]:
-		var nozzle := Vector2(side * 13, 35)
+		var nozzle := Vector2(side * 10, 26)
 		var flicker := 1.0 + sin(visual_time * 59 + side) * 0.13
 		_glow(nozzle + Vector2(0, thrust * 0.2), 11, Color(0.2, 0.7, 1.0, 0.18))
 		var flame := PackedVector2Array([nozzle + Vector2(-5, 0), nozzle + Vector2(0, thrust * flicker), nozzle + Vector2(5, 0)])
 		draw_colored_polygon(flame, Color(0.24, 0.75, 1.0, 0.65))
 		draw_line(nozzle, nozzle + Vector2(0, thrust * 0.55 * flicker), Color("e5fcff"), 3, true)
-	draw_texture_rect(SHIPS.vanguard, Rect2(-49, -55, 98, 98), false)
-	if sim.pulse_timer > 0.19:
-		_glow(Vector2(0, -48), 7, Color(0.6, 1, 0.9, 0.8))
+	draw_texture_rect(SHIPS.vanguard, Rect2(-38, -42, 76, 76), false)
+	if sim.pulse_timer > 0.15:
+		_glow(Vector2(0, -35), 6, Color(0.6, 1, 0.9, 0.8))
 	draw_set_transform(Vector2.ZERO)
 	if sim.aegis_left > 0:
 		var alpha := minf(1, sim.aegis_left * 3)
-		draw_circle(ship, 60, Color(0.16, 0.7, 0.9, 0.06 * alpha))
+		draw_circle(ship, 47, Color(0.16, 0.7, 0.9, 0.06 * alpha))
 		for ring in range(3):
-			draw_arc(ship, 58 + ring * 3, 0, TAU, 64, Color(0.3, 0.95, 0.95, (0.55 - ring * 0.18) * alpha), 1.8, true)
+			draw_arc(ship, 45 + ring * 3, 0, TAU, 64, Color(0.3, 0.95, 0.95, (0.55 - ring * 0.18) * alpha), 1.8, true)
 		for segment in range(6):
 			var angle := visual_time * 0.3 + segment * TAU / 6
-			draw_arc(ship, 55, angle, angle + 0.65, 8, Color(0.7, 1.0, 1.0, 0.75 * alpha), 2.5, true)
+			draw_arc(ship, 43, angle, angle + 0.65, 8, Color(0.7, 1.0, 1.0, 0.75 * alpha), 2.5, true)
+	if sim.overdrive_left > 0:
+		draw_arc(ship, 40, visual_time * 5, visual_time * 5 + 4.7, 32, Color("ff9f78"), 2, true)
+	if sim.chrono_left > 0:
+		draw_circle(ship, 90, Color(0.55, 0.35, 1.0, 0.07))
+		draw_arc(ship, 90, -visual_time, TAU - visual_time, 64, Color(0.7, 0.55, 1.0, 0.45), 1.5, true)
+	if sim.mend_left > 0:
+		for i in range(3):
+			var bot := ship + Vector2.from_angle(visual_time * 2 + i * TAU / 3) * 48
+			_glow(bot, 3, Color("91ffc0"))
+			draw_line(bot, ship, Color(0.5, 1.0, 0.75, 0.25), 1, true)
 
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
@@ -137,7 +153,23 @@ func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
 	var age := 1.0 - alpha
 	var p: Vector2 = effect.p
-	if effect.kind == "nova":
+	if effect.kind in ["arc", "lance"]:
+		var end: Vector2 = effect.to
+		var color := Color("bba5ff") if effect.kind == "arc" else Color("ffdb96")
+		if effect.kind == "arc":
+			var points := PackedVector2Array([p])
+			for i in range(1, 8):
+				points.append(p.lerp(end, i / 8.0) + Vector2(sin(i * 19 + effect.born) * 13, 0))
+			points.append(end)
+			draw_polyline(points, Color(color, alpha), 2.5, true)
+		else:
+			draw_line(p, end, Color(color, alpha * 0.12), 16, true)
+			draw_line(p, end, Color(color, alpha), 4, true)
+			draw_line(p, end, Color(1, 1, 1, alpha), 1.5, true)
+	elif effect.kind in ["barrage", "overdrive", "chrono", "mend"]:
+		var color := Color("a7a1ff") if effect.kind in ["chrono", "barrage"] else Color("a9ffc9")
+		draw_arc(p, 25 + age * 130, 0, TAU, 48, Color(color, alpha * 0.8), 3, true)
+	elif effect.kind == "nova":
 		var radius := age * 790
 		if not profile.reduced:
 			draw_arc(p, radius, 0, TAU, 100, Color(0.2, 0.9, 1, alpha * 0.08), 65, true)
