@@ -49,6 +49,7 @@ var last_hull := 100.0
 var card_selection := 0
 var banner_text := ""
 var banner_clock := 0.0
+var last_sector := ""
 var old_size := Vector2.ZERO
 
 func _ready() -> void:
@@ -322,6 +323,7 @@ func _start_flight() -> void:
 	previous_warning = false
 	for id in Catalog.ABILITIES:
 		previous_ready[id] = sim.cooldowns[id] <= 0
+	last_sector = _sector_name(sim.time)
 	banner_text = "AEGIS blocks. NOVA interrupts."
 	banner_clock = 5.0
 	sound.play("start")
@@ -341,6 +343,11 @@ func _process(delta: float) -> void:
 				_finish()
 			elif not sim.cards.is_empty():
 				_show_cards()
+		var sector_now := _sector_name(sim.time)
+		if sector_now != last_sector:
+			last_sector = sector_now
+			banner_text = sector_now + "  /  NEW SECTOR"
+			banner_clock = 3.5
 		var warning: bool = not sim.charges.is_empty()
 		if warning and not previous_warning:
 			sound.play("warning")
@@ -553,7 +560,7 @@ func _show_hangar() -> void:
 	_button(hero, "Pilots & ships · %s / %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], _show_loadout)
 	if not compact:
 		_label(hero, "Flight configuration", 20, Color.WHITE)
-		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [100 + profile.hangar.hull * 10, 50 + profile.hangar.shield * 8, profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
+		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [int(Catalog.ship(profile.ship).hull) + profile.hangar.hull * 10, int(Catalog.ship(profile.ship).shield) + profile.hangar.shield * 8 + (20 if profile.pilot == "engineer" else 0), profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
 		_wrapped(hero, "22 upgrade tracks plus permanent pilot and ship unlocks. Current suspended flights keep their original loadout.", 14)
 		_wrapped(hero, "Abilities are learned during flight. All six are available from your first run.", 14)
 	var workshop := VBoxContainer.new()
@@ -775,6 +782,15 @@ func _show_build() -> void:
 			count += 1
 		if count == 0:
 			_wrapped(box, "None installed", 13)
+	_label(box, "HANGAR MODULES", 15, AMBER)
+	var installed := 0
+	for entry in Catalog.HANGAR:
+		var rank: int = int(sim.meta.get(entry.id, 0))
+		if rank > 0:
+			_wrapped(box, "%s  ·  Rank %d/%d" % [entry.name, rank, entry.max], 13, CYAN)
+			installed += 1
+	if installed == 0:
+		_wrapped(box, "No permanent modules installed", 13)
 	_button(box, "Return to flight", _toggle_pause, true).grab_focus()
 
 func _show_loadout() -> void:
