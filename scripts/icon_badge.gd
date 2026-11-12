@@ -23,7 +23,8 @@ func _draw() -> void:
 	match icon_id:
 		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
-			draw_polyline(points + PackedVector2Array([points[0]]), color, 2.3, true)
+			points.append(points[0])
+			draw_polyline(points, color, 2.3, true)
 			draw_line(Vector2(-4,0), Vector2(-1,4), color, 2.3, true)
 			draw_line(Vector2(-1,4), Vector2(6,-4), color, 2.3, true)
 		"nova", "amplifier":
