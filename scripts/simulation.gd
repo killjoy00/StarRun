@@ -10,7 +10,10 @@ var rng := RandomNumberGenerator.new()
 var seed_value := 1
 # A separate seeded course never consumes the combat/draft random stream.
 var course: Array[Dictionary] = []
-var movement_version := 3
+var movement_version := 4
+var ship_id := "vanguard"
+var pilot_id := "rookie"
+var next_hazard := 20.0
 var tick := 0
 var time := 0.0
 var hull := 100.0
@@ -59,23 +62,28 @@ var beams_fired := 0
 var beams_cancelled := 0
 var meta := Catalog.defaults()
 
-func _init(run_seed: int = 1, hangar: Dictionary = {}) -> void:
+func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie") -> void:
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
+	ship_id = Catalog.ship(selected_ship).id
+	pilot_id = Catalog.pilot(selected_pilot).id
 	seed_value = run_seed
 	rng.seed = run_seed
 	_build_course()
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
-	max_hull += meta.hull * 10.0
+	var chassis: Dictionary = Catalog.ship(ship_id)
+	max_hull = float(chassis.hull) + meta.hull * 10.0
 	hull = max_hull
-	max_shield += meta.shield * 8.0
+	max_shield = float(chassis.shield) + meta.shield * 8.0 + (20.0 if pilot_id == "engineer" else 0.0)
 	shield = max_shield
-	upgrades.pulse += meta.pulse_start
-	upgrades.seeker += meta.seeker_start
-	rerolls_left = meta.rerolls
+	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
+	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
+	upgrades.arc = int(chassis.arc)
+	upgrades.mend = int(chassis.mend)
+	rerolls_left = meta.rerolls + (1 if pilot_id == "tactician" else 0)
 	banishes_left = meta.banishes
 	skips_left = meta.skips
 
@@ -88,12 +96,19 @@ func _build_course() -> void:
 	var arrival := 0.0
 	var previous := Vector2(270, 790)
 	while arrival < 420.0:
-		arrival += pilot.randf_range(2.2, 4.0) if movement_version >= 3 else pilot.randf_range(3.8, 7.5)
-		var target := previous + Vector2(pilot.randf_range(-220, 220), pilot.randf_range(-72, 72)) if movement_version >= 3 else previous + Vector2(pilot.randf_range(-115, 115), pilot.randf_range(-20, 20))
-		if pilot.randf() < (0.10 if movement_version >= 3 else 0.24):
+		var movement: float = float(Catalog.ship(ship_id).movement) if movement_version >= 4 else 1.0
+		arrival += (pilot.randf_range(1.65, 2.8) / movement if movement_version >= 4 else (pilot.randf_range(2.2, 4.0) if movement_version >= 3 else pilot.randf_range(3.8, 7.5)))
+		var target: Vector2
+		if movement_version >= 4:
+			target = previous + Vector2(pilot.randf_range(-245, 245), pilot.randf_range(-115, 115))
+		elif movement_version >= 3:
+			target = previous + Vector2(pilot.randf_range(-220, 220), pilot.randf_range(-72, 72))
+		else:
+			target = previous + Vector2(pilot.randf_range(-115, 115), pilot.randf_range(-20, 20))
+		if pilot.randf() < (0.05 if movement_version >= 4 else (0.10 if movement_version >= 3 else 0.24)):
 			target = previous + Vector2(pilot.randf_range(-18, 18), pilot.randf_range(-8, 8))
-		target.x = clampf(target.x, 100 if movement_version >= 3 else 125, 440 if movement_version >= 3 else 415)
-		target.y = clampf(target.y, 665 if movement_version >= 3 else 755, 815 if movement_version >= 3 else 810)
+		target.x = clampf(target.x, 80 if movement_version >= 4 else (100 if movement_version >= 3 else 125), 460 if movement_version >= 4 else (440 if movement_version >= 3 else 415))
+		target.y = clampf(target.y, 610 if movement_version >= 4 else (665 if movement_version >= 3 else 755), 835 if movement_version >= 4 else (815 if movement_version >= 3 else 810))
 		course.append({"t": arrival, "p": target})
 		previous = target
 
@@ -116,8 +131,18 @@ func ship_position(at: float = -1.0) -> Vector2:
 	var p3: Vector2 = course[mini(index + 2, course.size() - 1)].p
 	var velocity0: Vector2 = (end - p0) / float(next.t - course[index - 1].t)
 	var velocity1: Vector2 = (p3 - start) / float(course[mini(index + 2, course.size() - 1)].t - current.t)
-	# Time-aware cubic Hermite interpolation keeps turns and banking continuous.
+	# Cubic Bezier is equivalent to Hermite until the control points reach
+	# the safety envelope. Keeping handles within it prevents overshooting
+	# the gameplay boundary, without snapping the ship or changing old saves.
 	var u := weight
+	if movement_version >= 4:
+		var handle1: Vector2 = start + velocity0 * duration / 3.0
+		var handle2: Vector2 = end - velocity1 * duration / 3.0
+		handle1.x = clampf(handle1.x, 75.0, 465.0)
+		handle2.x = clampf(handle2.x, 75.0, 465.0)
+		handle1.y = clampf(handle1.y, 600.0, 850.0)
+		handle2.y = clampf(handle2.y, 600.0, 850.0)
+		return start * pow(1.0-u, 3) + 3.0 * handle1 * pow(1.0-u, 2) * u + 3.0 * handle2 * (1.0-u) * u*u + end * u*u*u
 	return (2*u*u*u - 3*u*u + 1) * start + (u*u*u - 2*u*u + u) * velocity0 * duration + (-2*u*u*u + 3*u*u) * end + (u*u*u - u*u) * velocity1 * duration
 
 func ship_velocity(at: float = -1.0) -> Vector2:
@@ -138,11 +163,11 @@ func step() -> void:
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
-	hull = minf(max_hull, hull + (upgrades.repair_bots * 0.15 + meta.repair * 0.15) * DT)
+	hull = minf(max_hull, hull + (upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)) * DT)
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
-		shield = minf(max_shield, shield + (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25) * DT)
+		shield = minf(max_shield, shield + (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT)
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
@@ -151,6 +176,9 @@ func step() -> void:
 	if time >= next_spawn and not boss_spawned:
 		_spawn_enemy()
 		next_spawn = time + maxf(0.72, 1.65 - time / 260.0)
+	if time >= next_hazard and not boss_spawned:
+		_spawn_hazard()
+		next_hazard = time + rng.randf_range(15.0, 23.0)
 	_update_enemies()
 	_update_charges()
 	_update_weapons()
@@ -160,18 +188,33 @@ func step() -> void:
 		_offer_cards()
 
 func _spawn_enemy() -> void:
-	if enemies.size() >= 18:
+	if enemies.size() >= 20:
 		return
-	var kind := "drone"
-	var roll := rng.randf()
-	if time > 30.0 and roll < 0.30:
-		kind = "gunship"
-	elif time > 55.0 and roll > 0.77:
-		kind = "sniper"
+	# Gradually broaden the roster rather than throwing every threat at a new player.
+	var pool: Array = ["drone", "drone", "drone", "rusher"]
+	if time > 25:
+		pool.append_array(["interceptor", "gunship", "drone"])
+	if time > 65:
+		pool.append_array(["sniper", "missile_bomber", "interceptor"])
+	if time > 110:
+		pool.append_array(["carrier", "shieldguard", "minelayer", "missile_bomber"])
+	if time > 170:
+		pool.append_array(["shieldguard", "minelayer", "carrier"])
+	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
+	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
+
+func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := 1.0 + time / 280.0
-	enemies.append({"id": next_id, "kind": kind, "p": Vector2(rng.randf_range(55, 485), -35), "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1, 3), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
+	var scaling := 1.0 + time / 340.0
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
+
+func _spawn_hazard() -> void:
+	if enemies.size() >= 19:
+		return
+	var kind := "boulder" if rng.randf() < 0.65 else "station"
+	_add_enemy(kind, Vector2(rng.randf_range(85, 455), -65))
+	_log("Incoming debris" if kind == "boulder" else "Hostile station detected")
 
 func _spawn_boss() -> void:
 	boss_spawned = true
@@ -187,35 +230,65 @@ func _spawn_boss() -> void:
 
 func _update_enemies() -> void:
 	var pace := 0.45 if chrono_left > 0 else 1.0
+	var minions: Array = []
 	for enemy in enemies:
 		if enemy.hp <= 0:
 			continue
-		if enemy.kind == "boss":
+		var kind: String = enemy.kind
+		if kind == "boss":
 			enemy.p.x = 270.0 + sin(time * 0.7) * 105.0
 		else:
 			enemy.p.y += enemy.speed * DT * pace
-			enemy.p.x += sin(time * 1.8 + enemy.phase) * 12.0 * DT * pace
+			if kind == "interceptor":
+				enemy.p.x += cos(time * 4.2 + enemy.phase) * 135.0 * DT * pace
+			elif kind == "rusher":
+				enemy.p.x = move_toward(enemy.p.x, ship_position().x, 28.0 * DT * pace)
+			elif kind == "minelayer":
+				enemy.p.x += sin(time * 3.0 + enemy.phase) * 48.0 * DT * pace
+			else:
+				enemy.p.x += sin(time * 1.8 + enemy.phase) * 12.0 * DT * pace
+			enemy.p.x = clampf(enemy.p.x, 35, 505)
+		if kind == "boulder":
+			if enemy.p.y > 945.0:
+				enemy.hp = -1.0
+			elif enemy.p.distance_to(ship_position()) < 44.0:
+				_hit(17.0, "hazard", "Boulder collision")
+				enemy.hp = -1.0
+			continue
 		enemy.fire -= DT * pace
-		if enemy.kind in ["sniper", "boss"] and time >= heavy_ready_at and charges.is_empty():
+		if kind in ["sniper", "boss"] and time >= heavy_ready_at and charges.is_empty():
 			var lead := 1.8
-			charges.append({"source": enemy.id, "x": ship_position(time + lead).x, "remaining": lead, "duration": lead, "damage": 35.0 if enemy.kind == "boss" else 28.0})
-			heavy_ready_at = time + (7.5 if enemy.kind == "boss" else 10.0)
+			charges.append({"source": enemy.id, "x": ship_position(time + lead).x, "remaining": lead, "duration": lead, "damage": 35.0 if kind == "boss" else 28.0})
+			heavy_ready_at = time + (7.5 if kind == "boss" else 10.0)
 			_log("Heavy beam charging")
 		if enemy.fire <= 0.0:
-			enemy.fire = 2.1 if enemy.kind == "boss" else float(content.enemies[enemy.kind].interval)
+			enemy.fire = 2.1 if kind == "boss" else float(content.enemies[kind].interval)
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
 			flight_time = enemy.p.distance_to(ship_position(time + flight_time)) / 215.0
 			var direction: Vector2 = (ship_position(time + flight_time) - enemy.p).normalized()
-			var count := 9 if enemy.kind == "boss" else (5 if enemy.kind == "gunship" else 3)
-			for i in range(count):
-				var angle := (i - (count - 1) / 2.0) * 0.15
-				bullets.append({"p": enemy.p, "v": direction.rotated(angle) * 215.0, "damage": 2.1 if enemy.kind == "boss" else 1.6, "kind": "chaff", "source": enemy.kind})
-			if enemy.kind == "gunship":
-				bullets.append({"p": enemy.p, "v": direction * 140.0, "damage": 12.0, "kind": "ordnance", "hp": 12.0, "source": "gunship"})
-		if enemy.p.y > 880:
+			if kind == "carrier":
+				if enemies.size() + minions.size() < 19:
+					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28)})
+				bullets.append({"p": enemy.p, "v": direction * 165.0, "damage": 2.0, "kind": "chaff", "source": kind})
+			elif kind == "minelayer":
+				bullets.append({"p": enemy.p, "v": Vector2(0, 62), "damage": 12.0, "kind": "mine", "hp": 14.0, "fuse": 3.4, "source": kind})
+			else:
+				var count := 9 if kind == "boss" else (5 if kind == "gunship" else (2 if kind in ["interceptor", "rusher"] else 3))
+				for i in range(count):
+					var angle := (i - (count - 1) / 2.0) * 0.15
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (245.0 if kind == "interceptor" else 215.0), "damage": 2.1 if kind == "boss" else (1.25 if kind in ["rusher", "interceptor"] else 1.6), "kind": "chaff", "source": kind})
+				if kind in ["gunship", "missile_bomber", "station"]:
+					var volley := 2 if kind == "missile_bomber" else 1
+					for i in range(volley):
+						bullets.append({"p":enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": 11.0 if kind == "missile_bomber" else 12.0, "kind":"ordnance", "hp":12.0, "source":kind})
+		if enemy.p.y > 885:
 			enemy.hp = -1.0
-			_hit(5.0, "hazard", "Escaped " + enemy.kind)
+			if kind not in ["boulder", "station"]:
+				_hit(5.0, "hazard", "Escaped " + kind)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
+	for minion in minions:
+		if enemies.size() < 20:
+			_add_enemy("drone", minion.p)
 
 func _update_charges() -> void:
 	for charge in charges:
@@ -233,20 +306,20 @@ func _update_charges() -> void:
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
 func _update_weapons() -> void:
-	var rate: float = 1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)
+	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
 	pulse_timer -= DT * rate
 	seeker_timer -= DT * rate
 	arc_timer -= DT * rate
 	lance_timer -= DT * rate
 	var bank := clampf(ship_velocity().x * 0.004, -0.32, 0.32)
 	var origin := ship_position() + Vector2(0, -34).rotated(bank)
-	if pulse_timer <= 0.0:
+	if upgrades.pulse > 0 and pulse_timer <= 0.0:
 		pulse_timer += 0.19
 		var barrels := 2 if upgrades.pulse >= 5 else 1
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power(), "weapon": "pulse", "target": -1})
-	if seeker_timer <= 0.0:
-		seeker_timer += 0.70
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0), "weapon": "pulse", "target": -1})
+	if upgrades.seeker > 0 and seeker_timer <= 0.0:
+		seeker_timer += (0.62 if pilot_id == "hunter" else 0.70)
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
 		var target_id := -1
 		var target_pos := Vector2(270, -100)
@@ -257,7 +330,7 @@ func _update_weapons() -> void:
 				target_pos = enemy.p
 		if target_id < 0:
 			for bullet in bullets:
-				if bullet.kind == "ordnance":
+				if bullet.kind in ["ordnance", "mine"]:
 					target_pos = bullet.p
 					target_id = -2
 					break
@@ -270,7 +343,7 @@ func _update_weapons() -> void:
 					target_id = enemy.id
 					target_pos = enemy.p
 		if target_id != -1:
-			shots.append({"p": origin, "v": (target_pos - origin).normalized() * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power(), "weapon": "seeker", "target": target_id})
+			shots.append({"p": origin, "v": (target_pos - origin).normalized() * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -282,7 +355,7 @@ func _update_weapons() -> void:
 			visited.append(target.id)
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
-			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power(), "arc")
+			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0), "arc")
 	if upgrades.lance > 0 and lance_timer <= 0.0 and not enemies.is_empty():
 		lance_timer = 2.4
 		var target := _nearest(origin)
@@ -318,10 +391,18 @@ func _update_bullets() -> void:
 	var ship := ship_position()
 	for bullet in bullets:
 		if bullet.kind == "ordnance":
-			bullet.v = bullet.v.lerp((ship - bullet.p).normalized() * 155.0, DT * 0.75)
+			bullet.v = bullet.v.lerp((ship - bullet.p).normalized() * (185.0 if bullet.source == "missile_bomber" else 155.0), DT * 0.9)
+		if bullet.kind == "mine":
+			bullet.fuse -= DT * (0.45 if chrono_left > 0 else 1.0)
+			if bullet.fuse <= 0.0:
+				effects.append({"kind":"explosion", "p":bullet.p, "life":0.38, "max_life":0.38, "born":tick})
+				if bullet.p.distance_to(ship) < 83.0:
+					_hit(bullet.damage, "hazard", "Proximity mine")
+				bullet.hp = 0.0
 		bullet.p += bullet.v * DT * (0.45 if chrono_left > 0 else 1.0)
-		if bullet.p.distance_squared_to(ship) < (16.0 if bullet.kind == "ordnance" else 10.0) ** 2:
-			_hit(bullet.damage, bullet.kind, bullet.source)
+		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind == "mine" else 10.0)
+		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
+			_hit(bullet.damage, "hazard" if bullet.kind == "mine" else bullet.kind, bullet.source)
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
@@ -338,7 +419,7 @@ func _update_shots() -> void:
 			var score := INF
 			for enemy in enemies:
 				var offset: Vector2 = enemy.p - shot.p
-				if enemy.hp <= 0 or offset.y >= -8 or absf(Vector2.UP.angle_to(offset)) > 0.58 + meta.guidance * 0.035:
+				if enemy.hp <= 0 or offset.y >= -8 or absf(Vector2.UP.angle_to(offset)) > 0.58 + meta.guidance * 0.035 + (0.12 if pilot_id == "ace" else 0.0):
 					continue
 				var candidate_score := absf(offset.x) + offset.length() * 0.10
 				if candidate_score < score:
@@ -346,22 +427,24 @@ func _update_shots() -> void:
 					candidate = enemy
 			if not candidate.is_empty():
 				var desired: Vector2 = (candidate.p - shot.p).normalized()
-				shot.v = shot.v.rotated(clampf(shot.v.angle_to(desired), -DT * (0.85 + meta.guidance * 0.12), DT * (0.85 + meta.guidance * 0.12)))
+				shot.v = shot.v.rotated(clampf(shot.v.angle_to(desired), -DT * (0.85 + meta.guidance * 0.12 + (0.25 if pilot_id == "ace" else 0.0)), DT * (0.85 + meta.guidance * 0.12)))
 		if shot.weapon in ["seeker", "barrage"] and shot.target >= 0:
 			for enemy in enemies:
 				if enemy.id == shot.target:
 					shot.v = shot.v.lerp((enemy.p - shot.p).normalized() * 650, DT * 8.0)
 		if shot.weapon == "seeker" and shot.target == -2:
 			for bullet in bullets:
-				if bullet.kind == "ordnance":
+				if bullet.kind in ["ordnance", "mine"]:
 					shot.v = shot.v.lerp((bullet.p - shot.p).normalized() * 650, DT * 8.0)
 					break
 		shot.p += shot.v * DT
 		var struck := false
-		if shot.weapon in ["seeker", "barrage"]:
+		if shot.weapon in ["seeker", "barrage", "pulse"]:
 			for bullet in bullets:
-				if bullet.kind == "ordnance" and bullet.p.distance_squared_to(shot.p) < 28 ** 2:
+				if bullet.kind in ["ordnance", "mine"] and bullet.p.distance_squared_to(shot.p) < 28 ** 2:
 					bullet.hp -= shot.damage
+					if bullet.hp <= 0.0:
+						effects.append({"kind":"explosion", "p":bullet.p, "life":0.30, "max_life":0.30, "born":tick})
 					struck = true
 					break
 		if not struck:
@@ -381,6 +464,8 @@ func _update_shots() -> void:
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
+	if enemy.kind == "shieldguard":
+		amount *= 0.72
 	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < upgrades.targeting * 0.05:
 		amount *= 2.0
 	damage_dealt[weapon] += minf(amount, enemy.hp)
@@ -393,7 +478,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08)
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.25 if pilot_id == "scavenger" else 0.0))
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -415,7 +500,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		return
 	var reduced := amount
 	if kind == "chaff":
-		reduced = maxf(amount * 0.25, amount - upgrades.armor * 0.35 - meta.armor * 0.12)
+		reduced = maxf(amount * 0.25, amount - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0))
 	var shield_damage := minf(shield, reduced)
 	var had_shield := shield > 0.0
 	shield -= shield_damage
@@ -444,7 +529,7 @@ func activate(ability: String) -> bool:
 	if ended or not cards.is_empty() or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03)
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0))
 	shield = minf(max_shield, shield + meta.reserve_shield * 5)
 	_log(ability.capitalize() + " activated")
 	if ability == "aegis":
@@ -550,11 +635,14 @@ func _log(message: String) -> void:
 		events.pop_front()
 
 func payout() -> int:
-	return int((5 + int(kills / 6) + meta.stipend * 2 + (15 + meta.bounty * 5 if won else 0)) * (1.0 + meta.cores * 0.08))
+	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 + meta.bounty * 5 if won else 0)) * (1.0 + meta.cores * 0.08))
+	if pilot_id == "scavenger":
+		base += maxi(1, int(round(base * 0.15)))
+	return base
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["seed_value", "movement_version", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["seed_value", "movement_version", "ship_id", "pilot_id", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["overdrive_left", "chrono_left", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

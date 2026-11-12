@@ -38,6 +38,11 @@ func _run() -> void:
 		for button in scene.ability_buttons.values():
 			check(button.get_global_rect().end.y <= dimensions.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= dimensions.x, "All six ability buttons must fit phone and desktop screens")
 		check(scene.pause_button.get_global_rect().end.y < scene.field.position.y, "Pause must fit above the playfield")
+		check(scene.build_button.get_global_rect().position.x >= 0 and scene.speed_button.get_global_rect().end.x <= dimensions.x, "Build and speed controls must fit narrow screens")
+		check(scene.game_speed == 1.0 or scene.game_speed in scene.speed_options, "Speed setting must remain valid")
+		var previous_speed: float = scene.game_speed
+		scene._cycle_speed()
+		check(scene.game_speed != previous_speed and scene.profile.speed == scene.game_speed, "Speed control must update the saved speed preference")
 		scene.sim._offer_cards()
 		scene._show_cards()
 		await process_frame
@@ -56,6 +61,16 @@ func _run() -> void:
 			await process_frame
 			await process_frame
 			check(scene.hangar_scroll.size.y > 70 and scene.hangar_scroll.get_global_rect().end.y < dimensions.y - 40, "Each Hangar category must have usable scrolling space above the footer")
+		scene.profile.cores = 1000
+		scene._show_loadout()
+		await process_frame
+		check(scene.mode == "loadout", "Loadout selector must open from the Hangar")
+		scene._select_loadout("ship", "wraith")
+		check(scene.profile.ship == "wraith" and "wraith" in scene.profile.ships_owned, "Unlocking a ship must equip and persist ownership")
+		scene._loadout_tab("Pilots")
+		scene._select_loadout("pilot", "hunter")
+		check(scene.profile.pilot == "hunter" and "hunter" in scene.profile.pilots_owned, "Unlocking a pilot must equip and persist ownership")
+		scene._show_hangar()
 		var paid: int = scene.profile.cores
 		scene._purchase("shield")
 		check(scene.profile.hangar.shield > 0 and scene.profile.cores < paid, "Hangar purchase must update the wallet and installed ranks")
@@ -69,6 +84,13 @@ func _run() -> void:
 		await process_frame
 		check(scene.card_buttons.size() == 4, "Four-card drafts must render all choices alongside draft tools")
 		scene.sim.cards.clear()
+		scene._new_run()
+		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
+		scene._show_build()
+		await process_frame
+		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")
+		scene._toggle_pause()
+		check(scene.mode == "playing", "Closing the build view must resume combat")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame

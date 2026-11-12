@@ -5,6 +5,7 @@ const Sound = preload("res://scripts/sound.gd")
 const Playfield = preload("res://scripts/playfield.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
+const IconBadge = preload("res://scripts/icon_badge.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -12,7 +13,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -31,6 +32,11 @@ var ability_a: Button
 var ability_b: Button
 var ability_buttons: Dictionary = {}
 var hangar_category := "Hull"
+var loadout_tab := "Ships"
+var speed_options := [0.5, 1.0, 2.0, 3.0]
+var game_speed := 1.0
+var speed_button: Button
+var build_button: Button
 var hangar_scroll: ScrollContainer
 var pause_button: Button
 var sound_button: Button
@@ -43,6 +49,8 @@ var last_hull := 100.0
 var card_selection := 0
 var banner_text := ""
 var banner_clock := 0.0
+var last_sector := ""
+var build_return_mode := "playing"
 var old_size := Vector2.ZERO
 
 func _ready() -> void:
@@ -52,6 +60,22 @@ func _ready() -> void:
 	var hangar := Catalog.defaults()
 	hangar.merge(profile.hangar, true)
 	profile.hangar = hangar
+	# Repair old profiles without charging for starter choices.
+	if not profile.get("ships_owned", []) is Array:
+		profile.ships_owned = ["vanguard"]
+	if not profile.get("pilots_owned", []) is Array:
+		profile.pilots_owned = ["rookie"]
+	if "vanguard" not in profile.ships_owned:
+		profile.ships_owned.append("vanguard")
+	if "rookie" not in profile.pilots_owned:
+		profile.pilots_owned.append("rookie")
+	if not profile.get("ship", "vanguard") in profile.ships_owned:
+		profile.ship = "vanguard"
+	if not profile.get("pilot", "rookie") in profile.pilots_owned:
+		profile.pilot = "rookie"
+	game_speed = float(profile.get("speed", 1.0))
+	if game_speed not in speed_options:
+		game_speed = 1.0
 	sound = Sound.new()
 	add_child(sound)
 	sound.enabled = profile.sound
@@ -120,9 +144,16 @@ func _build_ui() -> void:
 		ability_buttons[id] = _button(root, "", _activate.bind(id), id == "aegis")
 		ability_buttons[id].focus_mode = Control.FOCUS_NONE
 		previous_ready[id] = true
+		var badge := IconBadge.new()
+		badge.icon_id = id
+		badge.position = Vector2(4, 4)
+		badge.size = Vector2(25, 25)
+		ability_buttons[id].add_child(badge)
 	ability_a = ability_buttons.aegis
 	ability_b = ability_buttons.nova
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
+	build_button = _button(root, "BUILD", _show_build)
+	speed_button = _button(root, "1×", _cycle_speed)
 	sound_button = _button(root, "Effects", _toggle_sound)
 	music_button = _button(root, "Music", _toggle_music)
 	low_fx_button = _button(root, "Glow", _toggle_fx)
@@ -161,6 +192,13 @@ func _layout() -> void:
 			compact_style.content_margin_top = 6
 			compact_style.content_margin_bottom = 6
 			button.add_theme_stylebox_override(state, compact_style)
+	build_button.position = Vector2(field.end.x - 165, 31)
+	build_button.size = Vector2(74, 36)
+	speed_button.position = Vector2(field.end.x - 90, 31)
+	speed_button.size = Vector2(46, 36)
+	for control in [build_button, speed_button]:
+		control.custom_minimum_size.y = 36
+		control.add_theme_font_size_override("font_size", 11)
 	pause_button.position = Vector2(field.end.x - 42, 31)
 	pause_button.size = Vector2(42, 36)
 	pause_button.custom_minimum_size.y = 36
@@ -198,6 +236,10 @@ func _layout() -> void:
 		_show_results()
 	elif mode == "hangar":
 		_show_hangar()
+	elif mode == "loadout":
+		_show_loadout()
+	elif mode == "build":
+		_show_build()
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -243,10 +285,12 @@ func _show_menu() -> void:
 	_wrapped(box, "Build the ship. Read the threat. Choose your moment.", 19, Color.WHITE)
 	_wrapped(box, "Your ship flies and fires itself. Start with Aegis and Nova, then learn four more active abilities and build new weapons as you level up.")
 	_wrapped(box, "About five minutes. One boss. No steering.", 14)
+	_wrapped(box, "SHIP  %s   /   PILOT  %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], 13, CYAN)
 	if not services.read_save(Services.RUN).is_empty():
 		_button(box, "Resume flight", _resume_run, true)
 	_button(box, "Launch new flight", _new_run, not FileAccess.file_exists(Services.RUN)).grab_focus()
 	_button(box, "Hangar · %d cores" % profile.cores, _show_hangar)
+	_button(box, "Pilots & ships · equip / unlock", _show_loadout)
 	var row := HBoxContainer.new()
 	box.add_child(row)
 	var effects_toggle := _button(row, "Effects " + ("on" if profile.sound else "off"), _toggle_sound)
@@ -254,12 +298,12 @@ func _show_menu() -> void:
 	var glow_toggle := _button(row, "Glow " + ("low" if profile.reduced else "full"), _toggle_fx)
 	for toggle in [effects_toggle, music_toggle, glow_toggle]:
 		toggle.add_theme_font_size_override("font_size", 12)
-	_wrapped(box, "Keys 1–6 · Controller A / X / Y / B / LB / RB · Esc: pause", 12, MUTED)
+	_wrapped(box, "Keys 1–6 · B: build · Tab: speed · Esc: pause", 12, MUTED)
 
 func _new_run() -> void:
 	profile.runs += 1
 	_save_profile()
-	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar)
+	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot)
 	_start_flight()
 
 func _resume_run() -> void:
@@ -280,18 +324,19 @@ func _start_flight() -> void:
 	previous_warning = false
 	for id in Catalog.ABILITIES:
 		previous_ready[id] = sim.cooldowns[id] <= 0
+	last_sector = _sector_name(sim.time)
 	banner_text = "AEGIS blocks. NOVA interrupts."
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
 
 func _process(delta: float) -> void:
-	visual_time += delta
+	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
 	if mode == "playing":
-		accumulator += minf(delta, 0.2)
+		accumulator += minf(delta, 0.2) * game_speed
 		while accumulator >= Simulation.DT and mode == "playing":
 			sim.step()
 			accumulator -= Simulation.DT
@@ -299,6 +344,11 @@ func _process(delta: float) -> void:
 				_finish()
 			elif not sim.cards.is_empty():
 				_show_cards()
+		var sector_now := _sector_name(sim.time)
+		if sector_now != last_sector:
+			last_sector = sector_now
+			banner_text = sector_now + "  /  NEW SECTOR"
+			banner_clock = 3.5
 		var warning: bool = not sim.charges.is_empty()
 		if warning and not previous_warning:
 			sound.play("warning")
@@ -323,13 +373,16 @@ func _process(delta: float) -> void:
 				shake = maxf(shake, minf(4.0, effect.life * 9.0))
 	world.position = Vector2(sin(visual_time * 79), cos(visual_time * 83)) * shake
 	_update_hud()
+	build_button.visible = mode in ["playing", "paused", "build"]
+	speed_button.visible = mode in ["playing", "paused", "build"]
+	speed_button.text = str(game_speed) + "×"
 	queue_redraw()
 	world.queue_redraw()
 
 func _update_hud() -> void:
 	hud.text = "HULL %03d   SHIELD %02d   LV %02d" % [sim.hull, sim.shield, sim.level]
 	var seconds := int(sim.time)
-	status.text = "%02d:%02d  /  %s" % [seconds / 60, seconds % 60, "HARVESTER" if sim.boss_spawned else "DEBRIS BELT"]
+	status.text = "%02d:%02d" % [seconds / 60, seconds % 60]
 	for i in range(Catalog.ABILITIES.size()):
 		var id: String = Catalog.ABILITIES[i]
 		var button: Button = ability_buttons[id]
@@ -339,14 +392,14 @@ func _update_hud() -> void:
 		button.text = "%d  %s\n%s" % [i + 1, title if learned else "EMPTY", ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "LEVEL-UP"]
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = sim.content.abilities[id].name + (" · Level %d" % sim.upgrades[id] if learned else " · Find this ability in an upgrade draft")
-	build_label.text = "V A N G U A R D\nAUTOPILOT ONLINE\n\n"
+	build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
 	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
 		build_label.text += tag + "S\n"
 		for card in sim.content.cards:
 			if card.tag == tag and sim.upgrades[card.id] > 0:
 				build_label.text += "%s  %d/5\n" % [card.name, sim.upgrades[card.id]]
 		build_label.text += "\n"
-	report_label.text = "F L I G H T   D A T A\n\nSECTOR 01 / 04\nDEBRIS BELT\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % ["HARVESTER ENGAGED" if sim.boss_spawned else "Harvester at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), "HARVESTER ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
 func _activate(id: String) -> void:
 	if mode == "playing" and sim.activate(id):
@@ -366,7 +419,15 @@ func _show_cards() -> void:
 		var card: Dictionary = sim.cards[i]
 		var current: int = int(sim.upgrades.get(card.id, 0))
 		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, "NEW ABILITY" if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, current + 1] if card.id != "repair" else "REPAIR"), card.description]
-		var button := _button(box, title, _choose.bind(i))
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		box.add_child(row)
+		var icon := IconBadge.new()
+		icon.icon_id = card.id
+		icon.custom_minimum_size = Vector2(38, 38)
+		row.add_child(icon)
+		var button := _button(row, title, _choose.bind(i))
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		button.add_theme_font_size_override("font_size", 14)
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -406,7 +467,14 @@ func _choose(index: int) -> void:
 		_save_run()
 
 func _toggle_pause() -> void:
-	if mode == "playing":
+	if mode == "build":
+		if build_return_mode == "paused":
+			_show_pause()
+		else:
+			mode = "playing"
+			_clear_overlay()
+			accumulator = 0.0
+	elif mode == "playing":
 		_show_pause()
 	elif mode == "paused":
 		mode = "playing"
@@ -420,6 +488,7 @@ func _show_pause() -> void:
 	_label(box, "FLIGHT PAUSED", 28, CYAN)
 	_wrapped(box, "Your flight is saved, including the current upgrade hand and ability cooldowns.")
 	_button(box, "Continue flight", _toggle_pause, true).grab_focus()
+	_button(box, "Inspect build", _show_build)
 	_button(box, "Effects: " + ("on" if profile.sound else "off"), _toggle_sound)
 	_button(box, "Music: " + ("on" if profile.music else "off"), _toggle_music)
 	_button(box, "Glow: " + ("low" if profile.reduced else "full"), _toggle_fx)
@@ -474,7 +543,7 @@ func _show_hangar() -> void:
 	var heading := VBoxContainer.new()
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(heading)
-	_label(heading, "VANGUARD / DOCK 07", 11, CYAN)
+	_label(heading, Catalog.ship(profile.ship).name.to_upper() + " / DOCK 07", 11, CYAN)
 	_label(heading, "Hangar", 34, Color.WHITE)
 	var wallet := VBoxContainer.new()
 	header.add_child(wallet)
@@ -488,13 +557,15 @@ func _show_hangar() -> void:
 	hero.custom_minimum_size.x = 0 if compact else 280
 	body.add_child(hero)
 	var bay := HangarBay.new()
+	bay.ship_id = profile.ship
 	bay.custom_minimum_size = Vector2(0 if compact else 280, 126 if compact else 290)
 	bay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero.add_child(bay)
+	_button(hero, "Pilots & ships · %s / %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], _show_loadout)
 	if not compact:
 		_label(hero, "Flight configuration", 20, Color.WHITE)
-		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [100 + profile.hangar.hull * 10, 50 + profile.hangar.shield * 8, profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
-		_wrapped(hero, "22 upgrade tracks. Every purchase applies to your next flight. Your current suspended flight keeps its loadout.", 14)
+		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [int(Catalog.ship(profile.ship).hull) + profile.hangar.hull * 10, int(Catalog.ship(profile.ship).shield) + profile.hangar.shield * 8 + (20 if profile.pilot == "engineer" else 0), profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
+		_wrapped(hero, "22 upgrade tracks plus permanent pilot and ship unlocks. Current suspended flights keep their original loadout.", 14)
 		_wrapped(hero, "Abilities are learned during flight. All six are available from your first run.", 14)
 	var workshop := VBoxContainer.new()
 	workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -540,7 +611,12 @@ func _show_hangar() -> void:
 		card.add_theme_constant_override("separation", 8)
 		panel.add_child(card)
 		_label(card, "%02d   /   %s" % [index, entry.group.to_upper()], 10, AMBER)
-		_wrapped(card, entry.name, 20, Color.WHITE)
+		var name_row := HBoxContainer.new()
+		card.add_child(name_row)
+		var badge := IconBadge.new()
+		badge.icon_id = entry.id
+		name_row.add_child(badge)
+		_wrapped(name_row, entry.name, 19, Color.WHITE)
 		_wrapped(card, entry.description, 13, MUTED)
 		var pips := HBoxContainer.new()
 		pips.add_theme_constant_override("separation", 4)
@@ -639,7 +715,13 @@ func _input(event: InputEvent) -> void:
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
 	elif mode == "playing":
-		if event.keycode in [KEY_1, KEY_SPACE]:
+		if event.keycode == KEY_B:
+			_show_build()
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_TAB:
+			_cycle_speed()
+			get_viewport().set_input_as_handled()
+		elif event.keycode in [KEY_1, KEY_SPACE]:
 			_activate("aegis")
 			get_viewport().set_input_as_handled()
 		elif event.keycode >= KEY_2 and event.keycode <= KEY_6:
@@ -658,6 +740,130 @@ func _unhandled_input(event: InputEvent) -> void:
 			var index := bindings.find(event.button_index)
 			if index >= 0:
 				_activate(Catalog.ABILITIES[index])
+
+
+func _sector_name(at: float) -> String:
+	if at < 65:
+		return "DEBRIS BELT"
+	if at < 125:
+		return "ION NEBULA"
+	if at < 190:
+		return "WRECK FIELD"
+	if at < 240:
+		return "DARK RIFT"
+	return "HARVESTER ZONE"
+
+func _cycle_speed() -> void:
+	var index := speed_options.find(game_speed)
+	game_speed = float(speed_options[(index + 1) % speed_options.size()])
+	profile.speed = game_speed
+	_save_profile()
+	speed_button.text = str(game_speed) + "×"
+
+func _show_build() -> void:
+	if mode not in ["playing", "paused", "build"]:
+		return
+	if mode in ["playing", "paused"]:
+		build_return_mode = mode
+	mode = "build"
+	_save_run()
+	var box := _panel(500)
+	_label(box, "ACTIVE BUILD", 28, CYAN)
+	_wrapped(box, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 19, Color.WHITE)
+	_wrapped(box, "%s\n%s" % [Catalog.ship(sim.ship_id).description, Catalog.pilot(sim.pilot_id).description], 13)
+	_label(box, "HULL %d/%d    SHIELD %d/%d    LEVEL %d" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.level], 13, CYAN)
+	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
+		_label(box, tag + "S", 15, AMBER)
+		var count := 0
+		for entry in sim.content.cards:
+			var rank: int = int(sim.upgrades.get(entry.id, 0))
+			if entry.tag != tag or rank <= 0:
+				continue
+			var row := HBoxContainer.new()
+			box.add_child(row)
+			var badge := IconBadge.new()
+			badge.icon_id = entry.id
+			row.add_child(badge)
+			_wrapped(row, "%s  ·  Rank %d/%d" % [entry.name, rank, entry.max], 14, Color.WHITE)
+			count += 1
+		if count == 0:
+			_wrapped(box, "None installed", 13)
+	_label(box, "HANGAR MODULES", 15, AMBER)
+	var installed := 0
+	for entry in Catalog.HANGAR:
+		var rank: int = int(sim.meta.get(entry.id, 0))
+		if rank > 0:
+			_wrapped(box, "%s  ·  Rank %d/%d" % [entry.name, rank, entry.max], 13, CYAN)
+			installed += 1
+	if installed == 0:
+		_wrapped(box, "No permanent modules installed", 13)
+	_button(box, "Return to flight", _toggle_pause, true).grab_focus()
+
+func _show_loadout() -> void:
+	mode = "loadout"
+	var box := _panel(540)
+	_label(box, "FLIGHT CREW & FLEET", 26, CYAN)
+	_wrapped(box, "Unlocks are permanent. Equip one ship and one pilot; both apply to your next new flight. Suspended runs remain unchanged.", 13)
+	_label(box, "AVAILABLE CORES  %d" % profile.cores, 17, AMBER)
+	var nav := HBoxContainer.new()
+	box.add_child(nav)
+	_button(nav, "‹ Hangar", _show_hangar)
+	var tabs := HBoxContainer.new()
+	box.add_child(tabs)
+	for tab in ["Ships", "Pilots"]:
+		var button := _button(tabs, tab, _loadout_tab.bind(tab), tab == loadout_tab)
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var entries: Array = Catalog.SHIPS if loadout_tab == "Ships" else Catalog.PILOTS
+	var key := "ship" if loadout_tab == "Ships" else "pilot"
+	var owned_key := "ships_owned" if loadout_tab == "Ships" else "pilots_owned"
+	for entry in entries:
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", _style(Color("152435"), CYAN if profile[key] == entry.id else Color("314458")))
+		box.add_child(panel)
+		var row := HBoxContainer.new()
+		panel.add_child(row)
+		var badge := IconBadge.new()
+		badge.icon_id = entry.id
+		badge.custom_minimum_size = Vector2(42, 42)
+		row.add_child(badge)
+		var details := VBoxContainer.new()
+		details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(details)
+		_label(details, entry.name, 17, Color.WHITE)
+		_wrapped(details, entry.description, 12)
+		var is_owned: bool = entry.id in profile[owned_key]
+		var equipped: bool = profile[key] == entry.id
+		var label_text := "EQUIPPED" if equipped else ("EQUIP" if is_owned else "UNLOCK · %d" % entry.cost)
+		var choose := _button(details, label_text, _select_loadout.bind(key, entry.id))
+		choose.custom_minimum_size.y = 36
+		choose.disabled = equipped or (not is_owned and profile.cores < int(entry.cost))
+	_button(box, "Back to Hangar", _show_hangar, true).grab_focus()
+
+func _loadout_tab(value: String) -> void:
+	loadout_tab = value
+	_show_loadout()
+
+func _select_loadout(key: String, id: String) -> void:
+	if key not in ["ship", "pilot"]:
+		return
+	var entries: Array = Catalog.SHIPS if key == "ship" else Catalog.PILOTS
+	var item: Dictionary = {}
+	for candidate in entries:
+		if candidate.id == id:
+			item = candidate
+			break
+	if item.is_empty():
+		return
+	var owned_key := "ships_owned" if key == "ship" else "pilots_owned"
+	if id not in profile[owned_key]:
+		if profile.cores < int(item.cost):
+			return
+		profile.cores -= int(item.cost)
+		profile[owned_key].append(id)
+	profile[key] = id
+	_save_profile()
+	sound.play("card")
+	_show_loadout()
 
 func _draw() -> void:
 	if sim == null or field.size.x == 0:

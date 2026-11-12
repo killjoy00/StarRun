@@ -1,6 +1,25 @@
 extends RefCounted
 ## One catalog drives prices, refunds, migration and the Hangar UI.
 const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend"]
+
+# These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
+const PILOTS := [
+	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"Balanced training. No special bonus.", "trait":"STANDARD ISSUE"},
+	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage and stronger forward tracking.", "trait":"PRECISION"},
+	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 starting shield and +0.8 shield regeneration per second.", "trait":"FIELD REPAIR"},
+	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% seeker damage and faster lock-on.", "trait":"MISSILE EXPERT"},
+	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP and +15% post-flight cores.", "trait":"COLLECTOR"},
+	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one free card reroll.", "trait":"BATTLE PLAN"}
+]
+const SHIPS := [
+	{"id":"vanguard", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
+	{"id":"kestrel", "name":"Kestrel · Interceptor", "cost":45, "description":"25% quicker firing, sharper autopilot turns. Twin Pulse start; fragile defenses.", "hull":70, "shield":30, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
+	{"id":"bulwark", "name":"Bulwark · Fortress", "cost":50, "description":"Massive hull, heavy shields, inherent armor; wide, slower flight path. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
+	{"id":"wraith", "name":"Wraith · Missile boat", "cost":65, "description":"No Pulse Cannon at launch. Double seeker pods with 35% harder-hitting ordnance.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
+	{"id":"arcwing", "name":"Arcwing · Chain fighter", "cost":75, "description":"Starts with Arc Coil instead of Seekers. Lightning chains are 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
+	{"id":"haven", "name":"Haven · Support carrier", "cost":90, "description":"Starts with Repair Drones, Seekers and extra shielding, but no Pulse Cannon.", "hull":115, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
+]
+
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
 const HANGAR := [
 	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":6, "cost":5, "step":0},
@@ -49,3 +68,15 @@ static func refund(hangar: Dictionary) -> int:
 		for rank in range(int(hangar.get(item.id, 0))):
 			total += price(item.id, rank)
 	return total
+
+static func pilot(id: String) -> Dictionary:
+	for item in PILOTS:
+		if item.id == id:
+			return item
+	return PILOTS[0]
+
+static func ship(id: String) -> Dictionary:
+	for item in SHIPS:
+		if item.id == id:
+			return item
+	return SHIPS[0]

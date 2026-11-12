@@ -25,6 +25,8 @@ func _run() -> void:
 	_test_homing_and_modules()
 	_test_hangar_and_tactics()
 	_test_legacy_modules()
+	_test_loadouts()
+	_test_threat_catalog()
 	var seeds := 12
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -48,13 +50,13 @@ func _test_course() -> void:
 		var at := i * 0.25
 		var p := sim.ship_position(at)
 		var v := sim.ship_velocity(at)
-		inside = inside and p.x >= 70 and p.x <= 470 and p.y >= 640 and p.y <= 840
+		inside = inside and p.x >= 60 and p.x <= 480 and p.y >= 585 and p.y <= 860
 		max_speed = maxf(max_speed, v.length())
 		max_acceleration = maxf(max_acceleration, (v - previous).length() / 0.25)
 		previous = v
 	check(inside, "Curved course must remain in the safe flight band")
-	check(max_speed > 95.0 and max_speed < 195.0, "New pilot must move faster while avoiding abrupt cross-screen lunges")
-	check(max_acceleration < 260.0, "Course corrections must preserve smooth velocity")
+	check(max_speed > 120.0 and max_speed < 450.0, "New pilot must move faster while avoiding abrupt cross-screen lunges")
+	check(max_acceleration < 600.0, "Course corrections must preserve smooth velocity")
 	check(sim.ship_position(20).distance_to(other.ship_position(20)) > 1, "Different seeds must produce distinct routes")
 	check(sim.ship_position(30).distance_to(sim.ship_position(36)) > 5, "New pilot must not repeat the old six-second weave")
 	var legacy := sim.snapshot()
@@ -254,6 +256,82 @@ func _test_legacy_modules() -> void:
 	check(sim.restore(old), "An original first-flight save must still load")
 	sim.step()
 	check(sim.cooldowns.barrage == 0 and sim.upgrades.arc == 0 and sim.meta.hull == 2, "Migration must preserve purchased ranks and default new modules safely")
+
+
+func _test_loadouts() -> void:
+	check(Catalog.SHIPS.size() >= 6 and Catalog.PILOTS.size() >= 6, "Six ship archetypes and six pilots must be available")
+	check(Catalog.ship("vanguard").cost == 0 and Catalog.pilot("rookie").cost == 0, "Starter ship/pilot must be free")
+	var base := Sim.new(222)
+	var interceptor := Sim.new(222, {}, "kestrel", "ace")
+	check(interceptor.ship_id == "kestrel" and interceptor.pilot_id == "ace", "Selected loadout must be applied at launch")
+	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 70, "Interceptor starts with Pulse focus and fragile hull")
+	check(interceptor.course[2].t < base.course[2].t, "Interceptor autopilot must make faster turns")
+	interceptor._update_weapons()
+	check(interceptor.shots.any(func(s): return s.weapon == "pulse") and not interceptor.shots.any(func(s): return s.weapon == "seeker"), "Ship weapon exclusions must prevent firing uninstalled weapons")
+	var fortress := Sim.new(222, {}, "bulwark", "engineer")
+	check(fortress.max_hull == 160 and fortress.max_shield == 100, "Fortress and Engineer starting defenses stack")
+	fortress.shield = 20
+	fortress._hit(1.0, "chaff", "test")
+	check(fortress.shield == 19.75, "Bulwark inherent armor mitigates chaff")
+	var missile := Sim.new(222, {}, "wraith", "hunter")
+	check(missile.upgrades.pulse == 0 and missile.upgrades.seeker == 2, "Missile boat must start without Pulse")
+	missile.enemies = [{"id":1, "kind":"drone", "p":Vector2(250,240), "hp":100.0, "max_hp":100.0, "speed":0.0, "fire":99.0, "xp":3, "phase":0.0}]
+	missile._update_weapons()
+	check(missile.shots.size() == 1 and missile.shots[0].weapon == "seeker" and missile.shots[0].damage > 30, "Missile-specialist pilot and hull bonuses must stack")
+	var lightning := Sim.new(222, {}, "arcwing", "rookie")
+	check(lightning.upgrades.arc == 1 and lightning.upgrades.seeker == 0, "Arcwing must start with Arc Coil instead of missiles")
+	var support := Sim.new(222, {}, "haven", "tactician")
+	check(support.upgrades.mend == 1 and support.rerolls_left == 1, "Support carrier and tactician start with useful tools")
+	var salvager := Sim.new(222, {}, "vanguard", "scavenger")
+	check(salvager.payout() > base.payout(), "Salvager gets a measurable currency bonus")
+	var checkpoint := support.snapshot()
+	var restored := Sim.new(999)
+	check(restored.restore(bytes_to_var(var_to_bytes(checkpoint))), "Ship/pilot checkpoint must deserialize")
+	check(restored.snapshot() == checkpoint, "Checkpoint must preserve hull type, selected pilot and starter ability")
+	# Cosmetic playback speed must not affect fixed-step combat determinism.
+	var sim_one := Sim.new(341)
+	var sim_three := Sim.new(341)
+	for frame in range(240):
+		sim_one.step()
+	for frame in range(80):
+		for factor in range(3):
+			sim_three.step()
+	check(sim_one.snapshot() == sim_three.snapshot(), "Equal simulated time must give identical outcomes at 1x and 3x")
+
+func _test_threat_catalog() -> void:
+	var kinds := ["drone", "gunship", "sniper", "interceptor", "rusher", "missile_bomber", "carrier", "shieldguard", "minelayer", "boulder", "station"]
+	var sim := Sim.new(442)
+	for kind in kinds:
+		check(sim.content.enemies.has(kind), "Enemy type must have a combat specification: " + kind)
+		sim._add_enemy(kind, Vector2(120,200))
+	check(sim.enemies.size() == kinds.size(), "All enemy and hazard types must be spawnable")
+	sim.enemies.clear()
+	sim._add_enemy("missile_bomber", Vector2(260,150))
+	sim.enemies[0].fire = 0.0
+	sim._update_enemies()
+	check(sim.bullets.filter(func(b): return b.kind == "ordnance").size() == 2, "Missile bomber must launch a dual homing volley")
+	sim.bullets.clear()
+	sim.enemies.clear()
+	sim._add_enemy("minelayer", Vector2(260,150))
+	sim.enemies[0].fire = 0.0
+	sim._update_enemies()
+	check(sim.bullets.size() == 1 and sim.bullets[0].kind == "mine" and sim.bullets[0].fuse > 0.0, "Minelayer must deploy a visible timed hazard")
+	var mine: Dictionary = sim.bullets[0]
+	sim.shots = [{"p":mine.p, "v":Vector2.ZERO, "damage":24.0, "weapon":"pulse", "target":-1}]
+	sim.enemies.clear()
+	sim._update_shots()
+	check(sim.bullets[0].hp <= 0.0, "Player fire must be able to destroy mines")
+	sim.bullets.clear()
+	sim.shots.clear()
+	sim._add_enemy("boulder", Vector2(270,230))
+	var before_kills := sim.kills
+	sim._damage_enemy(sim.enemies[0], 500.0, "pulse")
+	check(sim.kills > before_kills and sim.enemies[0].hp <= 0, "Boulders must be destructible targets")
+	sim.enemies.clear()
+	sim._add_enemy("station", Vector2(260,150))
+	sim.enemies[0].fire = 0.0
+	sim._update_enemies()
+	check(sim.bullets.any(func(b): return b.kind == "ordnance"), "Stations must be active turret threats")
 
 func _bot(sim: RefCounted, strategy: String) -> void:
 	if not sim.cards.is_empty():

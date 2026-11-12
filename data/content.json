@@ -1,31 +1,31 @@
 {
-  "version": 3,
+  "version": 4,
   "duration": 300,
   "boss_at": 240,
   "abilities": {
     "aegis": {
       "name": "Aegis",
-      "cooldown": 7.0
+      "cooldown": 7
     },
     "nova": {
       "name": "Nova",
-      "cooldown": 10.0
+      "cooldown": 10
     },
     "barrage": {
       "name": "Barrage",
-      "cooldown": 14.0
+      "cooldown": 14
     },
     "overdrive": {
       "name": "Overdrive",
-      "cooldown": 18.0
+      "cooldown": 18
     },
     "chrono": {
       "name": "Chrono",
-      "cooldown": 20.0
+      "cooldown": 20
     },
     "mend": {
       "name": "Repair drones",
-      "cooldown": 24.0
+      "cooldown": 24
     }
   },
   "enemies": {
@@ -46,6 +46,54 @@
       "speed": 26,
       "xp": 7,
       "interval": 5.2
+    },
+    "interceptor": {
+      "hp": 24,
+      "speed": 88,
+      "xp": 4,
+      "interval": 3
+    },
+    "rusher": {
+      "hp": 17,
+      "speed": 123,
+      "xp": 3,
+      "interval": 4.5
+    },
+    "missile_bomber": {
+      "hp": 60,
+      "speed": 34,
+      "xp": 8,
+      "interval": 4.4
+    },
+    "carrier": {
+      "hp": 90,
+      "speed": 25,
+      "xp": 10,
+      "interval": 5.5
+    },
+    "shieldguard": {
+      "hp": 76,
+      "speed": 34,
+      "xp": 9,
+      "interval": 3.7
+    },
+    "minelayer": {
+      "hp": 54,
+      "speed": 38,
+      "xp": 7,
+      "interval": 3.5
+    },
+    "boulder": {
+      "hp": 70,
+      "speed": 52,
+      "xp": 4,
+      "interval": 0
+    },
+    "station": {
+      "hp": 150,
+      "speed": 18,
+      "xp": 12,
+      "interval": 4.6
     }
   },
   "cards": [
