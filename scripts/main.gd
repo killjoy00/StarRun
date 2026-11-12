@@ -367,7 +367,7 @@ func _process(delta: float) -> void:
 	_update_hud()
 	build_button.visible = mode in ["playing", "paused", "build"]
 	speed_button.visible = mode in ["playing", "paused", "build"]
-	speed_button.text = ("%g×" % game_speed)
+	speed_button.text = str(game_speed) + "×"
 	queue_redraw()
 	world.queue_redraw()
 
@@ -747,7 +747,7 @@ func _cycle_speed() -> void:
 	game_speed = float(speed_options[(index + 1) % speed_options.size()])
 	profile.speed = game_speed
 	_save_profile()
-	speed_button.text = "%g×" % game_speed
+	speed_button.text = str(game_speed) + "×"
 
 func _show_build() -> void:
 	if mode not in ["playing", "paused", "build"]:
