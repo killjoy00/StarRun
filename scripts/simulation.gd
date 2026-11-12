@@ -443,6 +443,8 @@ func _update_shots() -> void:
 			for bullet in bullets:
 				if bullet.kind in ["ordnance", "mine"] and bullet.p.distance_squared_to(shot.p) < 28 ** 2:
 					bullet.hp -= shot.damage
+					if bullet.hp <= 0.0:
+						effects.append({"kind":"explosion", "p":bullet.p, "life":0.30, "max_life":0.30, "born":tick})
 					struck = true
 					break
 		if not struck:
