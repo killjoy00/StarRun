@@ -1,26 +1,33 @@
-# First playable — accepted review changes
+# First playable — v0.3
 
-2026-11-12. This document records the implemented prototype and is authoritative for prototype tuning; DESIGN.md retains the full-game vision.
+2026-11-12. This is authoritative for current prototype tuning. DESIGN.md retains the broader release vision.
 
-## Decisions
+## Flight and combat
 
-1. The first run starts with both Aegis (8 s, 1.8 s protection) and Nova (12 s, global projectile clear and charge interrupt). Upgrades extend their effects. Their theoretical activation cadence is 4.8 s; good play is expected to hold them when that creates value.
-2. One five-minute slice: waves until 04:00, then Harvester. A base, intentionally played run should finish around 05:00. Human time also includes paused card selection.
-3. Pulse and seekers start at level 1. Aegis and Nova start at level 1. Four passive tracks start at zero. Thus the slice has **36 upgrade picks**, not 63. It normally offers approximately 14–20 choices depending on kills. This gives room to specialize without filling every track.
-4. In the full game, the old 43-pick base capacity and 63-pick expanded capacity must each have a defined upgrade budget. Do not use the expanded total to justify base-ship specialization. Forty choices over 24–28 combat minutes means an average of 36–42 combat seconds between choices, not 30. Total session time includes draft pauses.
-5. Only one heavy lane may charge at a time. Telegraph is 1.8 s; heavy scheduling is globally spaced by 10 s during waves and 8.5 s against the boss. Single heavy hits are at most 35 base hull. Nova interrupts bosses as well as regular enemies. Beam collision follows the previewed ship position.
-6. Seekers target a charging source first, then ordnance, then the nearest enemy. Pulse fires forward. This makes target selection a property of the build, without adding aiming.
-7. Final-ten-second events include sources, shield breaks, upgrade and ability decisions, and cooldown availability at death, alongside damage by class and weapon.
-8. Matched-seed bots are part of the first milestone: never activate, activate immediately, and react to threats. They use identical card-choice policies. Require timed play to improve clear rate over no input and improve surviving hull or clear rate over immediate activation. Preserve a clearable base ship; do not add a mandatory Hangar grind.
-9. Exact checkpoints preserve all simulation state, RNG state, current hand, outstanding level-ups, and cooldowns. Drafts freeze simulation. Saves are atomic on the native filesystem and stored through Godot's browser persistence on web. Save identity prevents repeated payout on the same resumed run.
-10. A small Hangar proves the run loop; it does not gate the abilities required for the first-run experience. Extra ships, slots, prototypes, rerolls, and three additional levels remain later content.
+The Vanguard sprite is 76 logical pixels across rather than 98, with a smaller collision core (10 for chaff, 16 for missiles). The new seeded pilot takes 2.2–4.0 seconds between wider horizontal and vertical course changes, retaining continuous Hermite interpolation and an exact two-second path preview. Saves tagged with older movement versions retain their old courses.
 
-## Verification limits
+The painted background now scrolls. Stars and debris move roughly three times as fast, enemies move about 65% faster, enemy chaff travels at 215 rather than 155, pulse shots at 980 rather than 750, and seekers at 650 rather than 450. Pulse fires every 0.19 seconds and seekers every 0.70 before upgrades. Pulse steering is restricted to a forward cone and a bounded turn rate; it never turns backward. Seekers and Barrage rockets can reacquire a target after a kill.
 
-Headless simulation measures rules and bot performance. It does not prove real-hardware 60 fps, human readability, controller ergonomics, browser persistence on Safari, or storefront integration. These require the explicit gates in NATIVE_DELIVERY.md and external playtesting.
+Waves end at 04:00 and Harvester follows. Only one heavy charge can exist. Heavy warnings remain 1.8 seconds; base heavy hits remain at most 35. Wave heavies are spaced 10 seconds apart; Harvester uses 7.5 seconds. Aegis starts at 7 seconds, Nova at 10. More motion must not make the decision window disappear.
 
-## Current automated result — v0.2
+## Build choices
 
-With no Hangar upgrades, the twelve fixed seeds in `tests/run.gd` produced 12/12 clears for both timed and immediate activation. Timed activation retained 142.0 hull on average versus 118.5 for immediate activation; no activation cleared 0/12, with mean survival of 127.1 seconds. These results use the new seeded flight course; the earlier six-second weave produced different outcomes. Card decisions use the same policy across all three cohorts. These small, fixed cohorts are regression checks, not a player difficulty estimate; they do not replace the human fun gate.
+There are 21 tracks: four weapons, six active abilities and eleven passive systems. All reach level 5. Four tracks start at level 1, giving 101 remaining picks in the full pool; this five-minute slice intentionally provides far fewer choices. The old 36-pick pool no longer describes this build.
 
-All 36 simulation assertions and 18 responsive-layout checks pass. Layout checks cover 375×667, 390×844, and 1280×800 logical windows. Native desktop launch, the new illustrated ships/backdrop, draft selection, Aegis, and pause were exercised visually. Web, Windows, and Linux exports completed; Windows has not been run on a Windows machine. The cloud browser lacks WebGL2, so browser gameplay could not be visually verified there. Human listening and physical-device performance checks remain open.
+Aegis and Nova start installed. Barrage launches guided rockets, Overdrive accelerates every automatic weapon, Chrono slows enemy movement/fire and projectiles to 45%, and Repair Drones heal over four seconds. New actives come from drafts, not permanent purchases. Six fixed controls prevent newly learned abilities from changing existing bindings. Level 2 and subsequent levels divisible by 3 offer a new active if any remain available.
+
+New passive systems add shield capacity, fire rate, weapon damage, continuous hull repair, XP gain, critical hits and ability amplification. Arc Coil chains among targets; Prism Lance pierces along an automatically targeted line and favors a charging source.
+
+## Between flights
+
+The Hangar has 22 tracks in Hull, Weapons, Abilities, Tactics and Salvage. Its ship bay shares the in-flight Vanguard artwork. All tracks have actual gameplay effects. Prices are centralized in catalog.gd, with a full exact-cost refund. Original Hull/Armory/Shield Lab purchases still cost five cores per rank, so existing refunds remain valid.
+
+Draft tools include a fourth card, finite rerolls, track-wide banishes and skips that repair hull. They spend a use but never consume a second pending level. A replacement hand and all remaining uses are checkpointed. Purchases affect only newly launched flights.
+
+## Delivery and verification
+
+Simulation checks cover movement bounds, mild homing, both new weapons, learning/casting all new actives, healing, slowing, Overdrive, Hangar effects, pricing/refunds, draft tools and old-save migration. The matched-seed harness compares identical card policies with no casts, immediate casts and reactive casts. Responsive UI checks cover all six controls, all five Hangar categories, purchases/refunds, four-card drafts and the flight recorder at 375×667, 390×844 and 1280×800.
+
+GitHub builds Web, Windows and Linux automatically. Human fun, physical-device performance, Windows-hardware execution, TestFlight, ads/purchases and Steam remain unverified gates. Automated outcomes are regression measurements, not a prediction of human difficulty.
+
+Current local result: **63 simulation assertions and 60 layout checks passed**. On 12 fixed seeds with no Hangar purchases, no-activation runs cleared 5/12 (15.3 mean hull); immediate activation cleared 12/12 (117.7 mean hull); reactive activation cleared 12/12 (131.5 mean hull). This cohort uses one shared upgrade policy across the three input strategies. Native visual checks exercised the Hangar categories, smaller moving ship, the first ability draft and learning/casting Chrono Field.

@@ -1,3 +1,5 @@
+> **Prototype update (2026-11-12, v0.3):** current playable behavior is defined in [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md). It now has a smaller, faster, more mobile ship, gentle pulse homing, four weapons, six learnable active abilities, eleven passive systems and a 22-track Hangar. The slot limits and launch content below describe the broader release plan and do not cap the current prototype.
+
 # StarRun: Game Design Document
 
 Status: Draft v0.2, 2026-11-12. Working title is the repo name.
