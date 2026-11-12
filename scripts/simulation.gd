@@ -131,8 +131,18 @@ func ship_position(at: float = -1.0) -> Vector2:
 	var p3: Vector2 = course[mini(index + 2, course.size() - 1)].p
 	var velocity0: Vector2 = (end - p0) / float(next.t - course[index - 1].t)
 	var velocity1: Vector2 = (p3 - start) / float(course[mini(index + 2, course.size() - 1)].t - current.t)
-	# Time-aware cubic Hermite interpolation keeps turns and banking continuous.
+	# Cubic Bezier is equivalent to Hermite until the control points reach
+	# the safety envelope. Keeping handles within it prevents overshooting
+	# the gameplay boundary, without snapping the ship or changing old saves.
 	var u := weight
+	if movement_version >= 4:
+		var handle1: Vector2 = start + velocity0 * duration / 3.0
+		var handle2: Vector2 = end - velocity1 * duration / 3.0
+		handle1.x = clampf(handle1.x, 75.0, 465.0)
+		handle2.x = clampf(handle2.x, 75.0, 465.0)
+		handle1.y = clampf(handle1.y, 600.0, 850.0)
+		handle2.y = clampf(handle2.y, 600.0, 850.0)
+		return start * pow(1.0-u, 3) + 3.0 * handle1 * pow(1.0-u, 2) * u + 3.0 * handle2 * (1.0-u) * u*u + end * u*u*u
 	return (2*u*u*u - 3*u*u + 1) * start + (u*u*u - 2*u*u + u) * velocity0 * duration + (-2*u*u*u + 3*u*u) * end + (u*u*u - u*u) * velocity1 * duration
 
 func ship_velocity(at: float = -1.0) -> Vector2:
@@ -623,7 +633,10 @@ func _log(message: String) -> void:
 		events.pop_front()
 
 func payout() -> int:
-	return int((5 + int(kills / 6) + meta.stipend * 2 + (15 + meta.bounty * 5 if won else 0)) * (1.0 + meta.cores * 0.08 + (0.15 if pilot_id == "scavenger" else 0.0)))
+	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 + meta.bounty * 5 if won else 0)) * (1.0 + meta.cores * 0.08))
+	if pilot_id == "scavenger":
+		base += maxi(1, int(round(base * 0.15)))
+	return base
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
