@@ -9,7 +9,7 @@ guard CommandLine.arguments.count == 2 else {
 }
 let n = 1024
 guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n,
-    bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: false, isPlanar: false,
+    bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
     colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
     let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else {
     fatalError("Cannot allocate icon")
