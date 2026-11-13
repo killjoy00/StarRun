@@ -18,6 +18,9 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 func _run() -> void:
+	check(ProjectSettings.get_setting("display/window/stretch/mode") == "canvas_items", "Retina phones must use adaptive canvas stretching")
+	check(ProjectSettings.get_setting("display/window/stretch/aspect") == "expand", "Phone aspect ratio must expand instead of letterboxing")
+	check(ProjectSettings.get_setting("display/window/size/viewport_width") == 390, "Mobile reference width must remain 390 logical points")
 	var scene: Node = load("res://scenes/main.tscn").instantiate()
 	scene.services = MemoryServices.new()
 	root.add_child(scene)
@@ -32,13 +35,25 @@ func _run() -> void:
 		await process_frame
 		scene._layout()
 		scene._update_hud()
-		check(scene.field.position.x >= 0 and scene.field.end.x <= dimensions.x, "Playfield must fit horizontally")
-		check(scene.ability_a.get_global_rect().end.y <= dimensions.y, "Controls must fit below playfield")
+		# Canvas Items uses logical coordinates: a 1170x2532 Retina display
+		# reports roughly 390x844 UI points, not raw hardware pixels.
+		var logical: Vector2 = scene.get_viewport_rect().size
+		print("UI size physical=%s logical=%s" % [str(dimensions), str(logical)])
+		check(scene.field.position.x >= 0 and scene.field.end.x <= logical.x, "Playfield must fit horizontally")
+		check(scene.ability_a.get_global_rect().end.y <= logical.y, "Controls must fit below playfield")
 		check(scene.ability_a.get_global_rect().end.x <= scene.ability_b.position.x, "Ability labels must not overlap at phone sizes")
 		for button in scene.ability_buttons.values():
-			check(button.get_global_rect().end.y <= dimensions.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= dimensions.x, "All six ability buttons must fit phone and desktop screens")
+			check(button.get_global_rect().end.y <= logical.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= logical.x, "All six ability buttons must fit phone and desktop screens")
 		check(scene.pause_button.get_global_rect().end.y < scene.field.position.y, "Pause must fit above the playfield")
-		check(scene.build_button.get_global_rect().position.x >= 0 and scene.speed_button.get_global_rect().end.x <= dimensions.x, "Build and speed controls must fit narrow screens")
+		check(scene.build_button.get_global_rect().position.x >= 0 and scene.speed_button.get_global_rect().end.x <= logical.x, "Build and speed controls must fit narrow screens")
+		if logical.x < 760:
+			check(scene.hud.get_theme_font_size("font_size") >= 18, "Phone HUD must be readable")
+			check(scene.status.get_theme_font_size("font_size") >= 16, "Phone timer must be readable")
+			for control in [scene.build_button, scene.speed_button, scene.pause_button]:
+				check(control.get_theme_font_size("font_size") >= 16, "Phone top controls must use >=16pt text")
+				check(control.size.y >= 44, "Phone top controls need 44pt touch targets")
+			for control in scene.ability_buttons.values():
+				check(control.get_theme_font_size("font_size") >= 16, "Phone ability labels must use >=16pt text")
 		check(scene.game_speed == 1.0 or scene.game_speed in scene.speed_options, "Speed setting must remain valid")
 		var previous_speed: float = scene.game_speed
 		scene._cycle_speed()
@@ -48,19 +63,19 @@ func _run() -> void:
 		await process_frame
 		var center: Control = scene.overlay.get_child(1)
 		var panel: Control = center.get_child(0)
-		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= dimensions.y, "Card panel must fit the screen")
+		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Card panel must fit the screen")
 		scene.sim.cards.clear()
 		scene._show_results()
 		await process_frame
 		center = scene.overlay.get_child(1)
 		panel = center.get_child(0)
-		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= dimensions.y, "Flight recorder must fit the screen")
+		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Flight recorder must fit the screen")
 		scene.profile.cores = 100
 		for group in scene.Catalog.GROUPS:
 			scene._hangar_tab(group)
 			await process_frame
 			await process_frame
-			check(scene.hangar_scroll.size.y > 70 and scene.hangar_scroll.get_global_rect().end.y < dimensions.y - 40, "Each Hangar category must have usable scrolling space above the footer")
+			check(scene.hangar_scroll.size.y > 70 and scene.hangar_scroll.get_global_rect().end.y < logical.y - 40, "Each Hangar category must have usable scrolling space above the footer")
 		scene.profile.cores = 1000
 		scene._show_loadout()
 		await process_frame

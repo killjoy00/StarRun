@@ -86,14 +86,22 @@ func _ready() -> void:
 	_show_menu()
 	get_tree().auto_accept_quit = false
 
+# Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
+# Protect gameplay labels and menu copy from the old 10-13px type on phones.
+func _compact_ui() -> bool:
+	return get_viewport_rect().size.x < 760
+
+func _text_size(font_size: int) -> int:
+	return maxi(font_size, 16) if _compact_ui() else font_size
+
 func _style(bg: Color, border: Color, width: int = 1) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
 	box.bg_color = bg
 	box.border_color = border
 	box.set_border_width_all(width)
 	box.set_corner_radius_all(4)
-	box.content_margin_left = 16
-	box.content_margin_right = 16
+	box.content_margin_left = 10 if _compact_ui() else 16
+	box.content_margin_right = 10 if _compact_ui() else 16
 	box.content_margin_top = 12
 	box.content_margin_bottom = 12
 	return box
@@ -101,7 +109,7 @@ func _style(bg: Color, border: Color, width: int = 1) -> StyleBoxFlat:
 func _label(parent: Node, text_value: String, font_size: int = 16, color: Color = Color.WHITE) -> Label:
 	var label := Label.new()
 	label.text = text_value
-	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_font_size_override("font_size", _text_size(font_size))
 	label.add_theme_color_override("font_color", color)
 	parent.add_child(label)
 	return label
@@ -109,7 +117,7 @@ func _label(parent: Node, text_value: String, font_size: int = 16, color: Color 
 func _button(parent: Node, title: String, action: Callable, primary: bool = false) -> Button:
 	var button := Button.new()
 	button.text = title
-	button.add_theme_font_size_override("font_size", 16)
+	button.add_theme_font_size_override("font_size", _text_size(16))
 	button.add_theme_color_override("font_color", INK if primary else CYAN)
 	button.add_theme_color_override("font_hover_color", INK if primary else Color.WHITE)
 	button.add_theme_color_override("font_disabled_color", MUTED)
@@ -136,8 +144,8 @@ func _build_ui() -> void:
 	world = Playfield.new()
 	world.host = self
 	clip.add_child(world)
-	hud = _label(root, "", 14, CYAN)
-	status = _label(root, "", 13, MUTED)
+	hud = _label(root, "", 18, CYAN)
+	status = _label(root, "", 16, MUTED)
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
 	for id in Catalog.ABILITIES:
@@ -175,6 +183,7 @@ func _layout() -> void:
 	hud.size = Vector2(field.size.x, 24)
 	status.position = Vector2(field.position.x, 43)
 	status.size = Vector2(field.size.x, 22)
+	var compact := _compact_ui()
 	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
 	var controls_x := (size.x - controls_width) / 2
 	var button_width := (controls_width - 12) / 3
@@ -183,7 +192,8 @@ func _layout() -> void:
 		button.position = Vector2(controls_x + (i % 3) * (button_width + 6), field.end.y + 9 + int(i / 3) * 56)
 		button.size = Vector2(button_width, 50)
 		button.custom_minimum_size.y = 50
-		button.add_theme_font_size_override("font_size", 12)
+		button.add_theme_font_size_override("font_size", _text_size(12))
+		button.get_child(0).visible = not compact # On narrow screens the badges overlap button text.
 		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
 		for state in ["normal", "hover", "pressed", "disabled"]:
 			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
@@ -192,17 +202,18 @@ func _layout() -> void:
 			compact_style.content_margin_top = 6
 			compact_style.content_margin_bottom = 6
 			button.add_theme_stylebox_override(state, compact_style)
-	build_button.position = Vector2(field.end.x - 165, 31)
-	build_button.size = Vector2(74, 36)
-	speed_button.position = Vector2(field.end.x - 90, 31)
-	speed_button.size = Vector2(46, 36)
+	var top_height := 44.0 if compact else 36.0
+	build_button.position = Vector2(field.end.x - (202 if compact else 165), 30 if compact else 31)
+	build_button.size = Vector2(86 if compact else 74, top_height)
+	speed_button.position = Vector2(field.end.x - (114 if compact else 90), 30 if compact else 31)
+	speed_button.size = Vector2(66 if compact else 46, top_height)
 	for control in [build_button, speed_button]:
-		control.custom_minimum_size.y = 36
-		control.add_theme_font_size_override("font_size", 11)
-	pause_button.position = Vector2(field.end.x - 42, 31)
-	pause_button.size = Vector2(42, 36)
-	pause_button.custom_minimum_size.y = 36
-	pause_button.add_theme_font_size_override("font_size", 14)
+		control.custom_minimum_size.y = top_height
+		control.add_theme_font_size_override("font_size", _text_size(11))
+	pause_button.position = Vector2(field.end.x - (46 if compact else 42), 30 if compact else 31)
+	pause_button.size = Vector2(46 if compact else 42, top_height)
+	pause_button.custom_minimum_size.y = top_height
+	pause_button.add_theme_font_size_override("font_size", _text_size(14))
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		var compact_style: StyleBoxFlat = pause_button.get_theme_stylebox(state).duplicate()
 		compact_style.set_content_margin_all(6)
@@ -291,13 +302,13 @@ func _show_menu() -> void:
 	_button(box, "Launch new flight", _new_run, not FileAccess.file_exists(Services.RUN)).grab_focus()
 	_button(box, "Hangar · %d cores" % profile.cores, _show_hangar)
 	_button(box, "Pilots & ships · equip / unlock", _show_loadout)
-	var row := HBoxContainer.new()
+	var row: BoxContainer = VBoxContainer.new() if _compact_ui() else HBoxContainer.new()
 	box.add_child(row)
 	var effects_toggle := _button(row, "Effects " + ("on" if profile.sound else "off"), _toggle_sound)
 	var music_toggle := _button(row, "Music " + ("on" if profile.music else "off"), _toggle_music)
 	var glow_toggle := _button(row, "Glow " + ("low" if profile.reduced else "full"), _toggle_fx)
 	for toggle in [effects_toggle, music_toggle, glow_toggle]:
-		toggle.add_theme_font_size_override("font_size", 12)
+		toggle.add_theme_font_size_override("font_size", _text_size(12))
 	_wrapped(box, "Keys 1–6 · B: build · Tab: speed · Esc: pause", 12, MUTED)
 
 func _new_run() -> void:
@@ -389,7 +400,8 @@ func _update_hud() -> void:
 		var cooldown: float = sim.cooldowns[id]
 		var learned: bool = sim.upgrades[id] > 0
 		var title: String = "DRONES" if id == "mend" else sim.content.abilities[id].name.to_upper()
-		button.text = "%d  %s\n%s" % [i + 1, title if learned else "EMPTY", ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "LEVEL-UP"]
+		var status_text := ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "LEVEL-UP"
+		button.text = ("%s\n%s" % [("CHRONO" if id == "chrono" else title) if learned else "EMPTY", status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title if learned else "EMPTY", status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = sim.content.abilities[id].name + (" · Level %d" % sim.upgrades[id] if learned else " · Find this ability in an upgrade draft")
 	build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
@@ -428,15 +440,15 @@ func _show_cards() -> void:
 		row.add_child(icon)
 		var button := _button(row, title, _choose.bind(i))
 		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 14)
+		button.add_theme_font_size_override("font_size", _text_size(14))
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size.y = 88
+		button.custom_minimum_size.y = 108 if _compact_ui() else 88
 		card_buttons.append(button)
 		if sim.banishes_left > 0 and card.id != "repair":
 			var banish := _button(box, "Banish %s · %d left" % [card.name, sim.banishes_left], _draft_action.bind("banish", i))
-			banish.custom_minimum_size.y = 30
-			banish.add_theme_font_size_override("font_size", 12)
+			banish.custom_minimum_size.y = 44 if _compact_ui() else 30
+			banish.add_theme_font_size_override("font_size", _text_size(12))
 	var tools := HBoxContainer.new()
 	box.add_child(tools)
 	if sim.rerolls_left > 0:
@@ -571,14 +583,19 @@ func _show_hangar() -> void:
 	workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	workshop.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	body.add_child(workshop)
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 4)
+	var tabs: Container = GridContainer.new() if compact else HBoxContainer.new()
+	if compact:
+		(tabs as GridContainer).columns = 3
+		tabs.add_theme_constant_override("h_separation", 4)
+		tabs.add_theme_constant_override("v_separation", 4)
+	else:
+		tabs.add_theme_constant_override("separation", 4)
 	workshop.add_child(tabs)
 	for group in Catalog.GROUPS:
 		var tab := _button(tabs, group, _hangar_tab.bind(group), group == hangar_category)
-		tab.custom_minimum_size = Vector2(0, 38)
+		tab.custom_minimum_size = Vector2(0, 46 if compact else 38)
 		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tab.add_theme_font_size_override("font_size", 11 if compact else 13)
+		tab.add_theme_font_size_override("font_size", _text_size(11 if compact else 13))
 		for style in ["normal", "hover", "pressed", "disabled"]:
 			var box: StyleBoxFlat = tab.get_theme_stylebox(style).duplicate()
 			box.content_margin_left = 6
@@ -627,19 +644,19 @@ func _show_hangar() -> void:
 			pip.custom_minimum_size = Vector2(20, 4)
 			pips.add_child(pip)
 		var buy := _button(card, "FULLY INSTALLED" if maxed else "Install · %d cores    %d / %d" % [price, bought, entry.max], _purchase.bind(entry.id))
-		buy.custom_minimum_size.y = 38
-		buy.add_theme_font_size_override("font_size", 12)
+		buy.custom_minimum_size.y = 48 if compact else 38
+		buy.add_theme_font_size_override("font_size", _text_size(12))
 		buy.disabled = maxed or profile.cores < price
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 8)
 	layout.add_child(footer)
 	var launch := _button(footer, "Launch", _new_run, true)
 	launch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var refund := _button(footer, "Refund · %d" % Catalog.refund(profile.hangar), _respec)
+	var refund := _button(footer, "Refund" if compact else "Refund · %d" % Catalog.refund(profile.hangar), _respec)
 	refund.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	refund.add_theme_font_size_override("font_size", 13)
+	refund.add_theme_font_size_override("font_size", _text_size(13))
 	var back := _button(footer, "Back", _show_menu)
-	back.add_theme_font_size_override("font_size", 13)
+	back.add_theme_font_size_override("font_size", _text_size(13))
 	launch.grab_focus()
 
 func _hangar_tab(group: String) -> void:
