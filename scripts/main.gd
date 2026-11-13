@@ -51,6 +51,13 @@ var banner_text := ""
 var banner_clock := 0.0
 var last_sector := ""
 var build_return_mode := "playing"
+var build_show_all := false
+var stage_clear_clock := 0.0
+var stage_clear_button: Button
+var warp_clock := 0.0
+var reading_panel: Control
+var reading_scroll: ScrollContainer
+var reading_footer: HBoxContainer
 var old_size := Vector2.ZERO
 
 func _ready() -> void:
@@ -250,6 +257,8 @@ func _layout() -> void:
 		_show_loadout()
 	elif mode == "build":
 		_show_build()
+	elif mode == "stage_clear":
+		_show_stage_clear(false)
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -294,7 +303,7 @@ func _show_menu() -> void:
 	_label(box, "DEBRIS BELT   /   FLIGHT 01", 13, AMBER)
 	_wrapped(box, "Build the ship. Read the threat. Choose your moment.", 19, Color.WHITE)
 	_wrapped(box, "Your ship flies and fires itself. Each hull begins with one signature ability. Draft up to three more from a pool of 20.")
-	_wrapped(box, "Two escalating stages. A boss at the end of each. No steering.", 14)
+	_wrapped(box, "Four distinct stages. A boss and a new battlefield in each. No steering.", 14)
 	_wrapped(box, "SHIP  %s   /   PILOT  %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], 13, CYAN)
 	if not services.read_save(Services.RUN).is_empty():
 		_button(box, "Resume flight", _resume_run, true)
@@ -337,22 +346,37 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "AEGIS blocks. NOVA interrupts."
+	banner_text = "Time your abilities. Survive four stages."
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
+	if sim.stage_transition_queued:
+		_show_stage_clear()
 
 func _process(delta: float) -> void:
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
+	if mode == "stage_clear":
+		var before: float = stage_clear_clock
+		stage_clear_clock += delta
+		if stage_clear_button != null and stage_clear_clock >= 1.2:
+			stage_clear_button.disabled = false
+		if (before < 0.55 and stage_clear_clock >= 0.55) or (before < 1.05 and stage_clear_clock >= 1.05):
+			sound.play("explosion", -7.0)
+	elif mode == "warp":
+		warp_clock += delta
+		if warp_clock >= 1.45:
+			_complete_warp()
 	if mode == "playing":
 		accumulator += minf(delta, 0.2) * game_speed
 		while accumulator >= Simulation.DT and mode == "playing":
 			sim.step()
 			accumulator -= Simulation.DT
-			if sim.ended:
+			if sim.stage_transition_queued:
+				_show_stage_clear()
+			elif sim.ended:
 				_finish()
 			elif not sim.cards.is_empty():
 				_show_cards()
@@ -386,6 +410,7 @@ func _process(delta: float) -> void:
 	world.position = Vector2(sin(visual_time * 79), cos(visual_time * 83)) * shake
 	_update_hud()
 	build_button.visible = mode in ["playing", "paused", "build"]
+	pause_button.visible = mode in ["playing", "paused", "build"]
 	speed_button.visible = mode in ["playing", "paused", "build"]
 	speed_button.text = str(game_speed) + "×"
 	queue_redraw()
@@ -439,8 +464,8 @@ func _show_cards() -> void:
 	_label(box, "UPLINK AVAILABLE", 13, CYAN)
 	_label(box, "Choose your upgrade", 26)
 	_label(box, "LEVEL %02d · Flight paused" % sim.level, 14, MUTED)
-	if sim.stage == 2 and sim.time - sim.stage_start < 1.0:
-		_wrapped(box, "STAGE 2 · ION STORM. Cyan fire stops shield recovery. Green corrosion damages your hull over time. Purple disruption delays ability cooldowns.", 16, AMBER)
+	if sim.stage > 1 and sim.time - sim.stage_start < 1.0:
+		_wrapped(box, "STAGE %d · %s. %s" % [sim.stage, sim.stage_name(), sim.stage_spec().description], 16, AMBER)
 	for i in range(sim.cards.size()):
 		var card: Dictionary = sim.cards[i]
 		var current: int = int(sim.upgrades.get(card.id, 0))
@@ -747,6 +772,10 @@ func _input(event: InputEvent) -> void:
 	if event.keycode in [KEY_ESCAPE, KEY_P]:
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
+	elif mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
+		if stage_clear_clock >= 1.2:
+			_begin_warp()
+		get_viewport().set_input_as_handled()
 	elif mode == "playing":
 		if event.keycode == KEY_B:
 			_show_build()
@@ -774,7 +803,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _sector_name(at: float) -> String:
 	if sim.stage > 1:
-		return "STORM CARRIER" if sim.boss_spawned else "ION STORM · STAGE 2"
+		return sim.boss_name().to_upper() if sim.boss_spawned else "%s · STAGE %d" % [sim.stage_name(), sim.stage]
 	if at < 65:
 		return "DEBRIS BELT"
 	if at < 125:
