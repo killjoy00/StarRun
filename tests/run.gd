@@ -347,6 +347,10 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		var rank := 100
 		for i in range(sim.cards.size()):
 			var r: int = priorities.find(sim.cards[i].id)
+			if r < 0:
+				r = 90 # Unknown IDs must not accidentally outrank every existing card.
+			if sim.cards[i].tag == "ABILITY" and sim.upgrades[sim.cards[i].id] == 0 and sim.active_slots.size() < Catalog.ACTIVE_SLOTS:
+				r = 0 if sim.cards[i].id in ["nova", "emp", "flak", "capacitor", "siphon"] else 2
 			if sim.hull < sim.max_hull * 0.35 and sim.cards[i].id in ["hull", "repair"]:
 				r = -1
 			if r < rank:
@@ -381,6 +385,21 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 					near += 1
 			if near >= 1:
 				sim.activate("aegis")
+		if sim.shield < sim.max_shield - 20:
+			sim.activate("capacitor")
+			sim.activate("deflector")
+		if sim.hull < sim.max_hull - 25:
+			sim.activate("siphon")
+		if not sim.charges.is_empty():
+			sim.activate("emp")
+		if sim.bullets.size() >= 12:
+			sim.activate("flak")
+			sim.activate("prism")
+			sim.activate("overload")
+		if sim.enemies.size() >= 3:
+			sim.activate("focus")
+			sim.activate("jammer")
+			sim.activate("strike")
 
 
 func _test_20_active_pool() -> void:
