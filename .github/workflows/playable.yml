@@ -20,6 +20,10 @@ jobs:
         run: tools/install-godot.sh
       - name: Import project
         run: godot --headless --path . --editor --import --quit
+      - name: Parse simulation and playfield with strict Godot warnings
+        run: |
+          godot --headless --path . --check-only --script scripts/simulation.gd
+          godot --headless --path . --check-only --script scripts/playfield.gd
       - name: Check first scene and reject script parse errors
         run: |
           godot --headless --path . --quit-after 10 2>&1 | tee /tmp/starrun-startup.log
