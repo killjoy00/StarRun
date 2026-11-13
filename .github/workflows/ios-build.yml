@@ -1,0 +1,54 @@
+name: iPhone build
+on:
+  push:
+    branches: [main, 'codex/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  iphone:
+    name: Export and compile unsigned iPhone app
+    runs-on: macos-15
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26"
+      - name: Cache Godot iOS export template
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Application Support/Godot/export_templates/4.6.3.stable/ios.zip
+          key: starrun-godot-4.6.3-ios-template-v1
+      - name: Export Godot iOS Xcode project
+        run: bash tools/ios-export.sh
+      - name: Compile iPhoneOS app without signing
+        run: |
+          set -euo pipefail
+          project=$(find build/ios/xcode -name '*.xcodeproj' -type d -print -quit)
+          test -n "$project"
+          scheme=$(basename "$project" .xcodeproj)
+          xcodebuild build \
+            -project "$project" -scheme "$scheme" \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/StarRunDerivedData" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            DEVELOPMENT_TEAM=3564X3VTDB
+          app=$(find "$RUNNER_TEMP/StarRunDerivedData/Build/Products/Release-iphoneos" -name '*.app' -type d -print -quit)
+          test -n "$app"
+          test -f "$app/Info.plist"
+          actual_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          test "$actual_id" = com.rsm.starrun
+          echo "Built unsigned iPhone app: $app ($actual_id)"
+      - name: Preserve Godot iOS source export
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-iOS-Xcode
+          path: build/ios/StarRun.zip
+          if-no-files-found: ignore
+          retention-days: 14
