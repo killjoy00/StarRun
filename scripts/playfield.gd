@@ -65,8 +65,15 @@ func _draw() -> void:
 			draw_polyline(points, AMBER, 2, true)
 			_glow(bullet.p, 2, Color.WHITE)
 		else:
-			_glow(bullet.p, 3.0, Color("ff738f"))
-			draw_circle(bullet.p, 1.1, Color("fff0d6"))
+			var tint := Color("ff738f")
+			match bullet.kind:
+				"ion": tint = Color("55d8ff")
+				"corrosion": tint = Color("a8ff70")
+				"disrupt": tint = Color("bc8cff")
+			_glow(bullet.p, 4.2 if bullet.kind != "chaff" else 3.0, tint)
+			if bullet.kind != "chaff":
+				draw_arc(bullet.p, 6.0, 0.0, TAU, 12, tint, 2.0, true)
+			draw_circle(bullet.p, 1.6, Color("fff0d6"))
 	for shot in sim.shots:
 		var color := CYAN if shot.weapon == "pulse" else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
 		var direction: Vector2 = shot.v.normalized()
@@ -90,6 +97,8 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
 func _sector(at: float) -> int:
+	if sim.stage > 1:
+		return 1 if at - sim.stage_start < 130.0 else (3 if at - sim.stage_start < 240.0 else 4)
 	if at < 65.0:
 		return 0
 	if at < 125.0:
@@ -199,7 +208,7 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var kind: String = enemy.kind
-	var boss := kind == "boss"
+	var boss := kind in ["boss", "boss2"]
 	if kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
 	elif kind == "station":
@@ -217,7 +226,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			size = Vector2(82,82)
 		if kind in ["interceptor", "rusher"]:
 			size = Vector2(52,64)
-		var art_key := kind if SHIPS.has(kind) else ("gunship" if kind in ["missile_bomber", "carrier", "shieldguard", "minelayer"] else "drone")
+		var art_key := ("boss" if boss else (kind if SHIPS.has(kind) else ("gunship" if kind in ["missile_bomber", "carrier", "shieldguard", "minelayer", "ion_frigate", "corroder", "disruptor"] else "drone")))
 		var tint := Color.WHITE
 		match kind:
 			"interceptor": tint = Color("66f5df")
@@ -226,6 +235,10 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			"carrier": tint = Color("a6e2f0")
 			"shieldguard": tint = Color("b7b2ff")
 			"minelayer": tint = Color("e9bd83")
+			"ion_frigate": tint = Color("55d8ff")
+			"corroder": tint = Color("a8ff70")
+			"disruptor": tint = Color("bc8cff")
+			"boss2": tint = Color("7cc4ff")
 		var bank := sin(sim.time * (2.2 if kind == "interceptor" else 0.7) + enemy.phase) * (0.035 if boss else 0.11)
 		draw_set_transform(p, bank)
 		draw_texture_rect(SHIPS[art_key], Rect2(-size/2, size), false, tint)
