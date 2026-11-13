@@ -1,6 +1,6 @@
-# First playable — v0.3
+# Historical first playable — v0.3
 
-2026-11-12. This is authoritative for current prototype tuning. DESIGN.md retains the broader release vision.
+2026-11-12. This records the earlier one-stage, six-button prototype. For current four-active gameplay, Stage 2 and difficulty tiers, see [the v0.4 gameplay milestone](GAMEPLAY_V04.md). DESIGN.md contains longer-term proposals.
 
 ## Flight and combat
 
