@@ -24,7 +24,12 @@ test -s "$template_dir/ios.zip"
 swift tools/generate-ios-icon.swift assets/ios-icon.png
 test -s assets/ios-icon.png
 mkdir -p build/ios
-"$godot" --headless --path . --editor --import --quit
+"$godot" --headless --path . --editor --import --quit 2>&1 | tee "$root/import.log"
+"$godot" --headless --path . --quit-after 10 2>&1 | tee "$root/startup.log"
+if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" "$root/import.log" "$root/startup.log"; then
+  echo "::error::Godot scripts failed to parse; refusing a broken iPhone export"
+  exit 1
+fi
 "$godot" --headless --path . --export-release iOS build/ios/StarRun.zip
 # Godot's iOS "project only" mode creates sibling directories rather than a ZIP.
 # Keep the Xcode project and payload together, and archive them for CI artifacts.
