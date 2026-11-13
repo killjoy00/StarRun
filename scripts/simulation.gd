@@ -252,19 +252,41 @@ func _enemy_limit() -> int:
 func _spawn_enemy() -> void:
 	if enemies.size() >= _enemy_limit():
 		return
-	# Gradually broaden the roster rather than throwing every threat at a new player.
-	var pool: Array = ["drone", "drone", "drone", "rusher"]
+	# Each stage has its own recognizable enemy ecology, not a generic harder pool.
 	var stage_time := time - stage_start
-	if stage_time > 25:
-		pool.append_array(["interceptor", "gunship", "drone"])
-	if stage_time > 65:
-		pool.append_array(["sniper", "missile_bomber", "interceptor"])
-	if stage_time > 110:
-		pool.append_array(["carrier", "shieldguard", "minelayer", "missile_bomber"])
-	if stage_time > 170:
-		pool.append_array(["shieldguard", "minelayer", "carrier"])
-	if stage > 1 or (difficulty == "insane" and stage_time > 120):
-		pool.append_array(["ion_frigate", "corroder", "disruptor", "ion_frigate", "missile_bomber", "minelayer"])
+	var pool: Array = []
+	match stage:
+		1:
+			pool = ["drone", "drone", "drone", "rusher"]
+			if stage_time > 25:
+				pool.append_array(["interceptor", "gunship", "drone"])
+			if stage_time > 65:
+				pool.append_array(["sniper", "missile_bomber", "interceptor"])
+			if stage_time > 110:
+				pool.append_array(["carrier", "shieldguard", "minelayer", "missile_bomber"])
+			if stage_time > 170:
+				pool.append_array(["shieldguard", "minelayer", "carrier"])
+			if difficulty == "insane" and stage_time > 150:
+				pool.append("ion_frigate")
+		2:
+			pool = ["ion_frigate", "storm_weaver", "interceptor", "ion_frigate", "disruptor"]
+			if stage_time > 50:
+				pool.append_array(["arc_spire", "corroder", "shieldguard", "storm_weaver"])
+			if stage_time > 115:
+				pool.append_array(["missile_bomber", "arc_spire", "corroder", "disruptor"])
+		3:
+			pool = ["ember_hunter", "forge_turret", "splitter", "ember_hunter", "gunship"]
+			if stage_time > 45:
+				pool.append_array(["slag_bomber", "forge_turret", "splitter", "minelayer"])
+			if stage_time > 105:
+				pool.append_array(["slag_bomber", "ember_hunter", "forge_turret", "carrier"])
+		4:
+			pool = ["phase_stalker", "void_lancer", "phase_stalker", "gravity_sentinel", "disruptor"]
+			if stage_time > 45:
+				pool.append_array(["echo_carrier", "void_lancer", "gravity_sentinel", "phase_stalker"])
+			if stage_time > 110:
+				pool.append_array(["echo_carrier", "void_lancer", "arc_spire", "slag_bomber"])
+
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
 	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
 
@@ -277,9 +299,14 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
 		return
-	var kind := "station" if stage > 1 and rng.randf() < 0.6 else ("boulder" if rng.randf() < 0.65 else "station")
+	var kind := "station"
+	match stage:
+		1: kind = "boulder" if rng.randf() < 0.65 else "station"
+		2: kind = "arc_spire" if rng.randf() < 0.7 else "station"
+		3: kind = "forge_turret" if rng.randf() < 0.6 else "slag_bomber"
+		4: kind = "gravity_sentinel" if rng.randf() < 0.65 else "void_lancer"
 	_add_enemy(kind, Vector2(rng.randf_range(85, 455), -65))
-	_log("Incoming debris" if kind == "boulder" else "Hostile station detected")
+	_log("Incoming %s" % kind.replace("_", " "))
 
 func _spawn_boss() -> void:
 	boss_spawned = true
