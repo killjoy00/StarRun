@@ -973,37 +973,78 @@ func _show_build() -> void:
 		build_return_mode = mode
 	mode = "build"
 	_save_run()
-	var box := _panel(500)
-	_label(box, "ACTIVE BUILD", 28, CYAN)
-	_wrapped(box, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 19, Color.WHITE)
-	_wrapped(box, "%s\n%s" % [Catalog.ship(sim.ship_id).description, Catalog.pilot(sim.pilot_id).description], 13)
-	_label(box, "STAGE %d · %s · HULL %d/%d · SHIELD %d/%d · LEVEL %d" % [sim.stage, sim.difficulty.to_upper(), sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.level], 13, CYAN)
-	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
-		_label(box, tag + "S", 15, AMBER)
-		var count := 0
-		for entry in sim.content.cards:
-			var rank: int = int(sim.upgrades.get(entry.id, 0))
-			if entry.tag != tag or rank <= 0:
-				continue
-			var row := HBoxContainer.new()
-			box.add_child(row)
-			var badge := IconBadge.new()
-			badge.icon_id = entry.id
-			row.add_child(badge)
-			_wrapped(row, "%s  ·  Rank %d/%d" % [entry.name, rank, entry.max], 14, Color.WHITE)
-			count += 1
-		if count == 0:
-			_wrapped(box, "None installed", 13)
-	_label(box, "HANGAR MODULES", 15, AMBER)
-	var installed := 0
+	var view := _reading_screen(540)
+	var header: VBoxContainer = view.header
+	var body: VBoxContainer = view.body
+	var footer: HBoxContainer = view.footer
+	_label(header, "YOUR BUILD", 27, CYAN)
+	_wrapped(header, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 17, Color.WHITE)
+	_wrapped(header, "STAGE %d OF %d  ·  %s  ·  LEVEL %d" % [sim.stage, sim.stage_count(), sim.difficulty.to_upper(), sim.level], 15, MUTED)
+	_reading_card(body, "SHIP STATUS", "HULL  %d / %d\nSHIELDS  %d / %d\nACTIVE SLOTS  %d / 4" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.active_slots.size()])
+	_label(body, "EQUIPPED ABILITIES", 19, AMBER)
+	var active_grid := GridContainer.new()
+	active_grid.columns = 1 if _compact_ui() else 2
+	active_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	active_grid.add_theme_constant_override("h_separation", 8)
+	active_grid.add_theme_constant_override("v_separation", 8)
+	body.add_child(active_grid)
+	for slot in range(Catalog.ACTIVE_SLOTS):
+		if slot >= sim.active_slots.size():
+			_reading_card(active_grid, "%d  ·  EMPTY SLOT" % (slot + 1), "Choose an ability from your next level-up.", MUTED)
+			continue
+		var id: String = str(sim.active_slots[slot])
+		var rank: int = int(sim.upgrades.get(id, 0))
+		var desc := ""
+		for card in sim.content.cards:
+			if card.id == id:
+				desc = str(card.description)
+				break
+		var recharge := int(sim.content.abilities[id].cooldown)
+		_reading_card(active_grid, "%d  ·  %s" % [slot + 1, sim.content.abilities[id].name.to_upper()], "RANK %d / 5  ·  %ds BASE COOLDOWN\n%s" % [rank, recharge, desc], CYAN)
+	_label(body, "AUTOMATIC WEAPONS", 19, AMBER)
+	var weapons := 0
+	for entry in sim.content.cards:
+		if entry.tag != "WEAPON" or int(sim.upgrades.get(entry.id, 0)) <= 0:
+			continue
+		weapons += 1
+		_reading_card(body, str(entry.name), "Rank %d of %d · %s" % [sim.upgrades[entry.id], entry.max, entry.description])
+	if weapons == 0:
+		_wrapped(body, "No automatic weapon modules installed.", 15)
+	_label(body, "SYSTEMS & SUPPORT", 19, AMBER)
+	var systems: Array = []
+	for entry in sim.content.cards:
+		if entry.tag == "SYSTEM" and int(sim.upgrades.get(entry.id, 0)) > 0:
+			systems.append(entry)
+	for index in range(systems.size() if build_show_all else mini(3, systems.size())):
+		var entry: Dictionary = systems[index]
+		_reading_card(body, str(entry.name), "Rank %d of %d · %s" % [sim.upgrades[entry.id], entry.max, entry.description])
+	if systems.size() > 3:
+		_button(body, "Show less" if build_show_all else "Show all %d installed systems" % systems.size(), _toggle_build_details)
+	var hangar_count := 0
+	var hangar_lines: Array[String] = []
 	for entry in Catalog.HANGAR:
 		var rank: int = int(sim.meta.get(entry.id, 0))
 		if rank > 0:
-			_wrapped(box, "%s  ·  Rank %d/%d" % [entry.name, rank, entry.max], 13, CYAN)
-			installed += 1
-	if installed == 0:
-		_wrapped(box, "No permanent modules installed", 13)
-	_button(box, "Return to flight", _toggle_pause, true).grab_focus()
+			hangar_count += 1
+			hangar_lines.append("%s  ·  %d/%d" % [entry.name, rank, entry.max])
+	var support := "%d permanent Hangar upgrades active on this flight." % hangar_count
+	if build_show_all and hangar_count > 0:
+		support += "\n" + "\n".join(hangar_lines)
+	_reading_card(body, "HANGAR SUPPORT", support, AMBER)
+	var resume := _reading_cta(footer, "Back to pause" if build_return_mode == "paused" else "Resume flight", _toggle_pause, true)
+	_reading_cta(footer, "Main menu", _build_to_menu)
+	resume.grab_focus()
+
+func _toggle_build_details() -> void:
+	build_show_all = not build_show_all
+	_show_build()
+
+func _build_to_menu() -> void:
+	if mode != "build":
+		return
+	_save_run()
+	_show_menu()
+
 
 func _show_loadout() -> void:
 	mode = "loadout"
