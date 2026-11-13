@@ -5,11 +5,11 @@
   "abilities": {
     "aegis": {
       "name": "Aegis",
-      "cooldown": 7
+      "cooldown": 14
     },
     "nova": {
       "name": "Nova",
-      "cooldown": 10
+      "cooldown": 20
     },
     "barrage": {
       "name": "Barrage",
@@ -26,6 +26,62 @@
     "mend": {
       "name": "Repair drones",
       "cooldown": 24
+    },
+    "flak": {
+      "name": "Flak screen",
+      "cooldown": 16
+    },
+    "emp": {
+      "name": "EMP blackout",
+      "cooldown": 23
+    },
+    "deflector": {
+      "name": "Deflector",
+      "cooldown": 18
+    },
+    "strike": {
+      "name": "Rail strike",
+      "cooldown": 19
+    },
+    "prism": {
+      "name": "Prism reversal",
+      "cooldown": 20
+    },
+    "barrier": {
+      "name": "Chaff barrier",
+      "cooldown": 25
+    },
+    "capacitor": {
+      "name": "Capacitor",
+      "cooldown": 20
+    },
+    "focus": {
+      "name": "Precision focus",
+      "cooldown": 23
+    },
+    "decoy": {
+      "name": "Decoy beacon",
+      "cooldown": 22
+    },
+    "jammer": {
+      "name": "Signal jammer",
+      "cooldown": 24
+    },
+    "siphon": {
+      "name": "Energy siphon",
+      "cooldown": 21
+    },
+    "overload": {
+      "name": "Chain overload",
+      "cooldown": 24
+    },
+    "reboot": {
+      "name": "Reactor reboot",
+      "cooldown": 34
+    },
+    "salvage": {
+      "name": "Salvage surge",
+      "cooldown": 28
     }
   },
   "enemies": {
@@ -94,6 +150,24 @@
       "speed": 18,
       "xp": 12,
       "interval": 4.6
+    },
+    "ion_frigate": {
+      "hp": 56,
+      "speed": 43,
+      "xp": 9,
+      "interval": 3.7
+    },
+    "corroder": {
+      "hp": 64,
+      "speed": 55,
+      "xp": 10,
+      "interval": 4
+    },
+    "disruptor": {
+      "hp": 72,
+      "speed": 45,
+      "xp": 11,
+      "interval": 4.5
     }
   },
   "cards": [
@@ -243,6 +317,106 @@
       "tag": "SYSTEM",
       "description": "Ability damage, duration and healing increase by 6% per level.",
       "max": 5
+    },
+    {
+      "id": "flak",
+      "name": "Flak screen",
+      "tag": "ABILITY",
+      "description": "Intercept missiles and mines across the screen; also damage nearby launchers.",
+      "max": 5
+    },
+    {
+      "id": "emp",
+      "name": "EMP blackout",
+      "tag": "ABILITY",
+      "description": "Cancel charging beams and silence enemy weapons for 3 seconds.",
+      "max": 5
+    },
+    {
+      "id": "deflector",
+      "name": "Deflector",
+      "tag": "ABILITY",
+      "description": "Absorb nearby chaff projectiles into restored shielding.",
+      "max": 5
+    },
+    {
+      "id": "strike",
+      "name": "Rail strike",
+      "tag": "ABILITY",
+      "description": "Deal massive damage to the toughest enemy, prioritizing charging threats.",
+      "max": 5
+    },
+    {
+      "id": "prism",
+      "name": "Prism reversal",
+      "tag": "ABILITY",
+      "description": "Convert nearby enemy projectiles into your own guided rockets.",
+      "max": 5
+    },
+    {
+      "id": "barrier",
+      "name": "Chaff barrier",
+      "tag": "ABILITY",
+      "description": "Block only incoming chaff for 6 seconds; heavy beams still hurt.",
+      "max": 5
+    },
+    {
+      "id": "capacitor",
+      "name": "Capacitor",
+      "tag": "ABILITY",
+      "description": "Instantly recharge shields and clear shield suppression.",
+      "max": 5
+    },
+    {
+      "id": "focus",
+      "name": "Precision focus",
+      "tag": "ABILITY",
+      "description": "Boost all automatic weapon damage for 6 seconds.",
+      "max": 5
+    },
+    {
+      "id": "decoy",
+      "name": "Decoy beacon",
+      "tag": "ABILITY",
+      "description": "Divert homing missiles and enemy aim to an off-axis decoy for 5 seconds.",
+      "max": 5
+    },
+    {
+      "id": "jammer",
+      "name": "Signal jammer",
+      "tag": "ABILITY",
+      "description": "Delay enemy fire and suppress new beam charges for 5 seconds.",
+      "max": 5
+    },
+    {
+      "id": "siphon",
+      "name": "Energy siphon",
+      "tag": "ABILITY",
+      "description": "Drain the toughest enemy and convert damage into hull repair.",
+      "max": 5
+    },
+    {
+      "id": "overload",
+      "name": "Chain overload",
+      "tag": "ABILITY",
+      "description": "Detonate nearby chaff for an area attack; stronger in crowded patterns.",
+      "max": 5
+    },
+    {
+      "id": "reboot",
+      "name": "Reactor reboot",
+      "tag": "ABILITY",
+      "description": "Recover part of the cooldown on the other equipped abilities.",
+      "max": 5
+    },
+    {
+      "id": "salvage",
+      "name": "Salvage surge",
+      "tag": "ABILITY",
+      "description": "Earn additional cores from kills during a 10-second window.",
+      "max": 5
     }
-  ]
+  ],
+  "stage_count": 2,
+  "stage_duration": 300
 }
