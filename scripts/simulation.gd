@@ -78,6 +78,9 @@ var meta := Catalog.defaults()
 
 func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal") -> void:
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
+	for id in Catalog.ABILITIES:
+		if not cooldowns.has(id):
+			cooldowns[id] = 0.0
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
@@ -480,6 +483,17 @@ func _update_bullets() -> void:
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
 func _update_shots() -> void:
+	# Only interceptor-capable projectiles belong in collision buckets.
+	# Avoid the former every-player-shot x every-enemy-bullet scan.
+	const CELL := 64.0
+	var ordnance_cells: Dictionary = {}
+	for bullet in bullets:
+		if bullet.kind not in ["ordnance", "mine"] or float(bullet.get("hp", 1)) <= 0.0:
+			continue
+		var cell := Vector2i(floori(bullet.p.x / CELL), floori(bullet.p.y / CELL))
+		if not ordnance_cells.has(cell):
+			ordnance_cells[cell] = []
+		ordnance_cells[cell].append(bullet)
 	for shot in shots:
 		if shot.weapon in ["seeker", "barrage"] and shot.target >= 0:
 			var alive := enemies.any(func(e): return e.id == shot.target and e.hp > 0)
@@ -513,13 +527,20 @@ func _update_shots() -> void:
 		shot.p += shot.v * DT
 		var struck := false
 		if shot.weapon in ["seeker", "barrage", "pulse"]:
-			for bullet in bullets:
-				if bullet.kind in ["ordnance", "mine"] and bullet.p.distance_squared_to(shot.p) < 28 ** 2:
-					bullet.hp -= shot.damage
-					if bullet.hp <= 0.0:
-						effects.append({"kind":"explosion", "p":bullet.p, "life":0.30, "max_life":0.30, "born":tick})
-					struck = true
+			var center := Vector2i(floori(shot.p.x / CELL), floori(shot.p.y / CELL))
+			for dx in range(-1, 2):
+				if struck:
 					break
+				for dy in range(-1, 2):
+					if struck:
+						break
+					for bullet in ordnance_cells.get(center + Vector2i(dx, dy), []):
+						if float(bullet.get("hp", 1)) > 0.0 and bullet.p.distance_squared_to(shot.p) < 28.0 * 28.0:
+							bullet.hp -= shot.damage
+							if bullet.hp <= 0.0:
+								effects.append({"kind":"explosion", "p":bullet.p, "life":0.30, "max_life":0.30, "born":tick})
+							struck = true
+							break
 		if not struck:
 			for enemy in enemies:
 				if enemy.hp <= 0.0:
