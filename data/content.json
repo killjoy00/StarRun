@@ -1,5 +1,5 @@
 {
-  "version": 4,
+  "version": 5,
   "duration": 300,
   "boss_at": 240,
   "abilities": {
@@ -168,6 +168,66 @@
       "speed": 45,
       "xp": 11,
       "interval": 4.5
+    },
+    "arc_spire": {
+      "hp": 105,
+      "speed": 24,
+      "xp": 13,
+      "interval": 4.3
+    },
+    "storm_weaver": {
+      "hp": 74,
+      "speed": 70,
+      "xp": 12,
+      "interval": 3.5
+    },
+    "forge_turret": {
+      "hp": 155,
+      "speed": 22,
+      "xp": 17,
+      "interval": 4.5
+    },
+    "slag_bomber": {
+      "hp": 118,
+      "speed": 40,
+      "xp": 16,
+      "interval": 3.9
+    },
+    "ember_hunter": {
+      "hp": 86,
+      "speed": 91,
+      "xp": 15,
+      "interval": 2.9
+    },
+    "splitter": {
+      "hp": 115,
+      "speed": 67,
+      "xp": 14,
+      "interval": 3.6
+    },
+    "phase_stalker": {
+      "hp": 130,
+      "speed": 87,
+      "xp": 21,
+      "interval": 3.3
+    },
+    "void_lancer": {
+      "hp": 170,
+      "speed": 38,
+      "xp": 24,
+      "interval": 5.8
+    },
+    "gravity_sentinel": {
+      "hp": 190,
+      "speed": 29,
+      "xp": 24,
+      "interval": 4.7
+    },
+    "echo_carrier": {
+      "hp": 225,
+      "speed": 26,
+      "xp": 28,
+      "interval": 5.8
     }
   },
   "cards": [
@@ -417,6 +477,60 @@
       "max": 5
     }
   ],
-  "stage_count": 2,
-  "stage_duration": 300
+  "stage_count": 4,
+  "stage_duration": 300,
+  "stages": [
+    {
+      "id": "debris_belt",
+      "name": "DEBRIS BELT",
+      "subtitle": "The outer wrecks",
+      "boss": "boss",
+      "boss_name": "Harvester",
+      "boss_hp": 6200,
+      "health_scale": 1,
+      "spawn_scale": 1,
+      "description": "Scrap, gunships and charging beams. Find the rhythm.",
+      "transition": "ION STORM",
+      "reward_label": "Belt cleared"
+    },
+    {
+      "id": "ion_storm",
+      "name": "ION STORM",
+      "subtitle": "The electric frontier",
+      "boss": "boss2",
+      "boss_name": "Storm Carrier",
+      "boss_hp": 10000,
+      "health_scale": 1.55,
+      "spawn_scale": 1.45,
+      "description": "Ion suppression, corrosion, disruption and electrical formations.",
+      "transition": "SOLAR FOUNDRY",
+      "reward_label": "Storm survived"
+    },
+    {
+      "id": "solar_foundry",
+      "name": "SOLAR FOUNDRY",
+      "subtitle": "The burning machine",
+      "boss": "boss3",
+      "boss_name": "Crucible Engine",
+      "boss_hp": 15500,
+      "health_scale": 2.15,
+      "spawn_scale": 1.72,
+      "description": "Heat weakens weapons, molten slag erupts and splitters multiply.",
+      "transition": "VOID CITADEL",
+      "reward_label": "Foundry dismantled"
+    },
+    {
+      "id": "void_citadel",
+      "name": "VOID CITADEL",
+      "subtitle": "The last stronghold",
+      "boss": "boss4",
+      "boss_name": "Void Regent",
+      "boss_hp": 22000,
+      "health_scale": 2.95,
+      "spawn_scale": 1.9,
+      "description": "Phasing raiders, gravity disruption and fortress beam volleys.",
+      "transition": "",
+      "reward_label": "Citadel conquered"
+    }
+  ]
 }
