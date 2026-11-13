@@ -307,7 +307,7 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var kind: String = enemy.kind
-	var boss := kind in ["boss", "boss2"]
+	var boss := kind.begins_with("boss")
 	if kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
 	elif kind == "station":
@@ -374,7 +374,6 @@ func _custom_enemy(kind: String) -> bool:
 
 func _draw_custom_enemy(kind: String) -> void:
 	# Procedural silhouettes at native size, not a color tint of one shared sprite.
-	var scale_factor := 1.0 if not kind.begins_with("boss") else 2.2
 	if kind == "boss2":
 		draw_colored_polygon(PackedVector2Array([Vector2(-105,-4), Vector2(-58,-49), Vector2(0,-74), Vector2(58,-49), Vector2(105,-4), Vector2(67,48), Vector2(-67,48)]), Color("173e62"))
 		for side in [-1,1]:
