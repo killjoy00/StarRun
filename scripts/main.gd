@@ -390,6 +390,7 @@ func _show_menu() -> void:
 
 func _new_run() -> void:
 	profile.runs += 1
+	build_show_all = false
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")))
 	_start_flight()
@@ -512,7 +513,7 @@ func _update_hud() -> void:
 			if card.tag == tag and sim.upgrades[card.id] > 0:
 				build_label.text += "%s  %d/5\n" % [card.name, sim.upgrades[card.id]]
 		build_label.text += "\n"
-	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), "HARVESTER ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
 func _activate_slot(slot: int) -> void:
 	if slot >= 0 and slot < sim.active_slots.size():
@@ -781,7 +782,7 @@ func _show_hangar() -> void:
 		_label(hero, "Flight configuration", 20, Color.WHITE)
 		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [int(Catalog.ship(profile.ship).hull) + profile.hangar.hull * 10, int(Catalog.ship(profile.ship).shield) + profile.hangar.shield * 8 + (20 if profile.pilot == "engineer" else 0), profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
 		_wrapped(hero, "22 upgrade tracks plus permanent pilot and ship unlocks. Current suspended flights keep their original loadout.", 14)
-		_wrapped(hero, "Abilities are learned during flight. All six are available from your first run.", 14)
+		_wrapped(hero, "Draft from 20 active abilities, with a maximum of four equipped at once.", 14)
 	var workshop := VBoxContainer.new()
 	workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	workshop.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1044,7 +1045,7 @@ func _show_build() -> void:
 	if systems.size() > 3:
 		_button(body, "Show less" if build_show_all else "Show all %d installed systems" % systems.size(), _toggle_build_details)
 	var hangar_count := 0
-	var hangar_lines: Array[String] = []
+	var hangar_lines := PackedStringArray()
 	for entry in Catalog.HANGAR:
 		var rank: int = int(sim.meta.get(entry.id, 0))
 		if rank > 0:
@@ -1143,5 +1144,5 @@ func _draw() -> void:
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
 		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "S T A R / R U N", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, CYAN)
-		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FIRST FLIGHT  /  0.3", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  0.5", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
