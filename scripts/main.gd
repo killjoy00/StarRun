@@ -547,6 +547,77 @@ func _show_pause() -> void:
 	_button(box, "Glow: " + ("low" if profile.reduced else "full"), _toggle_fx)
 	_button(box, "Save & return to hangar", _show_menu)
 
+func _show_stage_clear(reset_clock: bool = true) -> void:
+	if reset_clock:
+		stage_clear_clock = 0.0
+	mode = "stage_clear"
+	_save_run()
+	_clear_overlay()
+	var screen := get_viewport_rect().size
+	var shade := ColorRect.new()
+	shade.color = Color(0.005, 0.012, 0.025, 0.19)
+	shade.size = screen
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(shade)
+	var layout := VBoxContainer.new()
+	layout.position = Vector2(14, 12)
+	layout.size = screen - Vector2(28, 26)
+	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(layout)
+	var top := _wrapped(layout, "STAGE %d / 4  ·  %s DESTROYED" % [sim.stage, sim.boss_name().to_upper()], 22, AMBER)
+	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var space := Control.new()
+	space.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	space.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layout.add_child(space)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _style(Color("0a1726", 0.96), AMBER, 2))
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	layout.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 9)
+	panel.add_child(content)
+	_wrapped(content, sim.stage_spec().reward_label.to_upper(), 21, AMBER)
+	_wrapped(content, "+%d cumulative stage cores · %d ships destroyed" % [sim.payout(), sim.kills], 16, Color.WHITE)
+	var next_text := "The Void Citadel is yours. Claim your victory and see the flight report." if sim.stage == sim.stage_count() else "Next: %s. Your build carries forward; shields recharge, hull repairs and you get an upgrade." % sim.stage_spec().transition
+	_wrapped(content, next_text, 16, Color.WHITE)
+	stage_clear_button = _button(content, "Claim victory & see report" if sim.stage == sim.stage_count() else "Warp to " + str(sim.stage_spec().transition), _begin_warp, true)
+	stage_clear_button.disabled = stage_clear_clock < 1.2
+	stage_clear_button.custom_minimum_size.y = 58
+	if not stage_clear_button.disabled:
+		stage_clear_button.grab_focus()
+	if reset_clock:
+		sound.play("boss-explosion", -4.0)
+
+func _begin_warp() -> void:
+	if mode != "stage_clear" or stage_clear_clock < 1.2:
+		return
+	if sim.stage == sim.stage_count():
+		if sim.advance_stage():
+			_finish()
+		return
+	mode = "warp"
+	warp_clock = 0.0
+	_clear_overlay()
+	sound.play("start", -7.0)
+
+func _complete_warp() -> void:
+	if mode != "warp":
+		return
+	if not sim.advance_stage():
+		_show_stage_clear(false)
+		return
+	mode = "playing"
+	_clear_overlay()
+	accumulator = 0.0
+	last_sector = _sector_name(sim.time)
+	banner_text = "STAGE %d / 4  ·  %s" % [sim.stage, sim.stage_name()]
+	banner_clock = 5.0
+	_save_run()
+	if sim.pending_levels > 0:
+		sim._offer_cards()
+		_show_cards()
+
 func _finish() -> void:
 	mode = "results"
 	# Record settlement identity in profile before removing the resume save.
