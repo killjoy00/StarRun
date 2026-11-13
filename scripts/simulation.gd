@@ -657,7 +657,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	kills += 1
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2)
-	effects.append({"kind": "explosion", "p": enemy.p, "life": 0.72 if enemy.kind == "boss" else 0.5, "max_life": 0.72 if enemy.kind == "boss" else 0.5, "born": tick, "boss": enemy.kind == "boss"})
+	var is_boss: bool = str(enemy.kind).begins_with("boss")
+	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
@@ -666,15 +667,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		xp -= xp_needed()
 		level += 1
 		pending_levels += 1
-	if enemy.kind == "boss":
-		stage_clears = 1
+	if enemy.kind == "splitter" and enemies.size() < _enemy_limit() - 2:
+		for i in range(2):
+			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
+	if is_boss:
+		last_boss_position = enemy.p
+		stage_clears = stage
 		stage_transition_queued = true
-		_log("Harvester destroyed · Stage 2 unlocked")
-	elif enemy.kind == "boss2":
-		stage_clears = 2
-		ended = true
-		won = true
-		_log("Storm Carrier destroyed · full clear")
+		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func xp_needed() -> int:
 	return 25 + (level - 1) * 9
@@ -765,7 +765,7 @@ func activate(ability: String) -> bool:
 		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine"])
 		prevented += stopped * 12.0
 		for enemy in enemies:
-			if enemy.kind in ["missile_bomber", "minelayer", "boss2"]:
+			if enemy.kind in ["missile_bomber", "minelayer", "slag_bomber", "boss2", "boss3", "boss4"]:
 				_damage_enemy(enemy, 30.0 * ability_power(), "flak")
 	elif ability == "emp":
 		beams_cancelled += charges.size()
