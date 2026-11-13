@@ -39,6 +39,9 @@ var decoy_left := 0.0
 var jammer_left := 0.0
 var salvage_left := 0.0
 var corrosion_left := 0.0
+var heat_left := 0.0
+var gravity_left := 0.0
+var last_boss_position := Vector2(270, 135)
 var bonus_cores := 0
 var mend_left := 0.0
 var mend_rate := 0.0
@@ -55,7 +58,7 @@ var shots: Array = []
 var effects: Array = []
 var charges: Array = []
 var events: Array = []
-var damage_taken := {"chaff": 0.0, "heavy": 0.0, "ordnance": 0.0, "hazard": 0.0, "ion": 0.0, "corrosion": 0.0, "disrupt": 0.0}
+var damage_taken := {"chaff": 0.0, "heavy": 0.0, "ordnance": 0.0, "hazard": 0.0, "ion": 0.0, "corrosion": 0.0, "disrupt": 0.0, "heat": 0.0, "gravity": 0.0, "void": 0.0}
 var damage_dealt := {"pulse": 0.0, "seeker": 0.0, "nova": 0.0, "barrage": 0.0, "arc": 0.0, "lance": 0.0}
 var xp := 0.0
 var level := 1
@@ -179,7 +182,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
-	if ended or not cards.is_empty():
+	if ended or stage_transition_queued or not cards.is_empty():
 		return
 	tick += 1
 	time = tick * DT
@@ -188,7 +191,7 @@ func step() -> void:
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
-	for timer in ["emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left"]:
+	for timer in ["emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4
@@ -214,8 +217,8 @@ func step() -> void:
 	if time >= next_spawn and not boss_spawned:
 		_spawn_enemy()
 		var stage_time := time - stage_start
-		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		next_spawn = time + pace / ((1.45 if stage > 1 else 1.0) * threat_scale())
+			var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale())
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -224,16 +227,30 @@ func step() -> void:
 	_update_weapons()
 	_update_bullets()
 	_update_shots()
-	if stage_transition_queued:
-		_enter_stage_two()
-	if pending_levels > 0 and not ended:
+	# A defeated boss pauses the run for an explicit player-controlled celebration.
+	if pending_levels > 0 and not ended and not stage_transition_queued:
 		_offer_cards()
 
 func threat_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
 
+func stage_spec() -> Dictionary:
+	return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
+
+func boss_name() -> String:
+	return str(stage_spec().boss_name)
+
+func stage_name() -> String:
+	return str(stage_spec().name)
+
+func stage_count() -> int:
+	return int(content.stage_count)
+
+func _enemy_limit() -> int:
+	return 20 + (stage - 1) * 5
+
 func _spawn_enemy() -> void:
-	if enemies.size() >= (26 if stage > 1 else 20):
+	if enemies.size() >= _enemy_limit():
 		return
 	# Gradually broaden the roster rather than throwing every threat at a new player.
 	var pool: Array = ["drone", "drone", "drone", "rusher"]
@@ -253,12 +270,12 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * (1.55 if stage > 1 else 1.0) * threat_scale()
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale()
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 func _spawn_hazard() -> void:
-	if enemies.size() >= (25 if stage > 1 else 19):
+	if enemies.size() >= _enemy_limit() - 1:
 		return
 	var kind := "station" if stage > 1 and rng.randf() < 0.6 else ("boulder" if rng.randf() < 0.65 else "station")
 	_add_enemy(kind, Vector2(rng.randf_range(85, 455), -65))
@@ -272,28 +289,41 @@ func _spawn_boss() -> void:
 	shield = max_shield
 	hull = minf(max_hull, hull + 15)
 	heavy_ready_at = time + 3.0
-	var boss_kind := "boss2" if stage > 1 else "boss"
-	var hp := (10000.0 if stage > 1 else 6200.0) * threat_scale()
-	enemies.append({"id": next_id, "kind": boss_kind, "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
+	var spec := stage_spec()
+	var hp := float(spec.boss_hp) * threat_scale()
+	enemies.append({"id": next_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
-	_log(("Storm Carrier" if stage > 1 else "Harvester") + " arrived · shield refilled, +15 hull")
+	_log(str(spec.boss_name) + " arrived · shield refilled, +15 hull")
 
-func _enter_stage_two() -> void:
-	stage = 2
-	stage_start = time
+func advance_stage() -> bool:
+	if not stage_transition_queued or stage_clears != stage:
+		return false
 	stage_transition_queued = false
+	if stage >= stage_count():
+		ended = true
+		won = true
+		_log("The Citadel has fallen · full run complete")
+		return true
+	stage += 1
+	stage_start = time
 	boss_spawned = false
 	enemies.clear()
 	bullets.clear()
 	shots.clear()
 	charges.clear()
+	effects.clear()
 	shield = max_shield
-	hull = minf(max_hull, hull + 20.0)
+	hull = minf(max_hull, hull + max_hull * 0.30)
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
-	pending_levels += 1 # One substantial stage-clear build choice.
-	_log("STAGE 2 · ION STORM · NEW THREATS")
+	pending_levels += 1
+	_log("STAGE %d · %s · NEW THREATS" % [stage, stage_name()])
+	return true
+
+# Preserve older gameplay checks that explicitly advance the first stage.
+func _enter_stage_two() -> void:
+	advance_stage()
 
 func _update_enemies() -> void:
 	var pace := 0.45 if chrono_left > 0 else 1.0
