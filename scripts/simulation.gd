@@ -461,11 +461,13 @@ func _update_charges() -> void:
 						if enemy.id == charge.source:
 							_damage_enemy(enemy, 60.0, "nova")
 							_log("Aegis reflected the heavy beam")
-				_hit(charge.damage, "heavy", "Storm Carrier" if stage > 1 and boss_spawned else ("Harvester" if boss_spawned else "Sniper"))
+				_hit(charge.damage, "heavy", boss_name() if boss_spawned else "Heavy lancer")
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
 func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
+	if gravity_left > 0.0:
+		rate *= 0.72
 	pulse_timer -= DT * rate
 	seeker_timer -= DT * rate
 	arc_timer -= DT * rate
@@ -489,7 +491,7 @@ func _update_weapons() -> void:
 				target_pos = enemy.p
 		if target_id < 0:
 			for bullet in bullets:
-				if bullet.kind in ["ordnance", "mine"]:
+				if bullet.kind in ["ordnance", "mine", "slag"]:
 					target_pos = bullet.p
 					target_id = -2
 					break
@@ -526,11 +528,11 @@ func _update_weapons() -> void:
 			effects.append({"kind":"lance", "p":origin, "to":end, "life":0.28, "max_life":0.28, "born":tick})
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
-				if closest.distance_to(enemy.p) < (68 if enemy.kind == "boss" else 28):
+				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
 					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power(), "lance")
 
 func weapon_power() -> float:
-	return (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0)
+	return (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0)
 
 func ability_power() -> float:
 	return 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
@@ -552,18 +554,18 @@ func _update_bullets() -> void:
 		if bullet.kind == "ordnance":
 			var target := Vector2(70 if ship.x > 270 else 470, 700) if decoy_left > 0.0 else ship
 			bullet.v = bullet.v.lerp((target - bullet.p).normalized() * (185.0 if bullet.source == "missile_bomber" else 155.0), DT * 0.9)
-		if bullet.kind == "mine":
+		if bullet.kind in ["mine", "slag"]:
 			bullet.fuse -= DT * (0.45 if chrono_left > 0 else 1.0)
 			if bullet.fuse <= 0.0:
 				effects.append({"kind":"explosion", "p":bullet.p, "life":0.38, "max_life":0.38, "born":tick})
-				if bullet.p.distance_to(ship) < 83.0:
-					_hit(bullet.damage, "hazard", "Proximity mine")
+				if bullet.p.distance_to(ship) < (105.0 if bullet.kind == "slag" else 83.0):
+					_hit(bullet.damage, "hazard", "Molten slag" if bullet.kind == "slag" else "Proximity mine")
 				bullet.hp = 0.0
 		bullet.p += bullet.v * DT * (0.45 if chrono_left > 0 else 1.0)
-		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind == "mine" else 10.0)
+		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
 			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
-				_hit(bullet.damage, "hazard" if bullet.kind == "mine" else bullet.kind, bullet.source)
+				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, bullet.source)
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
@@ -573,7 +575,7 @@ func _update_shots() -> void:
 	const CELL := 64.0
 	var ordnance_cells: Dictionary = {}
 	for bullet in bullets:
-		if bullet.kind not in ["ordnance", "mine"] or float(bullet.get("hp", 1)) <= 0.0:
+		if bullet.kind not in ["ordnance", "mine", "slag"] or float(bullet.get("hp", 1)) <= 0.0:
 			continue
 		var cell := Vector2i(floori(bullet.p.x / CELL), floori(bullet.p.y / CELL))
 		if not ordnance_cells.has(cell):
@@ -606,7 +608,7 @@ func _update_shots() -> void:
 					shot.v = shot.v.lerp((enemy.p - shot.p).normalized() * 650, DT * 8.0)
 		if shot.weapon == "seeker" and shot.target == -2:
 			for bullet in bullets:
-				if bullet.kind in ["ordnance", "mine"]:
+				if bullet.kind in ["ordnance", "mine", "slag"]:
 					shot.v = shot.v.lerp((bullet.p - shot.p).normalized() * 650, DT * 8.0)
 					break
 		shot.p += shot.v * DT
@@ -630,7 +632,7 @@ func _update_shots() -> void:
 			for enemy in enemies:
 				if enemy.hp <= 0.0:
 					continue
-				var radius := 68.0 if enemy.kind == "boss" else 25.0
+				var radius := 68.0 if str(enemy.kind).begins_with("boss") else 25.0
 				if shot.p.distance_squared_to(enemy.p) < radius * radius:
 					_damage_enemy(enemy, shot.damage, shot.weapon)
 					struck = true
@@ -687,6 +689,13 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	var reduced := amount
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0)
+	elif kind == "heat":
+		heat_left = maxf(heat_left, 5.0)
+	elif kind == "gravity":
+		gravity_left = maxf(gravity_left, 4.5)
+	elif kind == "void":
+		# Void partially bypasses shields; players must prevent the strike.
+		hull = maxf(0.0, hull - amount * 0.30)
 	elif kind == "corrosion":
 		corrosion_left = maxf(corrosion_left, 5.0)
 	elif kind == "disrupt":
@@ -918,7 +927,7 @@ func _log(message: String) -> void:
 		events.pop_front()
 
 func payout() -> int:
-	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
+	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
 	return base
@@ -927,7 +936,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
