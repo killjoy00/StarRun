@@ -439,6 +439,8 @@ func _show_cards() -> void:
 	_label(box, "UPLINK AVAILABLE", 13, CYAN)
 	_label(box, "Choose your upgrade", 26)
 	_label(box, "LEVEL %02d · Flight paused" % sim.level, 14, MUTED)
+	if sim.stage == 2 and sim.time - sim.stage_start < 1.0:
+		_wrapped(box, "STAGE 2 · ION STORM. Cyan fire stops shield recovery. Green corrosion damages your hull over time. Purple disruption delays ability cooldowns.", 16, AMBER)
 	for i in range(sim.cards.size()):
 		var card: Dictionary = sim.cards[i]
 		var current: int = int(sim.upgrades.get(card.id, 0))
