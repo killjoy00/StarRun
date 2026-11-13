@@ -382,6 +382,68 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 			if near >= 1:
 				sim.activate("aegis")
 
+
+func _test_20_active_pool() -> void:
+	check(Catalog.ABILITIES.size() == 20 and Catalog.ACTIVE_SLOTS == 4, "Twenty abilities must compete for four active slots")
+	var seen := {}
+	for id in Catalog.ABILITIES:
+		check(not seen.has(id), "Ability IDs must be unique")
+		seen[id] = true
+		var sim := Sim.new(911, {}, "vanguard")
+		check(sim.content.abilities.has(id) and sim.content.cards.any(func(card): return card.id == id and card.tag == "ABILITY"), "Each active needs cooldown and draft card")
+		if id != "aegis":
+			_install(sim, id)
+		check(id in sim.active_slots and sim.activate(id), "Every active must cast once installed: " + id)
+	var sim := Sim.new(20)
+	check(not sim.activate("nova"), "Unslotted abilities must not cast")
+	for id in ["nova", "flak", "emp"]:
+		_install(sim, id)
+	check(sim.active_slots.size() == 4, "Three installed abilities fill all four slots")
+	sim.level = 8
+	sim._offer_cards()
+	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0), "Full active bars must not receive unusable ability cards")
+	var checkpoint := sim.snapshot()
+	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_stage_difficulty_and_pressure() -> void:
+	var normal := Sim.new(111, {}, "vanguard", "rookie", "normal")
+	var hard := Sim.new(111, {}, "vanguard", "rookie", "hard")
+	var insane := Sim.new(111, {}, "vanguard", "rookie", "insane")
+	for sim in [normal, hard, insane]:
+		sim._add_enemy("drone", Vector2(240, 100))
+	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
+	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
+	check(normal.content.stage_count == 2 and normal.content.abilities.aegis.cooldown >= 14, "Two stages and slower Aegis must be configured")
+	var sim := Sim.new(777)
+	sim.boss_spawned = true
+	sim.enemies = [{"id":9, "kind":"boss", "p":Vector2(270,135), "hp":10.0, "max_hp":6200.0, "speed":0.0, "fire":99.0, "xp":0, "phase":0.0}]
+	sim._damage_enemy(sim.enemies[0], 30.0, "pulse")
+	check(sim.stage_clears == 1 and sim.stage_transition_queued and not sim.ended, "Harvester must lead to Stage 2")
+	sim._enter_stage_two()
+	check(sim.stage == 2 and sim.stage_start == sim.time and sim.pending_levels == 1, "Stage 2 must reset schedules and offer a milestone draft")
+	sim._add_enemy("ion_frigate", Vector2(250,100))
+	check(sim.enemies[0].max_hp > normal.enemies[0].max_hp, "Stage 2 must be tougher than Stage 1")
+	sim.enemies.clear()
+	sim._spawn_boss()
+	check(sim.enemies.size() == 1 and sim.enemies[0].kind == "boss2", "Storm Carrier must exist as a second boss")
+	sim._damage_enemy(sim.enemies[0], 100000.0, "pulse")
+	check(sim.ended and sim.won and sim.stage_clears == 2, "Stage 2 boss must complete the run")
+	var statuses := Sim.new(19)
+	statuses._hit(1, "ion", "test")
+	check(statuses.shield_offline >= 4.0, "Ion fire must disable shield regeneration")
+	statuses._hit(1, "corrosion", "test")
+	check(statuses.corrosion_left >= 5.0, "Corrosion must cause continuing damage")
+	statuses.cooldowns.aegis = 4.0
+	statuses._hit(1, "disrupt", "test")
+	check(statuses.cooldowns.aegis >= 6.0, "Disruption must delay equipped cooldowns")
+	var scatter := Sim.new(11)
+	for i in range(650):
+		scatter.bullets.append({"p":Vector2(10 + i % 50 * 10, 200 + int(i / 50) * 10), "v":Vector2.ZERO, "damage":1.0, "kind":"chaff", "source":"stress"})
+	scatter.bullets.append({"p":Vector2(270, 550), "v":Vector2.ZERO, "damage":12.0, "kind":"mine", "hp":12.0, "source":"stress"})
+	scatter.shots.append({"p":Vector2(270, 550), "v":Vector2.ZERO, "damage":20.0, "weapon":"pulse", "target":-1})
+	scatter._update_shots()
+	check(scatter.bullets[-1].hp <= 0.0, "Spatial lookup must preserve point-defense collisions among hundreds of bullets")
+
 func _balance(seeds: int) -> Dictionary:
 	var result: Dictionary = {}
 	for strategy in ["never", "on_cooldown", "timed"]:
