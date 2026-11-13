@@ -265,6 +265,7 @@ func _clear_overlay() -> void:
 		overlay.remove_child(child)
 		child.queue_free()
 	card_buttons.clear()
+	stage_clear_button = null
 
 func _panel(width: float = 440.0) -> VBoxContainer:
 	_clear_overlay()
@@ -294,7 +295,74 @@ func _panel(width: float = 440.0) -> VBoxContainer:
 func _wrapped(parent: Node, value: String, size: int = 15, color: Color = MUTED) -> Label:
 	var label := _label(parent, value, size, color)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.custom_minimum_size.x = 0
 	return label
+
+func _reading_screen(width: float = 530.0) -> Dictionary:
+	# Full-height reading layout: title and actions remain pinned while details scroll.
+	_clear_overlay()
+	var screen := get_viewport_rect().size
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.018, 0.035, 0.95)
+	shade.size = screen
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(shade)
+	var center := CenterContainer.new()
+	center.size = screen
+	overlay.add_child(center)
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(minf(width, screen.x - 28), minf(745, screen.y - 28))
+	panel.add_theme_stylebox_override("panel", _style(Color("0c1828"), Color("3c5b69"), 1))
+	center.add_child(panel)
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 10)
+	layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(layout)
+	var header := VBoxContainer.new()
+	header.add_theme_constant_override("separation", 3)
+	layout.add_child(header)
+	var top_separator := HSeparator.new()
+	layout.add_child(top_separator)
+	reading_scroll = ScrollContainer.new()
+	reading_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	reading_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	reading_scroll.custom_minimum_size.y = 0
+	layout.add_child(reading_scroll)
+	var body := VBoxContainer.new()
+	body.add_theme_constant_override("separation", 10)
+	body.custom_minimum_size.x = 0
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	reading_scroll.add_child(body)
+	var bottom_separator := HSeparator.new()
+	layout.add_child(bottom_separator)
+	reading_footer = HBoxContainer.new()
+	reading_footer.add_theme_constant_override("separation", 8)
+	layout.add_child(reading_footer)
+	reading_panel = panel
+	return {"header":header, "body":body, "footer":reading_footer, "panel":panel, "scroll":reading_scroll}
+
+func _reading_card(parent: Node, heading: String, detail: String, accent: Color = CYAN) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.custom_minimum_size.x = 0
+	panel.add_theme_stylebox_override("panel", _style(Color("132638"), Color("28495c")))
+	parent.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	panel.add_child(content)
+	_wrapped(content, heading, 17, accent)
+	_wrapped(content, detail, 15, Color("e1edf4"))
+	return panel
+
+func _reading_cta(parent: HBoxContainer, title: String, action: Callable, primary: bool = false) -> Button:
+	var button := _button(parent, title, action, primary)
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.custom_minimum_size.x = 0
+	button.custom_minimum_size.y = 54
+	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return button
 
 func _show_menu() -> void:
 	mode = "menu"
