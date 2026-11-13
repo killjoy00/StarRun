@@ -31,8 +31,15 @@ mkdir -p build/ios
 test -d build/ios/StarRun.xcodeproj
 test -d build/ios/StarRun
 mkdir -p build/ios/xcode
-mv build/ios/StarRun.xcodeproj build/ios/StarRun build/ios/xcode/
-(cd build/ios/xcode && zip -qry ../StarRun.zip StarRun.xcodeproj StarRun)
+# Xcode references all generated XCFrameworks relative to the project root.
+# Moving only StarRun.xcodeproj and StarRun/ breaks MoltenVK and engine paths.
+for generated in build/ios/*; do
+  [[ "$generated" == "build/ios/xcode" ]] && continue
+  mv "$generated" build/ios/xcode/
+done
+test -d build/ios/xcode/StarRun.xcodeproj
+test -d build/ios/xcode/StarRun
+(cd build/ios/xcode && zip -qry ../StarRun.zip .)
 test -s build/ios/StarRun.zip
 unzip -tq build/ios/StarRun.zip
 project=$(find build/ios/xcode -name '*.xcodeproj' -type d -print -quit)
