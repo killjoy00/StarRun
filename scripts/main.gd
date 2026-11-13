@@ -750,11 +750,8 @@ func _input(event: InputEvent) -> void:
 		elif event.keycode == KEY_TAB:
 			_cycle_speed()
 			get_viewport().set_input_as_handled()
-		elif event.keycode in [KEY_1, KEY_SPACE]:
-			_activate("aegis")
-			get_viewport().set_input_as_handled()
-		elif event.keycode >= KEY_2 and event.keycode <= KEY_6:
-			_activate(Catalog.ABILITIES[event.keycode - KEY_1])
+		elif event.keycode == KEY_SPACE or (event.keycode >= KEY_1 and event.keycode <= KEY_4):
+			_activate_slot(0 if event.keycode == KEY_SPACE else event.keycode - KEY_1)
 			get_viewport().set_input_as_handled()
 	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
 		_choose(event.keycode - KEY_1)
@@ -765,13 +762,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.button_index == JOY_BUTTON_START:
 			_toggle_pause()
 		elif mode == "playing":
-			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B, JOY_BUTTON_LEFT_SHOULDER, JOY_BUTTON_RIGHT_SHOULDER]
+			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B]
 			var index := bindings.find(event.button_index)
 			if index >= 0:
-				_activate(Catalog.ABILITIES[index])
+				_activate_slot(index)
 
 
 func _sector_name(at: float) -> String:
+	if sim.stage > 1:
+		return "STORM CARRIER" if sim.boss_spawned else "ION STORM · STAGE 2"
 	if at < 65:
 		return "DEBRIS BELT"
 	if at < 125:
@@ -781,6 +780,12 @@ func _sector_name(at: float) -> String:
 	if at < 240:
 		return "DARK RIFT"
 	return "HARVESTER ZONE"
+
+func _cycle_difficulty() -> void:
+	var current := Catalog.DIFFICULTIES.find(str(profile.get("difficulty", "normal")))
+	profile.difficulty = Catalog.DIFFICULTIES[(current + 1) % Catalog.DIFFICULTIES.size()]
+	_save_profile()
+	_show_menu()
 
 func _cycle_speed() -> void:
 	var index := speed_options.find(game_speed)
