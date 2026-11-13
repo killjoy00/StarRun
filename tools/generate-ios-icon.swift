@@ -1,59 +1,57 @@
-// Generate a non-transparent 1024px App Store icon matching assets/icon.svg.
-// Uses only macOS AppKit so cloud builds need no image dependencies.
-import AppKit
+// Generate an opaque 1024px PNG mirroring assets/icon.svg.
+// CoreGraphics works without AppKit or a window server on macOS CI.
 import Foundation
+import CoreGraphics
+import ImageIO
 
 guard CommandLine.arguments.count == 2 else {
     fputs("Usage: swift tools/generate-ios-icon.swift assets/ios-icon.png\n", stderr)
     exit(2)
 }
 let n = 1024
-guard let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: n, pixelsHigh: n,
-    bitsPerSample: 8, samplesPerPixel: 3, hasAlpha: false, isPlanar: false,
-    colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
-    let graphics = NSGraphicsContext(bitmapImageRep: bitmap) else {
-    fatalError("Cannot allocate icon")
+guard let ctx = CGContext(data: nil, width: n, height: n, bitsPerComponent: 8,
+                          bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                          bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else {
+    fatalError("Cannot allocate CoreGraphics image context")
 }
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = graphics
-let context = graphics.cgContext
-context.translateBy(x: 0, y: CGFloat(n))
-context.scaleBy(x: 4, y: -4)
+ctx.translateBy(x: 0, y: CGFloat(n))
+ctx.scaleBy(x: 4, y: -4)
 func color(_ hex: UInt32) -> CGColor {
     CGColor(red: CGFloat((hex >> 16) & 255) / 255,
             green: CGFloat((hex >> 8) & 255) / 255,
             blue: CGFloat(hex & 255) / 255, alpha: 1)
 }
-context.setFillColor(color(0x070c19))
-context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
-context.beginPath()
-context.move(to: CGPoint(x: 128, y: 37))
-context.addLine(to: CGPoint(x: 199, y: 200))
-context.addLine(to: CGPoint(x: 128, y: 168))
-context.addLine(to: CGPoint(x: 57, y: 200))
-context.closePath()
-context.setFillColor(color(0x123b49))
-context.setStrokeColor(color(0x60f4e1))
-context.setLineWidth(9)
-context.setLineJoin(.round)
-context.drawPath(using: .fillStroke)
-context.beginPath()
-context.move(to: CGPoint(x: 128, y: 78))
-context.addLine(to: CGPoint(x: 128, y: 164))
-context.move(to: CGPoint(x: 105, y: 189))
-context.addLine(to: CGPoint(x: 128, y: 222))
-context.addLine(to: CGPoint(x: 151, y: 189))
-context.setStrokeColor(color(0xfcba69))
-context.setLineWidth(8)
-context.setLineCap(.round)
-context.setLineJoin(.round)
-context.strokePath()
-NSGraphicsContext.restoreGraphicsState()
+ctx.setFillColor(color(0x070c19))
+ctx.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+ctx.beginPath()
+ctx.move(to: CGPoint(x: 128, y: 37))
+ctx.addLine(to: CGPoint(x: 199, y: 200))
+ctx.addLine(to: CGPoint(x: 128, y: 168))
+ctx.addLine(to: CGPoint(x: 57, y: 200))
+ctx.closePath()
+ctx.setFillColor(color(0x123b49))
+ctx.setStrokeColor(color(0x60f4e1))
+ctx.setLineWidth(9)
+ctx.setLineJoin(.round)
+ctx.drawPath(using: .fillStroke)
+ctx.beginPath()
+ctx.move(to: CGPoint(x: 128, y: 78))
+ctx.addLine(to: CGPoint(x: 128, y: 164))
+ctx.move(to: CGPoint(x: 105, y: 189))
+ctx.addLine(to: CGPoint(x: 128, y: 222))
+ctx.addLine(to: CGPoint(x: 151, y: 189))
+ctx.setStrokeColor(color(0xfcba69))
+ctx.setLineWidth(8)
+ctx.setLineCap(.round)
+ctx.setLineJoin(.round)
+ctx.strokePath()
+guard let image = ctx.makeImage() else { fatalError("Cannot render icon") }
 let url = URL(fileURLWithPath: CommandLine.arguments[1])
 try FileManager.default.createDirectory(at: url.deletingLastPathComponent(),
                                          withIntermediateDirectories: true)
-guard let png = bitmap.representation(using: .png, properties: [:]) else {
-    fatalError("Cannot encode PNG")
+guard let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else {
+    fatalError("Cannot create PNG destination")
 }
-try png.write(to: url)
+CGImageDestinationAddImage(destination, image, nil)
+guard CGImageDestinationFinalize(destination) else { fatalError("Cannot write PNG") }
 print("Wrote \(url.path) (\(n)x\(n), opaque)")
