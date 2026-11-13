@@ -20,8 +20,13 @@ jobs:
         run: tools/install-godot.sh
       - name: Import project
         run: godot --headless --path . --editor --import --quit
-      - name: Check first scene
-        run: godot --headless --path . --quit-after 10
+      - name: Check first scene and reject script parse errors
+        run: |
+          godot --headless --path . --quit-after 10 2>&1 | tee /tmp/starrun-startup.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-startup.log; then
+            echo "::error::Godot reported a script parse failure"
+            exit 1
+          fi
       - name: Phone and Steam Deck layout checks
         run: godot --headless --path . --script tests/ui_smoke.gd
       - name: Replay, fairness, draft, save, and matched-seed balance checks
