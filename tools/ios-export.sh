@@ -26,10 +26,15 @@ test -s assets/ios-icon.png
 mkdir -p build/ios
 "$godot" --headless --path . --editor --import --quit
 "$godot" --headless --path . --export-release iOS build/ios/StarRun.zip
+# Godot's iOS "project only" mode creates sibling directories rather than a ZIP.
+# Keep the Xcode project and payload together, and archive them for CI artifacts.
+test -d build/ios/StarRun.xcodeproj
+test -d build/ios/StarRun
+mkdir -p build/ios/xcode
+mv build/ios/StarRun.xcodeproj build/ios/StarRun build/ios/xcode/
+(cd build/ios/xcode && zip -qry ../StarRun.zip StarRun.xcodeproj StarRun)
 test -s build/ios/StarRun.zip
 unzip -tq build/ios/StarRun.zip
-mkdir -p build/ios/xcode
-unzip -oq build/ios/StarRun.zip -d build/ios/xcode
 project=$(find build/ios/xcode -name '*.xcodeproj' -type d -print -quit)
 if [[ -z "$project" ]]; then
   echo "::error::Godot iOS export did not contain an Xcode project"
