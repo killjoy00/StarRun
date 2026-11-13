@@ -11,6 +11,12 @@ var seed_value := 1
 # A separate seeded course never consumes the combat/draft random stream.
 var course: Array[Dictionary] = []
 var movement_version := 4
+var difficulty := "normal"
+var stage := 1
+var stage_start := 0.0
+var stage_clears := 0
+var stage_transition_queued := false
+var active_slots: Array = []
 var ship_id := "vanguard"
 var pilot_id := "rookie"
 var next_hazard := 20.0
@@ -23,9 +29,17 @@ var max_shield := 50.0
 var shield_offline := 0.0
 var aegis_left := 0.0
 var cooldowns := {"aegis": 0.0, "nova": 0.0, "barrage": 0.0, "overdrive": 0.0, "chrono": 0.0, "mend": 0.0}
-var upgrades := {"pulse": 1, "seeker": 1, "armor": 0, "regen": 0, "hull": 0, "coolant": 0, "aegis": 1, "nova": 1}
+var upgrades := {"pulse": 1, "seeker": 1, "armor": 0, "regen": 0, "hull": 0, "coolant": 0, "aegis": 0, "nova": 0}
 var overdrive_left := 0.0
 var chrono_left := 0.0
+var emp_left := 0.0
+var barrier_left := 0.0
+var focus_left := 0.0
+var decoy_left := 0.0
+var jammer_left := 0.0
+var salvage_left := 0.0
+var corrosion_left := 0.0
+var bonus_cores := 0
 var mend_left := 0.0
 var mend_rate := 0.0
 var emergency_used := false
@@ -41,7 +55,7 @@ var shots: Array = []
 var effects: Array = []
 var charges: Array = []
 var events: Array = []
-var damage_taken := {"chaff": 0.0, "heavy": 0.0, "ordnance": 0.0, "hazard": 0.0}
+var damage_taken := {"chaff": 0.0, "heavy": 0.0, "ordnance": 0.0, "hazard": 0.0, "ion": 0.0, "corrosion": 0.0, "disrupt": 0.0}
 var damage_dealt := {"pulse": 0.0, "seeker": 0.0, "nova": 0.0, "barrage": 0.0, "arc": 0.0, "lance": 0.0}
 var xp := 0.0
 var level := 1
@@ -62,13 +76,14 @@ var beams_fired := 0
 var beams_cancelled := 0
 var meta := Catalog.defaults()
 
-func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie") -> void:
+func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal") -> void:
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
 	ship_id = Catalog.ship(selected_ship).id
 	pilot_id = Catalog.pilot(selected_pilot).id
+	difficulty = selected_difficulty if selected_difficulty in Catalog.DIFFICULTIES else "normal"
 	seed_value = run_seed
 	rng.seed = run_seed
 	_build_course()
@@ -83,6 +98,9 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
 	upgrades.arc = int(chassis.arc)
 	upgrades.mend = int(chassis.mend)
+	var signature: String = chassis.signature
+	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0)))
+	active_slots = [signature]
 	rerolls_left = meta.rerolls + (1 if pilot_id == "tactician" else 0)
 	banishes_left = meta.banishes
 	skips_left = meta.skips
@@ -95,7 +113,7 @@ func _build_course() -> void:
 	course.append({"t": 0.0, "p": Vector2(270, 790)})
 	var arrival := 0.0
 	var previous := Vector2(270, 790)
-	while arrival < 420.0:
+	while arrival < 1200.0:
 		var movement: float = float(Catalog.ship(ship_id).movement) if movement_version >= 4 else 1.0
 		arrival += (pilot.randf_range(1.65, 2.8) / movement if movement_version >= 4 else (pilot.randf_range(2.2, 4.0) if movement_version >= 3 else pilot.randf_range(3.8, 7.5)))
 		var target: Vector2
@@ -118,9 +136,16 @@ func ship_position(at: float = -1.0) -> Vector2:
 	# Keep an old suspended flight's original trajectory; all new flights use the new pilot.
 	if movement_version == 1:
 		return Vector2(WIDTH * 0.5 + sin(at * TAU / 6.0) * WIDTH * 0.30, 790.0)
-	var index := 1
-	while index < course.size() - 2 and at > float(course[index + 1].t):
-		index += 1
+	# Binary search avoids re-scanning the growing two-stage course for every projectile.
+	var lo := 1
+	var hi := course.size() - 2
+	while lo < hi:
+		var mid := (lo + hi) / 2
+		if at > float(course[mid + 1].t):
+			lo = mid + 1
+		else:
+			hi = mid
+	var index := lo
 	var current: Dictionary = course[index]
 	var next: Dictionary = course[index + 1]
 	var duration: float = next.t - current.t
@@ -160,6 +185,16 @@ func step() -> void:
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
+	for timer in ["emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left"]:
+		set(timer, maxf(0.0, float(get(timer)) - DT))
+	if corrosion_left > 0.0:
+		var corrosion_damage := DT * 1.4
+		hull = maxf(0.0, hull - corrosion_damage)
+		damage_taken.corrosion += corrosion_damage
+		if hull <= 0.0:
+			ended = true
+			_log("Hull lost to corrosion")
+			return
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
@@ -171,11 +206,13 @@ func step() -> void:
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
-	if not boss_spawned and time >= float(content.boss_at):
+	if not boss_spawned and time - stage_start >= float(content.boss_at):
 		_spawn_boss()
 	if time >= next_spawn and not boss_spawned:
 		_spawn_enemy()
-		next_spawn = time + maxf(0.72, 1.65 - time / 260.0)
+		var stage_time := time - stage_start
+		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+		next_spawn = time + pace / ((1.45 if stage > 1 else 1.0) * threat_scale())
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -184,35 +221,43 @@ func step() -> void:
 	_update_weapons()
 	_update_bullets()
 	_update_shots()
+	if stage_transition_queued:
+		_enter_stage_two()
 	if pending_levels > 0 and not ended:
 		_offer_cards()
 
+func threat_scale() -> float:
+	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
+
 func _spawn_enemy() -> void:
-	if enemies.size() >= 20:
+	if enemies.size() >= (26 if stage > 1 else 20):
 		return
 	# Gradually broaden the roster rather than throwing every threat at a new player.
 	var pool: Array = ["drone", "drone", "drone", "rusher"]
-	if time > 25:
+	var stage_time := time - stage_start
+	if stage_time > 25:
 		pool.append_array(["interceptor", "gunship", "drone"])
-	if time > 65:
+	if stage_time > 65:
 		pool.append_array(["sniper", "missile_bomber", "interceptor"])
-	if time > 110:
+	if stage_time > 110:
 		pool.append_array(["carrier", "shieldguard", "minelayer", "missile_bomber"])
-	if time > 170:
+	if stage_time > 170:
 		pool.append_array(["shieldguard", "minelayer", "carrier"])
+	if stage > 1 or (difficulty == "insane" and stage_time > 120):
+		pool.append_array(["ion_frigate", "corroder", "disruptor", "ion_frigate", "missile_bomber", "minelayer"])
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
 	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := 1.0 + time / 340.0
+	var scaling := (1.0 + (time - stage_start) / 340.0) * (1.55 if stage > 1 else 1.0) * threat_scale()
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 func _spawn_hazard() -> void:
-	if enemies.size() >= 19:
+	if enemies.size() >= (25 if stage > 1 else 19):
 		return
-	var kind := "boulder" if rng.randf() < 0.65 else "station"
+	var kind := "station" if stage > 1 and rng.randf() < 0.6 else ("boulder" if rng.randf() < 0.65 else "station")
 	_add_enemy(kind, Vector2(rng.randf_range(85, 455), -65))
 	_log("Incoming debris" if kind == "boulder" else "Hostile station detected")
 
@@ -224,9 +269,28 @@ func _spawn_boss() -> void:
 	shield = max_shield
 	hull = minf(max_hull, hull + 15)
 	heavy_ready_at = time + 3.0
-	enemies.append({"id": next_id, "kind": "boss", "p": Vector2(270, 135), "hp": 6200.0, "max_hp": 6200.0, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
+	var boss_kind := "boss2" if stage > 1 else "boss"
+	var hp := (10000.0 if stage > 1 else 6200.0) * threat_scale()
+	enemies.append({"id": next_id, "kind": boss_kind, "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
-	_log("Harvester arrived · shield refilled, +15 hull")
+	_log(("Storm Carrier" if stage > 1 else "Harvester") + " arrived · shield refilled, +15 hull")
+
+func _enter_stage_two() -> void:
+	stage = 2
+	stage_start = time
+	stage_transition_queued = false
+	boss_spawned = false
+	enemies.clear()
+	bullets.clear()
+	shots.clear()
+	charges.clear()
+	shield = max_shield
+	hull = minf(max_hull, hull + 20.0)
+	next_spawn = time + 1.5
+	next_hazard = time + 15.0
+	heavy_ready_at = time + 10.0
+	pending_levels += 1 # One substantial stage-clear build choice.
+	_log("STAGE 2 · ION STORM · NEW THREATS")
 
 func _update_enemies() -> void:
 	var pace := 0.45 if chrono_left > 0 else 1.0
