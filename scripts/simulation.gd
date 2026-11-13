@@ -359,15 +359,21 @@ func _update_enemies() -> void:
 		if enemy.hp <= 0:
 			continue
 		var kind: String = enemy.kind
-		if kind in ["boss", "boss2"]:
-			enemy.p.x = 270.0 + sin(time * (0.9 if stage > 1 else 0.7)) * 105.0
+		if kind.begins_with("boss"):
+			enemy.p.x = 270.0 + sin(time * (0.7 + stage * 0.16)) * (100.0 + stage * 9.0)
 		else:
 			enemy.p.y += enemy.speed * DT * pace
 			if kind == "interceptor":
 				enemy.p.x += cos(time * 4.2 + enemy.phase) * 135.0 * DT * pace
-			elif kind == "rusher":
-				enemy.p.x = move_toward(enemy.p.x, ship_position().x, 28.0 * DT * pace)
-			elif kind == "minelayer":
+			elif kind in ["rusher", "ember_hunter", "storm_weaver"]:
+				enemy.p.x = move_toward(enemy.p.x, ship_position().x, (28.0 if kind == "rusher" else 65.0) * DT * pace)
+			elif kind == "phase_stalker":
+				var cycle: int = floori((time - stage_start + float(enemy.phase)) / 2.8)
+				if int(enemy.get("blink", -1)) != cycle:
+					enemy.blink = cycle
+					enemy.p.x = clampf(270.0 + sin(cycle * 2.7 + enemy.phase) * 175.0, 52.0, 488.0)
+					effects.append({"kind":"phase", "p":enemy.p, "life":0.50, "max_life":0.50, "born":tick})
+			elif kind in ["minelayer", "slag_bomber", "echo_carrier"]:
 				enemy.p.x += sin(time * 3.0 + enemy.phase) * 48.0 * DT * pace
 			else:
 				enemy.p.x += sin(time * 1.8 + enemy.phase) * 12.0 * DT * pace
@@ -380,46 +386,68 @@ func _update_enemies() -> void:
 				enemy.hp = -1.0
 			continue
 		enemy.fire -= DT * pace
-		if kind in ["sniper", "boss", "boss2"] and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
+		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 1.8
-			charges.append({"source": enemy.id, "x": ship_position(time + lead).x, "remaining": lead, "duration": lead, "damage": (45.0 if kind == "boss2" else (35.0 if kind == "boss" else 28.0)) * threat_scale()})
-			heavy_ready_at = time + (6.0 if stage > 1 else (7.5 if kind == "boss" else 10.0))
-			_log("Heavy beam charging")
+			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
+			var beam_count := 2 if kind == "boss4" else 1
+			for beam in range(beam_count):
+				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0
+				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
+			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else 5.2)))
+			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
 			if jammer_left > 0.0 or emp_left > 0.0:
 				enemy.fire = 0.5
 				continue
-			enemy.fire = (1.6 if stage > 1 else 2.1) if kind in ["boss", "boss2"] else float(content.enemies[kind].interval) / threat_scale()
+			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
 			flight_time = enemy.p.distance_to(ship_position(time + flight_time)) / 215.0
-			var aim := ship_position(time + flight_time)
+			var aim: Vector2 = ship_position(time + flight_time)
 			if decoy_left > 0.0:
 				aim = Vector2(70 if ship_position().x > 270 else 470, 700)
 			var direction: Vector2 = (aim - enemy.p).normalized()
-			if kind == "carrier":
-				if enemies.size() + minions.size() < 19:
-					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28)})
-				bullets.append({"p": enemy.p, "v": direction * 165.0, "damage": 2.0, "kind": "chaff", "source": kind})
-			elif kind == "minelayer":
-				bullets.append({"p": enemy.p, "v": Vector2(0, 62), "damage": 12.0, "kind": "mine", "hp": 14.0, "fuse": 3.4, "source": kind})
+			if kind in ["carrier", "echo_carrier"]:
+				if enemies.size() + minions.size() < _enemy_limit() - 2:
+					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28), "kind":"phase_stalker" if kind == "echo_carrier" else "drone"})
+				bullets.append({"p": enemy.p, "v": direction * 165.0, "damage": 2.0 * threat_scale(), "kind": "void" if kind == "echo_carrier" else "chaff", "source": kind})
+			elif kind in ["minelayer", "slag_bomber"]:
+				var is_slag := kind == "slag_bomber"
+				bullets.append({"p": enemy.p, "v": Vector2(0, 75 if is_slag else 62), "damage": (18.0 if is_slag else 12.0) * threat_scale(), "kind": "slag" if is_slag else "mine", "hp": 18.0 if is_slag else 14.0, "fuse": 2.9 if is_slag else 3.4, "source": kind})
 			else:
-				var count := (13 if kind == "boss2" else 9) if kind in ["boss", "boss2"] else (5 if kind == "gunship" else (2 if kind in ["interceptor", "rusher"] else 3))
+				var count := 3
+				if kind == "gunship": count = 5
+				elif kind in ["interceptor", "rusher"]: count = 2
+				elif kind in ["arc_spire", "forge_turret"]: count = 9
+				elif kind == "gravity_sentinel": count = 7
+				elif kind.begins_with("boss"): count = 9 + stage * 2
+				var bullet_kind := "chaff"
+				match kind:
+					"ion_frigate", "arc_spire", "storm_weaver": bullet_kind = "ion"
+					"corroder": bullet_kind = "corrosion"
+					"disruptor": bullet_kind = "disrupt"
+					"ember_hunter", "forge_turret", "boss3": bullet_kind = "heat"
+					"phase_stalker", "void_lancer", "boss4": bullet_kind = "void"
+					"gravity_sentinel": bullet_kind = "gravity"
+				if kind == "boss4" and floori(time * 0.5) % 2 == 0:
+					bullet_kind = "gravity"
 				for i in range(count):
-					var angle := (i - (count - 1) / 2.0) * 0.15
-					var bullet_kind := ("ion" if kind == "ion_frigate" else ("corrosion" if kind == "corroder" else ("disrupt" if kind == "disruptor" else "chaff")))
-					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (245.0 if kind == "interceptor" else 215.0), "damage": (2.1 if kind in ["boss", "boss2"] else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
-				if kind in ["gunship", "missile_bomber", "station", "boss2"]:
-					var volley := 3 if kind == "boss2" else (2 if kind == "missile_bomber" else 1)
+					var angle: float = (i - (count - 1) / 2.0) * (0.19 if kind in ["arc_spire", "forge_turret"] else 0.15)
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
+				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
+					var volley := 3 if kind in ["boss2", "boss4"] else (2 if kind == "missile_bomber" else 1)
 					for i in range(volley):
-						bullets.append({"p":enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale(), "kind":"ordnance", "hp":12.0, "source":kind})
+						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale(), "kind":"ordnance", "hp":12.0, "source":kind})
+				if kind == "boss3":
+					for i in range(2):
+						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":kind})
 		if enemy.p.y > 885:
 			enemy.hp = -1.0
 			if kind not in ["boulder", "station"]:
 				_hit(5.0, "hazard", "Escaped " + kind)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 	for minion in minions:
-		if enemies.size() < (26 if stage > 1 else 20):
-			_add_enemy("drone", minion.p)
+		if enemies.size() < _enemy_limit():
+			_add_enemy(str(minion.kind), minion.p)
 
 func _update_charges() -> void:
 	for charge in charges:
