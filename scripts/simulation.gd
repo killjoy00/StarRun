@@ -217,7 +217,7 @@ func step() -> void:
 	if time >= next_spawn and not boss_spawned:
 		_spawn_enemy()
 		var stage_time := time - stage_start
-			var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale())
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
