@@ -51,7 +51,7 @@ func play(id: String, gain_db: float = -10.0) -> void:
 			return
 
 func update(sim: RefCounted, mode: String, delta: float) -> void:
-	var flying := mode == "playing"
+	var flying := mode in ["playing", "stage_clear", "warp"]
 	var intense: bool = sim.boss_spawned
 	var ducked: bool = not sim.charges.is_empty()
 	var music_gain := (-23.0 if ducked else -17.0) if flying else -28.0
