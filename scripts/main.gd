@@ -397,17 +397,19 @@ func _update_hud() -> void:
 	status.text = "%s  %02d:%02d" % [sim.difficulty.to_upper(), seconds / 60, seconds % 60]
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
-		var occupied := i < sim.active_slots.size()
+		var occupied: bool = i < sim.active_slots.size()
 		var id: String = str(sim.active_slots[i]) if occupied else ""
 		var cooldown: float = float(sim.cooldowns.get(id, 0.0))
-		var learned := occupied and sim.upgrades[id] > 0
+		var learned: bool = occupied and int(sim.upgrades.get(id, 0)) > 0
 		var title: String = sim.content.abilities[id].name.to_upper() if occupied else "EMPTY SLOT"
 		var status_text := ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "DRAFT AN ABILITY"
 		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + " · Level %d" % sim.upgrades[id]) if learned else "Install an active ability in an upgrade draft"
-		var badge = button.get_child(0)
-		badge.icon_id = id
+		var badge: Control = button.get_child(0)
+		if badge.get("icon_id") != id:
+			badge.set("icon_id", id)
+			badge.queue_redraw()
 		if occupied and not previous_ready.has(id):
 			previous_ready[id] = true
 	build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
