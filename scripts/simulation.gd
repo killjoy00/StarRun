@@ -299,8 +299,8 @@ func _update_enemies() -> void:
 		if enemy.hp <= 0:
 			continue
 		var kind: String = enemy.kind
-		if kind == "boss":
-			enemy.p.x = 270.0 + sin(time * 0.7) * 105.0
+		if kind in ["boss", "boss2"]:
+			enemy.p.x = 270.0 + sin(time * (0.9 if stage > 1 else 0.7)) * 105.0
 		else:
 			enemy.p.y += enemy.speed * DT * pace
 			if kind == "interceptor":
@@ -320,16 +320,22 @@ func _update_enemies() -> void:
 				enemy.hp = -1.0
 			continue
 		enemy.fire -= DT * pace
-		if kind in ["sniper", "boss"] and time >= heavy_ready_at and charges.is_empty():
+		if kind in ["sniper", "boss", "boss2"] and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 1.8
-			charges.append({"source": enemy.id, "x": ship_position(time + lead).x, "remaining": lead, "duration": lead, "damage": 35.0 if kind == "boss" else 28.0})
-			heavy_ready_at = time + (7.5 if kind == "boss" else 10.0)
+			charges.append({"source": enemy.id, "x": ship_position(time + lead).x, "remaining": lead, "duration": lead, "damage": (45.0 if kind == "boss2" else (35.0 if kind == "boss" else 28.0)) * threat_scale()})
+			heavy_ready_at = time + (6.0 if stage > 1 else (7.5 if kind == "boss" else 10.0))
 			_log("Heavy beam charging")
 		if enemy.fire <= 0.0:
-			enemy.fire = 2.1 if kind == "boss" else float(content.enemies[kind].interval)
+			if jammer_left > 0.0 or emp_left > 0.0:
+				enemy.fire = 0.5
+				continue
+			enemy.fire = (1.6 if stage > 1 else 2.1) if kind in ["boss", "boss2"] else float(content.enemies[kind].interval) / threat_scale()
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
 			flight_time = enemy.p.distance_to(ship_position(time + flight_time)) / 215.0
-			var direction: Vector2 = (ship_position(time + flight_time) - enemy.p).normalized()
+			var aim := ship_position(time + flight_time)
+			if decoy_left > 0.0:
+				aim = Vector2(70 if ship_position().x > 270 else 470, 700)
+			var direction: Vector2 = (aim - enemy.p).normalized()
 			if kind == "carrier":
 				if enemies.size() + minions.size() < 19:
 					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28)})
@@ -337,21 +343,22 @@ func _update_enemies() -> void:
 			elif kind == "minelayer":
 				bullets.append({"p": enemy.p, "v": Vector2(0, 62), "damage": 12.0, "kind": "mine", "hp": 14.0, "fuse": 3.4, "source": kind})
 			else:
-				var count := 9 if kind == "boss" else (5 if kind == "gunship" else (2 if kind in ["interceptor", "rusher"] else 3))
+				var count := (13 if kind == "boss2" else 9) if kind in ["boss", "boss2"] else (5 if kind == "gunship" else (2 if kind in ["interceptor", "rusher"] else 3))
 				for i in range(count):
 					var angle := (i - (count - 1) / 2.0) * 0.15
-					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (245.0 if kind == "interceptor" else 215.0), "damage": 2.1 if kind == "boss" else (1.25 if kind in ["rusher", "interceptor"] else 1.6), "kind": "chaff", "source": kind})
-				if kind in ["gunship", "missile_bomber", "station"]:
-					var volley := 2 if kind == "missile_bomber" else 1
+					var bullet_kind := ("ion" if kind == "ion_frigate" else ("corrosion" if kind == "corroder" else ("disrupt" if kind == "disruptor" else "chaff")))
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (245.0 if kind == "interceptor" else 215.0), "damage": (2.1 if kind in ["boss", "boss2"] else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
+				if kind in ["gunship", "missile_bomber", "station", "boss2"]:
+					var volley := 3 if kind == "boss2" else (2 if kind == "missile_bomber" else 1)
 					for i in range(volley):
-						bullets.append({"p":enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": 11.0 if kind == "missile_bomber" else 12.0, "kind":"ordnance", "hp":12.0, "source":kind})
+						bullets.append({"p":enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale(), "kind":"ordnance", "hp":12.0, "source":kind})
 		if enemy.p.y > 885:
 			enemy.hp = -1.0
 			if kind not in ["boulder", "station"]:
 				_hit(5.0, "hazard", "Escaped " + kind)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 	for minion in minions:
-		if enemies.size() < 20:
+		if enemies.size() < (26 if stage > 1 else 20):
 			_add_enemy("drone", minion.p)
 
 func _update_charges() -> void:
@@ -366,7 +373,7 @@ func _update_charges() -> void:
 						if enemy.id == charge.source:
 							_damage_enemy(enemy, 60.0, "nova")
 							_log("Aegis reflected the heavy beam")
-				_hit(charge.damage, "heavy", "Harvester" if boss_spawned else "Sniper")
+				_hit(charge.damage, "heavy", "Storm Carrier" if stage > 1 and boss_spawned else ("Harvester" if boss_spawned else "Sniper"))
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
 func _update_weapons() -> void:
@@ -455,7 +462,8 @@ func _update_bullets() -> void:
 	var ship := ship_position()
 	for bullet in bullets:
 		if bullet.kind == "ordnance":
-			bullet.v = bullet.v.lerp((ship - bullet.p).normalized() * (185.0 if bullet.source == "missile_bomber" else 155.0), DT * 0.9)
+			var target := Vector2(70 if ship.x > 270 else 470, 700) if decoy_left > 0.0 else ship
+			bullet.v = bullet.v.lerp((target - bullet.p).normalized() * (185.0 if bullet.source == "missile_bomber" else 155.0), DT * 0.9)
 		if bullet.kind == "mine":
 			bullet.fuse -= DT * (0.45 if chrono_left > 0 else 1.0)
 			if bullet.fuse <= 0.0:
@@ -466,7 +474,8 @@ func _update_bullets() -> void:
 		bullet.p += bullet.v * DT * (0.45 if chrono_left > 0 else 1.0)
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind == "mine" else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
-			_hit(bullet.damage, "hazard" if bullet.kind == "mine" else bullet.kind, bullet.source)
+			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
+				_hit(bullet.damage, "hazard" if bullet.kind == "mine" else bullet.kind, bullet.source)
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
@@ -548,9 +557,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		level += 1
 		pending_levels += 1
 	if enemy.kind == "boss":
+		stage_clears = 1
+		stage_transition_queued = true
+		_log("Harvester destroyed · Stage 2 unlocked")
+	elif enemy.kind == "boss2":
+		stage_clears = 2
 		ended = true
 		won = true
-		_log("Harvester destroyed")
+		_log("Storm Carrier destroyed · full clear")
 
 func xp_needed() -> int:
 	return 12 + (level - 1) * 4
@@ -563,6 +577,14 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount
+	if kind == "ion":
+		shield_offline = maxf(shield_offline, 4.0)
+	elif kind == "corrosion":
+		corrosion_left = maxf(corrosion_left, 5.0)
+	elif kind == "disrupt":
+		for id in active_slots:
+			if cooldowns[id] > 0.0:
+				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0)
 	if kind == "chaff":
 		reduced = maxf(amount * 0.25, amount - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0))
 	var shield_damage := minf(shield, reduced)
@@ -571,7 +593,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	var hull_damage := reduced - shield_damage
 	hull = maxf(0.0, hull - hull_damage)
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
-	damage_taken[kind] += reduced
+	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
 		shield_offline = 3.0
 		_log("Shield broke · offline for 3 seconds")
@@ -699,7 +721,7 @@ func _log(message: String) -> void:
 		events.pop_front()
 
 func payout() -> int:
-	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 + meta.bounty * 5 if won else 0)) * (1.0 + meta.cores * 0.08))
+	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
 	return base
