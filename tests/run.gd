@@ -27,6 +27,8 @@ func _run() -> void:
 	_test_legacy_modules()
 	_test_loadouts()
 	_test_threat_catalog()
+	_test_stage_difficulty_and_pressure()
+	_test_20_active_pool()
 	var seeds := 12
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -34,7 +36,7 @@ func _run() -> void:
 	var results: Dictionary = _balance(seeds)
 	check(results.timed.wins >= results.never.wins + mini(4, maxi(1, int(seeds / 2))), "Timed inputs must improve survival over no inputs")
 	check(results.timed.mean_hull > results.on_cooldown.mean_hull + 3 or results.timed.wins > results.on_cooldown.wins, "Timing must outperform cooldown spam on matched seeds")
-	check(results.timed.wins > 0, "Base ship must be able to clear the belt without Hangar upgrades")
+	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
@@ -92,7 +94,7 @@ func _test_interrupts_and_priority() -> void:
 	check(sim.shots[-1].target == 1, "Seekers must prioritize the charging source")
 	sim._damage_enemy(sim.enemies[0], 40, "pulse")
 	check(sim.charges.is_empty() and sim.beams_cancelled == 1, "Killing a charging source must cancel its beam")
-	sim = Sim.new()
+	sim = Sim.new(20, {}, "arcwing")
 	sim.charges = [{"source": 99, "x": 270.0, "remaining": 1.0, "duration": 1.8, "damage": 30.0}]
 	sim.bullets = [{"p": Vector2(100, 100), "v": Vector2.ZERO, "damage": 12.0, "kind": "ordnance", "hp": 12.0, "source": "gunship"}]
 	sim.activate("nova")
@@ -115,7 +117,7 @@ func _test_draft_and_cooldowns() -> void:
 	for i in range(100):
 		sim.step()
 	check(sim.snapshot() == before, "Draft must freeze all simulation state, including cooldowns and projectiles")
-	check(not sim.activate("nova"), "Abilities must not activate behind a draft")
+	check(not sim.activate("aegis"), "Abilities must not activate behind a draft")
 	check(sim.choose_card(0), "A valid draft choice must install")
 	check(not sim.choose_card(3), "Invalid choices must have no effect")
 	sim.hull = 10
@@ -167,11 +169,16 @@ func _test_new_abilities() -> void:
 	sim._offer_cards()
 	check(sim.cards.any(func(c): return c.tag == "ABILITY" and sim.upgrades[c.id] == 0), "First level-up must offer a new active ability")
 	sim.cards.clear()
-	for id in ["barrage", "overdrive", "chrono", "mend"]:
+	for id in ["barrage", "overdrive", "chrono"]:
 		_install(sim, id)
-		check(sim.upgrades[id] == 1 and sim.activate(id), "Learning %s must unlock its active button immediately" % id)
+		check(sim.upgrades[id] == 1 and sim.activate(id), "Learning %s must occupy a slot and allow casting" % id)
+	check(sim.active_slots.size() == 4, "A ship starts with one active and can draft exactly three more")
+	_install(sim, "mend")
+	check(sim.upgrades.mend == 0 and sim.active_slots.size() == 4, "A fifth unowned ability must never be equipped")
 	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
+	var haven := Sim.new(4, {}, "haven")
+	check(haven.active_slots == ["mend"], "Haven starts with its repair signature")
 	var healing := Sim.new()
 	_install(healing, "mend")
 	healing.hull = 40
@@ -252,18 +259,20 @@ func _test_legacy_modules() -> void:
 	old.cooldowns = {"aegis":2.0, "nova":3.0}
 	old.damage_dealt = {"pulse":10.0, "seeker":0.0, "nova":0.0}
 	old.movement_version = 2
+	old.erase("active_slots") # Previous checkpoint had Aegis and Nova learned.
 	var sim := Sim.new()
 	check(sim.restore(old), "An original first-flight save must still load")
 	sim.step()
-	check(sim.cooldowns.barrage == 0 and sim.upgrades.arc == 0 and sim.meta.hull == 2, "Migration must preserve purchased ranks and default new modules safely")
+	check(sim.cooldowns.barrage == 0 and sim.upgrades.arc == 0 and sim.meta.hull == 2 and "nova" in sim.active_slots, "Migration must preserve purchased ranks and learned active slots")
 
 
 func _test_loadouts() -> void:
 	check(Catalog.SHIPS.size() >= 6 and Catalog.PILOTS.size() >= 6, "Six ship archetypes and six pilots must be available")
 	check(Catalog.ship("vanguard").cost == 0 and Catalog.pilot("rookie").cost == 0, "Starter ship/pilot must be free")
 	var base := Sim.new(222)
+	check(base.active_slots == ["aegis"], "Vanguard starts with its Aegis signature only")
 	var interceptor := Sim.new(222, {}, "kestrel", "ace")
-	check(interceptor.ship_id == "kestrel" and interceptor.pilot_id == "ace", "Selected loadout must be applied at launch")
+	check(interceptor.ship_id == "kestrel" and interceptor.pilot_id == "ace" and interceptor.active_slots == ["overdrive"], "Selected hull must supply its own signature active")
 	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 70, "Interceptor starts with Pulse focus and fragile hull")
 	check(interceptor.course[2].t < base.course[2].t, "Interceptor autopilot must make faster turns")
 	interceptor._update_weapons()
@@ -299,7 +308,7 @@ func _test_loadouts() -> void:
 	check(sim_one.snapshot() == sim_three.snapshot(), "Equal simulated time must give identical outcomes at 1x and 3x")
 
 func _test_threat_catalog() -> void:
-	var kinds := ["drone", "gunship", "sniper", "interceptor", "rusher", "missile_bomber", "carrier", "shieldguard", "minelayer", "boulder", "station"]
+	var kinds := ["drone", "gunship", "sniper", "interceptor", "rusher", "missile_bomber", "carrier", "shieldguard", "minelayer", "boulder", "station", "ion_frigate", "corroder", "disruptor"]
 	var sim := Sim.new(442)
 	for kind in kinds:
 		check(sim.content.enemies.has(kind), "Enemy type must have a combat specification: " + kind)
@@ -340,6 +349,10 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		var rank := 100
 		for i in range(sim.cards.size()):
 			var r: int = priorities.find(sim.cards[i].id)
+			if r < 0:
+				r = 90 # Unknown IDs must not accidentally outrank every existing card.
+			if sim.cards[i].tag == "ABILITY" and sim.upgrades[sim.cards[i].id] == 0 and sim.active_slots.size() < Catalog.ACTIVE_SLOTS:
+				r = 0 if sim.cards[i].id in ["nova", "emp", "flak", "capacitor", "siphon"] else 2
 			if sim.hull < sim.max_hull * 0.35 and sim.cards[i].id in ["hull", "repair"]:
 				r = -1
 			if r < rank:
@@ -374,6 +387,83 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 					near += 1
 			if near >= 1:
 				sim.activate("aegis")
+		if sim.shield < sim.max_shield - 20:
+			sim.activate("capacitor")
+			sim.activate("deflector")
+		if sim.hull < sim.max_hull - 25:
+			sim.activate("siphon")
+		if not sim.charges.is_empty():
+			sim.activate("emp")
+		if sim.bullets.size() >= 12:
+			sim.activate("flak")
+			sim.activate("prism")
+			sim.activate("overload")
+		if sim.enemies.size() >= 3:
+			sim.activate("focus")
+			sim.activate("jammer")
+			sim.activate("strike")
+
+
+func _test_20_active_pool() -> void:
+	check(Catalog.ABILITIES.size() == 20 and Catalog.ACTIVE_SLOTS == 4, "Twenty abilities must compete for four active slots")
+	var seen := {}
+	for id in Catalog.ABILITIES:
+		check(not seen.has(id), "Ability IDs must be unique")
+		seen[id] = true
+		var sim := Sim.new(911, {}, "vanguard")
+		check(sim.content.abilities.has(id) and sim.content.cards.any(func(card): return card.id == id and card.tag == "ABILITY"), "Each active needs cooldown and draft card")
+		if id != "aegis":
+			_install(sim, id)
+		check(id in sim.active_slots and sim.activate(id), "Every active must cast once installed: " + id)
+	var sim := Sim.new(20)
+	check(not sim.activate("nova"), "Unslotted abilities must not cast")
+	for id in ["nova", "flak", "emp"]:
+		_install(sim, id)
+	check(sim.active_slots.size() == 4, "Three installed abilities fill all four slots")
+	sim.level = 8
+	sim._offer_cards()
+	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0), "Full active bars must not receive unusable ability cards")
+	var checkpoint := sim.snapshot()
+	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_stage_difficulty_and_pressure() -> void:
+	var normal := Sim.new(111, {}, "vanguard", "rookie", "normal")
+	var hard := Sim.new(111, {}, "vanguard", "rookie", "hard")
+	var insane := Sim.new(111, {}, "vanguard", "rookie", "insane")
+	for sim in [normal, hard, insane]:
+		sim._add_enemy("drone", Vector2(240, 100))
+	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
+	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
+	check(normal.content.stage_count == 2 and normal.content.abilities.aegis.cooldown >= 14, "Two stages and slower Aegis must be configured")
+	var sim := Sim.new(777)
+	sim.boss_spawned = true
+	sim.enemies = [{"id":9, "kind":"boss", "p":Vector2(270,135), "hp":10.0, "max_hp":6200.0, "speed":0.0, "fire":99.0, "xp":0, "phase":0.0}]
+	sim._damage_enemy(sim.enemies[0], 30.0, "pulse")
+	check(sim.stage_clears == 1 and sim.stage_transition_queued and not sim.ended, "Harvester must lead to Stage 2")
+	sim._enter_stage_two()
+	check(sim.stage == 2 and sim.stage_start == sim.time and sim.pending_levels == 1, "Stage 2 must reset schedules and offer a milestone draft")
+	sim._add_enemy("ion_frigate", Vector2(250,100))
+	check(sim.enemies[0].max_hp > normal.enemies[0].max_hp, "Stage 2 must be tougher than Stage 1")
+	sim.enemies.clear()
+	sim._spawn_boss()
+	check(sim.enemies.size() == 1 and sim.enemies[0].kind == "boss2", "Storm Carrier must exist as a second boss")
+	sim._damage_enemy(sim.enemies[0], 100000.0, "pulse")
+	check(sim.ended and sim.won and sim.stage_clears == 2, "Stage 2 boss must complete the run")
+	var statuses := Sim.new(19)
+	statuses._hit(1, "ion", "test")
+	check(statuses.shield_offline >= 4.0, "Ion fire must disable shield regeneration")
+	statuses._hit(1, "corrosion", "test")
+	check(statuses.corrosion_left >= 5.0, "Corrosion must cause continuing damage")
+	statuses.cooldowns.aegis = 4.0
+	statuses._hit(1, "disrupt", "test")
+	check(statuses.cooldowns.aegis >= 6.0, "Disruption must delay equipped cooldowns")
+	var scatter := Sim.new(11)
+	for i in range(650):
+		scatter.bullets.append({"p":Vector2(10 + i % 50 * 10, 200 + int(i / 50) * 10), "v":Vector2.ZERO, "damage":1.0, "kind":"chaff", "source":"stress"})
+	scatter.bullets.append({"p":Vector2(270, 550), "v":Vector2.ZERO, "damage":12.0, "kind":"mine", "hp":12.0, "source":"stress"})
+	scatter.shots.append({"p":Vector2(270, 550), "v":Vector2.ZERO, "damage":20.0, "weapon":"pulse", "target":-1})
+	scatter._update_shots()
+	check(scatter.bullets[-1].hp <= 0.0, "Spatial lookup must preserve point-defense collisions among hundreds of bullets")
 
 func _balance(seeds: int) -> Dictionary:
 	var result: Dictionary = {}
@@ -390,11 +480,11 @@ func _balance(seeds: int) -> Dictionary:
 				sim.step()
 				max_charges = maxi(max_charges, sim.charges.size())
 				max_entities = maxi(max_entities, sim.bullets.size())
-				if sim.ended:
+				if sim.ended or sim.stage_clears >= 1:
 					break
 			survival += sim.time
 			remaining += sim.hull
-			wins += int(sim.won)
+			wins += int(sim.stage_clears >= 1)
 		check(max_charges <= 1, "Dangerous heavy telegraphs must never overlap")
 		result[strategy] = {"seeds": seeds, "wins": wins, "mean_survival": snappedf(survival / seeds, 0.1), "mean_hull": snappedf(remaining / seeds, 0.1), "max_bullets": max_entities}
 	return result

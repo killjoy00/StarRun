@@ -11,7 +11,12 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 var failures := 0
 var checks := 0
 func _initialize() -> void:
+	create_timer(20.0).timeout.connect(_timeout)
 	call_deferred("_run")
+
+func _timeout() -> void:
+	push_error("UI smoke checks did not finish within 20 seconds; inspect preceding runtime errors")
+	quit(1)
 func check(ok: bool, message: String) -> void:
 	checks += 1
 	if not ok:
@@ -29,6 +34,7 @@ func _run() -> void:
 	await process_frame
 	# Avoid changing a real player's checkpoint when inspecting draft and result panels.
 	scene.sim.ended = true
+	check(scene.ability_buttons.size() == 4 and scene.sim.active_slots.size() == 1, "Four mobile active slots, one occupied by the ship signature")
 	for dimensions in [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
 		root.size = dimensions
 		await process_frame
@@ -43,7 +49,7 @@ func _run() -> void:
 		check(scene.ability_a.get_global_rect().end.y <= logical.y, "Controls must fit below playfield")
 		check(scene.ability_a.get_global_rect().end.x <= scene.ability_b.position.x, "Ability labels must not overlap at phone sizes")
 		for button in scene.ability_buttons.values():
-			check(button.get_global_rect().end.y <= logical.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= logical.x, "All six ability buttons must fit phone and desktop screens")
+			check(button.get_global_rect().end.y <= logical.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= logical.x, "Four equipped ability buttons must fit phone and desktop screens")
 		check(scene.pause_button.get_global_rect().end.y < scene.field.position.y, "Pause must fit above the playfield")
 		check(scene.build_button.get_global_rect().position.x >= 0 and scene.speed_button.get_global_rect().end.x <= logical.x, "Build and speed controls must fit narrow screens")
 		if logical.x < 760:
@@ -106,6 +112,12 @@ func _run() -> void:
 		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")
 		scene._toggle_pause()
 		check(scene.mode == "playing", "Closing the build view must resume combat")
+	scene._show_menu()
+	var old_difficulty: String = str(scene.profile.difficulty)
+	scene._cycle_difficulty()
+	check(scene.profile.difficulty != old_difficulty, "Menu difficulty selector must advance")
+	scene._new_run()
+	check(scene.sim.difficulty == scene.profile.difficulty and scene.sim.active_slots.size() == 1, "Difficulty and signature ability must apply to the next flight")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame

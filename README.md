@@ -1,46 +1,33 @@
 # StarRun
 
-A roguelite autoshooter where you build the ship and time its abilities. The ship steers and fires itself.
+StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
-## First playable
+## Gameplay — v0.4 draft milestone
 
-One five-minute Debris Belt flight with Vanguard, four automatic weapons, six active abilities, eleven passive systems, Harvester, a 22-track Hangar, exact saves, and a flight recorder.
+- **Four active slots from a pool of 20.** Every ship begins with one signature active. Draft up to three more, then improve the abilities you kept. The available actives range from time shields, missile flak and EMP to offensive strikes, decoys, siphons and salvage buffs.
+- **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
+- **Stage 1: Debris Belt.** Fly through changing scenery and enemy waves, then defeat the Harvester. A full Hangar can make this stage easy, by design.
+- **Stage 2: Ion Storm.** After Harvester, keep the same run and build. Stage 2 has tougher, faster waves, ion shots that halt shield regeneration, corrosion that bleeds hull, disruption that delays actives, and a new Storm Carrier boss. A stage-clear draft and partial repair separate the stages.
+- **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines, shield suppression, corrosion and cooldown disruption require different answers.
+- **Fewer, stronger level-ups.** XP thresholds rise faster than before, weapon and passive picks can grant two ranks, and each even-numbered early level offers an opportunity to draft an active until all four slots are filled.
+- **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties.
+- **Persistent Hangar.** Twenty-two refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Equipment and selected difficulty are retained in saves.
 
-- **Flight:** the player ship is 22% smaller. Faster, broader banked course changes cover more horizontal and vertical space, while the dotted path remains an exact two-second preview. New flights use this course; old suspended flights keep theirs.
-- **Pace:** scrolling painted space, faster star streaks and debris, faster enemies and projectiles, quicker automatic fire. The five-minute encounter schedule and 1.8-second heavy warnings remain readable.
-- **Weapons:** Pulse Cannon now gently steers toward nearby forward targets. Seekers still prioritize charging sources and missiles. Arc Coil chains lightning; Prism Lance pierces enemies along an automatically aimed beam. Both new weapons are learned through cards.
-- **Abilities:** start with Aegis and Nova. Learn Barrage, Overdrive, Chrono Field and Repair Drones in level-up drafts. The first draft always offers a new active; later drafts regularly offer more. All six can be carried at once, and none require a Hangar purchase.
-- **Controls:** keys **1–6** use the six fixed ability slots; **Space** always uses Aegis. Controller **A / X / Y / B / LB / RB** matches slots 1–6. Click/tap also works. Keys 1–4 choose draft cards. Escape/P/Start pauses.
-- **Hangar:** illustrated ship-service bay, category tabs, rank indicators and scrolling upgrade cards. Twenty-two permanent tracks cover hull, shields, damage, fire rate, guidance, starting weapons, cooldowns, ability strength, emergency protection, draft tools and salvage. Free refunds return the exact total paid. Purchases affect new flights; suspended flights retain their loadout.
-- **Draft tools:** buy a fourth card choice, up to three rerolls, banishes and repair skips per flight. A banish removes that entire track from the current flight's pool. Draft hands and remaining tools survive saving.
-- **Saves:** existing cores and the original Hull/Armory/Shield Lab ranks carry forward. Saves retain fixed-step state, RNG, the exact card hand, all six cooldowns, healing/time-field/overdrive effects, and draft tools. Web saves belong to that browser and origin.
-- **Audio:** independent music/effects toggles, original cruise/boss scores, weapon and engine audio, and distinct activation/ready cues for every active ability.
+Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Flak Screen, EMP Blackout, Deflector, Rail Strike, Prism Reversal, Chaff Barrier, Capacitor, Precision Focus, Decoy Beacon, Signal Jammer, Energy Siphon, Chain Overload, Reactor Reboot, Salvage Surge.
 
-## Combat variety and loadouts (next playable)
+## Controls
 
-StarRun now has **six pilot choices** and **six ships**. Vanguard and Vale are free starters. All other hulls and pilots are permanent core unlocks, separately from the refundable Hangar upgrades. Equip one of each before launch; an already-suspended flight keeps its previous configuration.
+On iPhone, four large on-screen buttons match equipped abilities from left to right and top to bottom. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses. Level-up choices use keys 1–4 or touch.
 
-| Hull | Starting style |
-| --- | --- |
-| Vanguard | Balanced Pulse Cannon, Seekers and defenses |
-| Kestrel | Fast-turning interceptor with boosted Pulse fire and little armor |
-| Bulwark | Slower armored fortress with large hull/shields |
-| Wraith | Seeker-focused missile boat, starts without Pulse |
-| Arcwing | Chain-lightning fighter with Arc Coil already installed |
-| Haven | Support carrier, starts with Repair Drones and Seekers |
+The playfield uses adaptive 390×844 logical canvas scaling on modern portrait iPhones. Phone UI text uses a 16-point minimum, with scrolling upgrade cards and Hangar. iOS readability and performance still need real-device validation.
 
-Pilots add different starting advantages: Vale (baseline), Vega (Pulse accuracy/damage), Patch (shield repair), Orion (missile specialization), Scrap (XP and cores), and Nyx (ability cooldowns and a draft reroll). Ship/pilot choices persist in your profile and flight snapshots.
+## Building and running
 
-The five-minute flight now passes through **five visually different regions**: Debris Belt, Ion Nebula, Wreck Field, Dark Rift and Harvester Zone. The combat director can deploy nine regular enemy archetypes, including dodging interceptors, rushers, missile bombers, drone carriers, shielded ships and minelayers, plus destroyable boulders and turret stations. Enemy missiles home with amber exhaust; mines flash a fuse warning and can be shot down.
-
-During flight, tap **BUILD** (keyboard **B**) to pause and inspect everything installed. Icons appear on the six abilities, level-up cards and Hangar upgrades. The **0.5× / 1× / 2× / 3×** speed control (keyboard **Tab**) changes game-time progression, not the fixed simulation step; it persists in your profile.
-
-## Builds
-
-Pinned to **Godot 4.6.3 standard**, GDScript and the Compatibility renderer. Open `project.godot` in that version. GitHub Actions runs simulation checks and automatically produces web, Windows, and Linux playtest artifacts on pushes and pull requests. See the **Playable build** workflow's artifacts.
+Pinned to **Godot 4.6.3**, GDScript and the Compatibility renderer. GitHub Actions performs simulation and responsive UI checks, builds Web/Windows/Linux, and compiles an unsigned native iPhone application. Shared Apple signing credentials are in the companion TestFlight release workflow; no secrets are stored in this repo.
 
 ```sh
 godot --headless --path . --editor --import --quit
+godot --headless --path . --script tests/ui_smoke.gd
 godot --headless --path . --script tests/run.gd
 mkdir -p build/web build/windows build/linux
 godot --headless --path . --export-release Web build/web/index.html
@@ -49,20 +36,17 @@ godot --headless --path . --export-release Windows build/windows/StarRun.exe
 godot --headless --path . --export-release Linux build/linux/StarRun.x86_64
 ```
 
-Serve the web folder over HTTP(S); it needs WebGL2. It is single-threaded and does not require cross-origin isolation. The Windows download also includes the complete source and design notes. Native downloads contain the game executable; Windows may show an unsigned application notice.
+Web requires WebGL2; Windows may show an unsigned application warning. Godot's 60 Hz simulation is independent of renderer and platform services, with deterministic seeds and exact checkpoint serialization.
 
-## Structure
+## Files and remaining release gates
 
-- `scripts/simulation.gd`: fixed 60 Hz combat, draft, targeting, threat director, and serializable state. No rendering or platform SDK dependencies.
-- `scripts/main.gd`: responsive presentation and input. The 9:16 playfield scales into the space left after HUD and controls, including on 16:9 phones.
-- `data/content.json`: enemy, ability, and card definitions.
-- `scripts/platform_services.gd`: atomic save adapter. Ads and store methods honestly report unavailable until native integrations are proven.
-- `tests/run.gd`: defense, interruption, targeting, frozen drafts, deterministic disk/checkpoint round trips, 12 matched seeds for three input policies, and ship/pilot, mines, destructible hazards, save/resume, and speed invariance.
+- [Gameplay milestone and validation plan](docs/GAMEPLAY_V04.md) — new four-active, two-stage and tiered-difficulty design
+- [Original design document](docs/DESIGN.md) — longer-term vision, some proposed content not yet implemented
+- [First playable v0.3 notes](docs/FIRST_PLAYABLE.md) — historical baseline, replaced by v0.4 for gameplay
+- [Native delivery gates](docs/NATIVE_DELIVERY.md) — ads, purchases, real-device performance and Steam integration
+- `scripts/simulation.gd` — deterministic combat, threat director, active effects, stage transitions and checkpoint state
+- `scripts/main.gd` — menus, responsive HUD, draft, Hangar and controller input
+- `data/content.json` — enemies, abilities and upgrade cards
+- `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-## Scope and remaining gates
-
-This is the first playable, not the full four-level release. iOS/TestFlight, Steam SDK integration, ads, purchases/restoration, real-device performance, and external player fun tests remain unverified gates. No store purchase or ad SDK is simulated as working. A passing bot check does not establish that human play is fun or accessible.
-
-Saved flights from v0.1 preserve their original course; launch a new flight to use the new pilot. Original art prompts and the reproducible score are documented in [art/audio notes](docs/ART_AUDIO.md).
-
-See [the updated design](docs/DESIGN.md), [current prototype decisions](docs/FIRST_PLAYABLE.md), and [native delivery gates](docs/NATIVE_DELIVERY.md).
+**This v0.4 gameplay pass is not yet merged or released.** A passing simulator or unsigned iOS compile does not establish human enjoyment, device frame-time stability, ads or in-app purchase support. The signed v0.3.x TestFlight delivery is separate.

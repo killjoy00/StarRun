@@ -1,6 +1,9 @@
 extends RefCounted
-## One catalog drives prices, refunds, migration and the Hangar UI.
-const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend"]
+## One catalog drives prices, refunds, unlockable actives, and the Hangar UI.
+const ACTIVE_SLOTS := 4
+const DIFFICULTIES := ["normal", "hard", "insane"]
+const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
+const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage"]
 
 # These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
 const PILOTS := [
@@ -12,12 +15,12 @@ const PILOTS := [
 	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one free card reroll.", "trait":"BATTLE PLAN"}
 ]
 const SHIPS := [
-	{"id":"vanguard", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
-	{"id":"kestrel", "name":"Kestrel · Interceptor", "cost":45, "description":"25% quicker firing, sharper autopilot turns. Twin Pulse start; fragile defenses.", "hull":70, "shield":30, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
-	{"id":"bulwark", "name":"Bulwark · Fortress", "cost":50, "description":"Massive hull, heavy shields, inherent armor; wide, slower flight path. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
-	{"id":"wraith", "name":"Wraith · Missile boat", "cost":65, "description":"No Pulse Cannon at launch. Double seeker pods with 35% harder-hitting ordnance.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
-	{"id":"arcwing", "name":"Arcwing · Chain fighter", "cost":75, "description":"Starts with Arc Coil instead of Seekers. Lightning chains are 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
-	{"id":"haven", "name":"Haven · Support carrier", "cost":90, "description":"Starts with Repair Drones, Seekers and extra shielding, but no Pulse Cannon.", "hull":115, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
+	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
+	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"25% quicker firing, sharper autopilot turns. Twin Pulse start; fragile defenses.", "hull":70, "shield":30, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
+	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Massive hull, heavy shields, inherent armor; wide, slower flight path. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
+	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"No Pulse Cannon at launch. Double seeker pods with 35% harder-hitting ordnance.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
+	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Starts with Arc Coil instead of Seekers. Lightning chains are 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
+	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Starts with Repair Drones, Seekers and extra shielding, but no Pulse Cannon.", "hull":115, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
 ]
 
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
