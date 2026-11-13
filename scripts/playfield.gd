@@ -338,9 +338,14 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			"corroder": tint = Color("a8ff70")
 			"disruptor": tint = Color("bc8cff")
 			"boss2": tint = Color("7cc4ff")
+			"boss3": tint = Color("ff8f48")
+			"boss4": tint = Color("cda8ff")
 		var bank := sin(sim.time * (2.2 if kind == "interceptor" else 0.7) + enemy.phase) * (0.035 if boss else 0.11)
 		draw_set_transform(p, bank)
-		draw_texture_rect(SHIPS[art_key], Rect2(-size/2, size), false, tint)
+		if _custom_enemy(kind):
+			_draw_custom_enemy(kind)
+		else:
+			draw_texture_rect(SHIPS[art_key], Rect2(-size/2, size), false, tint)
 		if kind == "missile_bomber":
 			for side in [-1,1]:
 				draw_circle(Vector2(side*32,14),9,Color("ffb057"))
@@ -355,14 +360,87 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			for side in [-1,1]:
 				draw_line(Vector2(side*8,-15),Vector2(side*35,28),Color("76fff2"),3)
 		if boss:
-			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(1,0.4,0.07,0.3))
+			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(tint,0.3))
 		draw_set_transform(Vector2.ZERO)
 	if boss:
 		draw_rect(Rect2(65,14,410,55),Color(0.03,0.035,0.05,0.8))
 		_bar(Rect2(80,24,380,6),enemy.hp/enemy.max_hp,AMBER)
-		draw_string(ThemeDB.fallback_font,Vector2(195,56),"H A R V E S T E R",HORIZONTAL_ALIGNMENT_LEFT,-1,16,AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(80,56), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
 	elif enemy.hp < enemy.max_hp:
 		_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+
+func _custom_enemy(kind: String) -> bool:
+	return kind in ["ion_frigate", "corroder", "disruptor", "arc_spire", "storm_weaver", "forge_turret", "slag_bomber", "ember_hunter", "splitter", "phase_stalker", "void_lancer", "gravity_sentinel", "echo_carrier", "boss2", "boss3", "boss4"]
+
+func _draw_custom_enemy(kind: String) -> void:
+	# Procedural silhouettes at native size, not a color tint of one shared sprite.
+	var scale_factor := 1.0 if not kind.begins_with("boss") else 2.2
+	if kind == "boss2":
+		draw_colored_polygon(PackedVector2Array([Vector2(-105,-4), Vector2(-58,-49), Vector2(0,-74), Vector2(58,-49), Vector2(105,-4), Vector2(67,48), Vector2(-67,48)]), Color("173e62"))
+		for side in [-1,1]:
+			draw_colored_polygon(PackedVector2Array([Vector2(side*43,-25),Vector2(side*118,-20),Vector2(side*96,18),Vector2(side*47,24)]),Color("309ac6"))
+			draw_line(Vector2(side*44,-20),Vector2(side*100,4),Color("9deaff"),4,true)
+		draw_circle(Vector2.ZERO, 27, Color("66dfff"))
+		draw_circle(Vector2.ZERO, 14, Color.WHITE)
+		draw_arc(Vector2.ZERO, 60 + sin(visual_time * 4) * 6, 0, TAU, 48, Color("8fe4ff",0.7),3,true)
+		return
+	if kind == "boss3":
+		draw_rect(Rect2(-94,-78,188,146),Color("4b2618"))
+		draw_rect(Rect2(-74,-64,148,124),Color("934328"))
+		for side in [-1,1]:
+			draw_rect(Rect2(side*96-19,-55,38,120),Color("783323"))
+			for i in range(4):
+				draw_line(Vector2(side*100-10,i*29-45),Vector2(side*100+12,i*29-45),Color("ffab58"),3,true)
+		draw_circle(Vector2.ZERO,48,Color("2c1415"))
+		draw_circle(Vector2.ZERO,34+sin(visual_time*6)*4,Color("ff6d2c"))
+		draw_circle(Vector2.ZERO,19,Color("ffda83"))
+		for i in range(12):
+			var angle: float = i * TAU / 12
+			draw_line(Vector2.from_angle(angle) * 47,Vector2.from_angle(angle)*74,Color("ff8f42"),4,true)
+		return
+	if kind == "boss4":
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-104),Vector2(79,-50),Vector2(97,41),Vector2(0,92),Vector2(-97,41),Vector2(-79,-50)]),Color("231446"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-92),Vector2(47,-22),Vector2(36,49),Vector2(0,76),Vector2(-36,49),Vector2(-47,-22)]),Color("794dbb"))
+		for side in [-1,1]:
+			var x := side * (115 + sin(visual_time*2) * 10)
+			draw_colored_polygon(PackedVector2Array([Vector2(x,-52),Vector2(x+side*25,0),Vector2(x,56),Vector2(x-side*20,0)]),Color("5c3b90"))
+			draw_line(Vector2(x,-48),Vector2(x,46),Color("c9a2ff"),3,true)
+		draw_circle(Vector2.ZERO,20+sin(visual_time*5)*3,Color("f0b7ff"))
+		draw_arc(Vector2.ZERO,86,visual_time,visual_time+PI*1.4,55,Color("d5a6ff",0.7),3,true)
+		return
+	if kind in ["ion_frigate", "corroder", "disruptor", "arc_spire", "storm_weaver"]:
+		var color := Color("58dbff") if kind in ["ion_frigate", "storm_weaver"] else (Color("a4ff74") if kind == "corroder" else Color("bba3ff"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-37),Vector2(25,-12),Vector2(31,25),Vector2(0,39),Vector2(-31,25),Vector2(-25,-12)]),Color("123348"))
+		draw_polyline(PackedVector2Array([Vector2(0,-37),Vector2(25,-12),Vector2(31,25),Vector2(0,39),Vector2(-31,25),Vector2(-25,-12),Vector2(0,-37)]),color,2.5,true)
+		for side in [-1,1]:
+			draw_line(Vector2(side*7,-17),Vector2(side*28,15),Color(color,0.55),3,true)
+		if kind in ["arc_spire", "storm_weaver"]:
+			for side in [-1,1]:
+				draw_line(Vector2(side*23,-17),Vector2(side*45,-30),color,3,true)
+				draw_circle(Vector2(side*44,-29),5,color)
+		draw_circle(Vector2.ZERO,8+sin(visual_time*5)*2,color)
+		return
+	if kind in ["forge_turret", "slag_bomber", "ember_hunter", "splitter"]:
+		var metal := Color("6f3422") if kind != "ember_hunter" else Color("a04426")
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-37),Vector2(32,-20),Vector2(30,28),Vector2(-30,28),Vector2(-32,-20)]),metal)
+		for side in [-1,1]:
+			draw_rect(Rect2(side*30-5,-14,10,43),Color("dc6a31"))
+			draw_line(Vector2(side*27,-7),Vector2(side*15,20),Color("ffbe6b"),3,true)
+		draw_circle(Vector2.ZERO,13,Color("33171a"))
+		draw_circle(Vector2.ZERO,7+sin(visual_time*7)*2,Color("ffc066"))
+		if kind == "splitter":
+			for side in [-1,1]:
+				draw_colored_polygon(PackedVector2Array([Vector2(side*16,-20),Vector2(side*41,-10),Vector2(side*41,15),Vector2(side*16,21)]),Color("d95f30"))
+		return
+	# Stage 4 void ships are angular, symmetric, and visibly unlike the foundry.
+	var purple := Color("ad79fa") if kind != "gravity_sentinel" else Color("8cb9ff")
+	draw_colored_polygon(PackedVector2Array([Vector2(0,-43),Vector2(37,-5),Vector2(0,43),Vector2(-37,-5)]),Color("1c143e"))
+	draw_polyline(PackedVector2Array([Vector2(0,-43),Vector2(37,-5),Vector2(0,43),Vector2(-37,-5),Vector2(0,-43)]),purple,3,true)
+	for side in [-1,1]:
+		draw_colored_polygon(PackedVector2Array([Vector2(side*19,-13),Vector2(side*45,-30),Vector2(side*38,27)]),Color(purple,0.65))
+	if kind in ["void_lancer", "gravity_sentinel"]:
+		draw_arc(Vector2.ZERO,35,0,TAU,32,Color(purple,0.55),2,true)
+	draw_circle(Vector2.ZERO,10+sin(visual_time*5)*2,Color("f2d7ff"))
 
 func _draw_threats() -> void:
 	for charge in sim.charges:
@@ -395,6 +473,9 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif effect.kind in ["barrage", "overdrive", "chrono", "mend"]:
 		var color := Color("a7a1ff") if effect.kind in ["chrono", "barrage"] else Color("a9ffc9")
 		draw_arc(p, 25 + age * 130, 0, TAU, 48, Color(color, alpha * 0.8), 3, true)
+	elif effect.kind == "phase":
+		draw_arc(p, 10 + age * 65, 0, TAU, 42, Color("d8a4ff", alpha * 0.8), 4, true)
+		draw_circle(p, 7 + age * 23, Color("b784ff", alpha * 0.12))
 	elif effect.kind == "nova":
 		var radius := age * 790
 		if not profile.reduced:
