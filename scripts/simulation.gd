@@ -442,7 +442,7 @@ func _update_weapons() -> void:
 					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power(), "lance")
 
 func weapon_power() -> float:
-	return 1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08
+	return (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0)
 
 func ability_power() -> float:
 	return 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
@@ -541,12 +541,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.72
 	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < upgrades.targeting * 0.05:
 		amount *= 2.0
-	damage_dealt[weapon] += minf(amount, enemy.hp)
+	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
 	enemy.hp -= amount
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
 	if enemy.hp > 0:
 		return
 	kills += 1
+	if salvage_left > 0.0:
+		bonus_cores += 1 + int(upgrades.salvage / 2)
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 0.72 if enemy.kind == "boss" else 0.5, "max_life": 0.72 if enemy.kind == "boss" else 0.5, "born": tick, "boss": enemy.kind == "boss"})
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
@@ -567,7 +569,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("Storm Carrier destroyed · full clear")
 
 func xp_needed() -> int:
-	return 12 + (level - 1) * 4
+	return 25 + (level - 1) * 9
 
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
@@ -612,7 +614,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		_log("Emergency field deployed")
 
 func activate(ability: String) -> bool:
-	if ended or not cards.is_empty() or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
+	if ended or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
 	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0))
@@ -643,6 +645,85 @@ func activate(ability: String) -> bool:
 		mend_rate = (24 + (upgrades.mend - 1) * 6) * ability_power() / 4.0
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
+	elif ability == "flak":
+		var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine"]).size()
+		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine"])
+		prevented += stopped * 12.0
+		for enemy in enemies:
+			if enemy.kind in ["missile_bomber", "minelayer", "boss2"]:
+				_damage_enemy(enemy, 30.0 * ability_power(), "flak")
+	elif ability == "emp":
+		beams_cancelled += charges.size()
+		charges.clear()
+		emp_left = (3.0 + upgrades.emp * 0.25) * ability_power()
+	elif ability == "deflector":
+		var remaining: Array = []
+		var absorbed := 0
+		for bullet in bullets:
+			if bullet.kind == "chaff" and bullet.p.distance_squared_to(ship_position()) < 300.0 * 300.0:
+				absorbed += 1
+			else:
+				remaining.append(bullet)
+		bullets = remaining
+		shield = minf(max_shield, shield + absorbed * (2.0 + upgrades.deflector * 0.5))
+		prevented += absorbed * 1.5
+	elif ability == "strike":
+		var target: Dictionary = {}
+		for enemy in enemies:
+			if target.is_empty() or enemy.hp > target.hp:
+				target = enemy
+		for charge in charges:
+			for enemy in enemies:
+				if enemy.id == charge.source:
+					target = enemy
+		if not target.is_empty():
+			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * ability_power(), "strike")
+	elif ability == "prism":
+		var remaining: Array = []
+		var reflected := 0
+		for bullet in bullets:
+			if reflected < 18 and bullet.kind in ["chaff", "ion", "corrosion", "disrupt"] and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
+				var target := _nearest(bullet.p)
+				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * ability_power(), "weapon": "barrage", "target": int(target.get("id", -1))})
+				reflected += 1
+			else:
+				remaining.append(bullet)
+		bullets = remaining
+		prevented += reflected * 1.5
+	elif ability == "barrier":
+		barrier_left = (6.0 + upgrades.barrier * 0.75) * ability_power()
+	elif ability == "capacitor":
+		shield_offline = 0.0
+		shield = minf(max_shield, shield + (30.0 + upgrades.capacitor * 15.0) * ability_power())
+	elif ability == "focus":
+		focus_left = (6.0 + upgrades.focus * 0.6) * ability_power()
+	elif ability == "decoy":
+		decoy_left = (5.0 + upgrades.decoy * 0.6) * ability_power()
+	elif ability == "jammer":
+		jammer_left = (5.0 + upgrades.jammer * 0.5) * ability_power()
+	elif ability == "siphon":
+		var target := _nearest(ship_position())
+		if not target.is_empty():
+			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * ability_power())
+			_damage_enemy(target, dealt, "siphon")
+			hull = minf(max_hull, hull + dealt * 0.30)
+	elif ability == "overload":
+		var remaining: Array = []
+		var detonated := 0
+		for bullet in bullets:
+			if bullet.kind == "chaff" and bullet.p.distance_squared_to(ship_position()) < 450.0 * 450.0:
+				detonated += 1
+			else:
+				remaining.append(bullet)
+		bullets = remaining
+		for enemy in enemies:
+			_damage_enemy(enemy, minf(250.0, 35.0 + detonated * 5.0 + upgrades.overload * 14.0) * ability_power(), "overload")
+	elif ability == "reboot":
+		for id in active_slots:
+			if id != "reboot":
+				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot)
+	elif ability == "salvage":
+		salvage_left = (10.0 + upgrades.salvage * 1.0) * ability_power()
 	if ability not in ["aegis", "nova"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
@@ -651,14 +732,16 @@ func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	for card in content.cards:
 		if upgrades[card.id] < int(card.max) and card.id not in banished:
+			if card.tag == "ABILITY" and upgrades[card.id] == 0 and active_slots.size() >= Catalog.ACTIVE_SLOTS:
+				continue
 			pool.append(card.duplicate(true))
 	cards.clear()
 	# Draw once, checkpoint the exact hand. RNG state is part of the save.
 	while cards.size() < 3 + int(meta.extra_card) and not pool.is_empty():
 		var index := rng.randi_range(0, pool.size() - 1)
 		cards.append(pool.pop_at(index))
-	# Put a new active on the first draft, then every third level until learned.
-	if level == 2 or level % 3 == 0:
+	# Offer a new active at levels 2, 4 and 6 until all four slots are filled.
+	if active_slots.size() < Catalog.ACTIVE_SLOTS and level % 2 == 0:
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
@@ -704,13 +787,21 @@ func choose_card(index: int) -> bool:
 	if id == "repair":
 		hull = minf(max_hull, hull + 30)
 	else:
-		upgrades[id] += 1
+		var card: Dictionary = cards[index]
+		if card.tag == "ABILITY" and int(upgrades[id]) == 0:
+			if active_slots.size() >= Catalog.ACTIVE_SLOTS:
+				return false
+			active_slots.append(id)
+		var before: int = int(upgrades[id])
+		var increment: int = 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
+		upgrades[id] = mini(int(card.max), before + increment)
+		var gained := int(upgrades[id]) - before
 		if id == "hull":
-			max_hull += 18
-			hull = minf(max_hull, hull + 18)
+			max_hull += 18 * gained
+			hull = minf(max_hull, hull + 18 * gained)
 		if id == "shield":
-			max_shield += 10
-			shield = minf(max_shield, shield + 10)
+			max_shield += 10 * gained
+			shield = minf(max_shield, shield + 10 * gained)
 	_log("Installed " + cards[index].name)
 	cards.clear()
 	return true
@@ -728,9 +819,9 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["seed_value", "movement_version", "ship_id", "pilot_id", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["overdrive_left", "chrono_left", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
@@ -746,6 +837,13 @@ func restore(state: Dictionary) -> bool:
 			else:
 				set(key, state[key])
 	movement_version = int(state.get("movement_version", 1))
+	if not state.has("active_slots"):
+		active_slots.clear()
+		for id in Catalog.ABILITIES:
+			if int(upgrades.get(id, 0)) > 0 and active_slots.size() < Catalog.ACTIVE_SLOTS:
+				active_slots.append(id)
+	if difficulty not in Catalog.DIFFICULTIES:
+		difficulty = "normal"
 	_build_course()
 	rng.state = state.rng
 	return true
