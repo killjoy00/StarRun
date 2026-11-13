@@ -11,7 +11,12 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 var failures := 0
 var checks := 0
 func _initialize() -> void:
+	create_timer(20.0).timeout.connect(_timeout)
 	call_deferred("_run")
+
+func _timeout() -> void:
+	push_error("UI smoke checks did not finish within 20 seconds; inspect preceding runtime errors")
+	quit(1)
 func check(ok: bool, message: String) -> void:
 	checks += 1
 	if not ok:
