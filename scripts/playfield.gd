@@ -22,16 +22,19 @@ func _draw() -> void:
 	var ship: Vector2 = sim.ship_position()
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
-	draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
-	var scroll := visual_time * 105.0
 	var sector := _sector(sim.time)
-	var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
-	for tile in range(-1, 2):
-		var y := tile * 1070.0 + fposmod(scroll, 1070.0) - 55
-		var flipped := posmod(tile - floori(scroll / 1070.0), 2) == 1
-		draw_set_transform(Vector2(-35 + drift.x, y + (1070 if flipped else 0)), 0, Vector2(1, -1 if flipped else 1))
-		draw_texture_rect(SPACE, Rect2(0, 0, 610, 1070), false, tints[sector])
-	draw_set_transform(Vector2.ZERO)
+	if sim.stage == 1:
+		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
+		var scroll := visual_time * 105.0
+		var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
+		for tile in range(-1, 2):
+			var y := tile * 1070.0 + fposmod(scroll, 1070.0) - 55
+			var flipped := posmod(tile - floori(scroll / 1070.0), 2) == 1
+			draw_set_transform(Vector2(-35 + drift.x, y + (1070 if flipped else 0)), 0, Vector2(1, -1 if flipped else 1))
+			draw_texture_rect(SPACE, Rect2(0, 0, 610, 1070), false, tints[sector])
+		draw_set_transform(Vector2.ZERO)
+	else:
+		_draw_stage_backdrop()
 	_draw_environment(sector, drift)
 	# Three depths of moving starlight sell forward flight without steering the player.
 	for i in range(90):
@@ -39,7 +42,7 @@ func _draw() -> void:
 		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.82, 0.86, 1.0, 0.16 + depth * 0.25) if sector != 4 else Color(1.0, 0.76, 0.45, 0.16 + depth * 0.25)
 		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
-	for i in range(9):
+	for i in range(9 if sim.stage == 1 else (3 if sim.stage == 2 else 0)):
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
@@ -49,11 +52,11 @@ func _draw() -> void:
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
 	for bullet in sim.bullets:
-		if bullet.kind == "mine":
+		if bullet.kind in ["mine", "slag"]:
 			var fuse: float = maxf(0.0, float(bullet.fuse))
 			var pulse := 0.45 + sin(visual_time * 14.0) * 0.30
-			draw_circle(bullet.p, 12, Color(1.0, 0.38, 0.10, 0.22 + pulse * 0.22))
-			draw_arc(bullet.p, 11, -PI/2, -PI/2 + TAU * clampf(fuse/3.4, 0, 1), 22, Color("ffc078"), 2.6, true)
+			draw_circle(bullet.p, 16 if bullet.kind == "slag" else 12, Color(1.0, 0.48 if bullet.kind == "slag" else 0.38, 0.10, 0.22 + pulse * 0.22))
+			draw_arc(bullet.p, 15 if bullet.kind == "slag" else 11, -PI/2, -PI/2 + TAU * clampf(fuse/3.4, 0, 1), 22, Color("ff552b") if bullet.kind == "slag" else AMBER, 2.6, true)
 			draw_colored_polygon(PackedVector2Array([bullet.p + Vector2(0,-7), bullet.p + Vector2(7,0), bullet.p + Vector2(0,7), bullet.p + Vector2(-7,0)]), Color("f38c4f"))
 			draw_circle(bullet.p, 2.6, Color.WHITE)
 		elif bullet.kind == "ordnance":
@@ -70,6 +73,9 @@ func _draw() -> void:
 				"ion": tint = Color("55d8ff")
 				"corrosion": tint = Color("a8ff70")
 				"disrupt": tint = Color("bc8cff")
+				"heat": tint = Color("ff7543")
+				"gravity": tint = Color("b887ff")
+				"void": tint = Color("fa6fff")
 			_glow(bullet.p, 4.2 if bullet.kind != "chaff" else 3.0, tint)
 			if bullet.kind != "chaff":
 				draw_arc(bullet.p, 6.0, 0.0, TAU, 12, tint, 2.0, true)
@@ -86,6 +92,10 @@ func _draw() -> void:
 	_draw_player(ship, velocity)
 	for effect in sim.effects:
 		_draw_effect(effect)
+	if host.mode == "stage_clear":
+		_draw_boss_ceremony(host.stage_clear_clock)
+	elif host.mode == "warp":
+		_draw_warp(host.warp_clock)
 	# Minimal edge framing lets the artwork breathe while bars stay readable.
 	for edge in [0, 1]:
 		draw_rect(Rect2(edge * 520, 0, 20, 960), Color(0.01, 0.025, 0.04, 0.18))
@@ -96,9 +106,12 @@ func _draw() -> void:
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
+func _visual_theme_id() -> String:
+	return ["debris", "storm", "forge", "void"][clampi(sim.stage - 1, 0, 3)]
+
 func _sector(at: float) -> int:
 	if sim.stage > 1:
-		return 1 if at - sim.stage_start < 130.0 else (3 if at - sim.stage_start < 240.0 else 4)
+		return sim.stage + 3
 	if at < 65.0:
 		return 0
 	if at < 125.0:
