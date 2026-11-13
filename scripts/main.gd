@@ -713,7 +713,7 @@ func _show_results() -> void:
 	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		var value: float = float(sim.damage_taken.get(kind, 0.0))
 		if value > 0.0:
-			var name := {"ordnance":"Missiles", "hazard":"Hazards", "heavy":"Heavy beams"}.get(kind, kind.capitalize())
+			var name: String = str({"ordnance":"Missiles", "hazard":"Hazards", "heavy":"Heavy beams"}.get(kind, kind.capitalize()))
 			damage_lines.append("%s   %.0f" % [name, value])
 	_reading_card(body, "INCOMING DAMAGE", "\n".join(damage_lines) if not damage_lines.is_empty() else "No incoming damage recorded.")
 	var weapons: Array = []
