@@ -146,14 +146,14 @@ func _draw_stage_backdrop() -> void:
 		3:
 			# Furnace ceiling and molten orange trenches, moving as distinct structures.
 			for edge in [-1, 1]:
-				var side_x := 270.0 + edge * 222.0
+				var side_x: float = 270.0 + edge * 222.0
 				draw_rect(Rect2(side_x - 40, 0, 80, 960), Color("4d2116", 0.82))
 				for i in range(9):
 					var y := fposmod(i * 148.0 + visual_time * 72.0, 1100.0) - 80.0
 					draw_rect(Rect2(side_x - 40, y, 80, 20), Color("db5926", 0.50))
 					draw_circle(Vector2(side_x, y + 8), 5, Color("ffe288", 0.7))
 			for lane in range(4):
-				var x := 110.0 + lane * 105.0
+				var x: float = 110.0 + lane * 105.0
 				draw_line(Vector2(x, -50), Vector2(x + sin(visual_time * 0.6) * 15, 1010), Color("ff7131", 0.16), 17)
 				for i in range(9):
 					var y := fposmod(i * 133.0 + lane * 81.0 + visual_time * 125.0, 1060.0) - 50.0
@@ -161,7 +161,7 @@ func _draw_stage_backdrop() -> void:
 		4:
 			# A black-violet architectural void, symmetrical towers and rotating gates.
 			for side in [-1, 1]:
-				var x := 270.0 + side * 225.0
+				var x: float = 270.0 + side * 225.0
 				draw_colored_polygon(PackedVector2Array([Vector2(x - 46, -50), Vector2(x + 46, -50), Vector2(x + 31, 1030), Vector2(x - 31, 1030)]), Color("23123e", 0.9))
 				for i in range(10):
 					var y := fposmod(i * 136.0 + visual_time * 56.0, 1100.0) - 70.0
@@ -401,7 +401,7 @@ func _draw_custom_enemy(kind: String) -> void:
 		draw_colored_polygon(PackedVector2Array([Vector2(0,-104),Vector2(79,-50),Vector2(97,41),Vector2(0,92),Vector2(-97,41),Vector2(-79,-50)]),Color("231446"))
 		draw_colored_polygon(PackedVector2Array([Vector2(0,-92),Vector2(47,-22),Vector2(36,49),Vector2(0,76),Vector2(-36,49),Vector2(-47,-22)]),Color("794dbb"))
 		for side in [-1,1]:
-			var x := side * (115 + sin(visual_time*2) * 10)
+			var x: float = side * (115 + sin(visual_time*2) * 10)
 			draw_colored_polygon(PackedVector2Array([Vector2(x,-52),Vector2(x+side*25,0),Vector2(x,56),Vector2(x-side*20,0)]),Color("5c3b90"))
 			draw_line(Vector2(x,-48),Vector2(x,46),Color("c9a2ff"),3,true)
 		draw_circle(Vector2.ZERO,20+sin(visual_time*5)*3,Color("f0b7ff"))
