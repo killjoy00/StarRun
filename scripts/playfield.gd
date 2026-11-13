@@ -122,6 +122,92 @@ func _sector(at: float) -> int:
 		return 3
 	return 4
 
+func _draw_stage_backdrop() -> void:
+	# Each late-game stage has its own silhouette, contrast, and parallax,
+	# rather than recoloring the Debris Belt texture.
+	var base := Color("041c32") if sim.stage == 2 else (Color("26110a") if sim.stage == 3 else Color("0d071b"))
+	var high := Color("064e64") if sim.stage == 2 else (Color("632512") if sim.stage == 3 else Color("261448"))
+	draw_rect(Rect2(0, 0, 540, 960), base)
+	for band in range(24):
+		draw_rect(Rect2(0, band * 40, 540, 42), base.lerp(high, 0.15 + 0.55 * (1.0 - absf(11.5 - band) / 12.0)))
+	match sim.stage:
+		2:
+			# Jagged cyan plasma rivers, pale cloud masses, electric ribs.
+			for i in range(10):
+				var x := 35.0 + i * 58.0 + sin(visual_time * 0.45 + i) * 22.0
+				draw_line(Vector2(x, -60), Vector2(x - 55, 1020), Color("116d90", 0.16), 28.0)
+				for part in range(8):
+					var y := fposmod(part * 161.0 + i * 91.0 + visual_time * (42 + i * 2), 1070.0) - 55.0
+					var points := PackedVector2Array([Vector2(x - 16, y), Vector2(x + 12, y + 28), Vector2(x - 8, y + 53), Vector2(x + 19, y + 92)])
+					draw_polyline(points, Color("87e8ff", 0.22 + i % 3 * 0.06), 2.1, true)
+			for i in range(5):
+				var p := Vector2(fposmod(i * 213.0, 620.0) - 40, fposmod(i * 317.0 + visual_time * 32.0, 1120.0) - 80)
+				draw_circle(p, 90 + i % 3 * 32, Color("39bbf0", 0.04))
+		3:
+			# Furnace ceiling and molten orange trenches, moving as distinct structures.
+			for edge in [-1, 1]:
+				var side_x := 270.0 + edge * 222.0
+				draw_rect(Rect2(side_x - 40, 0, 80, 960), Color("4d2116", 0.82))
+				for i in range(9):
+					var y := fposmod(i * 148.0 + visual_time * 72.0, 1100.0) - 80.0
+					draw_rect(Rect2(side_x - 40, y, 80, 20), Color("db5926", 0.50))
+					draw_circle(Vector2(side_x, y + 8), 5, Color("ffe288", 0.7))
+			for lane in range(4):
+				var x := 110.0 + lane * 105.0
+				draw_line(Vector2(x, -50), Vector2(x + sin(visual_time * 0.6) * 15, 1010), Color("ff7131", 0.16), 17)
+				for i in range(9):
+					var y := fposmod(i * 133.0 + lane * 81.0 + visual_time * 125.0, 1060.0) - 50.0
+					draw_rect(Rect2(x - 21, y, 42, 9), Color("ffb75d", 0.18))
+		4:
+			# A black-violet architectural void, symmetrical towers and rotating gates.
+			for side in [-1, 1]:
+				var x := 270.0 + side * 225.0
+				draw_colored_polygon(PackedVector2Array([Vector2(x - 46, -50), Vector2(x + 46, -50), Vector2(x + 31, 1030), Vector2(x - 31, 1030)]), Color("23123e", 0.9))
+				for i in range(10):
+					var y := fposmod(i * 136.0 + visual_time * 56.0, 1100.0) - 70.0
+					draw_colored_polygon(PackedVector2Array([Vector2(x, y - 25), Vector2(x + 18, y), Vector2(x, y + 25), Vector2(x - 18, y)]), Color("8753d8", 0.25))
+			for gate in range(6):
+				var y := fposmod(gate * 210.0 + visual_time * 65.0, 1220.0) - 170.0
+				draw_arc(Vector2(270, y), 102 + gate % 3 * 14, 0.14, PI - 0.14, 34, Color("ac84ff", 0.22), 3.0)
+				draw_arc(Vector2(270, y), 102 + gate % 3 * 14, PI + 0.14, TAU - 0.14, 34, Color("ac84ff", 0.22), 3.0)
+
+func _draw_boss_ceremony(elapsed: float) -> void:
+	var origin: Vector2 = sim.last_boss_position
+	var progress := clampf(elapsed / 2.2, 0, 1)
+	var warm := Color("ffbb55") if sim.stage in [1, 3] else Color("89dfff") if sim.stage == 2 else Color("d5a1ff")
+	if not profile.reduced:
+		draw_circle(origin, 155.0 * maxf(0, 1.0 - elapsed / 1.6), Color(warm, 0.28 * maxf(0, 1.0 - elapsed / 1.6)))
+		for pulse in range(4):
+			var t := elapsed - pulse * 0.24
+			if t >= 0 and t < 1.7:
+				var radius := 20.0 + t * 285.0
+				draw_arc(origin, radius, 0, TAU, 72, Color(warm, (1.0 - t / 1.7) * 0.80), 5.0 - pulse * 0.55, true)
+	for spark in range(18 if profile.reduced else 85):
+		var angle: float = spark * 2.399963 + sin(spark * 0.54) * 0.12
+		var speed: float = 75.0 + fposmod(spark * 73.0, 360.0)
+		var distance: float = minf(elapsed, 2.8) * speed
+		var position := origin + Vector2.from_angle(angle) * distance
+		var tint := warm.lerp(Color.WHITE, fposmod(spark * 0.37, 0.6))
+		var alpha: float = 0.90 * maxf(0.08, 1.0 - elapsed / 3.4)
+		draw_line(position, position - Vector2.from_angle(angle) * (5 + progress * 30), Color(tint, alpha), 1.5 if profile.reduced else 3.0, true)
+		if spark % 5 == 0:
+			draw_circle(position, 4.0, Color(tint, alpha * 0.75))
+
+func _draw_warp(elapsed: float) -> void:
+	var progress := clampf(elapsed / 1.45, 0, 1)
+	var center := Vector2(270, 470)
+	var color := Color("65dfff") if sim.stage == 1 else (Color("ffb36a") if sim.stage == 2 else Color("bf83ff"))
+	draw_circle(center, 125.0 * (1.0 - progress * 0.7), Color(color, 0.10 + 0.14 * progress))
+	for beam in range(38 if profile.reduced else 82):
+		var angle: float = beam * 2.399963
+		var radial: float = (22.0 + fposmod(beam * 47.0, 210.0)) * (1.0 + progress * 3.0)
+		var direction := Vector2.from_angle(angle)
+		var p := center + direction * radial
+		draw_line(p, p + direction * (20.0 + progress * 190.0), Color(color, 0.3 + progress * 0.6), 2.0, true)
+	for ring in range(4):
+		var radius := 45.0 + ring * 48.0 + progress * 140.0
+		draw_arc(center, radius, 0, TAU, 68, Color(color, 0.40 * (1.0 - progress)), 2.5, true)
+
 func _draw_environment(sector: int, drift: Vector2) -> void:
 	# Procedural layers provide distinct vistas without interrupting continuous scrolling.
 	match sector:
