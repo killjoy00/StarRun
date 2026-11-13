@@ -392,19 +392,24 @@ func _process(delta: float) -> void:
 	world.queue_redraw()
 
 func _update_hud() -> void:
-	hud.text = "HULL %03d   SHIELD %02d   LV %02d" % [sim.hull, sim.shield, sim.level]
-	var seconds := int(sim.time)
-	status.text = "%02d:%02d" % [seconds / 60, seconds % 60]
-	for i in range(Catalog.ABILITIES.size()):
-		var id: String = Catalog.ABILITIES[i]
-		var button: Button = ability_buttons[id]
-		var cooldown: float = sim.cooldowns[id]
-		var learned: bool = sim.upgrades[id] > 0
-		var title: String = "DRONES" if id == "mend" else sim.content.abilities[id].name.to_upper()
-		var status_text := ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "LEVEL-UP"
-		button.text = ("%s\n%s" % [("CHRONO" if id == "chrono" else title) if learned else "EMPTY", status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title if learned else "EMPTY", status_text])
+	hud.text = "S%d  HULL %03d   SHIELD %02d   LV %02d" % [sim.stage, sim.hull, sim.shield, sim.level]
+	var seconds := int(sim.time - sim.stage_start)
+	status.text = "%s  %02d:%02d" % [sim.difficulty.to_upper(), seconds / 60, seconds % 60]
+	for i in range(Catalog.ACTIVE_SLOTS):
+		var button: Button = ability_buttons[i]
+		var occupied := i < sim.active_slots.size()
+		var id: String = str(sim.active_slots[i]) if occupied else ""
+		var cooldown: float = float(sim.cooldowns.get(id, 0.0))
+		var learned := occupied and sim.upgrades[id] > 0
+		var title: String = sim.content.abilities[id].name.to_upper() if occupied else "EMPTY SLOT"
+		var status_text := ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "DRAFT AN ABILITY"
+		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
-		button.tooltip_text = sim.content.abilities[id].name + (" · Level %d" % sim.upgrades[id] if learned else " · Find this ability in an upgrade draft")
+		button.tooltip_text = (sim.content.abilities[id].name + " · Level %d" % sim.upgrades[id]) if learned else "Install an active ability in an upgrade draft"
+		var badge = button.get_child(0)
+		badge.icon_id = id
+		if occupied and not previous_ready.has(id):
+			previous_ready[id] = true
 	build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
 	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
 		build_label.text += tag + "S\n"
@@ -414,9 +419,13 @@ func _update_hud() -> void:
 		build_label.text += "\n"
 	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), "HARVESTER ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
+func _activate_slot(slot: int) -> void:
+	if slot >= 0 and slot < sim.active_slots.size():
+		_activate(str(sim.active_slots[slot]))
+
 func _activate(id: String) -> void:
 	if mode == "playing" and sim.activate(id):
-		sound.play(id)
+		sound.play(id if id in ["aegis", "nova", "barrage", "overdrive", "chrono", "mend"] else "nova")
 		if not sim.cards.is_empty():
 			_show_cards()
 
@@ -431,7 +440,9 @@ func _show_cards() -> void:
 	for i in range(sim.cards.size()):
 		var card: Dictionary = sim.cards[i]
 		var current: int = int(sim.upgrades.get(card.id, 0))
-		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, "NEW ABILITY" if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, current + 1] if card.id != "repair" else "REPAIR"), card.description]
+		var levels := 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
+		var growth := "NEW ABILITY · SLOT %d/4" % (sim.active_slots.size() + 1) if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, mini(int(card.max), current + levels)] if card.id != "repair" else "REPAIR")
+		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, growth, card.description]
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		box.add_child(row)
@@ -522,7 +533,7 @@ func _show_results() -> void:
 	var box := _panel(490)
 	_label(box, "SECTOR CLEARED" if sim.won else "SIGNAL LOST", 32, CYAN if sim.won else AMBER)
 	_wrapped(box, "Harvester destroyed. The belt is behind you." if sim.won else "The flight recorder survived. Here's what happened.", 16, Color.WHITE)
-	_label(box, "%02d:%02d survived · %d kills · +%d cores" % [int(sim.time) / 60, int(sim.time) % 60, sim.kills, sim.payout()], 14, CYAN)
+	_label(box, "Stage %d/2 · %s · %d kills · +%d cores" % [sim.stage_clears if sim.won else sim.stage, sim.difficulty.to_upper(), sim.kills, sim.payout()], 14, CYAN)
 	_wrapped(box, "DAMAGE RECEIVED\nChaff %.0f   Heavy %.0f   Missiles %.0f   Hazards %.0f\n\nWEAPON DAMAGE\nPulse %.0f   Seekers %.0f   Arc %.0f\nLance %.0f   Nova %.0f   Barrage %.0f\n\n%d beams cancelled · %.0f damage blocked" % [sim.damage_taken.chaff, sim.damage_taken.heavy, sim.damage_taken.ordnance, sim.damage_taken.hazard, sim.damage_dealt.pulse, sim.damage_dealt.seeker, sim.damage_dealt.arc, sim.damage_dealt.lance, sim.damage_dealt.nova, sim.damage_dealt.barrage, sim.beams_cancelled, sim.prevented], 14)
 	var recap := "FINAL 10 SECONDS"
 	var count := 0
@@ -789,7 +800,7 @@ func _show_build() -> void:
 	_label(box, "ACTIVE BUILD", 28, CYAN)
 	_wrapped(box, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 19, Color.WHITE)
 	_wrapped(box, "%s\n%s" % [Catalog.ship(sim.ship_id).description, Catalog.pilot(sim.pilot_id).description], 13)
-	_label(box, "HULL %d/%d    SHIELD %d/%d    LEVEL %d" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.level], 13, CYAN)
+	_label(box, "STAGE %d · %s · HULL %d/%d · SHIELD %d/%d · LEVEL %d" % [sim.stage, sim.difficulty.to_upper(), sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.level], 13, CYAN)
 	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
 		_label(box, tag + "S", 15, AMBER)
 		var count := 0
