@@ -177,8 +177,10 @@ func _test_new_abilities() -> void:
 	check(sim.upgrades.mend == 0 and sim.active_slots.size() == 4, "A fifth unowned ability must never be equipped")
 	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
-	var healing := Sim.new(4, {}, "haven")
-	check(healing.active_slots == ["mend"], "Haven starts with its repair signature")
+	var haven := Sim.new(4, {}, "haven")
+	check(haven.active_slots == ["mend"], "Haven starts with its repair signature")
+	var healing := Sim.new()
+	_install(healing, "mend")
 	healing.hull = 40
 	healing.next_spawn = 999
 	healing.activate("mend")
