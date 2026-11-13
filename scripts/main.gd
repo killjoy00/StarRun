@@ -698,21 +698,44 @@ func _finish() -> void:
 
 func _show_results() -> void:
 	mode = "results"
-	var box := _panel(490)
-	_label(box, "SECTOR CLEARED" if sim.won else "SIGNAL LOST", 32, CYAN if sim.won else AMBER)
-	_wrapped(box, "Harvester destroyed. The belt is behind you." if sim.won else "The flight recorder survived. Here's what happened.", 16, Color.WHITE)
-	_label(box, "Stage %d/2 · %s · %d kills · +%d cores" % [sim.stage_clears if sim.won else sim.stage, sim.difficulty.to_upper(), sim.kills, sim.payout()], 14, CYAN)
-	_wrapped(box, "DAMAGE RECEIVED\nChaff %.0f   Heavy %.0f   Missiles %.0f   Hazards %.0f\n\nWEAPON DAMAGE\nPulse %.0f   Seekers %.0f   Arc %.0f\nLance %.0f   Nova %.0f   Barrage %.0f\n\n%d beams cancelled · %.0f damage blocked" % [sim.damage_taken.chaff, sim.damage_taken.heavy, sim.damage_taken.ordnance, sim.damage_taken.hazard, sim.damage_dealt.pulse, sim.damage_dealt.seeker, sim.damage_dealt.arc, sim.damage_dealt.lance, sim.damage_dealt.nova, sim.damage_dealt.barrage, sim.beams_cancelled, sim.prevented], 14)
-	var recap := "FINAL 10 SECONDS"
-	var count := 0
+	var view := _reading_screen(540)
+	var header: VBoxContainer = view.header
+	var body: VBoxContainer = view.body
+	var footer: HBoxContainer = view.footer
+	_label(header, "FOUR STAGES CLEARED" if sim.won else "FLIGHT ENDED", 27, CYAN if sim.won else AMBER)
+	_wrapped(header, "Reached %s  ·  %s" % [sim.stage_name(), sim.difficulty.to_upper()], 17, Color.WHITE)
+	_wrapped(header, "Stage %d of %d  ·  %02d:%02d flight time" % [sim.stage, sim.stage_count(), int(sim.time) / 60, int(sim.time) % 60], 15, MUTED)
+	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses], AMBER)
+	_reading_card(body, "FINAL SHIP STATUS", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled])
+	_label(body, "DAMAGE REPORT", 19, AMBER)
+	var damage_lines := PackedStringArray()
+	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		var value: float = float(sim.damage_taken.get(kind, 0.0))
+		if value > 0.0:
+			var name := {"ordnance":"Missiles", "hazard":"Hazards", "heavy":"Heavy beams"}.get(kind, kind.capitalize())
+			damage_lines.append("%s   %.0f" % [name, value])
+	_reading_card(body, "INCOMING DAMAGE", "\n".join(damage_lines) if not damage_lines.is_empty() else "No incoming damage recorded.")
+	var weapons: Array = []
+	for key in sim.damage_dealt:
+		var value: float = float(sim.damage_dealt[key])
+		if value > 0:
+			weapons.append({"name":str(key).capitalize(), "damage":value})
+	weapons.sort_custom(func(a, b): return a.damage > b.damage)
+	var weapon_lines := PackedStringArray()
+	for i in range(mini(5, weapons.size())):
+		weapon_lines.append("%s   %.0f" % [weapons[i].name, weapons[i].damage])
+	_reading_card(body, "TOP WEAPONS", "\n".join(weapon_lines) if not weapon_lines.is_empty() else "No weapon damage recorded.")
+	_label(body, "LAST MOMENTS", 19, AMBER)
+	var recap := PackedStringArray()
 	for i in range(sim.events.size() - 1, -1, -1):
 		var event: Dictionary = sim.events[i]
-		if event.time >= sim.time - 10 and count < 5:
-			recap += "\n−%.1fs  %s" % [sim.time - event.time, event.message]
-			count += 1
-	_wrapped(box, recap, 13, MUTED)
-	_button(box, "Launch another flight", _new_run, true).grab_focus()
-	_button(box, "Hangar · %d cores" % profile.cores, _show_hangar)
+		if event.time >= sim.time - 10.0 and recap.size() < 5:
+			recap.append("%.1fs ago  ·  %s" % [sim.time - event.time, event.message])
+	_reading_card(body, "FLIGHT RECORDER", "\n".join(recap) if not recap.is_empty() else "No events during the final ten seconds.")
+	_button(body, "Visit Hangar  ·  %d cores available" % profile.cores, _show_hangar)
+	var again := _reading_cta(footer, "Fly again", _new_run, true)
+	_reading_cta(footer, "Main menu", _show_menu)
+	again.grab_focus()
 
 func _show_hangar() -> void:
 	mode = "hangar"
