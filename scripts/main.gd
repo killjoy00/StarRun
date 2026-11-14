@@ -47,6 +47,7 @@ var previous_ready := {}
 var previous_warning := false
 var last_hull := 100.0
 var card_selection := 0
+var draft_page := 0
 var banner_text := ""
 var banner_clock := 0.0
 var last_sector := ""
@@ -179,7 +180,7 @@ func _layout() -> void:
 	var size := get_viewport_rect().size
 	old_size = size
 	root.size = size
-	var usable_height := maxf(240, size.y - 222)
+	var usable_height := maxf(240, size.y - (160 if _compact_ui() else 222))
 	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 75), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
@@ -192,12 +193,12 @@ func _layout() -> void:
 	var compact := _compact_ui()
 	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
 	var controls_x := (size.x - controls_width) / 2
-	var button_width := (controls_width - 6) / 2
+	var button_width := (controls_width - (15 if compact else 6)) / (4 if compact else 2)
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
-		button.position = Vector2(controls_x + (i % 2) * (button_width + 6), field.end.y + 9 + int(i / 2) * 56)
-		button.size = Vector2(button_width, 50)
-		button.custom_minimum_size.y = 50
+		button.position = Vector2(controls_x + i * (button_width + 5), field.end.y + 9) if compact else Vector2(controls_x + (i % 2) * (button_width + 6), field.end.y + 9 + int(i / 2) * 56)
+		button.size = Vector2(button_width, 54 if compact else 50)
+		button.custom_minimum_size.y = 54 if compact else 50
 		button.add_theme_font_size_override("font_size", _text_size(12))
 		button.get_child(0).visible = not compact # On narrow screens the badges overlap button text.
 		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
@@ -493,6 +494,10 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	world.queue_redraw()
 
+func _short_ability_name(id: String) -> String:
+	var names := {"overdrive":"DRIVE", "capacitor":"CHARGE", "deflector":"DEFLECT", "barrage":"ROCKETS", "barrier":"BARRIER", "salvage":"SALVAGE", "overload":"OVERLOAD", "repair_matrix":"REPAIR", "nova_aegis":"NOVA SHD", "railstorm":"RAILSTORM", "stasis_lock":"TIME LOCK", "missile_grid":"MISSILES", "scrap_converter":"SCRAP", "prism_focus":"PRISM", "reflective_wall":"REFLECT", "ghost_signal":"GHOST", "reactor_surge":"SURGE", "strike":"RAIL", "reboot":"REBOOT", "siphon":"SIPHON", "focus":"FOCUS", "flak":"FLAK", "chrono":"CHRONO", "jammer":"JAMMER", "decoy":"DECOY", "aegis":"AEGIS", "mend":"REPAIR", "emp":"EMP", "nova":"NOVA", "prism":"PRISM"}
+	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
+
 func _update_hud() -> void:
 	hud.text = "S%d  HULL %03d   SHIELD %02d   LV %02d" % [sim.stage, sim.hull, sim.shield, sim.level]
 	var seconds := int(sim.time - sim.stage_start)
@@ -503,8 +508,8 @@ func _update_hud() -> void:
 		var id: String = str(sim.active_slots[i]) if occupied else ""
 		var cooldown: float = float(sim.cooldowns.get(id, 0.0))
 		var learned: bool = occupied and int(sim.upgrades.get(id, 0)) > 0
-		var title: String = sim.content.abilities[id].name.to_upper() if occupied else "EMPTY SLOT"
-		var status_text := ("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "DRAFT AN ABILITY"
+		var title: String = _short_ability_name(id) if occupied and _compact_ui() else (sim.content.abilities[id].name.to_upper() if occupied else "EMPTY")
+		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and _compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else ("FREE" if _compact_ui() else "DRAFT AN ABILITY"))
 		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + " · Level %d" % sim.upgrades[id]) if learned else "Install an active ability in an upgrade draft"
