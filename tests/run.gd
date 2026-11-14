@@ -366,9 +366,30 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 				best = i
 		sim.choose_card(best)
 	if strategy == "on_cooldown":
-		for id in Catalog.ABILITIES:
-			sim.activate(id)
+		for id in sim.active_slots:
+			sim.activate(str(id))
 	elif strategy == "timed":
+		# Fusions replace both original buttons. The bot must time the fused cast,
+		# rather than trying to press two abilities that no longer exist.
+		var urgent_beam := false
+		for beam in sim.charges:
+			urgent_beam = urgent_beam or float(beam.remaining) < 0.55
+		if urgent_beam or (sim.bullets.size() >= 16 and sim.shield < sim.max_shield - 10):
+			sim.activate("nova_aegis")
+		if urgent_beam or sim.bullets.size() >= 20:
+			sim.activate("stasis_lock")
+			sim.activate("ghost_signal")
+		if sim.boss_spawned or sim.enemies.size() >= 3:
+			sim.activate("railstorm")
+			sim.activate("missile_grid")
+			sim.activate("prism_focus")
+		if sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield - 30:
+			sim.activate("repair_matrix")
+		if sim.hull < sim.max_hull - 20 and sim.enemies.size() > 0:
+			sim.activate("scrap_converter")
+		if sim.bullets.size() >= 15:
+			sim.activate("reflective_wall")
+			sim.activate("reactor_surge")
 		if sim.enemies.size() >= 3 or sim.boss_spawned:
 			sim.activate("barrage")
 			sim.activate("overdrive")
