@@ -375,7 +375,7 @@ func _show_menu() -> void:
 	_label(box, "DEBRIS BELT   /   FLIGHT 01", 13, AMBER)
 	_wrapped(box, "Build the ship. Read the threat. Choose your moment.", 19, Color.WHITE)
 	_wrapped(box, "Your ship flies and fires itself. Each hull begins with one signature ability. Draft up to three more from a pool of 20.")
-	_wrapped(box, "Four distinct stages. A boss and a new battlefield in each. No steering.", 14)
+	_wrapped(box, "Four stages. Boss weak points, build synergies and irreversible Prototype and route decisions. Still no steering.", 14)
 	_wrapped(box, "SHIP  %s   /   PILOT  %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], 13, CYAN)
 	if not services.read_save(Services.RUN).is_empty():
 		_button(box, "Resume flight", _resume_run, true)
@@ -660,7 +660,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	panel.add_child(content)
 	_wrapped(content, sim.stage_spec().reward_label.to_upper(), 21, AMBER)
 	_wrapped(content, "RUN SALVAGE  %d CORES · %d ENEMIES DEFEATED\nSalvage is awarded when the flight ends." % [sim.payout(), sim.kills], 16, Color.WHITE)
-	var next_text := "The Void Citadel is yours. Claim your victory and see the flight report." if sim.stage == sim.stage_count() else "Next: %s. Your build carries forward; shields recharge, hull repairs and you get an upgrade." % sim.stage_spec().transition
+	var next_text := "The Void Citadel is yours. Claim your victory and see the flight report." if sim.stage == sim.stage_count() else "Next: %s. Warp, install a Prototype, then choose repairs, damage or a higher-risk bounty." % sim.stage_spec().transition
 	_wrapped(content, next_text, 16, Color.WHITE)
 	stage_clear_button = _button(content, "Claim victory & see report" if sim.stage == sim.stage_count() else "Warp to " + str(sim.stage_spec().transition), _begin_warp, true)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
@@ -711,7 +711,7 @@ func _show_prototypes() -> void:
 		choose.custom_minimum_size.y = 50
 		if first == null:
 			first = choose
-	_wrapped(footer, "1 OF 3  ·  THE CHOICE LASTS ALL FLIGHT", 14, MUTED)
+	_reading_cta(footer, "Save & Main Menu", _show_menu)
 	if first != null:
 		first.grab_focus()
 
@@ -746,7 +746,7 @@ func _show_route_choice() -> void:
 		button.custom_minimum_size.y = 52
 		if first == null:
 			first = button
-	_wrapped(footer, "The decision is saved before the next stage begins.", 14, MUTED)
+	_reading_cta(footer, "Save & Main Menu", _show_menu)
 	if first != null:
 		first.grab_focus()
 
