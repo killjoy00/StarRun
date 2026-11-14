@@ -549,6 +549,8 @@ func _update_enemies() -> void:
 				enemy.fire = 0.5
 				continue
 			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
+			if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
+				enemy.fire *= 0.70
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
 			flight_time = enemy.p.distance_to(ship_position(time + flight_time)) / 215.0
 			var aim: Vector2 = ship_position(time + flight_time)
@@ -577,6 +579,8 @@ func _update_enemies() -> void:
 				elif kind in ["arc_spire", "forge_turret"]: count = 9
 				elif kind == "gravity_sentinel": count = 7
 				elif kind.begins_with("boss"): count = 9 + stage * 2
+				if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
+					count += 6
 				var bullet_kind := "chaff"
 				match kind:
 					"ion_frigate", "arc_spire", "storm_weaver": bullet_kind = "ion"
