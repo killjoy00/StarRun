@@ -1124,76 +1124,64 @@ func _show_build() -> void:
 	var header: VBoxContainer = view.header
 	var body: VBoxContainer = view.body
 	var footer: HBoxContainer = view.footer
-	_label(header, "YOUR BUILD", 27, CYAN)
-	_wrapped(header, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 17, Color.WHITE)
-	_wrapped(header, "STAGE %d OF %d  ·  %s  ·  LEVEL %d" % [sim.stage, sim.stage_count(), sim.difficulty.to_upper(), sim.level], 15, MUTED)
-	_reading_card(body, "SHIP STATUS", "HULL  %d / %d\nSHIELDS  %d / %d\nACTIVE SLOTS  %d / 4" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.active_slots.size()])
-	_label(body, "BUILD IDENTITY", 19, AMBER)
-	var active_combos: Array = sim.active_synergies()
-	if active_combos.is_empty():
-		_reading_card(body, "NO ACTIVE SYNERGY", "Draft complementary active abilities to unlock Fortress, Glass Cannon, Control or Salvager bonuses - each has a drawback.", MUTED)
-	for combo in active_combos:
-		_reading_card(body, str(combo.name), str(combo.description), CYAN)
-	if sim.prototypes.is_empty():
-		_wrapped(body, "No Prototypes yet. Defeat a stage boss to choose one.", 15, MUTED)
-	for id in sim.prototypes:
-		var spec: Dictionary = sim.prototype_spec(str(id))
-		_reading_card(body, "PROTOTYPE  ·  " + str(spec.name), "BENEFIT  %s\nTRADEOFF  %s" % [spec.benefit, spec.cost], AMBER)
-	if not sim.route_choice.is_empty():
-		_wrapped(body, "Current route: %s  ·  %s" % [sim.route_choice.to_upper(), "Extra enemy pressure" if sim.stage_risk > 1.0 else ("Weapon overclock" if sim.stage_power > 1.0 else "Reinforced hull")], 15, CYAN)
-	_label(body, "EQUIPPED ABILITIES", 19, AMBER)
-	var active_grid := GridContainer.new()
-	active_grid.columns = 1 if _compact_ui() else 2
-	active_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	active_grid.add_theme_constant_override("h_separation", 8)
-	active_grid.add_theme_constant_override("v_separation", 8)
-	body.add_child(active_grid)
+	_label(header, "Build", 26, CYAN)
+	_wrapped(header, "%s / %s  |  Stage %d  |  Level %d" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name, sim.stage, sim.level], 15, Color.WHITE)
+	_reading_card(body, "Ship", "Hull %d/%d  |  Shield %d/%d  |  %d of 4 slots" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.active_slots.size()])
+	_label(body, "Active abilities", 18, AMBER)
 	for slot in range(Catalog.ACTIVE_SLOTS):
 		if slot >= sim.active_slots.size():
-			_reading_card(active_grid, "%d  ·  EMPTY SLOT" % (slot + 1), "Choose an ability from your next level-up.", MUTED)
+			_wrapped(body, "%d. Empty slot" % (slot + 1), 16)
 			continue
 		var id: String = str(sim.active_slots[slot])
-		var rank: int = int(sim.upgrades.get(id, 0))
-		var desc := ""
-		for card in sim.content.cards:
-			if card.id == id:
-				desc = str(card.description)
-				break
-		var recharge := int(sim.content.abilities[id].cooldown)
-		_reading_card(active_grid, "%d  ·  %s" % [slot + 1, sim.content.abilities[id].name.to_upper()], "RANK %d / 5  ·  %ds BASE COOLDOWN\n%s" % [rank, recharge, desc], CYAN)
-	_label(body, "AUTOMATIC WEAPONS", 19, AMBER)
-	var weapons := 0
-	for entry in sim.content.cards:
-		if entry.tag != "WEAPON" or int(sim.upgrades.get(entry.id, 0)) <= 0:
-			continue
-		weapons += 1
-		_reading_card(body, str(entry.name), "Rank %d of %d · %s" % [sim.upgrades[entry.id], entry.max, entry.description])
-	if weapons == 0:
-		_wrapped(body, "No automatic weapon modules installed.", 15)
-	_label(body, "Ship systems", 19, AMBER)
-	var systems: Array = []
-	for entry in sim.content.cards:
-		if entry.tag == "SYSTEM" and int(sim.upgrades.get(entry.id, 0)) > 0:
-			systems.append(entry)
-	for index in range(systems.size() if build_show_all else mini(3, systems.size())):
-		var entry: Dictionary = systems[index]
-		_reading_card(body, str(entry.name), "Rank %d of %d · %s" % [sim.upgrades[entry.id], entry.max, entry.description])
-	if systems.size() > 3:
-		_button(body, "Show less" if build_show_all else "Show all %d installed systems" % systems.size(), _toggle_build_details)
-	var hangar_count := 0
-	var hangar_lines := PackedStringArray()
-	for entry in Catalog.HANGAR:
-		var rank: int = int(sim.meta.get(entry.id, 0))
-		if rank > 0:
-			hangar_count += 1
-			hangar_lines.append("%s  ·  %d/%d" % [entry.name, rank, entry.max])
-	var support := "%d permanent Hangar upgrades active on this flight." % hangar_count
-	if build_show_all and hangar_count > 0:
-		support += "\n" + "\n".join(hangar_lines)
-	_reading_card(body, "HANGAR SUPPORT", support, AMBER)
-	var resume := _reading_cta(footer, "Back to pause" if build_return_mode == "paused" else "Resume flight", _toggle_pause, true)
+		var fused: Dictionary = sim.fusion_spec(id)
+		if not fused.is_empty():
+			var part_a: String = str(fused.parts[0])
+			var part_b: String = str(fused.parts[1])
+			_wrapped(body, "%d. %s (fused)\n    %s rank %d + %s rank %d" % [slot + 1, fused.name, sim.content.abilities[part_a].name, sim.upgrades[part_a], sim.content.abilities[part_b].name, sim.upgrades[part_b]], 16, CYAN)
+		else:
+			_wrapped(body, "%d. %s  |  Rank %d of 10" % [slot + 1, sim.content.abilities[id].name, sim.upgrades[id]], 16, CYAN)
+	var pairs: Array = sim.active_passive_links()
+	if not pairs.is_empty():
+		_label(body, "Paired upgrades", 18, AMBER)
+		for i in range(pairs.size() if build_show_all else mini(3, pairs.size())):
+			_wrapped(body, str(pairs[i].name) + ": " + str(pairs[i].description), 15)
+		if not build_show_all and pairs.size() > 3:
+			_wrapped(body, "%d more pairs. Open details to see them." % (pairs.size() - 3), 15)
+	var combos: Array = sim.active_synergies()
+	if not combos.is_empty():
+		_label(body, "Build bonuses", 18, AMBER)
+		for combo in combos:
+			_wrapped(body, str(combo.name).capitalize() + ": " + str(combo.description), 15)
+	if not sim.prototypes.is_empty():
+		_label(body, "PROTOTYPES", 18, AMBER)
+		for id in sim.prototypes:
+			var spec: Dictionary = sim.prototype_spec(str(id))
+			_wrapped(body, str(spec.name) + ": " + str(spec.benefit) + ". Cost: " + str(spec.cost), 15)
+	if not sim.route_choice.is_empty():
+		_wrapped(body, "Current route: " + sim.route_choice.capitalize(), 15, CYAN)
+	_button(body, "Hide equipment details" if build_show_all else "Show weapons, systems and Hangar", _toggle_build_details)
+	if build_show_all:
+		_label(body, "Automatic weapons", 18, AMBER)
+		for entry in sim.content.cards:
+			if entry.tag == "WEAPON" and int(sim.upgrades.get(entry.id, 0)) > 0:
+				_wrapped(body, "%s  |  Rank %d/10\n%s" % [entry.name, sim.upgrades[entry.id], entry.description], 15)
+		_label(body, "Ship systems", 18, AMBER)
+		for entry in sim.content.cards:
+			if entry.tag == "SYSTEM" and int(sim.upgrades.get(entry.id, 0)) > 0:
+				_wrapped(body, "%s  |  Rank %d/10\n%s" % [entry.name, sim.upgrades[entry.id], entry.description], 15)
+		_label(body, "Hangar upgrades", 18, AMBER)
+		var hangar_count := 0
+		for entry in Catalog.HANGAR:
+			var rank: int = int(sim.meta.get(entry.id, 0))
+			if rank > 0:
+				hangar_count += 1
+				_wrapped(body, "%s  |  Rank %d" % [entry.name, rank], 15)
+		if hangar_count == 0:
+			_wrapped(body, "No Hangar upgrades yet.", 15)
+	var resume := _reading_cta(footer, "Back to pause" if build_return_mode == "paused" else "Resume", _toggle_pause, true)
 	_reading_cta(footer, "Main menu", _build_to_menu)
 	resume.grab_focus()
+
 
 func _toggle_build_details() -> void:
 	build_show_all = not build_show_all
