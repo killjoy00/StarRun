@@ -541,55 +541,81 @@ func _activate(id: String) -> void:
 func _show_cards() -> void:
 	mode = "cards"
 	_save_run()
-	card_selection = 0
-	var box := _panel(460)
-	_label(box, "UPLINK AVAILABLE", 13, CYAN)
-	_label(box, "Choose your upgrade", 26)
-	_label(box, "LEVEL %02d · Flight paused" % sim.level, 14, MUTED)
+	var compact := _compact_ui()
+	var page_size := 2 if compact else maxi(1, sim.cards.size())
+	var max_page: int = maxi(0, int(ceil(float(sim.cards.size()) / float(page_size))) - 1)
+	draft_page = clampi(draft_page, 0, max_page)
+	var first: int = draft_page * page_size
+	var last: int = mini(sim.cards.size(), first + page_size)
+	var view := _reading_screen(470)
+	var header: VBoxContainer = view.header
+	var body: VBoxContainer = view.body
+	var footer: HBoxContainer = view.footer
+	_label(header, "Pick an upgrade", 24, Color.WHITE)
+	_wrapped(header, "Level %d  |  Options %d-%d of %d" % [sim.level, first + 1, last, sim.cards.size()], 15, MUTED)
 	if sim.stage > 1 and sim.time - sim.stage_start < 1.0:
-		_wrapped(box, "STAGE %d · %s. %s" % [sim.stage, sim.stage_name(), sim.stage_spec().description], 16, AMBER)
-	for i in range(sim.cards.size()):
+		_wrapped(header, "Stage %d: %s" % [sim.stage, sim.stage_name()], 15, AMBER)
+	# No long four-choice column on phones. Two full-width cards per page.
+	if compact:
+		reading_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	for i in range(first, last):
 		var card: Dictionary = sim.cards[i]
-		var current: int = int(sim.upgrades.get(card.id, 0))
-		var levels := 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
-		var growth := "NEW ABILITY · SLOT %d/4" % (sim.active_slots.size() + 1) if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, mini(int(card.max), current + levels)] if card.id != "repair" else "REPAIR")
-		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, growth, card.description]
+		var id: String = str(card.id)
+		var current: int = int(sim.upgrades.get(id, 0))
+		var increment: int = 1 if card.tag == "ABILITY" and current == 0 else 2
+		var next_rank: int = mini(int(card.max), current + increment)
+		var heading: String = "%d. %s" % [i + 1, card.name]
+		var detail: String = ("New active  |  %d of 4 slots" % (sim.active_slots.size() + 1)) if card.tag == "ABILITY" and current == 0 else ("%s  |  Rank %d to %d" % [card.tag.capitalize(), current, next_rank])
+		detail += "\n" + str(card.description)
+		if current < 10 and id != "repair":
+			var milestone: int = 5 if current < 5 else 10
+			detail += "\nRank %d: %s" % [milestone, str(card.get("rank5" if milestone == 5 else "rank10", ""))]
 		if card.tag == "ABILITY" and current == 0:
-			var synergy: String = sim.synergy_hint(str(card.id))
-			if not synergy.is_empty():
-				title += "\nCOMBO UNLOCK: " + synergy
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		box.add_child(row)
-		var icon := IconBadge.new()
-		icon.icon_id = card.id
-		icon.custom_minimum_size = Vector2(38, 38)
-		row.add_child(icon)
-		var button := _button(row, title, _choose.bind(i))
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", _text_size(14))
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size.y = (156 if _compact_ui() else 112) if title.contains("COMBO UNLOCK:") else (108 if _compact_ui() else 88)
-		card_buttons.append(button)
-		if sim.banishes_left > 0 and card.id != "repair":
-			var banish := _button(box, "Banish %s · %d left" % [card.name, sim.banishes_left], _draft_action.bind("banish", i))
-			banish.custom_minimum_size.y = 44 if _compact_ui() else 30
-			banish.add_theme_font_size_override("font_size", _text_size(12))
-	var tools := HBoxContainer.new()
-	box.add_child(tools)
+			var fusion: String = sim.fusion_hint(id)
+			if not fusion.is_empty():
+				detail += "\nFuses into " + fusion.get_slice(":", 0) + ". Frees a slot."
+		elif card.tag in ["WEAPON", "SYSTEM"]:
+			var link: String = sim.passive_hint(id)
+			if not link.is_empty():
+				detail += "\nPair bonus: " + link.get_slice(":", 0)
+		var card_panel := _reading_card(body, heading, detail, CYAN if card.tag == "ABILITY" else AMBER)
+		var actions := HBoxContainer.new()
+		actions.add_theme_constant_override("separation", 8)
+		card_panel.get_child(0).add_child(actions)
+		var pick := _button(actions, "Take " + str(card.name), _choose.bind(i), i == first)
+		pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pick.custom_minimum_size.y = 48
+		pick.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card_buttons.append(pick)
+		if sim.banishes_left > 0 and id != "repair":
+			var drop := _button(actions, "Remove", _draft_action.bind("banish", i))
+			drop.custom_minimum_size.y = 48
+			drop.tooltip_text = "Remove %s from this run's upgrade pool" % card.name
+	if compact and max_page > 0:
+		var prev := _reading_cta(footer, "Prev", _draft_page.bind(-1))
+		prev.disabled = draft_page == 0
+		var next := _reading_cta(footer, "Next", _draft_page.bind(1))
+		next.disabled = draft_page == max_page
 	if sim.rerolls_left > 0:
-		_button(tools, "Reroll (%d)" % sim.rerolls_left, _draft_action.bind("reroll", 0))
+		_reading_cta(footer, "Reroll", _draft_action.bind("reroll", 0))
 	if sim.skips_left > 0:
-		_button(tools, "Skip + repair (%d)" % sim.skips_left, _draft_action.bind("skip", 0))
+		_reading_cta(footer, "Skip", _draft_action.bind("skip", 0))
 	if not card_buttons.is_empty():
 		card_buttons[0].grab_focus()
 	sound.play("card")
+
+func _draft_page(direction: int) -> void:
+	if mode != "cards":
+		return
+	draft_page = maxi(0, draft_page + direction)
+	_show_cards()
+
 
 func _draft_action(action: String, index: int) -> void:
 	var changed: bool = sim.reroll_cards() if action == "reroll" else (sim.banish_card(index) if action == "banish" else sim.skip_cards())
 	if not changed:
 		return
+	draft_page = 0
 	if sim.cards.is_empty():
 		mode = "playing"
 		_clear_overlay()
@@ -600,6 +626,7 @@ func _draft_action(action: String, index: int) -> void:
 
 func _choose(index: int) -> void:
 	if mode == "cards" and sim.choose_card(index):
+		draft_page = 0
 		_clear_overlay()
 		mode = "playing"
 		accumulator = -0.25
