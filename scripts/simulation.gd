@@ -496,6 +496,13 @@ func _update_enemies() -> void:
 		if enemy.hp <= 0:
 			continue
 		var kind: String = enemy.kind
+		if kind == "boss_module":
+			var core: Dictionary = _boss_core()
+			if core.is_empty():
+				enemy.hp = -1.0
+			else:
+				enemy.p = core.p + enemy.offset
+			continue
 		if kind.begins_with("boss"):
 			enemy.p.x = 270.0 + sin(time * (0.7 + stage * 0.16)) * (100.0 + stage * 9.0)
 		else:
@@ -526,11 +533,11 @@ func _update_enemies() -> void:
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
-			var beam_count := 2 if kind == "boss4" else 1
+			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
-			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else 5.2)))
+			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8))))
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
 			if jammer_left > 0.0 or emp_left > 0.0:
@@ -543,6 +550,14 @@ func _update_enemies() -> void:
 			if decoy_left > 0.0:
 				aim = Vector2(70 if ship_position().x > 270 else 470, 700)
 			var direction: Vector2 = (aim - enemy.p).normalized()
+			if kind == "boss2" and _alive_modules("launch_bay") > 0:
+				var launch_cycle: int = floori((time - boss_spawn_time) / 5.0)
+				if int(enemy.get("last_launch", -1)) < launch_cycle:
+					enemy.last_launch = launch_cycle
+					for bay in enemies:
+						if bay.kind == "boss_module" and bay.hp > 0 and bay.role == "launch_bay" and enemies.size() + minions.size() < _enemy_limit() - 2:
+							minions.append({"p":bay.p + Vector2(0, 25), "kind":"storm_weaver"})
+					_log("Storm Carrier launched fighters - destroy its bays")
 			if kind in ["carrier", "echo_carrier"]:
 				if enemies.size() + minions.size() < _enemy_limit() - 2:
 					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28), "kind":"phase_stalker" if kind == "echo_carrier" else "drone"})
@@ -571,10 +586,10 @@ func _update_enemies() -> void:
 					var angle: float = (i - (count - 1) / 2.0) * (0.19 if kind in ["arc_spire", "forge_turret"] else 0.15)
 					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
 				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
-					var volley := 3 if kind in ["boss2", "boss4"] else (2 if kind == "missile_bomber" else 1)
+					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
 					for i in range(volley):
 						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale(), "kind":"ordnance", "hp":12.0, "source":kind})
-				if kind == "boss3":
+				if kind == "boss3" and boss_phase_label().begins_with("FURNACE SEALED"):
 					for i in range(2):
 						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":kind})
 		if enemy.p.y > 885:
@@ -698,7 +713,8 @@ func _update_bullets() -> void:
 				if bullet.p.distance_to(ship) < (105.0 if bullet.kind == "slag" else 83.0):
 					_hit(bullet.damage, "hazard", "Molten slag" if bullet.kind == "slag" else "Proximity mine")
 				bullet.hp = 0.0
-		bullet.p += bullet.v * DT * (0.45 if chrono_left > 0 else 1.0)
+		var bullet_pace: float = (0.45 if chrono_left > 0 else 1.0) * (0.88 if synergy_active("control") else 1.0)
+		bullet.p += bullet.v * DT * bullet_pace
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
 			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
@@ -732,7 +748,7 @@ func _update_shots() -> void:
 				var offset: Vector2 = enemy.p - shot.p
 				if enemy.hp <= 0 or offset.y >= -8 or absf(Vector2.UP.angle_to(offset)) > 0.58 + meta.guidance * 0.035 + (0.12 if pilot_id == "ace" else 0.0):
 					continue
-				var candidate_score := absf(offset.x) + offset.length() * 0.10
+				var candidate_score := (absf(offset.x) + offset.length() * 0.10) * (0.60 if enemy.kind == "boss_module" else 1.0)
 				if candidate_score < score:
 					score = candidate_score
 					candidate = enemy
@@ -769,7 +785,7 @@ func _update_shots() -> void:
 			for enemy in enemies:
 				if enemy.hp <= 0.0:
 					continue
-				var radius := 68.0 if str(enemy.kind).begins_with("boss") else 25.0
+				var radius := 68.0 if str(enemy.kind).begins_with("boss") and enemy.kind != "boss_module" else (30.0 if enemy.kind == "boss_module" else 25.0)
 				if shot.p.distance_squared_to(enemy.p) < radius * radius:
 					_damage_enemy(enemy, shot.damage, shot.weapon)
 					struck = true
@@ -784,6 +800,16 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		return
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
+	if enemy.kind == "boss_module":
+		amount *= 1.70 if _has_prototype("breach_optics") else 1.0
+	elif _has_prototype("breach_optics"):
+		amount *= 0.90
+	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
+		amount *= 0.85
+	if enemy.kind == "boss3" and _alive_modules("vent") > 0 and boss_phase_label().begins_with("FURNACE SEALED"):
+		amount *= 0.28
+	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
+		amount *= 0.28
 	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < upgrades.targeting * 0.05:
 		amount *= 2.0
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
@@ -792,6 +818,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp > 0:
 		return
 	kills += 1
+	if enemy.kind == "boss_module":
+		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2)
 	var is_boss: bool = str(enemy.kind).begins_with("boss")
@@ -808,6 +836,11 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		for i in range(2):
 			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
 	if is_boss:
+		if stage_risk > 1.0:
+			var reward: int = 20 * stage
+			bonus_cores += reward
+			bounty_earned += reward
+			_log("Bounty contract complete - +%d base cores" % reward)
 		last_boss_position = enemy.p
 		stage_clears = stage
 		stage_transition_queued = true
