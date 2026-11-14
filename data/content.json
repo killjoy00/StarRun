@@ -1,5 +1,5 @@
 {
-  "version": 6,
+  "version": 7,
   "duration": 300,
   "boss_at": 240,
   "abilities": {
@@ -235,246 +235,316 @@
       "id": "pulse",
       "name": "Pulse cannon",
       "tag": "WEAPON",
-      "description": "+24% pulse damage. Gentle homing. At level 5: twin barrels.",
-      "max": 5
+      "description": "Forward shots that track enemies a little.",
+      "max": 10,
+      "rank5": "Second barrel",
+      "rank10": "Third barrel and +20% pulse damage"
     },
     {
       "id": "seeker",
       "name": "Seeker pods",
       "tag": "WEAPON",
-      "description": "+30% missile damage. Prioritizes charging enemies.",
-      "max": 5
+      "description": "Guided missiles. Charging enemies come first.",
+      "max": 10,
+      "rank5": "Fire two seekers per volley",
+      "rank10": "Fire three seekers per volley"
     },
     {
       "id": "armor",
       "name": "Reactive armor",
       "tag": "SYSTEM",
-      "description": "Reduces each chaff hit by 0.35. Heavy beams bypass armor.",
-      "max": 5
+      "description": "Take less damage from small shots. Beams still hurt.",
+      "max": 10,
+      "rank5": "Extra 0.65 damage blocked from small shots",
+      "rank10": "Another 1.1 blocked from small shots"
     },
     {
       "id": "regen",
       "name": "Regenerator",
       "tag": "SYSTEM",
-      "description": "+0.35 shield regenerated per second.",
-      "max": 5
+      "description": "Shields recover between hits.",
+      "max": 10,
+      "rank5": "+0.55 shield regeneration per second",
+      "rank10": "Another +1.0 shield regeneration per second"
     },
     {
       "id": "hull",
       "name": "Hull plating",
       "tag": "SYSTEM",
-      "description": "+18 maximum hull and repairs 18 hull.",
-      "max": 5
+      "description": "More hull, plus an immediate repair.",
+      "max": 10,
+      "rank5": "+25 maximum hull and immediate repair",
+      "rank10": "Another +50 maximum hull and repair"
     },
     {
       "id": "coolant",
       "name": "Coolant loop",
       "tag": "SYSTEM",
-      "description": "Abilities recharge 8% faster per level.",
-      "max": 5
+      "description": "Shorter cooldowns for active abilities.",
+      "max": 10,
+      "rank5": "A further 5% shorter cooldown",
+      "rank10": "A further 10% shorter cooldown"
     },
     {
       "id": "aegis",
       "name": "Aegis field",
       "tag": "ABILITY",
-      "description": "+0.25 seconds of protection. Level 5 reflects beams.",
-      "max": 5
+      "description": "Block damage briefly. Reflect beams from rank 5.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "nova",
       "name": "Nova pulse",
       "tag": "ABILITY",
-      "description": "+25% nova damage. Cancels every charging beam.",
-      "max": 5
+      "description": "Clear incoming shots, cancel beams, and hit nearby enemies.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "barrage",
       "name": "Barrage",
       "tag": "ABILITY",
-      "description": "Unlock: launch 7 guided rockets. Higher levels add rockets and damage.",
-      "max": 5
+      "description": "Fire guided rockets at enemies.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "overdrive",
       "name": "Overdrive",
       "tag": "ABILITY",
-      "description": "Unlock: +75% weapon fire rate for 4 seconds. Upgrades extend duration.",
-      "max": 5
+      "description": "Your guns fire faster for a short time.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "chrono",
       "name": "Chrono field",
       "tag": "ABILITY",
-      "description": "Unlock: enemies and bullets move at 45% speed for 4 seconds.",
-      "max": 5
+      "description": "Slow enemy ships and bullets.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "mend",
       "name": "Repair drones",
       "tag": "ABILITY",
-      "description": "Unlock: repair 24 hull over 4 seconds. +6 healing per level.",
-      "max": 5
+      "description": "Repair hull over a few seconds.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "arc",
       "name": "Arc coil",
       "tag": "WEAPON",
-      "description": "Install an automatic chain-lightning weapon. More damage and chains per level.",
-      "max": 5
+      "description": "Automatic lightning that jumps between enemies.",
+      "max": 10,
+      "rank5": "One more lightning chain",
+      "rank10": "Two more chains and +25% arc damage"
     },
     {
       "id": "lance",
       "name": "Prism lance",
       "tag": "WEAPON",
-      "description": "Install an automatic piercing beam aimed at a charging source or nearest enemy.",
-      "max": 5
+      "description": "A piercing beam that favors dangerous targets.",
+      "max": 10,
+      "rank5": "Beam fires 22% sooner",
+      "rank10": "Beam fires 40% sooner and hits 25% harder"
     },
     {
       "id": "shield",
       "name": "Shield capacitor",
       "tag": "SYSTEM",
-      "description": "+10 maximum shield and restore 10 shield.",
-      "max": 5
+      "description": "Increase max shields and recharge immediately.",
+      "max": 10,
+      "rank5": "+18 maximum shield and recharge",
+      "rank10": "Another +35 maximum shield and recharge"
     },
     {
       "id": "autoloader",
       "name": "Autoloader",
       "tag": "SYSTEM",
-      "description": "Automatic weapons fire 8% faster per level.",
-      "max": 5
+      "description": "Make automatic weapons fire faster.",
+      "max": 10,
+      "rank5": "Extra 15% fire rate",
+      "rank10": "Another +25% fire rate"
     },
     {
       "id": "munitions",
       "name": "Munitions",
       "tag": "SYSTEM",
-      "description": "All automatic weapon damage increases by 8% per level.",
-      "max": 5
+      "description": "Increase automatic weapon damage.",
+      "max": 10,
+      "rank5": "Extra 14% automatic damage",
+      "rank10": "Another +22% automatic damage"
     },
     {
       "id": "repair_bots",
       "name": "Repair bots",
       "tag": "SYSTEM",
-      "description": "Continuously repair 0.15 hull per second per level.",
-      "max": 5
+      "description": "Slow but steady hull repair.",
+      "max": 10,
+      "rank5": "+0.35 hull repair per second",
+      "rank10": "Another +0.7 hull repair per second"
     },
     {
       "id": "harvester",
       "name": "Data collector",
       "tag": "SYSTEM",
-      "description": "Gain 8% more XP from every kill per level.",
-      "max": 5
+      "description": "Gain more experience from kills.",
+      "max": 10,
+      "rank5": "Extra 15% XP from kills",
+      "rank10": "Another +25% XP from kills"
     },
     {
       "id": "targeting",
       "name": "Targeting computer",
       "tag": "SYSTEM",
-      "description": "+5% chance per level for weapons to deal double damage.",
-      "max": 5
+      "description": "Give automatic weapons a chance for critical hits.",
+      "max": 10,
+      "rank5": "Critical hits deal 2.5x damage",
+      "rank10": "Critical hits deal 3x damage"
     },
     {
       "id": "amplifier",
       "name": "Ability amplifier",
       "tag": "SYSTEM",
-      "description": "Ability damage, duration and healing increase by 6% per level.",
-      "max": 5
+      "description": "Increase ability damage, healing and duration.",
+      "max": 10,
+      "rank5": "Extra 15% ability power",
+      "rank10": "Another +25% ability power"
     },
     {
       "id": "flak",
       "name": "Flak screen",
       "tag": "ABILITY",
-      "description": "Intercept missiles and mines across the screen; also damage nearby launchers.",
-      "max": 5
+      "description": "Shoot down missiles, mines and slag.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "emp",
       "name": "EMP blackout",
       "tag": "ABILITY",
-      "description": "Cancel charging beams and silence enemy weapons for 3 seconds.",
-      "max": 5
+      "description": "Cancel charged beams and silence enemy guns.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "deflector",
       "name": "Deflector",
       "tag": "ABILITY",
-      "description": "Absorb nearby chaff projectiles into restored shielding.",
-      "max": 5
+      "description": "Turn nearby small shots into shielding.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "strike",
       "name": "Rail strike",
       "tag": "ABILITY",
-      "description": "Deal massive damage to the toughest enemy, prioritizing charging threats.",
-      "max": 5
+      "description": "Hit the strongest enemy with a heavy shot.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "prism",
       "name": "Prism reversal",
       "tag": "ABILITY",
-      "description": "Convert nearby enemy projectiles into your own guided rockets.",
-      "max": 5
+      "description": "Turn enemy shots into your own guided shots.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "barrier",
       "name": "Chaff barrier",
       "tag": "ABILITY",
-      "description": "Block only incoming chaff for 6 seconds; heavy beams still hurt.",
-      "max": 5
+      "description": "Block small shots. Heavy beams still hurt.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "capacitor",
       "name": "Capacitor",
       "tag": "ABILITY",
-      "description": "Instantly recharge shields and clear shield suppression.",
-      "max": 5
+      "description": "Refill shields and end shield disruption.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "focus",
       "name": "Precision focus",
       "tag": "ABILITY",
-      "description": "Boost all automatic weapon damage for 6 seconds.",
-      "max": 5
+      "description": "Your weapons hit harder for a short time.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "decoy",
       "name": "Decoy beacon",
       "tag": "ABILITY",
-      "description": "Divert homing missiles and enemy aim to an off-axis decoy for 5 seconds.",
-      "max": 5
+      "description": "Draw missile fire and enemy aim away.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "jammer",
       "name": "Signal jammer",
       "tag": "ABILITY",
-      "description": "Delay enemy fire and suppress new beam charges for 5 seconds.",
-      "max": 5
+      "description": "Delay enemy guns and stop new beams.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "siphon",
       "name": "Energy siphon",
       "tag": "ABILITY",
-      "description": "Drain the toughest enemy and convert damage into hull repair.",
-      "max": 5
+      "description": "Drain an enemy to repair your hull.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "overload",
       "name": "Chain overload",
       "tag": "ABILITY",
-      "description": "Detonate nearby chaff for an area attack; stronger in crowded patterns.",
-      "max": 5
+      "description": "Detonate nearby shots to hit enemies.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "reboot",
       "name": "Reactor reboot",
       "tag": "ABILITY",
-      "description": "Recover part of the cooldown on the other equipped abilities.",
-      "max": 5
+      "description": "Cut the cooldown on your other abilities.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     },
     {
       "id": "salvage",
       "name": "Salvage surge",
       "tag": "ABILITY",
-      "description": "Earn additional cores from kills during a 10-second window.",
-      "max": 5
+      "description": "Earn extra cores from kills for a short time.",
+      "max": 10,
+      "rank5": "20% stronger effect, 10% shorter cooldown",
+      "rank10": "45% stronger effect, 20% shorter cooldown"
     }
   ],
   "stage_count": 4,
@@ -597,6 +667,182 @@
       "description": "First shield break each stage instantly restores 30 shield. Weapon damage -10%.",
       "benefit": "30 shield on first break per stage",
       "cost": "-10% weapon damage"
+    }
+  ],
+  "fusions": [
+    {
+      "id": "nova_aegis",
+      "name": "Nova Guard",
+      "parts": [
+        "aegis",
+        "nova"
+      ],
+      "cooldown": 22,
+      "description": "Raise a shield, cancel beams, clear bullets and blast nearby enemies."
+    },
+    {
+      "id": "railstorm",
+      "name": "Railstorm",
+      "parts": [
+        "overdrive",
+        "strike"
+      ],
+      "cooldown": 28,
+      "description": "Speed up every gun and hammer the toughest target three times."
+    },
+    {
+      "id": "stasis_lock",
+      "name": "Time Lock",
+      "parts": [
+        "chrono",
+        "emp"
+      ],
+      "cooldown": 29,
+      "description": "Freeze the barrage, stop new beams and disable enemy weapons."
+    },
+    {
+      "id": "repair_matrix",
+      "name": "Repair Matrix",
+      "parts": [
+        "mend",
+        "capacitor"
+      ],
+      "cooldown": 28,
+      "description": "Repair hull, refill shields and block small shots."
+    },
+    {
+      "id": "missile_grid",
+      "name": "Missile Grid",
+      "parts": [
+        "barrage",
+        "flak"
+      ],
+      "cooldown": 23,
+      "description": "Clear missiles and slag, then launch a heavier rocket salvo."
+    },
+    {
+      "id": "scrap_converter",
+      "name": "Scrap Converter",
+      "parts": [
+        "salvage",
+        "siphon"
+      ],
+      "cooldown": 27,
+      "description": "Drain an enemy for repairs and earn cores from follow-up kills."
+    },
+    {
+      "id": "prism_focus",
+      "name": "Prism Focus",
+      "parts": [
+        "focus",
+        "prism"
+      ],
+      "cooldown": 28,
+      "description": "Boost weapon damage and turn incoming shots into counterfire."
+    },
+    {
+      "id": "reflective_wall",
+      "name": "Reflector Wall",
+      "parts": [
+        "barrier",
+        "deflector"
+      ],
+      "cooldown": 25,
+      "description": "Block small shots, recharge shielding and fire back."
+    },
+    {
+      "id": "ghost_signal",
+      "name": "Ghost Signal",
+      "parts": [
+        "jammer",
+        "decoy"
+      ],
+      "cooldown": 29,
+      "description": "Hide behind a decoy while enemy weapons are jammed."
+    },
+    {
+      "id": "reactor_surge",
+      "name": "Reactor Surge",
+      "parts": [
+        "overload",
+        "reboot"
+      ],
+      "cooldown": 33,
+      "description": "Detonate incoming shots and cut cooldowns on your other abilities."
+    }
+  ],
+  "passive_links": [
+    {
+      "id": "reinforced_plating",
+      "name": "Reinforced plating",
+      "requires": [
+        "armor",
+        "hull"
+      ],
+      "description": "Armor stops more small-shot damage. Hull takes 10% less damage."
+    },
+    {
+      "id": "shield_cycle",
+      "name": "Shield cycle",
+      "requires": [
+        "shield",
+        "regen"
+      ],
+      "description": "Shields regenerate 40% faster and recover sooner after a break."
+    },
+    {
+      "id": "smart_pulse",
+      "name": "Smart cannon",
+      "requires": [
+        "pulse",
+        "targeting"
+      ],
+      "description": "Pulse hits 20% harder and has a better critical chance."
+    },
+    {
+      "id": "guided_payload",
+      "name": "Guided payload",
+      "requires": [
+        "seeker",
+        "munitions"
+      ],
+      "description": "Seekers hit 25% harder. Other weapons get 5% more damage."
+    },
+    {
+      "id": "quick_charge",
+      "name": "Quick charge",
+      "requires": [
+        "coolant",
+        "amplifier"
+      ],
+      "description": "Abilities recharge 12% faster and hit or heal 15% harder."
+    },
+    {
+      "id": "field_recovery",
+      "name": "Field recovery",
+      "requires": [
+        "repair_bots",
+        "harvester"
+      ],
+      "description": "Repair bots fix hull 40% faster. Kills give 20% more XP."
+    },
+    {
+      "id": "arc_feed",
+      "name": "Arc feed",
+      "requires": [
+        "arc",
+        "autoloader"
+      ],
+      "description": "Lightning fires 15% faster and jumps to one more enemy."
+    },
+    {
+      "id": "lance_sight",
+      "name": "Lance sight",
+      "requires": [
+        "lance",
+        "targeting"
+      ],
+      "description": "Prism lance hits 35% harder and favors weak points."
     }
   ],
   "synergies": [
