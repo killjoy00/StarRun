@@ -204,7 +204,7 @@ func step() -> void:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4
-		hull = maxf(0.0, hull - corrosion_damage)
+		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
 		damage_taken.corrosion += corrosion_damage
 		if hull <= 0.0:
 			ended = true
@@ -217,7 +217,12 @@ func step() -> void:
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
-		shield = minf(max_shield, shield + (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT)
+		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT
+		if synergy_active("fortress"):
+			recharge *= 1.60
+		if _has_prototype("bastion_lattice"):
+			recharge *= 1.40
+		shield = minf(max_shield, shield + recharge)
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
@@ -648,13 +653,10 @@ func _update_weapons() -> void:
 					target_id = -2
 					break
 		if target_id == -1 and not enemies.is_empty():
-			var distance := INF
-			for enemy in enemies:
-				var d: float = origin.distance_squared_to(enemy.p)
-				if d < distance:
-					distance = d
-					target_id = enemy.id
-					target_pos = enemy.p
+			var chosen: Dictionary = _nearest(origin)
+			if not chosen.is_empty():
+				target_id = int(chosen.id)
+				target_pos = chosen.p
 		if target_id != -1:
 			shots.append({"p": origin, "v": (target_pos - origin).normalized() * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
@@ -684,17 +686,63 @@ func _update_weapons() -> void:
 					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power(), "lance")
 
 func weapon_power() -> float:
-	return (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0)
+	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	if synergy_active("fortress"):
+		power *= 0.82
+	if synergy_active("assault"):
+		power *= 1.28
+	if synergy_active("control"):
+		power *= 0.88
+	if synergy_active("salvager"):
+		power *= 0.82
+	for prototype in prototypes:
+		match str(prototype):
+			"bastion_lattice": power *= 0.88
+			"volatile_core": power *= 1.30
+			"null_harmonics": power *= 0.88
+			"salvage_charter": power *= 0.85
+			"emergency_safeguard": power *= 0.90
+	return power
 
 func ability_power() -> float:
-	return 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
+	var power: float = 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
+	if synergy_active("assault"):
+		power *= 1.20
+	if _has_prototype("echo_coil"):
+		power *= 1.40
+	return power
+
+func hull_damage_multiplier() -> float:
+	var factor := 1.0
+	if synergy_active("fortress"):
+		factor *= 0.85
+	if synergy_active("assault"):
+		factor *= 1.28
+	if _has_prototype("volatile_core"):
+		factor *= 1.25
+	return factor
+
+func cooldown_multiplier() -> float:
+	var factor := 1.0
+	if synergy_active("control"):
+		factor *= 0.82
+	if _has_prototype("null_harmonics"):
+		factor *= 0.78
+	if _has_prototype("mirror_cell"):
+		factor *= 1.15
+	if _has_prototype("echo_coil"):
+		factor *= 1.18
+	return factor
 
 func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
+	# Auto-target components first during boss fights. Players never aim or steer.
 	var best: Dictionary = {}
 	var distance := INF
 	for enemy in enemies:
-		if enemy.hp > 0 and enemy.id not in excluded:
-			var d := origin.distance_squared_to(enemy.p)
+		if enemy.hp > 0.0 and enemy.id not in excluded:
+			var d: float = origin.distance_squared_to(enemy.p)
+			if enemy.kind == "boss_module":
+				d *= 0.22
 			if d < distance:
 				distance = d
 				best = enemy
@@ -856,7 +904,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		prevented += amount
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
-	var reduced := amount
+	var reduced := amount * stage_risk
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0)
 	elif kind == "heat":
@@ -864,8 +912,9 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5)
 	elif kind == "void":
-		# Void partially bypasses shields; players must prevent the strike.
-		hull = maxf(0.0, hull - amount * 0.30)
+		# A fraction reaches the hull directly; the remainder hits shields.
+		hull = maxf(0.0, hull - reduced * 0.30 * hull_damage_multiplier())
+		reduced *= 0.70
 	elif kind == "corrosion":
 		corrosion_left = maxf(corrosion_left, 5.0)
 	elif kind == "disrupt":
@@ -878,12 +927,17 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	var had_shield := shield > 0.0
 	shield -= shield_damage
 	var hull_damage := reduced - shield_damage
-	hull = maxf(0.0, hull - hull_damage)
+	hull = maxf(0.0, hull - hull_damage * hull_damage_multiplier())
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
 		shield_offline = 3.0
-		_log("Shield broke · offline for 3 seconds")
+		_log("Shield broke - offline for 3 seconds")
+		if _has_prototype("emergency_safeguard") and not safeguard_used:
+			safeguard_used = true
+			shield_offline = 0.0
+			shield = minf(max_shield, 30.0)
+			_log("Emergency Safeguard rebuilt 30 shield")
 	if kind != "chaff" or hull_damage > 0.0:
 		_log("%s · %.1f %s damage%s" % [source, reduced, kind, " to hull" if hull_damage > 0 else " to shield"])
 	if hull <= 0:
@@ -902,7 +956,7 @@ func activate(ability: String) -> bool:
 	if ended or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0))
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier()
 	shield = minf(max_shield, shield + meta.reserve_shield * 5)
 	_log(ability.capitalize() + " activated")
 	if ability == "aegis":
@@ -931,8 +985,8 @@ func activate(ability: String) -> bool:
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
-		var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine"]).size()
-		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine"])
+		var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine", "slag"]).size()
+		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
 		prevented += stopped * 12.0
 		for enemy in enemies:
 			if enemy.kind in ["missile_bomber", "minelayer", "slag_bomber", "boss2", "boss3", "boss4"]:
@@ -1100,6 +1154,10 @@ func payout() -> int:
 	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
+	if synergy_active("salvager"):
+		base = int(round(base * 1.25))
+	if _has_prototype("salvage_charter"):
+		base = int(round(base * 1.35))
 	return base
 
 func snapshot() -> Dictionary:
