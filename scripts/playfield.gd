@@ -2,6 +2,9 @@ extends Node2D
 ## Material ship art, parallax debris, banking and layered combat VFX.
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
+const DANGER := Color("ff727b")
+const THREAT_INK := Color("080e1c")
+const SHIELD := Color("80aaff")
 const SHIPS := {
 	"vanguard": preload("res://assets/art/vanguard.png"),
 	"drone": preload("res://assets/art/drone.png"),
@@ -14,6 +17,26 @@ var host: Node
 var sim: RefCounted
 var profile: Dictionary
 var visual_time := 0.0
+var feedback_sim: RefCounted
+var feedback_stage := 0
+var shield_break_clock := 0.0
+var last_shield_break_tick := -1
+
+func _process(delta: float) -> void:
+	if host == null or host.sim == null:
+		return
+	if feedback_sim != host.sim or feedback_stage != host.sim.stage:
+		feedback_sim = host.sim
+		feedback_stage = host.sim.stage
+		shield_break_clock = 0.0
+		last_shield_break_tick = -1
+	if host.mode == "playing":
+		shield_break_clock = maxf(0.0, shield_break_clock - delta)
+	for effect in host.sim.effects:
+		if effect.kind == "shield-break" and int(effect.born) > last_shield_break_tick:
+			last_shield_break_tick = int(effect.born)
+			shield_break_clock = 0.75
+
 
 func _draw() -> void:
 	sim = host.sim
@@ -46,40 +69,10 @@ func _draw() -> void:
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
-	_draw_threats()
 	# Exact two-second preview remains fair on curved flight paths.
 	for i in range(2, 25):
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
-	for bullet in sim.bullets:
-		if bullet.kind in ["mine", "slag"]:
-			var fuse: float = maxf(0.0, float(bullet.fuse))
-			var pulse := 0.45 + sin(visual_time * 14.0) * 0.30
-			draw_circle(bullet.p, 16 if bullet.kind == "slag" else 12, Color(1.0, 0.48 if bullet.kind == "slag" else 0.38, 0.10, 0.22 + pulse * 0.22))
-			draw_arc(bullet.p, 15 if bullet.kind == "slag" else 11, -PI/2, -PI/2 + TAU * clampf(fuse/3.4, 0, 1), 22, Color("ff552b") if bullet.kind == "slag" else AMBER, 2.6, true)
-			draw_colored_polygon(PackedVector2Array([bullet.p + Vector2(0,-7), bullet.p + Vector2(7,0), bullet.p + Vector2(0,7), bullet.p + Vector2(-7,0)]), Color("f38c4f"))
-			draw_circle(bullet.p, 2.6, Color.WHITE)
-		elif bullet.kind == "ordnance":
-			var direction: Vector2 = bullet.v.normalized()
-			draw_line(bullet.p - direction * 24, bullet.p, Color(1, 0.6, 0.25, 0.38), 6, true)
-			var wing := Vector2(-direction.y, direction.x)
-			var points := PackedVector2Array([bullet.p + direction * 13, bullet.p + wing * 7 - direction * 5, bullet.p - direction * 10, bullet.p - wing * 7 - direction * 5])
-			draw_colored_polygon(points, Color("6e3824"))
-			draw_polyline(points, AMBER, 2, true)
-			_glow(bullet.p, 2, Color.WHITE)
-		else:
-			var tint := Color("ff738f")
-			match bullet.kind:
-				"ion": tint = Color("55d8ff")
-				"corrosion": tint = Color("a8ff70")
-				"disrupt": tint = Color("bc8cff")
-				"heat": tint = Color("ff7543")
-				"gravity": tint = Color("b887ff")
-				"void": tint = Color("fa6fff")
-			_glow(bullet.p, 4.2 if bullet.kind != "chaff" else 3.0, tint)
-			if bullet.kind != "chaff":
-				draw_arc(bullet.p, 6.0, 0.0, TAU, 12, tint, 2.0, true)
-			draw_circle(bullet.p, 1.6, Color("fff0d6"))
 	for shot in sim.shots:
 		var color := CYAN if shot.weapon == "pulse" else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
 		var direction: Vector2 = shot.v.normalized()
@@ -90,8 +83,17 @@ func _draw() -> void:
 	for enemy in sim.enemies:
 		_draw_enemy(enemy)
 	_draw_player(ship, velocity)
+	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		_draw_effect(effect)
+		if effect.kind not in ["beam", "shield-break"]:
+			_draw_effect(effect)
+	for effect in sim.effects:
+		if effect.kind == "beam":
+			_draw_effect(effect)
+	_draw_threats()
+	_draw_shield_feedback(ship)
+	for bullet in sim.bullets:
+		_draw_projectile(bullet)
 	if host.mode == "stage_clear":
 		_draw_boss_ceremony(host.stage_clear_clock)
 	elif host.mode == "warp":
@@ -101,7 +103,12 @@ func _draw() -> void:
 		draw_rect(Rect2(edge * 520, 0, 20, 960), Color(0.01, 0.025, 0.04, 0.18))
 	draw_rect(Rect2(0, 906, 540, 54), Color(0.015, 0.03, 0.05, 0.85))
 	_bar(Rect2(18, 925, 244, 6), sim.hull / sim.max_hull, CYAN)
-	_bar(Rect2(278, 925, 244, 6), sim.shield / sim.max_shield, Color("80aaff"))
+	var shield_down: bool = sim.shield <= 0.0 and sim.max_shield > 0.0
+	_bar(Rect2(278, 925, 244, 6), sim.shield / maxf(1.0, sim.max_shield), SHIELD)
+	if shield_down:
+		draw_string(ThemeDB.fallback_font, Vector2(278, 920), "SHIELD DOWN", HORIZONTAL_ALIGNMENT_LEFT, 244, 15, DANGER)
+		for segment in range(8):
+			draw_line(Vector2(278 + segment * 31, 928), Vector2(298 + segment * 31, 928), DANGER, 3, true)
 	_bar(Rect2(18, 941, 504, 3), float(sim.xp) / sim.xp_needed(), AMBER)
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
@@ -476,16 +483,82 @@ func _draw_custom_enemy(kind: String) -> void:
 		draw_arc(Vector2.ZERO,35,0,TAU,32,Color(purple,0.55),2,true)
 	draw_circle(Vector2.ZERO,10+sin(visual_time*5)*2,Color("f2d7ff"))
 
+func _threat_outline(points: PackedVector2Array) -> void:
+	var closed := points.duplicate()
+	closed.append(points[0])
+	draw_colored_polygon(points, THREAT_INK)
+	draw_polyline(closed, THREAT_INK, 6.0, true)
+	draw_polyline(closed, DANGER, 2.2, true)
+
+func _draw_projectile(bullet: Dictionary) -> void:
+	var p: Vector2 = bullet.p
+	var kind: String = bullet.kind
+	# Shape says what it does. The dark rim and coral edge always mean hostile,
+	# including ion/void rounds whose inner colors also occur in friendly FX.
+	if kind in ["mine", "slag"]:
+		var radius := 10.0 if kind == "slag" else 8.0
+		var points := PackedVector2Array([p + Vector2(0, -radius), p + Vector2(radius, 0), p + Vector2(0, radius), p + Vector2(-radius, 0)])
+		_threat_outline(points)
+		draw_circle(p, 3.0, AMBER)
+		var fuse: float = clampf(float(bullet.fuse) / (3.2 if kind == "slag" else 3.4), 0, 1)
+		draw_arc(p, radius + 5, 0, TAU, 24, THREAT_INK, 5.0, true)
+		draw_arc(p, radius + 5, -PI / 2, -PI / 2 + TAU * fuse, 24, DANGER, 2.5, true)
+	elif kind == "ordnance":
+		var direction: Vector2 = bullet.v.normalized()
+		var wing := Vector2(-direction.y, direction.x)
+		draw_line(p - direction * 24, p, THREAT_INK, 7, true)
+		draw_line(p - direction * 24, p, DANGER, 2, true)
+		_threat_outline(PackedVector2Array([p + direction * 13, p + wing * 7 - direction * 5, p - direction * 10, p - wing * 7 - direction * 5]))
+		draw_line(p - direction * 5, p + direction * 5, Color("fff0d6"), 2, true)
+	elif kind == "chaff":
+		draw_circle(p, 6.0, THREAT_INK)
+		draw_circle(p, 3.8, DANGER)
+		draw_circle(p, 1.5, Color("fff0d6"))
+	else:
+		var tint := DANGER
+		match kind:
+			"ion": tint = Color("55d8ff")
+			"corrosion": tint = Color("a8ff70")
+			"disrupt": tint = Color("bc8cff")
+			"heat": tint = Color("ffb35d")
+			"gravity": tint = Color("b887ff")
+			"void": tint = Color("fa6fff")
+		_threat_outline(PackedVector2Array([p + Vector2(0, -7), p + Vector2(7, 0), p + Vector2(0, 7), p + Vector2(-7, 0)]))
+		draw_circle(p, 3.0, tint)
+		draw_circle(p, 1.1, Color("fff0d6"))
+
 func _draw_threats() -> void:
 	for charge in sim.charges:
-		var progress: float = 1.0 - charge.remaining / charge.duration
-		draw_rect(Rect2(charge.x - 32, 0, 64, 900), Color(1, 0.48, 0.1, 0.045 + progress * 0.13))
+		var progress: float = clampf(1.0 - charge.remaining / charge.duration, 0, 1)
+		# The 66px lane matches the existing 33px collision half-width exactly.
+		draw_rect(Rect2(charge.x - 33, 0, 66, 900), Color(THREAT_INK, 0.20))
+		draw_rect(Rect2(charge.x - 33, 0, 66, 900), Color(DANGER, 0.04 + progress * 0.10))
 		for side in [-1, 1]:
-			draw_line(Vector2(charge.x + side * 32, 0), Vector2(charge.x + side * 32, 900), Color(1, 0.62, 0.25, 0.45 + progress * 0.4), 1.5)
-		for i in range(13):
-			var y := fposmod(i * 75 + visual_time * 90, 900)
-			draw_polyline(PackedVector2Array([Vector2(charge.x - 8, y), Vector2(charge.x, y + 9), Vector2(charge.x + 8, y)]), Color(1, 0.68, 0.27, 0.45), 1.5, true)
-		draw_string(ThemeDB.fallback_font, Vector2(clampf(charge.x - 50, 5, 430), 680), "BEAM %.1fs" % charge.remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, AMBER)
+			var x: float = charge.x + side * 33
+			draw_line(Vector2(x, 0), Vector2(x, 900), THREAT_INK, 5, true)
+			for y in range(0, 900, 30):
+				draw_line(Vector2(x, y), Vector2(x, y + 12 + progress * 12), DANGER, 2, true)
+		# A fixed countdown stays readable with reduced effects and overlapping FX.
+		var label_x: float = clampf(charge.x - 48, 6, 428)
+		draw_rect(Rect2(label_x - 5, 658, 109, 28), THREAT_INK)
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, 679), "BEAM %.1fs" % charge.remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, DANGER)
+
+func _draw_shield_feedback(ship: Vector2) -> void:
+	# Presentation uses real time so the break remains visible even at 3x speed.
+	var age := 1.0 - shield_break_clock / 0.75 if shield_break_clock > 0.0 else -1.0
+	var down: bool = sim.shield <= 0.0 and sim.max_shield > 0.0
+	if age < 0.0 and not down:
+		return
+	# Short broken arcs, rather than a full-screen flash. Follow the ship.
+	var burst := maxf(0.0, age)
+	var radius := 43.0 + (0.0 if profile.reduced else burst * 18.0)
+	var tint := SHIELD.lerp(DANGER, minf(1.0, burst * 3.0)) if age >= 0.0 else DANGER
+	var alpha := 1.0 - burst * 0.45 if age >= 0.0 else 0.55
+	for segment in range(6):
+		var start: float = segment * TAU / 6 + 0.12
+		var end: float = start + (0.53 if age >= 0.0 else 0.30)
+		draw_arc(ship, radius, start, end, 10, Color(THREAT_INK, alpha), 6, true)
+		draw_arc(ship, radius, start, end, 10, Color(tint, alpha), 2.8, true)
 
 func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
@@ -517,9 +590,10 @@ func _draw_effect(effect: Dictionary) -> void:
 		draw_arc(p, radius, 0, TAU, 100, Color(0.4, 1, 0.9, alpha), 5, true)
 		draw_arc(p, radius * 0.83, 0, TAU, 90, Color(0.8, 1, 1, alpha * 0.4), 2, true)
 	elif effect.kind == "beam":
+		draw_line(p, p + Vector2(0, 920), Color(THREAT_INK, alpha), 70, true)
 		if not profile.reduced:
-			draw_line(p, p + Vector2(0, 920), Color(1, 0.32, 0.08, alpha * 0.18), 80, true)
-		draw_line(p, p + Vector2(0, 920), Color(1, 0.6, 0.17, alpha * 0.7), 38, true)
+			draw_line(p, p + Vector2(0, 920), Color(DANGER, alpha * 0.12), 72, true)
+		draw_line(p, p + Vector2(0, 920), Color(DANGER, alpha * 0.8), 64, true)
 		draw_line(p, p + Vector2(0, 920), Color(1, 0.97, 0.8, alpha), 9, true)
 	elif effect.kind in ["impact", "shield-hit", "hull-hit"]:
 		var color := CYAN if effect.kind == "shield-hit" else AMBER

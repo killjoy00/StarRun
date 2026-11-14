@@ -19,7 +19,8 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 - **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines and stage-specific suppression require different responses.
 - **Real milestones at ranks 5 and 10.** Every one of the 35 upgrade tracks gets a breakpoint effect. Later picks add two ranks; crossing rank 5 or 10 triggers the effect immediately, even if the choice skipped that exact number.
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties.
-- **Persistent Hangar.** Twenty-two refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Equipment and selected difficulty are retained in saves.
+- **Readable threats.** Enemy rounds and beam warnings share a coral outline and render above friendly effects. A fractured shield ring and segmented shield bar make shield loss visible, including with reduced effects. Fusion and rank-5/10 picks get a thin accent border.
+- **Persistent Hangar.** Twenty-two refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Reroll uplinks grant one reroll per rank each stage. Equipment and selected difficulty are retained in saves.
 
 Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Flak Screen, EMP Blackout, Deflector, Rail Strike, Prism Reversal, Chaff Barrier, Capacitor, Precision Focus, Decoy Beacon, Signal Jammer, Energy Siphon, Chain Overload, Reactor Reboot, Salvage Surge.
 

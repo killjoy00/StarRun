@@ -39,6 +39,21 @@ jobs:
             echo "::error::Godot reported a runtime script failure during UI tests"
             exit 1
           fi
+      - name: Render combat readability and phone upgrade checks
+        run: |
+          set -o pipefail
+          xvfb-run -a godot --path . --audio-driver Dummy --script tests/visual_readability.gd 2>&1 | tee /tmp/starrun-visual.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-visual.log; then
+            exit 1
+          fi
+      - name: Preserve combat and upgrade previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-combat-readability
+          path: /tmp/starrun-visuals
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Replay, fairness, draft, save, and matched-seed balance checks
         run: |
           set -o pipefail

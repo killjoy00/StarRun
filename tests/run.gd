@@ -24,6 +24,7 @@ func _run() -> void:
 	_test_new_abilities()
 	_test_homing_and_modules()
 	_test_hangar_and_tactics()
+	_test_stage_rerolls_and_shield_breaks()
 	_test_legacy_modules()
 	_test_loadouts()
 	_test_threat_catalog()
@@ -843,3 +844,57 @@ func _balance(seeds: int) -> Dictionary:
 		check(max_charges <= 1, "Dangerous heavy telegraphs must never overlap")
 		result[strategy] = {"seeds": seeds, "wins": wins, "mean_survival": snappedf(survival / seeds, 0.1), "mean_hull": snappedf(remaining / seeds, 0.1), "max_bullets": max_entities}
 	return result
+
+func _test_stage_rerolls_and_shield_breaks() -> void:
+	for rank in [0, 1, 3]:
+		for pilot in ["rookie", "tactician"]:
+			var sim := Sim.new(2401, {"rerolls": rank}, "vanguard", pilot)
+			for stage_number in range(1, 5):
+				var expected: int = rank + (1 if pilot == "tactician" and stage_number == 1 else 0)
+				check(sim.rerolls_left == expected, "Only purchased stage rerolls replenish; pilot bonus is once per flight")
+				sim._offer_cards(false)
+				for use in range(expected):
+					check(sim.reroll_cards(), "Every granted reroll can replace the hand")
+				check(not sim.reroll_cards(), "Exhausted rerolls cannot replace the hand")
+				var saved := sim.snapshot()
+				var resumed := Sim.new()
+				check(resumed.restore(saved) and resumed.rerolls_left == 0 and resumed.pilot_rerolls_left == 0, "Resume must not replenish spent rerolls")
+				check(resumed.pilot_id == pilot, "Resume must retain the pilot whose reroll allowance was saved")
+				sim = resumed
+				sim.cards.clear()
+				sim._spawn_boss()
+				sim._damage_enemy(sim.enemies[0], 9999999.0, "pulse")
+				if stage_number < 4:
+					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Rerolls refill through the real boss/intermission transition")
+					var allowance: int = sim.rerolls_left
+					check(not sim.advance_stage() and sim.rerolls_left == allowance, "Repeated stage advance cannot grant more rerolls")
+	var unused := Sim.new(2402, {"rerolls": 2}, "vanguard", "tactician")
+	unused._offer_cards(false)
+	unused.reroll_cards()
+	check(unused.rerolls_left == 2 and unused.pilot_rerolls_left == 1, "Use renewable stage rerolls before the pilot reserve")
+	unused.cards.clear()
+	unused._spawn_boss()
+	unused._damage_enemy(unused.enemies[0], 9999999.0, "pulse")
+	unused._enter_stage_two()
+	check(unused.rerolls_left == 3 and unused.pilot_rerolls_left == 1, "Unused stage uses do not accumulate; unused pilot reserve remains")
+	var legacy := unused.snapshot()
+	legacy.erase("pilot_rerolls_left")
+	var migrated := Sim.new()
+	check(migrated.restore(legacy) and migrated.rerolls_left == unused.rerolls_left, "Older checkpoints keep their current allowance without a free refill")
+	var shielded := Sim.new(2403)
+	shielded._hit(2, "chaff", "test")
+	check(not shielded.effects.any(func(e): return e.kind == "shield-break"), "Ordinary shield hits do not show a break")
+	shielded.shield = 4.0
+	shielded._hit(4.0, "heavy", "test")
+	check(shielded.shield == 0 and shielded.effects.filter(func(e): return e.kind == "shield-break").size() == 1, "Exact shield depletion must emit one distinct break cue")
+	shielded._hit(4.0, "heavy", "test")
+	check(shielded.effects.filter(func(e): return e.kind == "shield-break").size() == 1, "Further hull hits must not repeat the shield-break cue")
+	var protected := Sim.new(2404)
+	protected.aegis_left = 1.0
+	protected._hit(100.0, "heavy", "test")
+	check(not protected.effects.any(func(e): return e.kind == "shield-break"), "Aegis-blocked attacks must not claim the shield broke")
+	var safeguard := Sim.new(2405)
+	safeguard.prototypes = ["emergency_safeguard"]
+	safeguard.shield = 2.0
+	safeguard._hit(3.0, "heavy", "test")
+	check(safeguard.shield > 0 and safeguard.effects.any(func(e): return e.kind == "shield-break"), "An immediately rebuilt shield still shows the actual break")

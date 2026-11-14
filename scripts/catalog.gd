@@ -12,7 +12,7 @@ const PILOTS := [
 	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 starting shield and +0.8 shield regeneration per second.", "trait":"FIELD REPAIR"},
 	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% seeker damage and faster lock-on.", "trait":"MISSILE EXPERT"},
 	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP and +15% post-flight cores.", "trait":"COLLECTOR"},
-	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one free card reroll.", "trait":"BATTLE PLAN"}
+	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one extra reroll per flight.", "trait":"BATTLE PLAN"}
 ]
 const SHIPS := [
 	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
@@ -40,7 +40,7 @@ const HANGAR := [
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Recover 5 shield whenever you activate an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per flight, gain 1.5 seconds of Aegis at low hull. +0.5s at rank 2.", "max":2, "cost":12, "step":8},
 	{"id":"extra_card", "name":"Expanded uplink", "group":"Tactics", "description":"Choose from four cards at every level-up.", "max":1, "cost":15, "step":0},
-	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"Reroll a whole upgrade hand once per rank per flight.", "max":3, "cost":7, "step":3},
+	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"One reroll per stage per rank. Unused stage rerolls do not carry over.", "max":3, "cost":7, "step":3},
 	{"id":"banishes", "name":"Banish protocols", "group":"Tactics", "description":"Remove an upgrade track from this flight's pool. One use per rank.", "max":3, "cost":7, "step":3},
 	{"id":"skips", "name":"Repair fallback", "group":"Tactics", "description":"Skip a draft to repair 12 hull. One use per rank per flight.", "max":3, "cost":5, "step":2},
 	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"Earn 6% more XP from kills per rank.", "max":5, "cost":6, "step":2},

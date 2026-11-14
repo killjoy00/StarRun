@@ -557,15 +557,20 @@ func _tiles(parent: Node, items: Array) -> HBoxContainer:
 		Kit.caps(stack, str(item[0]), Kit.MUTED, 12)
 	return row
 
-func _pips(parent: Node, filled: int, total: int, tint: Color = Kit.CYAN) -> HBoxContainer:
+func _pips(parent: Node, filled: int, total: int, tint: Color = Kit.CYAN, next_available: bool = false) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 3)
 	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	parent.add_child(row)
 	for i in range(total):
-		var pip := ColorRect.new()
-		pip.color = tint if i < filled else Color("213447")
+		var pip: Control
+		if next_available and i == filled:
+			pip = Panel.new()
+			pip.add_theme_stylebox_override("panel", Kit.box(Color("213447"), Kit.AMBER, 0, 1, 0, 0))
+		else:
+			pip = ColorRect.new()
+			pip.color = tint if i < filled else Color("213447")
 		pip.custom_minimum_size = Vector2(0, 6)
 		pip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -926,7 +931,7 @@ func _hangar_row(parent: Node, entry: Dictionary) -> void:
 	var progress := HBoxContainer.new()
 	progress.add_theme_constant_override("separation", 8)
 	info.add_child(progress)
-	_pips(progress, bought, top_rank)
+	_pips(progress, bought, top_rank, Kit.CYAN, not maxed and int(profile.cores) >= price)
 	Kit.label(progress, "%d/%d" % [bought, top_rank], 14, Kit.DIM)
 	var buy := Button.new()
 	buy.custom_minimum_size = Vector2(84, 44)
@@ -1113,7 +1118,7 @@ func _show_cards(play_sound: bool = true) -> void:
 		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
 	else:
 		if sim.rerolls_left > 0:
-			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand")
+			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand. Hangar rerolls refill each stage.")
 		if sim.skips_left > 0:
 			_draft_tool("Skip", "+12 hull", _draft_action.bind("skip", 0), "Take no upgrade and repair 12 hull")
 		if sim.banishes_left > 0:
@@ -1133,6 +1138,9 @@ func _draft_card(parent: Node, i: int) -> void:
 	var id: String = str(card.id)
 	var tag: String = str(card.tag)
 	var current: int = int(sim.upgrades.get(id, 0))
+	var next_rank: int = mini(int(card.max), current + (1 if tag == "ABILITY" and current == 0 else 2))
+	var milestone: int = 5 if current < 5 else 10
+	var reaches_milestone: bool = current < milestone and next_rank >= milestone and tag != "RECOVERY"
 	var is_new_ability := tag == "ABILITY" and current == 0
 	var fusion: String = sim.fusion_hint(id) if is_new_ability else ""
 	var accent := Kit.CYAN
@@ -1146,12 +1154,16 @@ func _draft_card(parent: Node, i: int) -> void:
 		accent = Color("7afcc0")
 		tag_text = "Recovery"
 	else:
-		var next_rank: int = mini(int(card.max), current + (1 if tag == "ABILITY" and current == 0 else 2))
 		accent = Kit.CYAN if tag == "ABILITY" else (Kit.AMBER if tag == "WEAPON" else Color("9fcbff"))
 		tag_text = "%s  ·  rank %d to %d" % [tag.capitalize(), current, next_rank]
+	if reaches_milestone:
+		tag_text = "Rank %d bonus  ·  %d to %d" % [milestone, current, next_rank]
 	var removable := banish_mode and id != "repair"
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
 	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
+	# Only a pick that actually fuses or crosses a breakpoint gets an accent edge.
+	if not banish_mode and (not fusion.is_empty() or reaches_milestone):
+		view.panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, accent, 14, 2, 0, 0))
 	var hit: Button = view.button
 	if banish_mode and not removable:
 		hit.disabled = true
@@ -1178,15 +1190,14 @@ func _draft_card(parent: Node, i: int) -> void:
 	Kit.label(info, str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
 		Kit.label(info, "Fuses into %s." % fusion.get_slice(":", 0), 15, Kit.VIOLET, true)
-	elif current < 10 and tag in ["WEAPON", "SYSTEM"]:
-		var milestone: int = 5 if current < 5 else 10
+	elif current < 10 and (reaches_milestone or (not _compact_ui() and tag in ["WEAPON", "SYSTEM", "ABILITY"])):
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
-			Kit.label(info, "Rank %d: %s" % [milestone, reward], 15, Kit.MUTED, true)
-	if tag in ["WEAPON", "SYSTEM"]:
+			Kit.label(info, ("Now: %s" % reward) if reaches_milestone else ("At rank %d: %s" % [milestone, reward]), 15, accent if reaches_milestone else Kit.MUTED, true)
+	if current == 0 and tag in ["WEAPON", "SYSTEM"]:
 		var link: String = sim.passive_hint(id)
 		if not link.is_empty():
-			Kit.label(info, "Pair bonus: " + link.get_slice(":", 0), 15, Kit.AMBER, true)
+			Kit.label(info, "Pair: " + link.get_slice(":", 0), 15, Kit.AMBER, true)
 
 func _toggle_banish() -> void:
 	if mode != "cards":
@@ -1664,7 +1675,7 @@ func _update_hud() -> void:
 			if card.tag == tag and sim.upgrades[card.id] > 0:
 				build_label.text += "%s  %d/%d\n" % [card.name, sim.upgrades[card.id], card.max]
 		build_label.text += "\n"
-	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nCoral lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
 func _activate_slot(slot: int) -> void:
 	if slot >= 0 and slot < sim.active_slots.size():
