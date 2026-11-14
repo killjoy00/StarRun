@@ -577,7 +577,8 @@ func _test_boss_components_and_phases() -> void:
 	var baseline := Sim.new(3456)
 	baseline.stage = 4
 	baseline._spawn_boss()
-	check(void_boss._nearest(Vector2(270, 790)).kind == "boss_module", "Autopilot targeting must prioritize boss parts without player aiming")
+	check(baseline._nearest(Vector2(270, 790)).kind == "boss_module", "Autopilot targeting must prioritize intact boss parts without player aiming")
+	check(void_boss._nearest(Vector2(270, 790)).kind == "boss4", "After destroying pylons auto-aim must return to the Regent core")
 
 func _test_synergy_tradeoffs() -> void:
 	var base := Sim.new(555)
