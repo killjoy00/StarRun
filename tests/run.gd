@@ -28,6 +28,8 @@ func _run() -> void:
 	_test_loadouts()
 	_test_threat_catalog()
 	_test_stage_difficulty_and_pressure()
+	_test_four_stage_campaign()
+	_test_new_stage_threats()
 	_test_20_active_pool()
 	var seeds := 12
 	for arg in OS.get_cmdline_user_args():
@@ -434,7 +436,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 		sim._add_enemy("drone", Vector2(240, 100))
 	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
 	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
-	check(normal.content.stage_count == 2 and normal.content.abilities.aegis.cooldown >= 14, "Two stages and slower Aegis must be configured")
+	check(normal.content.stage_count == 4 and normal.content.abilities.aegis.cooldown >= 14, "Four stages and slower Aegis must be configured")
 	var sim := Sim.new(777)
 	sim.boss_spawned = true
 	sim.enemies = [{"id":9, "kind":"boss", "p":Vector2(270,135), "hp":10.0, "max_hp":6200.0, "speed":0.0, "fire":99.0, "xp":0, "phase":0.0}]
@@ -448,7 +450,8 @@ func _test_stage_difficulty_and_pressure() -> void:
 	sim._spawn_boss()
 	check(sim.enemies.size() == 1 and sim.enemies[0].kind == "boss2", "Storm Carrier must exist as a second boss")
 	sim._damage_enemy(sim.enemies[0], 100000.0, "pulse")
-	check(sim.ended and sim.won and sim.stage_clears == 2, "Stage 2 boss must complete the run")
+	check(not sim.ended and sim.stage_transition_queued and sim.stage_clears == 2, "Stage 2 must stop for its victory acknowledgement, not end the run")
+	check(sim.advance_stage() and sim.stage == 3, "Acknowledging Stage 2 must advance to the new Foundry")
 	var statuses := Sim.new(19)
 	statuses._hit(1, "ion", "test")
 	check(statuses.shield_offline >= 4.0, "Ion fire must disable shield regeneration")
@@ -464,6 +467,73 @@ func _test_stage_difficulty_and_pressure() -> void:
 	scatter.shots.append({"p":Vector2(270, 550), "v":Vector2.ZERO, "damage":20.0, "weapon":"pulse", "target":-1})
 	scatter._update_shots()
 	check(scatter.bullets[-1].hp <= 0.0, "Spatial lookup must preserve point-defense collisions among hundreds of bullets")
+
+
+func _test_four_stage_campaign() -> void:
+	var sim := Sim.new(404, {}, "vanguard", "rookie", "normal")
+	check(sim.stage_count() == 4 and sim.stage_name() == "DEBRIS BELT", "Four authored campaign stages must start in the debris belt")
+	var names := {}
+	var boss_kinds := ["boss", "boss2", "boss3", "boss4"]
+	var health := 0.0
+	for stage_number in range(1, 5):
+		check(sim.stage == stage_number, "Campaign advances sequentially through each stage")
+		check(not names.has(sim.stage_name()), "Each stage needs a different name and environment")
+		names[sim.stage_name()] = true
+		sim._spawn_boss()
+		check(sim.enemies.size() == 1 and sim.enemies[0].kind == boss_kinds[stage_number - 1], "Each stage must have a distinct boss")
+		check(sim.enemies[0].max_hp > health, "Later bosses must require stronger builds")
+		health = sim.enemies[0].max_hp
+		sim._damage_enemy(sim.enemies[0], 1000000.0, "pulse")
+		check(sim.stage_clears == stage_number and sim.stage_transition_queued and not sim.ended, "Each boss must freeze before the player acknowledges victory")
+		var paused: Dictionary = sim.snapshot()
+		sim.step()
+		check(sim.snapshot() == paused, "Victory celebration must freeze every simulation field")
+		var restored := Sim.new(1)
+		check(restored.restore(paused) and restored.snapshot() == paused, "Resume must restore an awaiting stage-clear celebration exactly")
+		check(sim.advance_stage(), "Continue action must advance the campaign")
+		if stage_number < 4:
+			check(sim.stage == stage_number + 1 and not sim.stage_transition_queued and not sim.won, "Next stage should be playable without resetting the build")
+			check(sim.pending_levels == stage_number, "Each cleared boss awards exactly one milestone upgrade")
+		else:
+			check(sim.ended and sim.won and sim.stage_clears == 4, "Acknowledging final boss must finish all four stages")
+	check(not sim.advance_stage(), "Final stage can only be settled once")
+	check(sim.payout() > Sim.new().payout(), "Later stages must grant increased cumulative salvage")
+
+func _test_new_stage_threats() -> void:
+	var sim := Sim.new(707)
+	for kind in ["arc_spire", "storm_weaver", "forge_turret", "slag_bomber", "ember_hunter", "splitter", "phase_stalker", "void_lancer", "gravity_sentinel", "echo_carrier"]:
+		check(sim.content.enemies.has(kind) and sim.content.enemies[kind].hp > 0, "All new enemies need positive health specs: " + kind)
+	sim.stage = 3
+	sim.stage_start = sim.time
+	sim._add_enemy("slag_bomber", Vector2(250, 100))
+	sim.enemies[0].fire = 0.0
+	sim._update_enemies()
+	check(sim.bullets.any(func(b): return b.kind == "slag" and b.fuse > 0.0), "Foundry bomber must create timed molten-slag hazards")
+	sim._hit(2.0, "heat", "test")
+	check(sim.heat_left >= 5.0 and sim.weapon_power() < Sim.new().weapon_power(), "Heat must reduce firepower temporarily")
+	var first_kills := sim.kills
+	sim.enemies.clear()
+	sim._add_enemy("splitter", Vector2(225, 180))
+	sim._damage_enemy(sim.enemies[0], 10000.0, "pulse")
+	check(sim.kills == first_kills + 1 and sim.enemies.size() == 3, "Splitter must release two new drone enemies on death")
+	sim.enemies.clear()
+	sim.bullets.clear()
+	sim.stage = 4
+	sim.stage_start = sim.time
+	sim._add_enemy("gravity_sentinel", Vector2(260, 120))
+	sim.enemies[0].fire = 0.0
+	sim._update_enemies()
+	check(sim.bullets.any(func(b): return b.kind == "gravity"), "Void sentinels must launch recognizable gravity projectiles")
+	sim._hit(2.0, "gravity", "test")
+	check(sim.gravity_left >= 4.5, "Gravity threat must slow automatic weapons")
+	sim.enemies.clear()
+	sim.bullets.clear()
+	sim._spawn_boss()
+	sim.heavy_ready_at = 0.0
+	sim._update_enemies()
+	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0, "Final boss must telegraph two distinct heavy lanes")
+	sim._hit(2.0, "void", "test")
+	check(sim.hull < sim.max_hull, "Void shots must meaningfully bypass shields")
 
 func _balance(seeds: int) -> Dictionary:
 	var result: Dictionary = {}

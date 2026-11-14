@@ -2,13 +2,17 @@
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
-## Gameplay — v0.4 draft milestone
+## Gameplay — v0.5 four-stage campaign
 
 - **Four active slots from a pool of 20.** Every ship begins with one signature active. Draft up to three more, then improve the abilities you kept. The available actives range from time shields, missile flak and EMP to offensive strikes, decoys, siphons and salvage buffs.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
 - **Stage 1: Debris Belt.** Fly through changing scenery and enemy waves, then defeat the Harvester. A full Hangar can make this stage easy, by design.
-- **Stage 2: Ion Storm.** After Harvester, keep the same run and build. Stage 2 has tougher, faster waves, ion shots that halt shield regeneration, corrosion that bleeds hull, disruption that delays actives, and a new Storm Carrier boss. A stage-clear draft and partial repair separate the stages.
-- **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines, shield suppression, corrosion and cooldown disruption require different answers.
+- **Stage 2: Ion Storm.** A fully different cobalt lightning environment, new electrical silhouettes, ion shield suppression, corrosion, ability disruption and the Storm Carrier.
+- **Stage 3: Solar Foundry.** Molten orange factory corridors, Forge Turrets, Slag Bombers, Ember Hunters and Splitters. Heat impairs automatic weapons; molten bombs are visible and shootable. The Crucible Engine is the boss.
+- **Stage 4: Void Citadel.** Violet fortress architecture, blinking Phase Stalkers, Void Lancers, Gravity Sentinels and Echo Carriers. Gravity slows weapon fire; void shots partially bypass shields; the Void Regent fires twin telegraphed beams.
+- **Boss victories are earned moments.** Every boss defeat freezes the simulation for oversized explosions, secondary bursts, debris and shockwaves. Tap **Warp to next stage** to trigger a short jump animation; receive partial repairs and a milestone draft. After Stage 4, tap **Claim victory** for the full report. 
+- **Readable Build and Results.** Mobile screens have wrapped summary cards, vertical-only scrolling, fixed titles and persistent Resume/Main Menu or Fly Again/Main Menu controls.
+- **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines and stage-specific suppression require different responses.
 - **Fewer, stronger level-ups.** XP thresholds rise faster than before, weapon and passive picks can grant two ranks, and each even-numbered early level offers an opportunity to draft an active until all four slots are filled.
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties.
 - **Persistent Hangar.** Twenty-two refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Equipment and selected difficulty are retained in saves.
@@ -19,7 +23,7 @@ Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Fla
 
 On iPhone, four large on-screen buttons match equipped abilities from left to right and top to bottom. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses. Level-up choices use keys 1–4 or touch.
 
-The playfield uses adaptive 390×844 logical canvas scaling on modern portrait iPhones. Phone UI text uses a 16-point minimum, with scrolling upgrade cards and Hangar. iOS readability and performance still need real-device validation.
+The playfield uses adaptive 390×844 logical canvas scaling on modern portrait iPhones. Phone UI text uses a 16-point minimum. Build and Results use pinned navigation with scrollable, word-wrapped cards. iOS readability and performance still need real-device validation.
 
 ## Building and running
 
@@ -40,7 +44,8 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 
 ## Files and remaining release gates
 
-- [Gameplay milestone and validation plan](docs/GAMEPLAY_V04.md) — new four-active, two-stage and tiered-difficulty design
+- [Gameplay v0.5 and UAT specification](docs/GAMEPLAY_V05.md) — four stages, boss ceremonies, readable Build and Results
+- [Historical v0.4 milestone](docs/GAMEPLAY_V04.md) — previous two-stage implementation
 - [Original design document](docs/DESIGN.md) — longer-term vision, some proposed content not yet implemented
 - [First playable v0.3 notes](docs/FIRST_PLAYABLE.md) — historical baseline, replaced by v0.4 for gameplay
 - [Native delivery gates](docs/NATIVE_DELIVERY.md) — ads, purchases, real-device performance and Steam integration
@@ -49,4 +54,4 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 - `data/content.json` — enemies, abilities and upgrade cards
 - `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-**This v0.4 gameplay pass is not yet merged or released.** A passing simulator or unsigned iOS compile does not establish human enjoyment, device frame-time stability, ads or in-app purchase support. The signed v0.3.x TestFlight delivery is separate.
+**v0.5 is a four-stage gameplay update awaiting full CI and device UAT.** A passing simulator or unsigned iOS compile does not establish human enjoyment, device frame-time stability, ads or in-app purchase support. Signed TestFlight release status is verified separately.

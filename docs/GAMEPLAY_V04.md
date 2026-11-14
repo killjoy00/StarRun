@@ -1,4 +1,6 @@
-# StarRun v0.4 gameplay milestone — draft implementation
+# StarRun v0.4 gameplay milestone — historical two-stage implementation
+
+This document records the earlier version. The current four-stage implementation, visual direction and mobile UAT requirements live in [GAMEPLAY_V05.md](GAMEPLAY_V05.md).
 
 This document describes proposed gameplay implemented on the v0.4 feature branch. It is **not** verified as fun, device-performant, or App Store ready until CI and real iPhone playtesting pass.
 

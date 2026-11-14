@@ -22,16 +22,19 @@ func _draw() -> void:
 	var ship: Vector2 = sim.ship_position()
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
-	draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
-	var scroll := visual_time * 105.0
 	var sector := _sector(sim.time)
-	var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
-	for tile in range(-1, 2):
-		var y := tile * 1070.0 + fposmod(scroll, 1070.0) - 55
-		var flipped := posmod(tile - floori(scroll / 1070.0), 2) == 1
-		draw_set_transform(Vector2(-35 + drift.x, y + (1070 if flipped else 0)), 0, Vector2(1, -1 if flipped else 1))
-		draw_texture_rect(SPACE, Rect2(0, 0, 610, 1070), false, tints[sector])
-	draw_set_transform(Vector2.ZERO)
+	if sim.stage == 1:
+		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
+		var scroll := visual_time * 105.0
+		var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
+		for tile in range(-1, 2):
+			var y := tile * 1070.0 + fposmod(scroll, 1070.0) - 55
+			var flipped := posmod(tile - floori(scroll / 1070.0), 2) == 1
+			draw_set_transform(Vector2(-35 + drift.x, y + (1070 if flipped else 0)), 0, Vector2(1, -1 if flipped else 1))
+			draw_texture_rect(SPACE, Rect2(0, 0, 610, 1070), false, tints[sector])
+		draw_set_transform(Vector2.ZERO)
+	else:
+		_draw_stage_backdrop()
 	_draw_environment(sector, drift)
 	# Three depths of moving starlight sell forward flight without steering the player.
 	for i in range(90):
@@ -39,7 +42,7 @@ func _draw() -> void:
 		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.82, 0.86, 1.0, 0.16 + depth * 0.25) if sector != 4 else Color(1.0, 0.76, 0.45, 0.16 + depth * 0.25)
 		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
-	for i in range(9):
+	for i in range(9 if sim.stage == 1 else (3 if sim.stage == 2 else 0)):
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
@@ -49,11 +52,11 @@ func _draw() -> void:
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
 	for bullet in sim.bullets:
-		if bullet.kind == "mine":
+		if bullet.kind in ["mine", "slag"]:
 			var fuse: float = maxf(0.0, float(bullet.fuse))
 			var pulse := 0.45 + sin(visual_time * 14.0) * 0.30
-			draw_circle(bullet.p, 12, Color(1.0, 0.38, 0.10, 0.22 + pulse * 0.22))
-			draw_arc(bullet.p, 11, -PI/2, -PI/2 + TAU * clampf(fuse/3.4, 0, 1), 22, Color("ffc078"), 2.6, true)
+			draw_circle(bullet.p, 16 if bullet.kind == "slag" else 12, Color(1.0, 0.48 if bullet.kind == "slag" else 0.38, 0.10, 0.22 + pulse * 0.22))
+			draw_arc(bullet.p, 15 if bullet.kind == "slag" else 11, -PI/2, -PI/2 + TAU * clampf(fuse/3.4, 0, 1), 22, Color("ff552b") if bullet.kind == "slag" else AMBER, 2.6, true)
 			draw_colored_polygon(PackedVector2Array([bullet.p + Vector2(0,-7), bullet.p + Vector2(7,0), bullet.p + Vector2(0,7), bullet.p + Vector2(-7,0)]), Color("f38c4f"))
 			draw_circle(bullet.p, 2.6, Color.WHITE)
 		elif bullet.kind == "ordnance":
@@ -70,6 +73,9 @@ func _draw() -> void:
 				"ion": tint = Color("55d8ff")
 				"corrosion": tint = Color("a8ff70")
 				"disrupt": tint = Color("bc8cff")
+				"heat": tint = Color("ff7543")
+				"gravity": tint = Color("b887ff")
+				"void": tint = Color("fa6fff")
 			_glow(bullet.p, 4.2 if bullet.kind != "chaff" else 3.0, tint)
 			if bullet.kind != "chaff":
 				draw_arc(bullet.p, 6.0, 0.0, TAU, 12, tint, 2.0, true)
@@ -86,6 +92,10 @@ func _draw() -> void:
 	_draw_player(ship, velocity)
 	for effect in sim.effects:
 		_draw_effect(effect)
+	if host.mode == "stage_clear":
+		_draw_boss_ceremony(host.stage_clear_clock)
+	elif host.mode == "warp":
+		_draw_warp(host.warp_clock)
 	# Minimal edge framing lets the artwork breathe while bars stay readable.
 	for edge in [0, 1]:
 		draw_rect(Rect2(edge * 520, 0, 20, 960), Color(0.01, 0.025, 0.04, 0.18))
@@ -96,9 +106,12 @@ func _draw() -> void:
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
+func _visual_theme_id() -> String:
+	return ["debris", "storm", "forge", "void"][clampi(sim.stage - 1, 0, 3)]
+
 func _sector(at: float) -> int:
 	if sim.stage > 1:
-		return 1 if at - sim.stage_start < 130.0 else (3 if at - sim.stage_start < 240.0 else 4)
+		return sim.stage + 3
 	if at < 65.0:
 		return 0
 	if at < 125.0:
@@ -108,6 +121,92 @@ func _sector(at: float) -> int:
 	if at < 240.0:
 		return 3
 	return 4
+
+func _draw_stage_backdrop() -> void:
+	# Each late-game stage has its own silhouette, contrast, and parallax,
+	# rather than recoloring the Debris Belt texture.
+	var base := Color("041c32") if sim.stage == 2 else (Color("26110a") if sim.stage == 3 else Color("0d071b"))
+	var high := Color("064e64") if sim.stage == 2 else (Color("632512") if sim.stage == 3 else Color("261448"))
+	draw_rect(Rect2(0, 0, 540, 960), base)
+	for band in range(24):
+		draw_rect(Rect2(0, band * 40, 540, 42), base.lerp(high, 0.15 + 0.55 * (1.0 - absf(11.5 - band) / 12.0)))
+	match sim.stage:
+		2:
+			# Jagged cyan plasma rivers, pale cloud masses, electric ribs.
+			for i in range(10):
+				var x := 35.0 + i * 58.0 + sin(visual_time * 0.45 + i) * 22.0
+				draw_line(Vector2(x, -60), Vector2(x - 55, 1020), Color("116d90", 0.16), 28.0)
+				for part in range(8):
+					var y := fposmod(part * 161.0 + i * 91.0 + visual_time * (42 + i * 2), 1070.0) - 55.0
+					var points := PackedVector2Array([Vector2(x - 16, y), Vector2(x + 12, y + 28), Vector2(x - 8, y + 53), Vector2(x + 19, y + 92)])
+					draw_polyline(points, Color("87e8ff", 0.22 + i % 3 * 0.06), 2.1, true)
+			for i in range(5):
+				var p := Vector2(fposmod(i * 213.0, 620.0) - 40, fposmod(i * 317.0 + visual_time * 32.0, 1120.0) - 80)
+				draw_circle(p, 90 + i % 3 * 32, Color("39bbf0", 0.04))
+		3:
+			# Furnace ceiling and molten orange trenches, moving as distinct structures.
+			for edge in [-1, 1]:
+				var side_x: float = 270.0 + edge * 222.0
+				draw_rect(Rect2(side_x - 40, 0, 80, 960), Color("4d2116", 0.82))
+				for i in range(9):
+					var y := fposmod(i * 148.0 + visual_time * 72.0, 1100.0) - 80.0
+					draw_rect(Rect2(side_x - 40, y, 80, 20), Color("db5926", 0.50))
+					draw_circle(Vector2(side_x, y + 8), 5, Color("ffe288", 0.7))
+			for lane in range(4):
+				var x: float = 110.0 + lane * 105.0
+				draw_line(Vector2(x, -50), Vector2(x + sin(visual_time * 0.6) * 15, 1010), Color("ff7131", 0.16), 17)
+				for i in range(9):
+					var y := fposmod(i * 133.0 + lane * 81.0 + visual_time * 125.0, 1060.0) - 50.0
+					draw_rect(Rect2(x - 21, y, 42, 9), Color("ffb75d", 0.18))
+		4:
+			# A black-violet architectural void, symmetrical towers and rotating gates.
+			for side in [-1, 1]:
+				var x: float = 270.0 + side * 225.0
+				draw_colored_polygon(PackedVector2Array([Vector2(x - 46, -50), Vector2(x + 46, -50), Vector2(x + 31, 1030), Vector2(x - 31, 1030)]), Color("23123e", 0.9))
+				for i in range(10):
+					var y := fposmod(i * 136.0 + visual_time * 56.0, 1100.0) - 70.0
+					draw_colored_polygon(PackedVector2Array([Vector2(x, y - 25), Vector2(x + 18, y), Vector2(x, y + 25), Vector2(x - 18, y)]), Color("8753d8", 0.25))
+			for gate in range(6):
+				var y := fposmod(gate * 210.0 + visual_time * 65.0, 1220.0) - 170.0
+				draw_arc(Vector2(270, y), 102 + gate % 3 * 14, 0.14, PI - 0.14, 34, Color("ac84ff", 0.22), 3.0)
+				draw_arc(Vector2(270, y), 102 + gate % 3 * 14, PI + 0.14, TAU - 0.14, 34, Color("ac84ff", 0.22), 3.0)
+
+func _draw_boss_ceremony(elapsed: float) -> void:
+	var origin: Vector2 = sim.last_boss_position
+	var progress := clampf(elapsed / 2.2, 0, 1)
+	var warm := Color("ffbb55") if sim.stage in [1, 3] else Color("89dfff") if sim.stage == 2 else Color("d5a1ff")
+	if not profile.reduced:
+		draw_circle(origin, 155.0 * maxf(0, 1.0 - elapsed / 1.6), Color(warm, 0.28 * maxf(0, 1.0 - elapsed / 1.6)))
+		for pulse in range(4):
+			var t := elapsed - pulse * 0.24
+			if t >= 0 and t < 1.7:
+				var radius := 20.0 + t * 285.0
+				draw_arc(origin, radius, 0, TAU, 72, Color(warm, (1.0 - t / 1.7) * 0.80), 5.0 - pulse * 0.55, true)
+	for spark in range(18 if profile.reduced else 85):
+		var angle: float = spark * 2.399963 + sin(spark * 0.54) * 0.12
+		var speed: float = 75.0 + fposmod(spark * 73.0, 360.0)
+		var distance: float = minf(elapsed, 2.8) * speed
+		var position := origin + Vector2.from_angle(angle) * distance
+		var tint := warm.lerp(Color.WHITE, fposmod(spark * 0.37, 0.6))
+		var alpha: float = 0.90 * maxf(0.08, 1.0 - elapsed / 3.4)
+		draw_line(position, position - Vector2.from_angle(angle) * (5 + progress * 30), Color(tint, alpha), 1.5 if profile.reduced else 3.0, true)
+		if spark % 5 == 0:
+			draw_circle(position, 4.0, Color(tint, alpha * 0.75))
+
+func _draw_warp(elapsed: float) -> void:
+	var progress := clampf(elapsed / 1.45, 0, 1)
+	var center := Vector2(270, 470)
+	var color := Color("65dfff") if sim.stage == 1 else (Color("ffb36a") if sim.stage == 2 else Color("bf83ff"))
+	draw_circle(center, 125.0 * (1.0 - progress * 0.7), Color(color, 0.10 + 0.14 * progress))
+	for beam in range(38 if profile.reduced else 82):
+		var angle: float = beam * 2.399963
+		var radial: float = (22.0 + fposmod(beam * 47.0, 210.0)) * (1.0 + progress * 3.0)
+		var direction := Vector2.from_angle(angle)
+		var p := center + direction * radial
+		draw_line(p, p + direction * (20.0 + progress * 190.0), Color(color, 0.3 + progress * 0.6), 2.0, true)
+	for ring in range(4):
+		var radius := 45.0 + ring * 48.0 + progress * 140.0
+		draw_arc(center, radius, 0, TAU, 68, Color(color, 0.40 * (1.0 - progress)), 2.5, true)
 
 func _draw_environment(sector: int, drift: Vector2) -> void:
 	# Procedural layers provide distinct vistas without interrupting continuous scrolling.
@@ -208,7 +307,7 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var kind: String = enemy.kind
-	var boss := kind in ["boss", "boss2"]
+	var boss := kind.begins_with("boss")
 	if kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
 	elif kind == "station":
@@ -239,9 +338,14 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			"corroder": tint = Color("a8ff70")
 			"disruptor": tint = Color("bc8cff")
 			"boss2": tint = Color("7cc4ff")
+			"boss3": tint = Color("ff8f48")
+			"boss4": tint = Color("cda8ff")
 		var bank := sin(sim.time * (2.2 if kind == "interceptor" else 0.7) + enemy.phase) * (0.035 if boss else 0.11)
 		draw_set_transform(p, bank)
-		draw_texture_rect(SHIPS[art_key], Rect2(-size/2, size), false, tint)
+		if _custom_enemy(kind):
+			_draw_custom_enemy(kind)
+		else:
+			draw_texture_rect(SHIPS[art_key], Rect2(-size/2, size), false, tint)
 		if kind == "missile_bomber":
 			for side in [-1,1]:
 				draw_circle(Vector2(side*32,14),9,Color("ffb057"))
@@ -256,14 +360,86 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			for side in [-1,1]:
 				draw_line(Vector2(side*8,-15),Vector2(side*35,28),Color("76fff2"),3)
 		if boss:
-			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(1,0.4,0.07,0.3))
+			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(tint,0.3))
 		draw_set_transform(Vector2.ZERO)
 	if boss:
 		draw_rect(Rect2(65,14,410,55),Color(0.03,0.035,0.05,0.8))
 		_bar(Rect2(80,24,380,6),enemy.hp/enemy.max_hp,AMBER)
-		draw_string(ThemeDB.fallback_font,Vector2(195,56),"H A R V E S T E R",HORIZONTAL_ALIGNMENT_LEFT,-1,16,AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(80,56), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
 	elif enemy.hp < enemy.max_hp:
 		_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+
+func _custom_enemy(kind: String) -> bool:
+	return kind in ["ion_frigate", "corroder", "disruptor", "arc_spire", "storm_weaver", "forge_turret", "slag_bomber", "ember_hunter", "splitter", "phase_stalker", "void_lancer", "gravity_sentinel", "echo_carrier", "boss2", "boss3", "boss4"]
+
+func _draw_custom_enemy(kind: String) -> void:
+	# Procedural silhouettes at native size, not a color tint of one shared sprite.
+	if kind == "boss2":
+		draw_colored_polygon(PackedVector2Array([Vector2(-105,-4), Vector2(-58,-49), Vector2(0,-74), Vector2(58,-49), Vector2(105,-4), Vector2(67,48), Vector2(-67,48)]), Color("173e62"))
+		for side in [-1,1]:
+			draw_colored_polygon(PackedVector2Array([Vector2(side*43,-25),Vector2(side*118,-20),Vector2(side*96,18),Vector2(side*47,24)]),Color("309ac6"))
+			draw_line(Vector2(side*44,-20),Vector2(side*100,4),Color("9deaff"),4,true)
+		draw_circle(Vector2.ZERO, 27, Color("66dfff"))
+		draw_circle(Vector2.ZERO, 14, Color.WHITE)
+		draw_arc(Vector2.ZERO, 60 + sin(visual_time * 4) * 6, 0, TAU, 48, Color("8fe4ff",0.7),3,true)
+		return
+	if kind == "boss3":
+		draw_rect(Rect2(-94,-78,188,146),Color("4b2618"))
+		draw_rect(Rect2(-74,-64,148,124),Color("934328"))
+		for side in [-1,1]:
+			draw_rect(Rect2(side*96-19,-55,38,120),Color("783323"))
+			for i in range(4):
+				draw_line(Vector2(side*100-10,i*29-45),Vector2(side*100+12,i*29-45),Color("ffab58"),3,true)
+		draw_circle(Vector2.ZERO,48,Color("2c1415"))
+		draw_circle(Vector2.ZERO,34+sin(visual_time*6)*4,Color("ff6d2c"))
+		draw_circle(Vector2.ZERO,19,Color("ffda83"))
+		for i in range(12):
+			var angle: float = i * TAU / 12
+			draw_line(Vector2.from_angle(angle) * 47,Vector2.from_angle(angle)*74,Color("ff8f42"),4,true)
+		return
+	if kind == "boss4":
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-104),Vector2(79,-50),Vector2(97,41),Vector2(0,92),Vector2(-97,41),Vector2(-79,-50)]),Color("231446"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-92),Vector2(47,-22),Vector2(36,49),Vector2(0,76),Vector2(-36,49),Vector2(-47,-22)]),Color("794dbb"))
+		for side in [-1,1]:
+			var x: float = side * (115 + sin(visual_time*2) * 10)
+			draw_colored_polygon(PackedVector2Array([Vector2(x,-52),Vector2(x+side*25,0),Vector2(x,56),Vector2(x-side*20,0)]),Color("5c3b90"))
+			draw_line(Vector2(x,-48),Vector2(x,46),Color("c9a2ff"),3,true)
+		draw_circle(Vector2.ZERO,20+sin(visual_time*5)*3,Color("f0b7ff"))
+		draw_arc(Vector2.ZERO,86,visual_time,visual_time+PI*1.4,55,Color("d5a6ff",0.7),3,true)
+		return
+	if kind in ["ion_frigate", "corroder", "disruptor", "arc_spire", "storm_weaver"]:
+		var color := Color("58dbff") if kind in ["ion_frigate", "storm_weaver"] else (Color("a4ff74") if kind == "corroder" else Color("bba3ff"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-37),Vector2(25,-12),Vector2(31,25),Vector2(0,39),Vector2(-31,25),Vector2(-25,-12)]),Color("123348"))
+		draw_polyline(PackedVector2Array([Vector2(0,-37),Vector2(25,-12),Vector2(31,25),Vector2(0,39),Vector2(-31,25),Vector2(-25,-12),Vector2(0,-37)]),color,2.5,true)
+		for side in [-1,1]:
+			draw_line(Vector2(side*7,-17),Vector2(side*28,15),Color(color,0.55),3,true)
+		if kind in ["arc_spire", "storm_weaver"]:
+			for side in [-1,1]:
+				draw_line(Vector2(side*23,-17),Vector2(side*45,-30),color,3,true)
+				draw_circle(Vector2(side*44,-29),5,color)
+		draw_circle(Vector2.ZERO,8+sin(visual_time*5)*2,color)
+		return
+	if kind in ["forge_turret", "slag_bomber", "ember_hunter", "splitter"]:
+		var metal := Color("6f3422") if kind != "ember_hunter" else Color("a04426")
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-37),Vector2(32,-20),Vector2(30,28),Vector2(-30,28),Vector2(-32,-20)]),metal)
+		for side in [-1,1]:
+			draw_rect(Rect2(side*30-5,-14,10,43),Color("dc6a31"))
+			draw_line(Vector2(side*27,-7),Vector2(side*15,20),Color("ffbe6b"),3,true)
+		draw_circle(Vector2.ZERO,13,Color("33171a"))
+		draw_circle(Vector2.ZERO,7+sin(visual_time*7)*2,Color("ffc066"))
+		if kind == "splitter":
+			for side in [-1,1]:
+				draw_colored_polygon(PackedVector2Array([Vector2(side*16,-20),Vector2(side*41,-10),Vector2(side*41,15),Vector2(side*16,21)]),Color("d95f30"))
+		return
+	# Stage 4 void ships are angular, symmetric, and visibly unlike the foundry.
+	var purple := Color("ad79fa") if kind != "gravity_sentinel" else Color("8cb9ff")
+	draw_colored_polygon(PackedVector2Array([Vector2(0,-43),Vector2(37,-5),Vector2(0,43),Vector2(-37,-5)]),Color("1c143e"))
+	draw_polyline(PackedVector2Array([Vector2(0,-43),Vector2(37,-5),Vector2(0,43),Vector2(-37,-5),Vector2(0,-43)]),purple,3,true)
+	for side in [-1,1]:
+		draw_colored_polygon(PackedVector2Array([Vector2(side*19,-13),Vector2(side*45,-30),Vector2(side*38,27)]),Color(purple,0.65))
+	if kind in ["void_lancer", "gravity_sentinel"]:
+		draw_arc(Vector2.ZERO,35,0,TAU,32,Color(purple,0.55),2,true)
+	draw_circle(Vector2.ZERO,10+sin(visual_time*5)*2,Color("f2d7ff"))
 
 func _draw_threats() -> void:
 	for charge in sim.charges:
@@ -296,6 +472,9 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif effect.kind in ["barrage", "overdrive", "chrono", "mend"]:
 		var color := Color("a7a1ff") if effect.kind in ["chrono", "barrage"] else Color("a9ffc9")
 		draw_arc(p, 25 + age * 130, 0, TAU, 48, Color(color, alpha * 0.8), 3, true)
+	elif effect.kind == "phase":
+		draw_arc(p, 10 + age * 65, 0, TAU, 42, Color("d8a4ff", alpha * 0.8), 4, true)
+		draw_circle(p, 7 + age * 23, Color("b784ff", alpha * 0.12))
 	elif effect.kind == "nova":
 		var radius := age * 790
 		if not profile.reduced:

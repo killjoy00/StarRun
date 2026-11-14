@@ -1,10 +1,10 @@
-> **Prototype update (2026-11-12, v0.3):** current playable behavior is defined in [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md). It now has a smaller, faster, more mobile ship, gentle pulse homing, four weapons, six learnable active abilities, eleven passive systems and a 22-track Hangar. The slot limits and launch content below describe the broader release plan and do not cap the current prototype.
+> **Current implementation (2026-11-13, v0.5):** see [GAMEPLAY_V05.md](GAMEPLAY_V05.md) for the four-stage campaign, 20-actives/four-slots, unique environments and bosses, player-acknowledged warp, and Build/Results UAT requirements. [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) and [GAMEPLAY_V04.md](GAMEPLAY_V04.md) are historical snapshots; proposed features below are explicitly not all implemented.
 
 # StarRun: Game Design Document
 
-Status: Draft v0.2, 2026-11-12. Working title is the repo name.
+Status: Design direction revised 2026-11-13 for v0.5 gameplay. Working title is the repo name.
 
-The review changes were accepted on 2026-11-12. [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) records the implemented first-playable rules and overrides older proposal numbers for that slice. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
+The revised gameplay scope was accepted on 2026-11-13. [GAMEPLAY_V05.md](GAMEPLAY_V05.md) is the detailed source for implemented mechanics and specific mobile UAT requirements. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
 
 How to read this doc: every item is tagged by where it came from.
 
@@ -33,8 +33,8 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 | iOS business model | Free with ads, one purchase removes them | Decided |
 | Steam business model | Paid, with a free demo containing one level | Decided |
 | Art style | Illustrated hard-surface ships, deep-space painting, neon combat effects | Revised by user, 2026-11-12 |
-| Engine | Godot 4, gated by a tech spike (section 14) | Proposed |
-| Full-clear run length | 24 to 28 minutes | Assumption |
+| Engine | Godot 4.6.3, native iOS export and TestFlight pipeline implemented; ads, purchase/restore and device performance remain gated (section 16.2) | Implemented / unpassed native gates |
+| Full-clear run length | Roughly 16 minutes of waves plus four variable-length boss fights and optional drafts; needs device timing validation | Current estimate |
 | Team size | Solo or very small team | Assumption |
 
 ## 2. Design pillars
@@ -50,7 +50,7 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 
 **Minute to minute.** Kills grant XP. Each level-up pauses the game and offers cards. Target: one level-up roughly every 30 seconds, faster early and slower late (Proposed).
 
-**Level to level.** Each level is about 5 minutes of waves, an elite at the midpoint, and a boss. Beating a boss grants a Prototype (a run-defining relic) and a partial hull repair.
+**Stage to stage (implemented v0.5).** Four minutes of waves lead to a distinct boss in each of four stages. Boss defeat freezes combat for an explicit celebration. The player taps Warp to continue; shields refill, 30% of max hull is repaired and one milestone upgrade draft is awarded. A separate run-defining Prototype relic selection is still proposed, not implemented.
 
 **Run to run.** Death or victory pays out Cores. Cores buy permanent upgrades in the Hangar. Milestones unlock new weapons, abilities, Prototypes, and ships.
 
@@ -214,22 +214,22 @@ Because the player does not aim, enemy roles exist to stress different parts of 
 
 **Elites** are regular enemies with one affix (Armored, Volatile, Rapid, Shielded). This multiplies variety without new art.
 
-Launch target: 12 enemy types, 4 elite affixes, 4 bosses.
+Current v0.5 pool: 24 standard enemies/hazards with Stage 2–4-specific attacks, and 4 distinct bosses. Elite affixes remain proposed and are not shipped.
 
 ## 10. Levels
 
-Each level is a seeded sequence of about 9 wave segments of roughly 30 seconds, drawn from that level's segment pool, with an elite encounter at the midpoint and a boss at the end. Each segment has a **threat budget** (expected incoming damage per second) so difficulty is tuned by number, not by feel alone.
+Implemented: each stage uses its own seeded enemy pool and four-minute wave director, followed by a boss. Stage-specific health, spawn and attack scales accumulate with Normal/Hard/Insane difficulty. Formal threat budgets, hand-authored 30-second segments and guaranteed midpoint elites are proposed, not yet implemented.
 
 Each boss tests a different part of the build, so a one-dimensional build hits a wall somewhere.
 
 | # | Level | Theme and new mechanic | Boss | Boss tests |
 |---|---|---|---|---|
 | 1 | Debris Belt | Destructible asteroids that drop XP. Drones, Swarmers, Gunships. | **Harvester**: mining rig that charges a telegraphed laser across the flight path | Ability timing. Teaches Aegis and cancel-by-kill. |
-| 2 | Picket Line | Fleet formations. Introduces ordnance and Shieldbearers. | **Carrier**: launches fighter wings and missile salvos; hangar bays are weak points | Point defense and swarm clear |
-| 3 | Ion Storm | Telegraphed lightning lanes that suppress shield regen for 3 seconds. Snipers, Cloakers, Spinners. | **Twin Tempest**: two linked ships; the survivor enrages | Target priority and shield management |
-| 4 | Citadel | Fortress trench with wall Turrets and timed laser gates. All enemy types. | **Dreadnought Core**: shield generators, then a spiral chaff phase, then a doomsday charge that must be interrupted or absorbed | Everything, plus a damage race |
+| 2 | Ion Storm | Cobalt plasma, lightning ribs, electrical spires; ion suppression, corrosion and ability disruption | **Storm Carrier**: blue winged warship with electric core, missiles and beam | Cooldown management and shield recovery |
+| 3 | Solar Foundry | Molten furnace rails, forge artillery, heat reducing weapon output, shootable slag bombs and splitting ships | **Crucible Engine**: giant furnace reactor with heat spreads and molten mines | Sustained pressure and point defense |
+| 4 | Void Citadel | Black-violet fortress towers, phase-stalking raiders, gravity slowdown and shield-piercing void fire | **Void Regent**: geometric core with orbiting pylons and dual telegraphed beam lanes | Prioritization, layered defense and cooldown discipline |
 
-Between levels: Prototype pick, shield refilled, 30% of max hull repaired.
+Implemented between stages: explicit boss-clear celebration, tap-to-warp, refill shields, repair 30% max hull, choose a milestone upgrade. Prototype relic choices remain a future design.
 
 **After the first clear**: Threat tiers 1 to 10, each adding a modifier (more elites, faster chaff, shorter telegraphs down to the 1.0 second floor). This is where long-term players spend their Hangar power.
 
@@ -303,7 +303,7 @@ Not researched: price points, ad network choice beyond plugin availability, and 
 
 ### 14.1 Playfield
 
-Gameplay happens in a fixed 9:16 logical playfield, identical on every device, so balance is the same everywhere (Proposed).
+Gameplay uses a fixed 540×960 world scaled into the available logical iPhone canvas and displayed as a centered column on wider screens. Touch controls and menus use responsive layouts, while combat positions remain in world coordinates.
 
 - **iPhone** (taller than 9:16): the extra height holds the HUD above (hull, shield, XP, level progress) and the ability bar below, inside thumb reach and the safe areas.
 - **iPad, desktop, Steam Deck** (wider than 9:16): the playfield is a centered column. Side panels show what a build game wants visible: weapons and levels with live damage meters on the left, abilities with key hints, Prototypes, and boss info on the right.
@@ -313,9 +313,9 @@ Gameplay happens in a fixed 9:16 logical playfield, identical on every device, s
 | Platform | Abilities | Cards |
 |---|---|---|
 | iOS | Tap buttons | Tap |
-| Keyboard | 1, 2, 3 (rebindable) | Number keys or arrows and Enter |
+| Keyboard | 1–4 (Space uses slot 1); Esc/P pause, B build | Number keys 1–4 |
 | Mouse | Click buttons | Click |
-| Controller, Steam Deck | Face buttons | D-pad and confirm |
+| Controller, Steam Deck | A/X/Y/B face buttons | Click/confirm; controller draft focus requires real-device UAT |
 
 ### 14.3 Sessions
 
@@ -323,7 +323,13 @@ A 25 minute run is long for a phone. Save the exact run state every ten seconds 
 
 ### 14.4 Accessibility
 
-Shape-coded bullets, screen shake and flash toggles, reduced glow mode, scalable text, full remapping on desktop, audio cues for every telegraph.
+Implemented: stage-themed, shape- and color-coded threats; 16pt minimum mobile body labels; at least 44pt touch targets; reduced-glow mode; readable pinned navigation in Build/Results; audio warning and shield-break cues. Proposed but unverified: full remapping, dedicated flash and shake toggles, VoiceOver support.
+
+### 14.5 Build, Results and between-stage interaction (implemented v0.5; device UAT pending)
+
+A boss defeat is a **player-recognized milestone**, not an invisible change of wave pool. The explosion and shockwaves are displayed while the deterministic simulation is frozen; after the visual beat, a single explicit **Warp to next stage** action begins a short cinematic transition. After the fourth boss, **Claim victory** ends the run and opens Results. Pending celebrations are checkpointed and never auto-complete on resume.
+
+Build and Results are reading screens, not walls of tiny numbers. Fixed headers provide orientation. The middle section scrolls vertically, with smart word wrapping and no horizontal scrolling. Large fixed-footers keep **Resume flight / Main menu** on Build and **Fly again / Main menu** on Results visible and thumb-reachable. Results leads with salvage, stage reached, survival and threats, then the detailed damage/weapon breakdown and last ten seconds. Build summarizes the four active slots first and keeps long systems/Hangar detail behind an explicit expansion. See the measurable checks in [GAMEPLAY_V05.md](GAMEPLAY_V05.md).
 
 ## 15. Art and audio
 
