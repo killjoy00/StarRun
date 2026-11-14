@@ -17,10 +17,17 @@ func _draw() -> void:
 		color = AMBER
 	elif icon_id in ["arc", "arcwing", "chrono", "coolant", "tactician", "nyx"]:
 		color = VIOLET
+	elif icon_id in ["nova_aegis", "railstorm", "stasis_lock", "repair_matrix", "missile_grid", "scrap_converter", "prism_focus", "reflective_wall", "ghost_signal", "reactor_surge"]:
+		color = Color("c9a8ff")
 	draw_set_transform(center, 0.0, Vector2.ONE * s)
 	draw_circle(Vector2.ZERO, 17.0, Color(color, 0.08))
 	draw_arc(Vector2.ZERO, 16.0, 0.0, TAU, 28, Color(color, 0.45), 1.3, true)
 	match icon_id:
+		"nova_aegis", "railstorm", "stasis_lock", "repair_matrix", "missile_grid", "scrap_converter", "prism_focus", "reflective_wall", "ghost_signal", "reactor_surge":
+			# A double strike marks abilities made from two separate skills.
+			for side in [-1, 1]:
+				draw_colored_polygon(PackedVector2Array([Vector2(side*5,-13),Vector2(side*13,0),Vector2(side*5,13),Vector2(side*1,0)]), Color(color,0.65))
+			draw_line(Vector2(side*4,-9),Vector2(side*10,0),Color.WHITE,1.7,true)
 		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
 			points.append(points[0])
