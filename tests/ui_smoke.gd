@@ -30,6 +30,14 @@ func _unwrapped_long_label(node: Node) -> bool:
 			return true
 	return false
 
+func _contains_text(node: Node, phrase: String) -> bool:
+	if node is Label and str(node.text).contains(phrase):
+		return true
+	for child in node.get_children():
+		if _contains_text(child, phrase):
+			return true
+	return false
+
 func _run() -> void:
 	check(ProjectSettings.get_setting("display/window/stretch/mode") == "canvas_items", "Retina phones must use adaptive canvas stretching")
 	check(ProjectSettings.get_setting("display/window/stretch/aspect") == "expand", "Phone aspect ratio must expand instead of letterboxing")
@@ -160,8 +168,29 @@ func _run() -> void:
 	scene._begin_warp()
 	check(scene.mode == "warp", "One click should begin a distinct warp animation")
 	scene._complete_warp()
-	check(scene.sim.stage == 2 and scene.mode == "cards", "Warp must advance to Stage 2 and offer the milestone upgrade")
+	check(scene.sim.stage == 1 and scene.mode == "prototype" and scene.sim.prototype_offers.size() == 3, "Warp must first present three irreversible Prototype choices")
+	await process_frame
+	check(scene.reading_scroll.size.y > 100 and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Prototype choice must be readable and scroll vertically")
+	check(not _unwrapped_long_label(scene.reading_scroll), "Prototype descriptions and drawbacks must wrap")
+	var preserved_hand: Array = scene.sim.prototype_offers.duplicate()
+	scene._show_menu()
+	scene._resume_run()
+	check(scene.mode == "prototype" and scene.sim.prototype_offers == preserved_hand, "Menu/resume must preserve the exact intermission Prototype hand")
+	scene._choose_prototype(0)
+	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
+	await process_frame
+	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
+	scene._show_menu()
+	scene._resume_run()
+	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
+	scene._choose_route("overclock")
+	check(scene.sim.stage == 2 and scene.mode == "cards" and is_equal_approx(scene.sim.stage_power, 1.25), "Selecting Overclock must start Stage 2 with reduced shields and its stronger weapons")
 	scene.sim.cards.clear()
+	scene.mode = "playing"
+	scene._show_build()
+	await process_frame
+	check(_contains_text(scene.reading_scroll, "PROTOTYPE") and _contains_text(scene.reading_scroll, "Current route:"), "Build screen must explain acquired Prototype and route tradeoffs")
+	scene._toggle_pause()
 	scene.sim.stage = 4
 	scene.sim.stage_clears = 4
 	scene.sim.stage_transition_queued = true
