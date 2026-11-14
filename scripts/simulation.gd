@@ -875,7 +875,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
-	var is_boss: bool = str(enemy.kind).begins_with("boss")
+	# Boss components are targets, but only the core can end a stage or pay a contract.
+	var is_boss: bool = str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"]
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
