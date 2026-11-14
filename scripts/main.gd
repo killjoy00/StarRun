@@ -373,10 +373,10 @@ func _show_menu() -> void:
 	mode = "menu"
 	var box := _panel()
 	_label(box, "S T A R / R U N", 38, CYAN)
-	_label(box, "DEBRIS BELT   /   FLIGHT 01", 13, AMBER)
-	_wrapped(box, "Build the ship. Read the threat. Choose your moment.", 19, Color.WHITE)
-	_wrapped(box, "Your ship flies and fires itself. Each hull begins with one signature ability. Draft up to three more from a pool of 20.")
-	_wrapped(box, "Four stages. Boss weak points, build synergies and irreversible Prototype and route decisions. Still no steering.", 14)
+	_label(box, "Four stages. One ship.", 13, AMBER)
+	_wrapped(box, "The ship flies and shoots. You choose its upgrades and when to use them.", 19, Color.WHITE)
+	_wrapped(box, "Combine two abilities to make a stronger one and free a slot. Weapons and ship systems can pair up too.")
+	_wrapped(box, "Each stage ends with a different boss. Afterward, you choose what to carry into the next one.", 14)
 	_wrapped(box, "SHIP  %s   /   PILOT  %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], 13, CYAN)
 	if not services.read_save(Services.RUN).is_empty():
 		_button(box, "Resume flight", _resume_run, true)
@@ -651,8 +651,8 @@ func _show_pause() -> void:
 	mode = "paused"
 	_save_run()
 	var box := _panel()
-	_label(box, "FLIGHT PAUSED", 28, CYAN)
-	_wrapped(box, "Your flight is saved, including the current upgrade hand and ability cooldowns.")
+	_label(box, "Paused", 28, CYAN)
+	_wrapped(box, "Your ship, upgrades and cooldowns are saved.")
 	_button(box, "Continue flight", _toggle_pause, true).grab_focus()
 	_button(box, "Inspect build", _show_build)
 	_button(box, "Effects: " + ("on" if profile.sound else "off"), _toggle_sound)
@@ -691,8 +691,8 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	content.add_theme_constant_override("separation", 9)
 	panel.add_child(content)
 	_wrapped(content, sim.stage_spec().reward_label.to_upper(), 21, AMBER)
-	_wrapped(content, "RUN SALVAGE  %d CORES · %d ENEMIES DEFEATED\nSalvage is awarded when the flight ends." % [sim.payout(), sim.kills], 16, Color.WHITE)
-	var next_text := "The Void Citadel is yours. Claim your victory and see the flight report." if sim.stage == sim.stage_count() else "Next: %s. Warp, install a Prototype, then choose repairs, damage or a higher-risk bounty." % sim.stage_spec().transition
+	_wrapped(content, "%d cores so far  |  %d enemies down\nCores are paid out when the run ends." % [sim.payout(), sim.kills], 16, Color.WHITE)
+	var next_text := "All four stages cleared. See how your run went." if sim.stage == sim.stage_count() else "Next: %s. Pick a prototype, then choose your next route." % sim.stage_spec().transition
 	_wrapped(content, next_text, 16, Color.WHITE)
 	stage_clear_button = _button(content, "Claim victory & see report" if sim.stage == sim.stage_count() else "Warp to " + str(sim.stage_spec().transition), _begin_warp, true)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
@@ -729,21 +729,21 @@ func _show_prototypes() -> void:
 	var header: VBoxContainer = view.header
 	var body: VBoxContainer = view.body
 	var footer: HBoxContainer = view.footer
-	_label(header, "CHOOSE A PROTOTYPE", 26, CYAN)
-	_wrapped(header, "Stage %d cleared. Install one permanent upgrade for the rest of this flight." % sim.stage, 15, Color.WHITE)
-	_wrapped(header, "Every Prototype has a benefit and a cost. The other two options are lost.", 14, AMBER)
+	_label(header, "Pick a prototype", 26, CYAN)
+	_wrapped(header, "Keep one of these for the rest of this run." % sim.stage, 15, Color.WHITE)
+	_wrapped(header, "Each has a downside. You only get one.", 14, AMBER)
 	var first: Button = null
 	for i in range(sim.prototype_offers.size()):
 		var id: String = str(sim.prototype_offers[i])
 		var spec: Dictionary = sim.prototype_spec(id)
 		var card := _reading_card(body, "%d  /  %s  [%s]" % [i + 1, spec.name, spec.role], "%s\nBENEFIT  %s\nTRADEOFF  %s" % [spec.description, spec.benefit, spec.cost], CYAN)
 		var content: VBoxContainer = card.get_child(0)
-		var choose := _button(content, "Install " + str(spec.name), _choose_prototype.bind(i), i == 0)
+		var choose := _button(content, "Take " + str(spec.name), _choose_prototype.bind(i), i == 0)
 		choose.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		choose.custom_minimum_size.y = 50
 		if first == null:
 			first = choose
-	_reading_cta(footer, "Save & Main Menu", _show_menu)
+	_reading_cta(footer, "Save and exit", _show_menu)
 	if first != null:
 		first.grab_focus()
 
@@ -761,13 +761,13 @@ func _show_route_choice() -> void:
 	var header: VBoxContainer = view.header
 	var body: VBoxContainer = view.body
 	var footer: HBoxContainer = view.footer
-	_label(header, "CHOOSE YOUR NEXT ROUTE", 26, CYAN)
+	_label(header, "Choose the next route", 26, CYAN)
 	_wrapped(header, "NEXT: %s  ·  STAGE %d OF 4" % [sim.stage_spec().transition, sim.stage + 1], 15, Color.WHITE)
-	_wrapped(header, "One immediate decision: restore your hull, push your damage or gamble for extra cores.", 14, MUTED)
+	_wrapped(header, "Repair, hit harder, or take a harder stage for more cores.", 14, MUTED)
 	var routes := [
-		{"id":"repair", "name":"SAFE PASSAGE", "text":"BENEFIT  Repair 55% of max hull and fully restore shields.\nTRADEOFF  No extra damage or core bounty.", "action":"Repair and continue"},
-		{"id":"overclock", "name":"REDLINE JUMP", "text":"BENEFIT  +25% automatic weapon damage for the next stage.\nTRADEOFF  Repair only 10% hull and start with 60% shields.", "action":"Overclock and continue"},
-		{"id":"bounty", "name":"HIGH-RISK CONTRACT", "text":"BENEFIT  +%d base cores for defeating the next boss.\nTRADEOFF  +30%% enemy health, damage and spawn pressure; repair only 30%% hull." % (20 * (sim.stage + 1)), "action":"Accept bounty and continue"}
+		{"id":"repair", "name":"REPAIR", "text":"Repair 55% of hull and refill shields. No extra rewards.", "action":"Take repair"},
+		{"id":"overclock", "name":"MORE DAMAGE", "text":"Guns deal 25% more damage next stage. Repair just 10% hull and start with 60% shields.", "action":"Take damage"},
+		{"id":"bounty", "name":"BOUNTY RUN", "text":"Get +%d base cores if you beat the next boss. Enemies have 30%% more health, damage and spawns. Repair 30%% hull." % (20 * (sim.stage + 1)), "action":"Take bounty"}
 	]
 	var first: Button = null
 	for route in routes:
@@ -778,7 +778,7 @@ func _show_route_choice() -> void:
 		button.custom_minimum_size.y = 52
 		if first == null:
 			first = button
-	_reading_cta(footer, "Save & Main Menu", _show_menu)
+	_reading_cta(footer, "Save and exit", _show_menu)
 	if first != null:
 		first.grab_focus()
 
@@ -819,7 +819,7 @@ func _show_results() -> void:
 	var header: VBoxContainer = view.header
 	var body: VBoxContainer = view.body
 	var footer: HBoxContainer = view.footer
-	_label(header, "FOUR STAGES CLEARED" if sim.won else "FLIGHT ENDED", 27, CYAN if sim.won else AMBER)
+	_label(header, "You made it" if sim.won else "Run over", 27, CYAN if sim.won else AMBER)
 	_wrapped(header, "Reached %s  ·  %s" % [sim.stage_name(), sim.difficulty.to_upper()], 17, Color.WHITE)
 	_wrapped(header, "Stage %d of %d  ·  %02d:%02d flight time" % [sim.stage, sim.stage_count(), int(sim.time) / 60, int(sim.time) % 60], 15, MUTED)
 	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated\nBase cores earned through bounty contracts: %d" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses, sim.bounty_earned], AMBER)
@@ -829,9 +829,9 @@ func _show_results() -> void:
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + " - " + str(spec.benefit))
-	_reading_card(body, "YOUR BUILD STRATEGY", "\n".join(build_lines) if not build_lines.is_empty() else "No synergy combos or Prototypes acquired.", CYAN)
+	_reading_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No pairs or prototypes this time.", CYAN)
 	_reading_card(body, "FINAL SHIP STATUS", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled])
-	_label(body, "DAMAGE REPORT", 19, AMBER)
+	_label(body, "Damage taken", 19, AMBER)
 	var damage_lines := PackedStringArray()
 	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		var value: float = float(sim.damage_taken.get(kind, 0.0))
@@ -849,7 +849,7 @@ func _show_results() -> void:
 	for i in range(mini(5, weapons.size())):
 		weapon_lines.append("%s   %.0f" % [weapons[i].name, weapons[i].damage])
 	_reading_card(body, "TOP WEAPONS", "\n".join(weapon_lines) if not weapon_lines.is_empty() else "No weapon damage recorded.")
-	_label(body, "LAST MOMENTS", 19, AMBER)
+	_label(body, "Final seconds", 19, AMBER)
 	var recap := PackedStringArray()
 	for i in range(sim.events.size() - 1, -1, -1):
 		var event: Dictionary = sim.events[i]
@@ -1170,7 +1170,7 @@ func _show_build() -> void:
 		_reading_card(body, str(entry.name), "Rank %d of %d · %s" % [sim.upgrades[entry.id], entry.max, entry.description])
 	if weapons == 0:
 		_wrapped(body, "No automatic weapon modules installed.", 15)
-	_label(body, "SYSTEMS & SUPPORT", 19, AMBER)
+	_label(body, "Ship systems", 19, AMBER)
 	var systems: Array = []
 	for entry in sim.content.cards:
 		if entry.tag == "SYSTEM" and int(sim.upgrades.get(entry.id, 0)) > 0:
