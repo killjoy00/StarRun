@@ -374,7 +374,11 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		var urgent_beam := false
 		for beam in sim.charges:
 			urgent_beam = urgent_beam or float(beam.remaining) < 0.55
-		if urgent_beam or (sim.bullets.size() >= 16 and sim.shield < sim.max_shield - 10):
+		var near_shots := 0
+		for bullet in sim.bullets:
+			if (bullet.p + bullet.v * 0.30).distance_squared_to(sim.ship_position(sim.time + 0.30)) < 65.0 * 65.0:
+				near_shots += 1
+		if urgent_beam or near_shots >= 1 or (sim.shield < sim.max_shield - 20 and sim.bullets.size() >= 8):
 			sim.activate("nova_aegis")
 		if urgent_beam or sim.bullets.size() >= 20:
 			sim.activate("stasis_lock")
@@ -707,6 +711,21 @@ func _test_fusions_and_milestones() -> void:
 		var snap: Dictionary = sim.snapshot()
 		var clone := Sim.new(2)
 		check(clone.restore(snap) and clone.snapshot() == snap, "Fused skills and source ranks must survive save/restore: " + str(pair.id))
+	var counter := Sim.new(1909)
+	counter.active_slots = ["nova_aegis"]
+	counter.upgrades.aegis = 1
+	counter.upgrades.nova = 1
+	counter.upgrades.nova_aegis = 1
+	counter.hull = counter.max_hull - 30.0
+	var plain := Sim.new(1909)
+	plain.active_slots = ["nova_aegis"]
+	plain.upgrades.aegis = 1
+	plain.upgrades.nova = 1
+	plain.upgrades.nova_aegis = 1
+	plain.hull = plain.max_hull - 30.0
+	counter.charges.append({"source":0, "x":270.0, "remaining":0.5, "duration":1.8, "damage":29.0})
+	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
+	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull, "A well-timed fusion counter must earn real healing and a shorter cooldown")
 	var slots := Sim.new(1902)
 	for name in ["flak", "emp", "strike"]:
 		_install(slots, name)
