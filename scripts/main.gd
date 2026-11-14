@@ -647,7 +647,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	content.add_theme_constant_override("separation", 9)
 	panel.add_child(content)
 	_wrapped(content, sim.stage_spec().reward_label.to_upper(), 21, AMBER)
-	_wrapped(content, "+%d cumulative stage cores · %d ships destroyed" % [sim.payout(), sim.kills], 16, Color.WHITE)
+	_wrapped(content, "RUN SALVAGE  %d CORES · %d ENEMIES DEFEATED\nSalvage is awarded when the flight ends." % [sim.payout(), sim.kills], 16, Color.WHITE)
 	var next_text := "The Void Citadel is yours. Claim your victory and see the flight report." if sim.stage == sim.stage_count() else "Next: %s. Your build carries forward; shields recharge, hull repairs and you get an upgrade." % sim.stage_spec().transition
 	_wrapped(content, next_text, 16, Color.WHITE)
 	stage_clear_button = _button(content, "Claim victory & see report" if sim.stage == sim.stage_count() else "Warp to " + str(sim.stage_spec().transition), _begin_warp, true)
