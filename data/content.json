@@ -678,7 +678,7 @@
         "nova"
       ],
       "cooldown": 22,
-      "description": "Raise a shield, cancel beams, clear bullets and blast nearby enemies."
+      "description": "Block and blast. Counter just before a hit to heal and cut the cooldown."
     },
     {
       "id": "railstorm",
@@ -842,7 +842,7 @@
         "lance",
         "targeting"
       ],
-      "description": "Prism lance hits 35% harder and favors weak points."
+      "description": "Prism lance hits 35% harder with an 8% better critical chance."
     }
   ],
   "synergies": [
