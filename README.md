@@ -2,7 +2,7 @@
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
-## Gameplay — v0.5 four-stage campaign
+## Gameplay — v0.6 strategic campaign
 
 - **Four active slots from a pool of 20.** Every ship begins with one signature active. Draft up to three more, then improve the abilities you kept. The available actives range from time shields, missile flak and EMP to offensive strikes, decoys, siphons and salvage buffs.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
@@ -10,8 +10,12 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 - **Stage 2: Ion Storm.** A fully different cobalt lightning environment, new electrical silhouettes, ion shield suppression, corrosion, ability disruption and the Storm Carrier.
 - **Stage 3: Solar Foundry.** Molten orange factory corridors, Forge Turrets, Slag Bombers, Ember Hunters and Splitters. Heat impairs automatic weapons; molten bombs are visible and shootable. The Crucible Engine is the boss.
 - **Stage 4: Void Citadel.** Violet fortress architecture, blinking Phase Stalkers, Void Lancers, Gravity Sentinels and Echo Carriers. Gravity slows weapon fire; void shots partially bypass shields; the Void Regent fires twin telegraphed beams.
-- **Boss victories are earned moments.** Every boss defeat freezes the simulation for oversized explosions, secondary bursts, debris and shockwaves. Tap **Warp to next stage** to trigger a short jump animation; receive partial repairs and a milestone draft. After Stage 4, tap **Claim victory** for the full report. 
-- **Readable Build and Results.** Mobile screens have wrapped summary cards, vertical-only scrolling, fixed titles and persistent Resume/Main Menu or Fly Again/Main Menu controls.
+- **Tactical multi-part bosses.** Storm Carrier has targetable fighter-launch bays; Crucible Engine has cooling vents and alternating armored/exposed windows; Void Regent has shield pylons and a final onslaught. Autopilot weapons can prioritize these real weak points—no aiming or steering required.
+- **Four build identities.** Combine two complementary active abilities to activate **Fortress**, **Glass Cannon**, **Control** or **Salvager**. Each combo has a meaningful power advantage and corresponding drawback. Drafts identify potential combo-completing cards.
+- **Eight Prototypes.** Between stages, choose one permanent run-changing Prototype from three random, save-stable choices. Prototypes boost durability, damage, cooldowns, boss targeting or core income—but always with a cost.
+- **Choose your next route.** After the warp and Prototype draft, choose **Safe Passage** (big repair), **Redline Jump** (+25% next-stage automatic damage, limited repairs/shields), or **High-Risk Contract** (+30% enemy pressure, additional cores for beating the next boss). Decisions persist through checkpoints.
+- **Boss victories are earned moments.** Defeating a boss freezes combat for oversized explosions and shockwaves. Tap **Warp to next stage**, pick a Prototype and route, and receive an extra level-up before the next stage. After Stage 4, tap **Claim victory** for the full report.
+- **Readable Build, choices and Results.** Mobile screens have wrapped summary cards, vertical-only scrolling, fixed navigation, and explicit run-build and reward summaries. Prototype and route choices show both the benefit and tradeoff.
 - **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines and stage-specific suppression require different responses.
 - **Fewer, stronger level-ups.** XP thresholds rise faster than before, weapon and passive picks can grant two ranks, and each even-numbered early level offers an opportunity to draft an active until all four slots are filled.
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties.
@@ -44,7 +48,8 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 
 ## Files and remaining release gates
 
-- [Gameplay v0.5 and UAT specification](docs/GAMEPLAY_V05.md) — four stages, boss ceremonies, readable Build and Results
+- [Gameplay v0.6 and strategic UAT specification](docs/GAMEPLAY_V06.md) — boss phases, archetypes, Prototypes and routes
+- [Historical v0.5 milestone](docs/GAMEPLAY_V05.md) — four stages, boss ceremonies, readable Build and Results
 - [Historical v0.4 milestone](docs/GAMEPLAY_V04.md) — previous two-stage implementation
 - [Original design document](docs/DESIGN.md) — longer-term vision, some proposed content not yet implemented
 - [First playable v0.3 notes](docs/FIRST_PLAYABLE.md) — historical baseline, replaced by v0.4 for gameplay
@@ -54,4 +59,4 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 - `data/content.json` — enemies, abilities and upgrade cards
 - `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-**v0.5 is a four-stage gameplay update awaiting full CI and device UAT.** A passing simulator or unsigned iOS compile does not establish human enjoyment, device frame-time stability, ads or in-app purchase support. Signed TestFlight release status is verified separately.
+**v0.6 builds on the shipped four-stage game with new strategic systems; real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.
