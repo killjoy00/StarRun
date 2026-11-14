@@ -86,6 +86,7 @@ func _run() -> void:
 		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Flight recorder must fit the screen")
 		check(scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Results must wrap instead of forcing horizontal scrolling")
 		check(scene.reading_scroll.size.y > 100, "Results report must preserve usable scrolling space")
+		check(not _unwrapped_long_label(scene.reading_scroll), "Long results details must wrap on phone screens")
 		for control in scene.reading_footer.get_children():
 			check(control.get_global_rect().end.y < logical.y and control.size.y >= 44, "Report navigation must stay pinned and touchable at every size")
 		scene.profile.cores = 100
