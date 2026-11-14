@@ -531,6 +531,7 @@ func _test_boss_components_and_phases() -> void:
 		if bay.kind == "boss_module" and bay.role == "launch_bay":
 			storm._damage_enemy(bay, 100000.0, "pulse")
 	check(storm._alive_modules("launch_bay") == 0 and storm.boss_phase_label() == "LAUNCH BAYS DESTROYED", "Destroying bays must change the boss phase")
+	check(not storm.stage_transition_queued and storm.stage_clears == 0 and storm.bounty_earned == 0 and storm.enemies[0].hp > 0.0, "Destroying launch bays must not award victory or contract bounty before the boss core dies")
 	storm.bullets.clear()
 	storm.enemies[0].fire = 0.0
 	storm._update_enemies()
@@ -554,6 +555,7 @@ func _test_boss_components_and_phases() -> void:
 	var open_hp: float = core.hp
 	furnace._damage_enemy(core, 100.0, "pulse")
 	check(furnace._alive_modules("vent") == 0 and open_hp - core.hp >= 99.0, "Destroying both vents must permanently expose the Crucible core")
+	check(not furnace.stage_transition_queued and furnace.stage_clears == 0, "Destroying cooling vents must not clear the Foundry before the core dies")
 	var void_boss := Sim.new(3456)
 	void_boss.stage = 4
 	void_boss._spawn_boss()
@@ -568,6 +570,7 @@ func _test_boss_components_and_phases() -> void:
 		if pylon.kind == "boss_module" and pylon.role == "pylon":
 			void_boss._damage_enemy(pylon, 100000.0, "pulse")
 	check(void_boss._alive_modules("pylon") == 0, "Void shield pylons must be destructible")
+	check(not void_boss.stage_transition_queued and void_boss.stage_clears == 0, "Destroying shield pylons must not clear the Citadel before the core dies")
 	void_boss.charges.clear()
 	void_boss.heavy_ready_at = 0.0
 	void_boss._update_enemies()
