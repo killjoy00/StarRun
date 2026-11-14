@@ -15,7 +15,7 @@ StarRun still offers **20 original active abilities**. Each has one fixed partne
 
 | Original abilities | New active | What one cast does |
 |---|---|---|
-| Aegis + Nova | Nova Guard | Protect and blast; counter a near-hit for extra healing and a cooldown refund |
+| Aegis + Nova | Nova Guard | Block and blast; a timed counter makes the blast much stronger, repairs hull and shortens cooldown |
 | Overdrive + Rail Strike | Railstorm | Faster guns plus three heavy hits |
 | Chrono + EMP | Time Lock | Slow attacks, cancel beams and silence guns |
 | Repair Drones + Capacitor | Repair Matrix | Hull repair, shield refill, chaff barrier, clear heat and corrosion |
