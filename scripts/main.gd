@@ -790,7 +790,14 @@ func _show_results() -> void:
 	_label(header, "FOUR STAGES CLEARED" if sim.won else "FLIGHT ENDED", 27, CYAN if sim.won else AMBER)
 	_wrapped(header, "Reached %s  ·  %s" % [sim.stage_name(), sim.difficulty.to_upper()], 17, Color.WHITE)
 	_wrapped(header, "Stage %d of %d  ·  %02d:%02d flight time" % [sim.stage, sim.stage_count(), int(sim.time) / 60, int(sim.time) % 60], 15, MUTED)
-	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses], AMBER)
+	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated\nBase cores earned through bounty contracts: %d" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses, sim.bounty_earned], AMBER)
+	var build_lines := PackedStringArray()
+	for combo in sim.active_synergies():
+		build_lines.append(str(combo.name) + " - " + str(combo.description))
+	for id in sim.prototypes:
+		var spec: Dictionary = sim.prototype_spec(str(id))
+		build_lines.append(str(spec.name) + " - " + str(spec.benefit))
+	_reading_card(body, "YOUR BUILD STRATEGY", "\n".join(build_lines) if not build_lines.is_empty() else "No synergy combos or Prototypes acquired.", CYAN)
 	_reading_card(body, "FINAL SHIP STATUS", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled])
 	_label(body, "DAMAGE REPORT", 19, AMBER)
 	var damage_lines := PackedStringArray()
@@ -1089,6 +1096,19 @@ func _show_build() -> void:
 	_wrapped(header, "%s  /  %s" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name], 17, Color.WHITE)
 	_wrapped(header, "STAGE %d OF %d  ·  %s  ·  LEVEL %d" % [sim.stage, sim.stage_count(), sim.difficulty.to_upper(), sim.level], 15, MUTED)
 	_reading_card(body, "SHIP STATUS", "HULL  %d / %d\nSHIELDS  %d / %d\nACTIVE SLOTS  %d / 4" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.active_slots.size()])
+	_label(body, "BUILD IDENTITY", 19, AMBER)
+	var active_combos: Array = sim.active_synergies()
+	if active_combos.is_empty():
+		_reading_card(body, "NO ACTIVE SYNERGY", "Draft complementary active abilities to unlock Fortress, Glass Cannon, Control or Salvager bonuses - each has a drawback.", MUTED)
+	for combo in active_combos:
+		_reading_card(body, str(combo.name), str(combo.description), CYAN)
+	if sim.prototypes.is_empty():
+		_wrapped(body, "No Prototypes yet. Defeat a stage boss to choose one.", 15, MUTED)
+	for id in sim.prototypes:
+		var spec: Dictionary = sim.prototype_spec(str(id))
+		_reading_card(body, "PROTOTYPE  ·  " + str(spec.name), "BENEFIT  %s\nTRADEOFF  %s" % [spec.benefit, spec.cost], AMBER)
+	if not sim.route_choice.is_empty():
+		_wrapped(body, "Current route: %s  ·  %s" % [sim.route_choice.to_upper(), "Extra enemy pressure" if sim.stage_risk > 1.0 else ("Weapon overclock" if sim.stage_power > 1.0 else "Reinforced hull")], 15, CYAN)
 	_label(body, "EQUIPPED ABILITIES", 19, AMBER)
 	var active_grid := GridContainer.new()
 	active_grid.columns = 1 if _compact_ui() else 2
