@@ -27,7 +27,7 @@ func _draw() -> void:
 			# A double strike marks abilities made from two separate skills.
 			for side in [-1, 1]:
 				draw_colored_polygon(PackedVector2Array([Vector2(side*5,-13),Vector2(side*13,0),Vector2(side*5,13),Vector2(side*1,0)]), Color(color,0.65))
-			draw_line(Vector2(side*4,-9),Vector2(side*10,0),Color.WHITE,1.7,true)
+				draw_line(Vector2(side*4,-9),Vector2(side*10,0),Color.WHITE,1.7,true)
 		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
 			points.append(points[0])
