@@ -178,6 +178,8 @@ func _run() -> void:
 	check(scene.mode == "prototype" and scene.sim.prototype_offers == preserved_hand, "Menu/resume must preserve the exact intermission Prototype hand")
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
+	check(_contains_text(scene.reading_scroll, "SAFE PASSAGE") and _contains_text(scene.reading_scroll, "REDLINE JUMP") and _contains_text(scene.reading_scroll, "HIGH-RISK CONTRACT"), "Every strategic route must render its selection card without a runtime formatting error")
+	check(_contains_text(scene.reading_scroll, "BENEFIT") and _contains_text(scene.reading_scroll, "TRADEOFF"), "Route choices must expose explicit benefits and costs")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
