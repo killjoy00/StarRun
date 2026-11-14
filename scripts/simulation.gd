@@ -1220,8 +1220,11 @@ func _activate_fusion(id: String, strength: float) -> void:
 			charges.clear()
 			prevented += bullets.reduce(func(sum, b): return sum + float(b.damage), 0.0)
 			bullets.clear()
+			# The blast is deliberately modest on an early cast; a true counter
+			# is much more powerful. This makes timing matter more than spam.
+			var blast: float = (235.0 if counter_window else 70.0) * strength
 			for enemy in enemies:
-				_damage_enemy(enemy, 100.0 * strength, "nova")
+				_damage_enemy(enemy, blast, "nova")
 			effects.append({"kind":"nova", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick})
 		"railstorm":
 			overdrive_left = maxf(overdrive_left, 7.0 * strength)
