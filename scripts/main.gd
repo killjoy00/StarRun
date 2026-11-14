@@ -394,6 +394,7 @@ func _show_menu() -> void:
 	_wrapped(box, "Keys 1–4 · B: build · Tab: speed · Esc: pause", 12, MUTED)
 
 func _new_run() -> void:
+	draft_page = 0
 	profile.runs += 1
 	build_show_all = false
 	_save_profile()
@@ -401,6 +402,7 @@ func _new_run() -> void:
 	_start_flight()
 
 func _resume_run() -> void:
+	draft_page = 0
 	var state := services.read_save(Services.RUN)
 	sim = Simulation.new()
 	if not sim.restore(state):
@@ -495,7 +497,7 @@ func _process(delta: float) -> void:
 	world.queue_redraw()
 
 func _short_ability_name(id: String) -> String:
-	var names := {"overdrive":"DRIVE", "capacitor":"CHARGE", "deflector":"DEFLECT", "barrage":"ROCKETS", "barrier":"BARRIER", "salvage":"SALVAGE", "overload":"OVERLOAD", "repair_matrix":"REPAIR", "nova_aegis":"NOVA SHD", "railstorm":"RAILSTORM", "stasis_lock":"TIME LOCK", "missile_grid":"MISSILES", "scrap_converter":"SCRAP", "prism_focus":"PRISM", "reflective_wall":"REFLECT", "ghost_signal":"GHOST", "reactor_surge":"SURGE", "strike":"RAIL", "reboot":"REBOOT", "siphon":"SIPHON", "focus":"FOCUS", "flak":"FLAK", "chrono":"CHRONO", "jammer":"JAMMER", "decoy":"DECOY", "aegis":"AEGIS", "mend":"REPAIR", "emp":"EMP", "nova":"NOVA", "prism":"PRISM"}
+	var names := {"overdrive":"DRIVE", "capacitor":"CHARGE", "deflector":"DEFLECT", "barrage":"ROCKETS", "barrier":"BARRIER", "salvage":"SALVAGE", "overload":"OVERLOAD", "repair_matrix":"REPAIR", "nova_aegis":"NOVA GRD", "railstorm":"RAILSTORM", "stasis_lock":"TIME LOCK", "missile_grid":"MISSILES", "scrap_converter":"SCRAP", "prism_focus":"PRISM", "reflective_wall":"REFLECT", "ghost_signal":"GHOST", "reactor_surge":"SURGE", "strike":"RAIL", "reboot":"REBOOT", "siphon":"SIPHON", "focus":"FOCUS", "flak":"FLAK", "chrono":"CHRONO", "jammer":"JAMMER", "decoy":"DECOY", "aegis":"AEGIS", "mend":"REPAIR", "emp":"EMP", "nova":"NOVA", "prism":"PRISM"}
 	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
 
 func _update_hud() -> void:
@@ -1080,7 +1082,10 @@ func _input(event: InputEvent) -> void:
 			_activate_slot(0 if event.keycode == KEY_SPACE else event.keycode - KEY_1)
 			get_viewport().set_input_as_handled()
 	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
-		_choose(event.keycode - KEY_1)
+		var local_choice: int = event.keycode - KEY_1
+		# Number keys on a paged phone draft may only choose the visible hand.
+		if not _compact_ui() or local_choice < 2:
+			_choose(draft_page * 2 + local_choice if _compact_ui() else local_choice)
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
