@@ -433,7 +433,7 @@ func _spawn_hazard() -> void:
 func _spawn_boss() -> void:
 	boss_spawned = true
 	boss_spawn_time = time
-	safeguard_used = false
+	# The safeguard is once per stage; spawning the boss must not recharge it.
 	enemies.clear()
 	bullets.clear()
 	charges.clear()
@@ -441,12 +441,12 @@ func _spawn_boss() -> void:
 	hull = minf(max_hull, hull + 15)
 	heavy_ready_at = time + 3.0
 	var spec := stage_spec()
-	var hp := float(spec.boss_hp) * threat_scale()
+	var hp := float(spec.boss_hp) * threat_scale() * stage_risk
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale()
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
