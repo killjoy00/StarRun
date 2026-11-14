@@ -29,6 +29,9 @@ func _run() -> void:
 	_test_threat_catalog()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
+	_test_boss_components_and_phases()
+	_test_synergy_tradeoffs()
+	_test_prototype_and_route_choices()
 	_test_new_stage_threats()
 	_test_20_active_pool()
 	var seeds := 12
@@ -448,10 +451,12 @@ func _test_stage_difficulty_and_pressure() -> void:
 	check(sim.enemies[0].max_hp > normal.enemies[0].max_hp, "Stage 2 must be tougher than Stage 1")
 	sim.enemies.clear()
 	sim._spawn_boss()
-	check(sim.enemies.size() == 1 and sim.enemies[0].kind == "boss2", "Storm Carrier must exist as a second boss")
+	check(sim.enemies.size() == 3 and sim.enemies[0].kind == "boss2" and sim._alive_modules("launch_bay") == 2, "Storm Carrier must have two destructible launch bays")
 	sim._damage_enemy(sim.enemies[0], 100000.0, "pulse")
 	check(not sim.ended and sim.stage_transition_queued and sim.stage_clears == 2, "Stage 2 must stop for its victory acknowledgement, not end the run")
-	check(sim.advance_stage() and sim.stage == 3, "Acknowledging Stage 2 must advance to the new Foundry")
+	check(not sim.advance_stage(), "Stage 2 cannot skip the strategic intermission")
+	check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair"), "Stage 2 must require Prototype and route selection")
+	check(sim.advance_stage() and sim.stage == 3, "Two strategic choices should unlock the Foundry")
 	var statuses := Sim.new(19)
 	statuses._hit(1, "ion", "test")
 	check(statuses.shield_offline >= 4.0, "Ion fire must disable shield regeneration")
@@ -480,7 +485,7 @@ func _test_four_stage_campaign() -> void:
 		check(not names.has(sim.stage_name()), "Each stage needs a different name and environment")
 		names[sim.stage_name()] = true
 		sim._spawn_boss()
-		check(sim.enemies.size() == 1 and sim.enemies[0].kind == boss_kinds[stage_number - 1], "Each stage must have a distinct boss")
+		check(sim.enemies.size() == (1 if stage_number == 1 else 3) and sim.enemies[0].kind == boss_kinds[stage_number - 1], "Each stage must have a distinct boss with modules after Stage 1")
 		check(sim.enemies[0].max_hp > health, "Later bosses must require stronger builds")
 		health = sim.enemies[0].max_hp
 		sim._damage_enemy(sim.enemies[0], 1000000.0, "pulse")
@@ -490,7 +495,17 @@ func _test_four_stage_campaign() -> void:
 		check(sim.snapshot() == paused, "Victory celebration must freeze every simulation field")
 		var restored := Sim.new(1)
 		check(restored.restore(paused) and restored.snapshot() == paused, "Resume must restore an awaiting stage-clear celebration exactly")
-		check(sim.advance_stage(), "Continue action must advance the campaign")
+		if stage_number < 4:
+			check(not sim.advance_stage(), "Boss victory may not automatically advance or bypass decisions")
+			check(sim.begin_intermission(), "Every non-final boss offers a Prototype draft")
+			var offers: Array = sim.prototype_offers.duplicate()
+			check(offers.size() == 3, "Three unique Prototypes must be offered")
+			check(sim.choose_prototype(0), "Selecting a Prototype must succeed")
+			check(sim.intermission_step == "route" and sim.prototypes.size() == stage_number, "Prototype choice persists across the campaign")
+			var route: String = ["repair", "overclock", "bounty"][stage_number - 1]
+			check(sim.choose_route(route) and sim.advance_stage(), "Repair, overclock and bounty routes should unlock the next stage")
+		else:
+			check(sim.advance_stage(), "Claiming the final boss victory must complete the campaign")
 		if stage_number < 4:
 			check(sim.stage == stage_number + 1 and not sim.stage_transition_queued and not sim.won, "Next stage should be playable without resetting the build")
 			check(sim.pending_levels == stage_number, "Each cleared boss awards exactly one milestone upgrade")
@@ -498,6 +513,140 @@ func _test_four_stage_campaign() -> void:
 			check(sim.ended and sim.won and sim.stage_clears == 4, "Acknowledging final boss must finish all four stages")
 	check(not sim.advance_stage(), "Final stage can only be settled once")
 	check(sim.payout() > Sim.new().payout(), "Later stages must grant increased cumulative salvage")
+
+func _test_boss_components_and_phases() -> void:
+	var storm := Sim.new(1234)
+	storm.stage = 2
+	storm._spawn_boss()
+	check(storm._alive_modules("launch_bay") == 2 and storm.boss_phase_label() == "LAUNCH BAYS ONLINE", "Stage 2 boss must have attack-controlling launch bays")
+	var root: Dictionary = storm.enemies[0]
+	var original_hp: float = root.hp
+	storm._damage_enemy(root, 100.0, "pulse")
+	check(root.hp < original_hp and root.hp > original_hp - 100.0, "Live launch bays armor the carrier core")
+	storm.time = storm.boss_spawn_time + 6.0
+	storm.enemies[0].fire = 0.0
+	storm._update_enemies()
+	check(storm.enemies.any(func(e): return e.kind == "storm_weaver"), "Live launch bays must deploy storm fighters")
+	for bay in storm.enemies:
+		if bay.kind == "boss_module" and bay.role == "launch_bay":
+			storm._damage_enemy(bay, 100000.0, "pulse")
+	check(storm._alive_modules("launch_bay") == 0 and storm.boss_phase_label() == "LAUNCH BAYS DESTROYED", "Destroying bays must change the boss phase")
+	storm.bullets.clear()
+	storm.enemies[0].fire = 0.0
+	storm._update_enemies()
+	check(storm.bullets.filter(func(b): return b.kind == "ordnance").size() == 1, "Destroyed launch bays must reduce carrier missile volleys")
+	var furnace := Sim.new(2345)
+	furnace.stage = 3
+	furnace._spawn_boss()
+	var core: Dictionary = furnace.enemies[0]
+	var sealed_hp: float = core.hp
+	furnace._damage_enemy(core, 100.0, "pulse")
+	var sealed_damage: float = sealed_hp - core.hp
+	furnace.time = furnace.boss_spawn_time + 10.0
+	var exposed_hp: float = core.hp
+	furnace._damage_enemy(core, 100.0, "pulse")
+	var exposed_damage: float = exposed_hp - core.hp
+	check(exposed_damage > sealed_damage * 3.0, "Foundry boss must alternate between heavily armored and exposed core phases")
+	for vent in furnace.enemies:
+		if vent.kind == "boss_module" and vent.role == "vent":
+			furnace._damage_enemy(vent, 100000.0, "pulse")
+	furnace.time = furnace.boss_spawn_time
+	var open_hp: float = core.hp
+	furnace._damage_enemy(core, 100.0, "pulse")
+	check(furnace._alive_modules("vent") == 0 and open_hp - core.hp >= 99.0, "Destroying both vents must permanently expose the Crucible core")
+	var void_boss := Sim.new(3456)
+	void_boss.stage = 4
+	void_boss._spawn_boss()
+	var regent: Dictionary = void_boss.enemies[0]
+	var shielded_hp: float = regent.hp
+	void_boss._damage_enemy(regent, 100.0, "pulse")
+	check(shielded_hp - regent.hp < 40.0, "Shield pylons must protect the Void Regent core")
+	void_boss.heavy_ready_at = 0.0
+	void_boss._update_enemies()
+	check(void_boss.charges.size() == 2, "Both pylons must sustain two heavy attack lanes")
+	for pylon in void_boss.enemies:
+		if pylon.kind == "boss_module" and pylon.role == "pylon":
+			void_boss._damage_enemy(pylon, 100000.0, "pulse")
+	check(void_boss._alive_modules("pylon") == 0, "Void shield pylons must be destructible")
+	void_boss.charges.clear()
+	void_boss.heavy_ready_at = 0.0
+	void_boss._update_enemies()
+	check(void_boss.charges.size() == 1, "Destroying pylons must change the heavy beam pattern")
+	regent.hp = regent.max_hp * 0.30
+	check(void_boss.boss_phase_label() == "FINAL ONSLAUGHT", "Final boss must reveal an enraged low-health phase")
+	var baseline := Sim.new(3456)
+	baseline.stage = 4
+	baseline._spawn_boss()
+	check(void_boss._nearest(Vector2(270, 790)).kind == "boss_module", "Autopilot targeting must prioritize boss parts without player aiming")
+
+func _test_synergy_tradeoffs() -> void:
+	var base := Sim.new(555)
+	var fortress := Sim.new(555)
+	_install(fortress, "capacitor")
+	check(fortress.synergy_active("fortress") and fortress.active_synergies().size() >= 1, "Aegis + Capacitor must form Fortress")
+	check(fortress.weapon_power() < base.weapon_power() and fortress.hull_damage_multiplier() < base.hull_damage_multiplier(), "Fortress must trade weapon power for resilience")
+	var assault := Sim.new(555, {}, "kestrel")
+	_install(assault, "strike")
+	check(assault.synergy_active("assault"), "Overdrive + Rail Strike must form Glass Cannon")
+	check(assault.weapon_power() > base.weapon_power() and assault.hull_damage_multiplier() > base.hull_damage_multiplier(), "Glass Cannon must increase both damage dealt and hull damage taken")
+	var control := Sim.new(555)
+	_install(control, "emp")
+	_install(control, "flak")
+	check(control.synergy_active("control") and control.cooldown_multiplier() < 1.0 and control.weapon_power() < base.weapon_power(), "Control must reduce ability cooldown at a weapon-cost tradeoff")
+	var salvage := Sim.new(555)
+	_install(salvage, "salvage")
+	_install(salvage, "siphon")
+	check(salvage.synergy_active("salvager") and salvage.payout() > base.payout() and salvage.weapon_power() < base.weapon_power(), "Salvager must raise core payout at the cost of combat power")
+	check(base.synergy_hint("capacitor").contains("FORTRESS"), "Upgrade drafts must explain synergy opportunities without requiring a wiki")
+	base.level = 2
+	base._offer_cards()
+	check(base.cards.any(func(card): return card.tag == "ABILITY" and base.upgrades[card.id] == 0 and not base.synergy_hint(str(card.id)).is_empty()), "First even-level draft must offer a real synergy partner")
+	check(base.active_slots.size() == 1, "Draft guidance must not install extra actives automatically")
+
+func _test_prototype_and_route_choices() -> void:
+	var sim := Sim.new(888)
+	sim._spawn_boss()
+	sim._damage_enemy(sim.enemies[0], 100000.0, "pulse")
+	check(not sim.advance_stage(), "Cannot enter Stage 2 without both strategic choices")
+	check(sim.begin_intermission() and sim.prototype_offers.size() == 3, "A stage clear must offer exactly three Prototypes")
+	var hand := sim.prototype_offers.duplicate()
+	check(not sim.begin_intermission() and sim.prototype_offers == hand, "Rerendering or resuming must not redraw Prototype offers")
+	var snapshot: Dictionary = sim.snapshot()
+	var restored := Sim.new(1)
+	check(restored.restore(snapshot) and restored.prototype_offers == hand and restored.intermission_step == "prototype", "The exact Prototype hand must survive checkpoint restore")
+	check(not sim.choose_route("bounty"), "Route choice must not bypass Prototype installation")
+	check(sim.choose_prototype(0), "A valid Prototype must install")
+	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
+	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
+	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0), "Safe route must have no extra threat or damage")
+	var risk := Sim.new(889)
+	risk.stage = 2
+	risk._spawn_boss()
+	risk._damage_enemy(risk.enemies[0], 100000.0, "pulse")
+	check(risk.begin_intermission() and risk.choose_prototype(0) and risk.choose_route("bounty") and risk.advance_stage(), "Bounty route must advance after two choices")
+	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30), "Bounty route must multiply enemy pressure by 30%")
+	var baseline := Sim.new(889)
+	baseline.stage = 3
+	risk._add_enemy("drone", Vector2(220, 80))
+	baseline._add_enemy("drone", Vector2(220, 80))
+	check(risk.enemies[0].hp > baseline.enemies[0].hp, "Risk contract must have meaningfully stronger enemies")
+	risk.enemies.clear()
+	risk._spawn_boss()
+	risk._damage_enemy(risk.enemies[0], 1000000.0, "pulse")
+	check(risk.bounty_earned == 60 and risk.bonus_cores >= 60, "Bounties must pay only when the risked next-stage boss is beaten")
+	var clock := Sim.new(890)
+	clock.stage = 2
+	clock._spawn_boss()
+	clock._damage_enemy(clock.enemies[0], 100000.0, "pulse")
+	check(clock.begin_intermission() and clock.choose_prototype(0) and clock.choose_route("overclock") and clock.advance_stage(), "Overclock route must be available")
+	check(is_equal_approx(clock.stage_power, 1.25) and is_equal_approx(clock.shield, clock.max_shield * 0.60), "Overclock must grant damage but start with reduced shields")
+	var prototype := Sim.new(556)
+	prototype.prototypes = ["volatile_core", "null_harmonics", "salvage_charter", "breach_optics"]
+	check(prototype.weapon_power() > 0.0 and prototype.cooldown_multiplier() < 1.0 and prototype.payout() > Sim.new().payout(), "Prototype stack must affect combat, cooldown and rewards")
+	var legacy: Dictionary = Sim.new().snapshot()
+	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time"]:
+		legacy.erase(key)
+	check(Sim.new().restore(legacy), "An older v0.5 flight without strategic fields must remain resumable")
 
 func _test_new_stage_threats() -> void:
 	var sim := Sim.new(707)
