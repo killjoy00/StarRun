@@ -86,20 +86,35 @@ func _run() -> void:
 		scene.sim._offer_cards()
 		scene._show_cards()
 		await process_frame
-		var center: Control = scene.overlay.get_child(1)
-		var panel: Control = center.get_child(0)
+		var panel: Control = scene.reading_panel
 		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Card panel must fit the screen")
 		scene.sim.cards.clear()
 		scene._show_results()
 		await process_frame
-		center = scene.overlay.get_child(1)
-		panel = center.get_child(0)
+		panel = scene.reading_panel
 		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Flight recorder must fit the screen")
 		check(scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Results must wrap instead of forcing horizontal scrolling")
 		check(scene.reading_scroll.size.y > 100, "Results report must preserve usable scrolling space")
 		check(not _unwrapped_long_label(scene.reading_scroll), "Long results details must wrap on phone screens")
 		for control in scene.reading_footer.get_children():
 			check(control.get_global_rect().end.y < logical.y and control.size.y >= 44, "Report navigation must stay pinned and touchable at every size")
+		scene._show_menu()
+		await process_frame
+		check(not scene.hud.visible and not scene.ability_a.visible, "Combat HUD must not show through the title screen")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
+		for sheet in ["settings", "briefing", "pause"]:
+			if sheet == "settings":
+				scene._show_settings()
+			elif sheet == "briefing":
+				scene._show_briefing(false)
+			else:
+				scene.mode = "playing"
+				scene._show_pause()
+			await process_frame
+			await process_frame
+			var rect: Rect2 = scene.reading_panel.get_global_rect()
+			check(rect.position.y >= 0 and rect.end.y <= logical.y + 1.0 and rect.size.y > 120, "%s sheet must be fully on screen" % sheet)
+		scene._show_menu()
 		scene.profile.cores = 100
 		for group in scene.Catalog.GROUPS:
 			scene._hangar_tab(group)
@@ -110,7 +125,11 @@ func _run() -> void:
 		scene._show_loadout()
 		await process_frame
 		check(scene.mode == "loadout", "Loadout selector must open from the Hangar")
-		scene._select_loadout("ship", "wraith")
+		scene.profile.ships_owned = ["vanguard"]
+		scene.profile.ship = "vanguard"
+		scene._loadout_tap("ship", "wraith")
+		check(scene.profile.ship != "wraith" and "wraith" not in scene.profile.ships_owned, "Permanent unlocks must not spend cores on the first tap")
+		scene._loadout_tap("ship", "wraith")
 		check(scene.profile.ship == "wraith" and "wraith" in scene.profile.ships_owned, "Unlocking a ship must equip and persist ownership")
 		scene._loadout_tab("Pilots")
 		scene._select_loadout("pilot", "hunter")
@@ -119,7 +138,9 @@ func _run() -> void:
 		var paid: int = scene.profile.cores
 		scene._purchase("shield")
 		check(scene.profile.hangar.shield > 0 and scene.profile.cores < paid, "Hangar purchase must update the wallet and installed ranks")
-		scene._respec()
+		scene._refund_tap()
+		check(scene.profile.hangar.shield > 0, "Refund all must ask for a second tap")
+		scene._refund_tap()
 		check(scene.profile.cores == paid, "Refund must return every spent core through the UI flow")
 		scene.sim.meta.extra_card = 1
 		scene.sim.banishes_left = 1
@@ -127,16 +148,20 @@ func _run() -> void:
 		scene.sim._offer_cards()
 		scene._show_cards()
 		await process_frame
-		check(scene.card_buttons.size() == (2 if logical.x < 760 else 4), "Phone draft should show two readable cards per page, desktop all four")
-		if logical.x < 760:
-			check(scene.reading_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Phone drafts should not need long vertical scrolling")
-			var first_card_text: String = scene.card_buttons[0].text
-			scene._draft_page(1)
-			await process_frame
-			check(scene.draft_page == 1 and scene.card_buttons.size() == 2 and scene.card_buttons[0].text != first_card_text, "Next button must reveal the other two choices without changing the hand")
-			scene._draft_page(-1)
-			await process_frame
-			check(scene.draft_page == 0 and scene.card_buttons[0].text == first_card_text, "Previous button must return to the same choices")
+		await process_frame
+		check(scene.card_buttons.size() == 4 and scene.sim.cards.size() == 4, "Every draft option must be visible together so choices can be compared")
+		var last_card: Rect2 = scene.card_buttons[3].get_global_rect()
+		check(last_card.end.y <= scene.reading_scroll.get_global_rect().end.y + 1.0, "A four-card draft must fit without scrolling")
+		for control in scene.reading_footer.get_children():
+			check(control.size.y >= 44 and control.get_global_rect().end.y <= logical.y, "Draft tools must be touchable and on screen")
+		var hand: int = scene.sim.cards.size()
+		scene.draft_guard = 0.3
+		scene._choose(0)
+		check(scene.mode == "cards" and scene.sim.cards.size() == hand, "A tap landing as the draft opens must not pick a card")
+		scene._toggle_banish()
+		check(scene.banish_mode and scene.mode == "cards", "Remove must enter an explicit pick-to-remove mode")
+		scene._toggle_banish()
+		check(not scene.banish_mode, "Cancel must leave remove mode without spending a removal")
 		scene.sim.cards.clear()
 		scene._new_run()
 		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
@@ -152,9 +177,15 @@ func _run() -> void:
 		scene._toggle_pause()
 		check(scene.mode == "playing", "Closing the build view must resume combat")
 	scene._show_menu()
+	scene._set_difficulty("hard")
+	check(scene.profile.difficulty == "hard", "Difficulty segments must select directly")
 	var old_difficulty: String = str(scene.profile.difficulty)
 	scene._cycle_difficulty()
 	check(scene.profile.difficulty != old_difficulty, "Menu difficulty selector must advance")
+	scene._launch_or_confirm("menu")
+	check(scene.mode == "abandon" and not scene.services.read_save(scene.Services.RUN).is_empty(), "Launching over a saved flight must ask before deleting it")
+	scene._close_sheet()
+	check(scene.mode == "menu", "Cancelling the abandon prompt must return to the title")
 	scene._new_run()
 	check(scene.sim.difficulty == scene.profile.difficulty and scene.sim.active_slots.size() == 1, "Difficulty and signature ability must apply to the next flight")
 	scene._show_build()
@@ -191,7 +222,7 @@ func _run() -> void:
 	check(scene.mode == "prototype" and scene.sim.prototype_offers == preserved_hand, "Menu/resume must preserve the exact intermission Prototype hand")
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
-	check(_contains_text(scene.reading_scroll, "REPAIR") and _contains_text(scene.reading_scroll, "MORE DAMAGE") and _contains_text(scene.reading_scroll, "BOUNTY RUN"), "Every strategic route must render after the prototype choice")
+	check(_contains_text(scene.reading_scroll, "Repair") and _contains_text(scene.reading_scroll, "More damage") and _contains_text(scene.reading_scroll, "Bounty run"), "Every strategic route must render after the prototype choice")
 	check(_contains_text(scene.reading_scroll, "No extra rewards") and _contains_text(scene.reading_scroll, "25%") and _contains_text(scene.reading_scroll, "30%"), "Every route must explain its actual benefit and cost in plain language")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
@@ -204,7 +235,7 @@ func _run() -> void:
 	scene.mode = "playing"
 	scene._show_build()
 	await process_frame
-	check(_contains_text(scene.reading_scroll, "PROTOTYPE") and _contains_text(scene.reading_scroll, "Current route:"), "Build screen must explain acquired Prototype and route tradeoffs")
+	check(_contains_text(scene.reading_scroll, "Prototype") and _contains_text(scene.reading_scroll, "Current route:"), "Build screen must explain acquired Prototype and route tradeoffs")
 	scene._toggle_pause()
 	scene.sim.stage = 4
 	scene.sim.stage_clears = 4

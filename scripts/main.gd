@@ -6,6 +6,7 @@ const Playfield = preload("res://scripts/playfield.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
 const IconBadge = preload("res://scripts/icon_badge.gd")
+const Kit = preload("res://scripts/menu_kit.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -47,7 +48,6 @@ var previous_ready := {}
 var previous_warning := false
 var last_hull := 100.0
 var card_selection := 0
-var draft_page := 0
 var banner_text := ""
 var banner_clock := 0.0
 var last_sector := ""
@@ -60,6 +60,12 @@ var reading_panel: Control
 var reading_scroll: ScrollContainer
 var reading_footer: HBoxContainer
 var old_size := Vector2.ZERO
+var confirm_key := "" # Second-tap confirmation for permanent or bulk actions.
+var draft_guard := 0.0
+var banish_mode := false
+var loadout_return := "hangar"
+var briefing_launch := false
+var sheet_base := "menu" # Screen shown beneath a settings, briefing or confirmation sheet.
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -180,6 +186,7 @@ func _layout() -> void:
 	var size := get_viewport_rect().size
 	old_size = size
 	root.size = size
+	overlay.size = size
 	var usable_height := maxf(240, size.y - (160 if _compact_ui() else 222))
 	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 75), Vector2(540, 960) * scale_factor)
@@ -244,7 +251,14 @@ func _layout() -> void:
 	music_button.custom_minimum_size.y = 36
 	music_button.visible = wide
 	low_fx_button.visible = wide
-	if mode == "menu":
+	if mode in ["settings", "briefing"]:
+		if mode == "settings":
+			_show_settings()
+		else:
+			_show_briefing(briefing_launch)
+	elif mode == "abandon":
+		_confirm_abandon(sheet_base)
+	elif mode == "menu":
 		_show_menu()
 	elif mode == "cards":
 		_show_cards()
@@ -272,129 +286,1247 @@ func _clear_overlay() -> void:
 	card_buttons.clear()
 	stage_clear_button = null
 
-func _panel(width: float = 440.0) -> VBoxContainer:
-	_clear_overlay()
+func _touch_first() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
+
+## Safe-area margins in logical canvas units. get_display_safe_area() reports
+## display pixels, so it is scaled into the 390-point canvas before use.
+func _insets() -> Dictionary:
+	var view := get_viewport_rect().size
+	var top := 0.0
+	var bottom := 0.0
+	if OS.has_feature("mobile"):
+		var window := Vector2(DisplayServer.window_get_size())
+		var safe := DisplayServer.get_display_safe_area()
+		if window.x > 0.0 and safe.size.x > 0:
+			var k := view.x / window.x
+			top = float(safe.position.y) * k
+			bottom = maxf(0.0, (window.y - float(safe.end.y)) * k)
+	return {"top": maxf(top, 14.0), "bottom": maxf(bottom, 14.0)}
+
+func _focus(control: Control) -> void:
+	# Focus rings help keyboards and controllers; on a touch screen they read as a stray selection.
+	if control != null and not _touch_first():
+		control.grab_focus()
+
+func _ui_button(parent: Node, title: String, action: Callable, kind: String = "secondary", height: float = 48.0, in_row: bool = false) -> Button:
+	var button := Button.new()
+	button.text = title
+	Kit.style_button(button, kind, 18 if kind == "primary" else 16, 10, 8.0 if in_row else 14.0)
+	button.custom_minimum_size.y = height
+	if in_row:
+		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		button.clip_text = true
+		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	button.pressed.connect(action)
+	parent.add_child(button)
+	return button
+
+func _icon_button(parent: Node, kind: String, action: Callable, tooltip: String) -> Button:
+	var button := Button.new()
+	Kit.style_button(button, "secondary", 16, 12, 0.0)
+	button.custom_minimum_size = Vector2(44, 44)
+	button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	button.tooltip_text = tooltip
+	button.pressed.connect(action)
+	parent.add_child(button)
+	var icon := Kit.glyph(button, kind, Kit.TEXT, 22)
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.offset_left = 11
+	icon.offset_top = 11
+	icon.offset_right = -11
+	icon.offset_bottom = -11
+	return button
+
+func _wallet() -> Control:
+	var chip := PanelContainer.new()
+	chip.add_theme_stylebox_override("panel", Kit.box(Color("1f1910"), Color("4d3c22"), 22, 1, 12, 7))
+	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.tooltip_text = "Cores. Spend them in the Hangar."
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	chip.add_child(row)
+	row.add_child(Kit.core_icon(16))
+	Kit.label(row, str(profile.cores), 18, Kit.AMBER)
+	return chip
+
+func _chip(parent: Node, text_value: String, color: Color, filled: bool = false) -> PanelContainer:
+	var chip := PanelContainer.new()
+	chip.add_theme_stylebox_override("panel", Kit.box(Color(color, 0.22 if filled else 0.08), Color(color, 0.55), 20, 1, 10, 3))
+	chip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(chip)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 5)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	chip.add_child(row)
+	var text := Kit.label(row, text_value, 14, color)
+	text.add_theme_font_override("font", Kit.font(1, 0.25))
+	return chip
+
+func _section(parent: Node, text_value: String, color: Color = Kit.AMBER) -> Label:
+	var heading := Kit.label(parent, text_value, 17, color)
+	heading.add_theme_font_override("font", Kit.font(0, 0.35))
+	return heading
+
+func _backdrop(alpha: float) -> void:
 	var screen := get_viewport_rect().size
 	var shade := ColorRect.new()
-	shade.color = Color(0.015, 0.025, 0.05, 0.85)
+	shade.color = Color(Color("050a14"), alpha)
 	shade.size = screen
 	shade.mouse_filter = Control.MOUSE_FILTER_STOP
 	overlay.add_child(shade)
-	var center := CenterContainer.new()
-	center.size = screen
-	overlay.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size.x = minf(width, screen.x - 28)
-	panel.add_theme_stylebox_override("panel", _style(Color("0b1424"), Color("284451")))
-	center.add_child(panel)
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 12)
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size.y = minf(620, screen.y - 60)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	panel.add_child(scroll)
-	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(box)
-	return box
+	if alpha >= 0.99:
+		var art := TextureRect.new()
+		art.texture = Playfield.SPACE
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		art.size = screen
+		art.modulate = Color(0.30, 0.38, 0.52, 0.32)
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.add_child(art)
 
-func _wrapped(parent: Node, value: String, size: int = 15, color: Color = MUTED) -> Label:
-	var label := _label(parent, value, size, color)
-	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	label.custom_minimum_size.x = 0
-	return label
-
-func _reading_screen(width: float = 530.0) -> Dictionary:
-	# Full-height reading layout: title and actions remain pinned while details scroll.
+## A full screen: header on top, body in the middle, actions pinned to the bottom
+## where a thumb reaches them.
+func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dictionary:
 	_clear_overlay()
+	_backdrop(alpha)
 	var screen := get_viewport_rect().size
-	var shade := ColorRect.new()
-	shade.color = Color(0.01, 0.018, 0.035, 0.95)
-	shade.size = screen
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	overlay.add_child(shade)
-	var center := CenterContainer.new()
-	center.size = screen
-	overlay.add_child(center)
-	var panel := PanelContainer.new()
-	panel.custom_minimum_size = Vector2(minf(width, screen.x - 28), minf(745, screen.y - 28))
-	panel.add_theme_stylebox_override("panel", _style(Color("0c1828"), Color("3c5b69"), 1))
-	center.add_child(panel)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 10)
-	layout.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	panel.add_child(layout)
-	var header := VBoxContainer.new()
-	header.add_theme_constant_override("separation", 3)
-	layout.add_child(header)
-	var top_separator := HSeparator.new()
-	layout.add_child(top_separator)
-	reading_scroll = ScrollContainer.new()
-	reading_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	reading_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reading_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	reading_scroll.custom_minimum_size.y = 0
-	layout.add_child(reading_scroll)
+	var inset := _insets()
+	var w := minf(width, screen.x - 32.0)
+	var frame := VBoxContainer.new()
+	frame.position = Vector2((screen.x - w) * 0.5, float(inset.top) + 4.0)
+	frame.size = Vector2(w, screen.y - float(inset.top) - float(inset.bottom) - 8.0)
+	frame.add_theme_constant_override("separation", 14)
+	overlay.add_child(frame)
+	var top := VBoxContainer.new()
+	top.add_theme_constant_override("separation", 6)
+	frame.add_child(top)
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 10)
-	body.custom_minimum_size.x = 0
 	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	reading_scroll.add_child(body)
-	var bottom_separator := HSeparator.new()
-	layout.add_child(bottom_separator)
+	reading_scroll = null
+	if scroll:
+		reading_scroll = ScrollContainer.new()
+		reading_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		reading_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		frame.add_child(reading_scroll)
+		reading_scroll.add_child(body)
+	else:
+		body.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		frame.add_child(body)
+	var bottom := VBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 8)
+	frame.add_child(bottom)
 	reading_footer = HBoxContainer.new()
 	reading_footer.add_theme_constant_override("separation", 8)
-	layout.add_child(reading_footer)
-	reading_panel = panel
-	return {"header":header, "body":body, "footer":reading_footer, "panel":panel, "scroll":reading_scroll}
+	bottom.add_child(reading_footer)
+	reading_panel = frame
+	return {"top": top, "body": body, "bottom": bottom, "footer": reading_footer, "frame": frame}
 
-func _reading_card(parent: Node, heading: String, detail: String, accent: Color = CYAN) -> PanelContainer:
+func _page_header(top: VBoxContainer, eyebrow: String, title: String, back: Callable = Callable(), wallet: bool = false) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	top.add_child(row)
+	if back.is_valid():
+		_icon_button(row, "back", back, "Back")
+	var titles := VBoxContainer.new()
+	titles.add_theme_constant_override("separation", 0)
+	titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	titles.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_child(titles)
+	if not eyebrow.is_empty():
+		var over := Kit.caps(titles, eyebrow, Kit.AMBER, 13)
+		over.clip_text = true
+		over.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var heading := Kit.label(titles, title, 26, Color.WHITE, true)
+	heading.add_theme_font_override("font", Kit.font(0, 0.45))
+	if wallet:
+		row.add_child(_wallet())
+
+## A sheet rising from the bottom edge (centred on wide screens). Pass clear=false
+## to lay it over the current screen instead of replacing it.
+func _sheet(title: String, eyebrow: String = "", dismiss: Callable = Callable(), clear: bool = true) -> VBoxContainer:
+	if clear:
+		_clear_overlay()
+	var screen := get_viewport_rect().size
+	var inset := _insets()
+	var shade := ColorRect.new()
+	shade.color = Color(0.01, 0.02, 0.04, 0.72)
+	shade.size = screen
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	if dismiss.is_valid():
+		shade.gui_input.connect(_on_shade_input.bind(dismiss))
+	overlay.add_child(shade)
+	var compact := _compact_ui()
+	var w := minf(500.0, screen.x)
+	var panel := PanelContainer.new()
+	var style := Kit.box(Color("0c1727"), Color("2a4257"), 20, 1, 20, 18)
+	if compact:
+		style.corner_radius_bottom_left = 0
+		style.corner_radius_bottom_right = 0
+		style.border_width_bottom = 0
+		style.content_margin_bottom = 16.0 + float(inset.bottom)
+	panel.add_theme_stylebox_override("panel", style)
+	overlay.add_child(panel)
+	if compact:
+		panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	else:
+		panel.set_anchors_preset(Control.PRESET_CENTER)
+		panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	# Presets keep the old rect by rewriting offsets; reset them so the sheet sizes to content.
+	panel.offset_top = 0.0
+	panel.offset_bottom = 0.0
+	panel.offset_left = -w * 0.5
+	panel.offset_right = w * 0.5
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	panel.add_child(box)
+	if compact:
+		var grip := ColorRect.new()
+		grip.color = Color("2f465c")
+		grip.custom_minimum_size = Vector2(40, 4)
+		grip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		box.add_child(grip)
+	var titles := VBoxContainer.new()
+	titles.add_theme_constant_override("separation", 0)
+	box.add_child(titles)
+	if not eyebrow.is_empty():
+		Kit.caps(titles, eyebrow, Kit.AMBER, 13)
+	var heading := Kit.label(titles, title, 24, Color.WHITE, true)
+	heading.add_theme_font_override("font", Kit.font(0, 0.45))
+	reading_panel = panel
+	return box
+
+## A card the whole surface of which is the tap target. Returns its content box.
+func _tap_card(parent: Node, action: Callable, accent: Color, selected: bool = false) -> Dictionary:
 	var panel := PanelContainer.new()
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	panel.custom_minimum_size.x = 0
-	panel.add_theme_stylebox_override("panel", _style(Color("132638"), Color("28495c")))
+	panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE_HI if selected else Kit.SURFACE, accent if selected else Kit.LINE, 14, 2 if selected else 1, 0, 0))
+	parent.add_child(panel)
+	var pad := MarginContainer.new()
+	pad.add_theme_constant_override("margin_left", 14)
+	pad.add_theme_constant_override("margin_right", 14)
+	pad.add_theme_constant_override("margin_top", 12)
+	pad.add_theme_constant_override("margin_bottom", 12)
+	pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(pad)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 4)
+	content.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pad.add_child(content)
+	var hit := Button.new()
+	hit.add_theme_stylebox_override("normal", StyleBoxEmpty.new())
+	hit.add_theme_stylebox_override("hover", Kit.box(Color(accent, 0.04), Color(accent, 0.65), 14, 1, 0, 0))
+	hit.add_theme_stylebox_override("pressed", Kit.box(Color(accent, 0.14), accent, 14, 2, 0, 0))
+	hit.add_theme_stylebox_override("focus", Kit.box(Color(0, 0, 0, 0), Kit.AMBER, 14, 2, 0, 0))
+	hit.add_theme_stylebox_override("disabled", StyleBoxEmpty.new())
+	hit.pressed.connect(action)
+	panel.add_child(hit)
+	return {"panel": panel, "content": content, "button": hit}
+
+func _info_card(parent: Node, heading: String, detail: String, accent: Color = Kit.CYAN) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 14, 1, 14, 12))
 	parent.add_child(panel)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 4)
 	panel.add_child(content)
-	_wrapped(content, heading, 17, accent)
-	_wrapped(content, detail, 15, Color("e1edf4"))
+	if not heading.is_empty():
+		Kit.caps(content, heading, accent, 13)
+	Kit.label(content, detail, 16, Kit.TEXT, true)
 	return panel
 
-func _reading_cta(parent: HBoxContainer, title: String, action: Callable, primary: bool = false) -> Button:
-	var button := _button(parent, title, action, primary)
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.custom_minimum_size.x = 0
-	button.custom_minimum_size.y = 54
-	button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	return button
+func _tiles(parent: Node, items: Array) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	for item in items:
+		var tile := PanelContainer.new()
+		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tile.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 12, 1, 12, 10))
+		row.add_child(tile)
+		var stack := VBoxContainer.new()
+		stack.add_theme_constant_override("separation", 0)
+		tile.add_child(stack)
+		var value := Kit.label(stack, str(item[1]), 22, item[2] if item.size() > 2 else Color.WHITE)
+		value.add_theme_font_override("font", Kit.font(0, 0.45))
+		Kit.caps(stack, str(item[0]), Kit.MUTED, 12)
+	return row
+
+func _pips(parent: Node, filled: int, total: int, tint: Color = Kit.CYAN) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 3)
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	parent.add_child(row)
+	for i in range(total):
+		var pip := ColorRect.new()
+		pip.color = tint if i < filled else Color("213447")
+		pip.custom_minimum_size = Vector2(0, 6)
+		pip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(pip)
+	return row
+
+func _tabs(parent: Node, items: Array, current: String, action: Callable) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 0)
+	parent.add_child(row)
+	for item in items:
+		var column := VBoxContainer.new()
+		column.add_theme_constant_override("separation", 0)
+		column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(column)
+		var tab := Button.new()
+		tab.text = str(item)
+		Kit.style_button(tab, "ghost", 16, 6, 4.0)
+		var active: bool = str(item) == current
+		for state in ["font_color", "font_hover_color", "font_focus_color"]:
+			tab.add_theme_color_override(state, Color.WHITE if active else Kit.MUTED)
+		tab.custom_minimum_size.y = 44
+		tab.pressed.connect(action.bind(str(item)))
+		column.add_child(tab)
+		var line := ColorRect.new()
+		line.color = Kit.CYAN if active else Kit.LINE
+		line.custom_minimum_size.y = 3 if active else 1
+		column.add_child(line)
+	return row
+
+func _keep_scroll(scroll: ScrollContainer, value: int) -> void:
+	# Re-rendering a list after a tap should not throw the player back to the top.
+	if scroll == null or value <= 0:
+		return
+	get_tree().process_frame.connect(_apply_scroll.bind(scroll, value), CONNECT_ONE_SHOT)
+
+func _apply_scroll(scroll: ScrollContainer, value: int) -> void:
+	if is_instance_valid(scroll):
+		scroll.scroll_vertical = value
+
+func _on_shade_input(event: InputEvent, dismiss: Callable) -> void:
+	if event is InputEventMouseButton and event.pressed:
+		dismiss.call()
+
+func _name_part(full: String, part: int) -> String:
+	var pieces := full.split(" · ")
+	if part < pieces.size():
+		return pieces[part]
+	return "" if part > 0 else full
+
+func _difficulty_text(id: String) -> String:
+	match id:
+		"hard": return "Enemies get 25% more health and damage, and fire and arrive faster. Cores ×1.75."
+		"insane": return "Enemies get 60% more health and damage, and fire and arrive faster. Cores ×2.5."
+	return "Standard enemy strength. Cores ×1."
+
+func _multiplier_text(id: String) -> String:
+	var value := float(Catalog.REWARD_MULTIPLIERS[id])
+	return str(int(value)) if is_equal_approx(value, roundf(value)) else str(value)
+
+func _render_base(base: String) -> void:
+	match base:
+		"hangar": _show_hangar()
+		"paused": _show_pause()
+		_: _show_menu()
+
+# ---------------------------------------------------------------------------
+# Title
+# ---------------------------------------------------------------------------
 
 func _show_menu() -> void:
 	mode = "menu"
-	var box := _panel()
-	_label(box, "S T A R / R U N", 38, CYAN)
-	_label(box, "Four stages. One ship.", 13, AMBER)
-	_wrapped(box, "The ship flies and shoots. You choose its upgrades and when to use them.", 19, Color.WHITE)
-	_wrapped(box, "Combine two abilities to make a stronger one and free a slot. Weapons and ship systems can pair up too.")
-	_wrapped(box, "Each stage ends with a different boss. Afterward, you choose what to carry into the next one.", 14)
-	_wrapped(box, "SHIP  %s   /   PILOT  %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], 13, CYAN)
-	if not services.read_save(Services.RUN).is_empty():
-		_button(box, "Resume flight", _resume_run, true)
-	_button(box, "Launch new flight", _new_run, not FileAccess.file_exists(Services.RUN)).grab_focus()
-	_button(box, "Hangar · %d cores" % profile.cores, _show_hangar)
-	_button(box, "Pilots & ships · equip / unlock", _show_loadout)
-	_button(box, "Difficulty: %s · rewards ×%.2f" % [str(profile.get("difficulty", "normal")).to_upper(), float(Catalog.REWARD_MULTIPLIERS[profile.get("difficulty", "normal")])], _cycle_difficulty)
-	var row: BoxContainer = VBoxContainer.new() if _compact_ui() else HBoxContainer.new()
+	confirm_key = ""
+	var view := _page(1.0, false, 460.0)
+	var top: VBoxContainer = view.top
+	var body: VBoxContainer = view.body
+	var bottom: VBoxContainer = view.bottom
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 8)
+	top.add_child(bar)
+	var mark := Kit.label(bar, "STARRUN", 32, Kit.CYAN)
+	mark.add_theme_font_override("font", Kit.font(5, 0.7))
+	mark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bar.add_child(_wallet())
+	_icon_button(bar, "settings", _show_settings, "Sound and effects")
+	Kit.label(top, "Your ship flies and shoots on its own. You build it, and you choose when to fire its abilities.", 16, Kit.MUTED, true)
+	# Hero: the equipped ship in flight. Tapping it opens Ships & pilots.
+	var hero_frame := PanelContainer.new()
+	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
+	hero_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hero_frame.clip_contents = true
+	body.add_child(hero_frame)
+	var hero := HangarBay.new()
+	hero.style = "flight"
+	hero.labels = false
+	hero.ship_id = profile.ship
+	hero.custom_minimum_size = Vector2(0, 110)
+	hero_frame.add_child(hero)
+	var caption := MarginContainer.new()
+	for side in ["left", "right", "bottom"]:
+		caption.add_theme_constant_override("margin_" + side, 14)
+	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hero_frame.add_child(caption)
+	var caption_row := HBoxContainer.new()
+	caption_row.size_flags_vertical = Control.SIZE_SHRINK_END
+	caption_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption.add_child(caption_row)
+	var names := VBoxContainer.new()
+	names.add_theme_constant_override("separation", 0)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	caption_row.add_child(names)
+	var ship: Dictionary = Catalog.ship(profile.ship)
+	var pilot: Dictionary = Catalog.pilot(profile.pilot)
+	var ship_name := Kit.label(names, _name_part(ship.name, 0), 22, Color.WHITE)
+	ship_name.add_theme_font_override("font", Kit.font(1, 0.5))
+	var role := _name_part(ship.name, 1)
+	Kit.label(names, ("%s  ·  " % role if not role.is_empty() else "") + "Pilot " + _name_part(pilot.name, 0), 15, Kit.MUTED)
+	var change := _chip(caption_row, "Change", Kit.CYAN)
+	Kit.glyph(change.get_child(0), "next", Kit.CYAN, 14)
+	var hit := Button.new()
+	for state in ["normal", "disabled"]:
+		hit.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+	hit.add_theme_stylebox_override("hover", Kit.box(Color(1, 1, 1, 0.03), Color(Kit.CYAN, 0.6), 16, 1, 0, 0))
+	hit.add_theme_stylebox_override("pressed", Kit.box(Color(Kit.CYAN, 0.10), Kit.CYAN, 16, 2, 0, 0))
+	hit.add_theme_stylebox_override("focus", Kit.box(Color(0, 0, 0, 0), Kit.AMBER, 16, 2, 0, 0))
+	hit.tooltip_text = "Change ship or pilot"
+	hit.pressed.connect(_open_loadout.bind("menu"))
+	hero_frame.add_child(hit)
+	# Difficulty as a visible three-way choice, not a button that cycles.
+	Kit.caps(body, "Difficulty", Kit.MUTED, 13)
+	var segments := HBoxContainer.new()
+	segments.add_theme_constant_override("separation", 6)
+	body.add_child(segments)
+	var current := str(profile.get("difficulty", "normal"))
+	for id in Catalog.DIFFICULTIES:
+		var chosen: bool = id == current
+		var segment := Button.new()
+		segment.text = "%s\n×%s" % [str(id).capitalize(), _multiplier_text(str(id))]
+		Kit.style_button(segment, ("danger" if id == "insane" else "selected") if chosen else "secondary", 16, 10, 6.0)
+		if not chosen:
+			for state in ["font_color", "font_hover_color", "font_focus_color"]:
+				segment.add_theme_color_override(state, Kit.MUTED)
+		segment.custom_minimum_size.y = 60
+		segment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		segment.pressed.connect(_set_difficulty.bind(str(id)))
+		segments.add_child(segment)
+	Kit.label(body, _difficulty_text(current), 15, Kit.MUTED, true)
+	# Actions: secondary row, then the one primary action at the bottom edge.
+	var saved := services.read_save(Services.RUN)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	bottom.add_child(row)
+	bottom.move_child(row, 0)
+	_ui_button(row, "Hangar", _show_hangar, "secondary", 48, true)
+	_ui_button(row, "How to play", _show_briefing.bind(false), "secondary", 48, true)
+	var primary: Button
+	if saved.is_empty():
+		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
+	else:
+		_ui_button(row, "New flight", _confirm_abandon.bind("menu"), "secondary", 48, true)
+		primary = _ui_button(reading_footer, "Resume  ·  Stage %d" % int(saved.get("stage", 1)), _resume_run, "primary", 60, true)
+	if not _touch_first():
+		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
+		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_focus(primary)
+
+func _set_difficulty(id: String) -> void:
+	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
+		profile.difficulty = id
+		_save_profile()
+		sound.play("card")
+	_show_menu()
+
+func _launch() -> void:
+	# The first flight gets a 20-second briefing; after that Launch means launch.
+	if int(profile.runs) == 0 and not bool(profile.get("briefed", false)):
+		_show_briefing(true)
+		return
+	_new_run()
+
+func _launch_or_confirm(base: String) -> void:
+	if services.read_save(Services.RUN).is_empty():
+		_launch()
+	else:
+		_confirm_abandon(base)
+
+func _show_settings() -> void:
+	if mode != "settings":
+		sheet_base = "paused" if mode == "paused" else "menu"
+	_render_base(sheet_base)
+	mode = "settings"
+	var box := _sheet("Sound and effects", "Settings", _close_sheet, false)
+	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
+	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
+	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	_focus(_ui_button(box, "Done", _close_sheet, "primary", 52))
+
+func _toggle_row(parent: Node, title: String, detail: String, on: bool, action: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	parent.add_child(row)
+	var text := VBoxContainer.new()
+	text.add_theme_constant_override("separation", 0)
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(text)
+	Kit.label(text, title, 17, Color.WHITE)
+	Kit.label(text, detail, 15, Kit.MUTED, true)
+	var toggle := Button.new()
+	toggle.text = "On" if on else "Off"
+	Kit.style_button(toggle, "selected" if on else "secondary", 16, 22, 8.0)
+	toggle.custom_minimum_size = Vector2(72, 44)
+	toggle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	toggle.pressed.connect(action)
+	row.add_child(toggle)
+
+func _close_sheet() -> void:
+	_render_base(sheet_base)
+
+func _show_briefing(launch_after: bool = false) -> void:
+	if mode != "briefing":
+		briefing_launch = launch_after
+		sheet_base = "menu"
+	_render_base(sheet_base)
+	mode = "briefing"
+	var box := _sheet("How a run works", "Flight briefing", _close_sheet, false)
+	var steps := [
+		["Autopilot", "Your ship steers and shoots by itself. You never aim."],
+		["Abilities", "The four buttons under the playfield are yours. Tap one when it's ready, then it recharges."],
+		["Level up", "Pick one upgrade each level. Two matching abilities fuse into a stronger one and free a slot."],
+		["Four bosses", "Clear four stages. The cores you earn buy permanent upgrades in the Hangar."],
+	]
+	for i in range(steps.size()):
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		box.add_child(row)
+		var number := PanelContainer.new()
+		number.add_theme_stylebox_override("panel", Kit.box(Color(Kit.CYAN, 0.12), Color(Kit.CYAN, 0.6), 16, 1, 0, 0))
+		number.custom_minimum_size = Vector2(32, 32)
+		number.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(number)
+		var digit := Kit.label(number, str(i + 1), 16, Kit.CYAN)
+		digit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		digit.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var text := VBoxContainer.new()
+		text.add_theme_constant_override("separation", 0)
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(text)
+		Kit.label(text, str(steps[i][0]), 17, Color.WHITE)
+		Kit.label(text, str(steps[i][1]), 15, Kit.MUTED, true)
+	if not _touch_first():
+		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
+	_focus(_ui_button(box, "Launch" if briefing_launch else "Got it", _briefing_done, "primary", 56))
+
+func _briefing_done() -> void:
+	profile.briefed = true
+	_save_profile()
+	if briefing_launch:
+		briefing_launch = false
+		_new_run()
+	else:
+		_show_menu()
+
+func _confirm_abandon(base: String) -> void:
+	sheet_base = base
+	_render_base(base)
+	mode = "abandon"
+	var saved := services.read_save(Services.RUN)
+	var box := _sheet("Abandon your saved flight?", "New flight", _close_sheet, false)
+	Kit.label(box, "You have a flight saved in Stage %d. Starting over deletes it, and it pays out no cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
+	_focus(_ui_button(box, "Resume saved flight", _resume_run, "primary", 54))
+	_ui_button(box, "Abandon and launch", _launch, "danger", 48)
+	_ui_button(box, "Cancel", _close_sheet, "ghost", 44)
+
+# ---------------------------------------------------------------------------
+# Hangar
+# ---------------------------------------------------------------------------
+
+func _show_hangar() -> void:
+	var prior: int = hangar_scroll.scroll_vertical if is_instance_valid(hangar_scroll) and mode == "hangar" else 0
+	mode = "hangar"
+	var view := _page(1.0, false, 560.0)
+	var body: VBoxContainer = view.body
+	_page_header(view.top, "Permanent upgrades", "Hangar", _show_menu, true)
+	# Equipped ship strip, tappable to change ship or pilot.
+	var strip := _tap_card(body, _open_loadout.bind("hangar"), Kit.CYAN)
+	var strip_row := HBoxContainer.new()
+	strip_row.add_theme_constant_override("separation", 12)
+	strip_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip.content.add_child(strip_row)
+	var bay := HangarBay.new()
+	bay.ship_id = profile.ship
+	bay.labels = false
+	bay.custom_minimum_size = Vector2(88, 80)
+	strip_row.add_child(bay)
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 1)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.alignment = BoxContainer.ALIGNMENT_CENTER
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	strip_row.add_child(info)
+	var ship: Dictionary = Catalog.ship(profile.ship)
+	var title := Kit.label(info, _name_part(ship.name, 0), 19, Color.WHITE)
+	title.add_theme_font_override("font", Kit.font(0, 0.45))
+	Kit.label(info, "Pilot " + _name_part(Catalog.pilot(profile.pilot).name, 0), 15, Kit.MUTED)
+	var hull := int(ship.hull) + int(profile.hangar.hull) * 10
+	var shield := int(ship.shield) + int(profile.hangar.shield) * 8 + (20 if profile.pilot == "engineer" else 0)
+	var stat_line := "%d hull  ·  %d shield" % [hull, shield]
+	if int(profile.hangar.damage) > 0:
+		stat_line += "  ·  +%d%% damage" % (int(profile.hangar.damage) * 8)
+	Kit.label(info, stat_line, 15, Kit.CYAN, true)
+	Kit.glyph(strip_row, "next", Kit.MUTED, 18)
+	_tabs(body, Catalog.GROUPS, hangar_category, _hangar_tab)
+	hangar_scroll = ScrollContainer.new()
+	hangar_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hangar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	body.add_child(hangar_scroll)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 8)
+	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hangar_scroll.add_child(list)
+	for entry in Catalog.HANGAR:
+		if entry.group == hangar_category:
+			_hangar_row(list, entry)
+	var refund_total := Catalog.refund(profile.hangar)
+	if refund_total > 0:
+		var armed := confirm_key == "refund"
+		var refund := _ui_button(list, ("Tap again to refund %d cores" if armed else "Refund all upgrades  ·  %d cores") % refund_total, _refund_tap, "danger" if armed else "ghost", 44)
+		refund.tooltip_text = "Every rank in every category is removed and fully refunded."
+	_keep_scroll(hangar_scroll, prior)
+	var launch := _ui_button(reading_footer, "Launch", _launch_or_confirm.bind("hangar"), "primary", 56, true)
+	_focus(launch)
+
+func _hangar_row(parent: Node, entry: Dictionary) -> void:
+	var bought: int = int(profile.hangar[entry.id])
+	var top_rank: int = int(entry.max)
+	var maxed := bought >= top_rank
+	var price := Catalog.price(entry.id, bought)
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Color("2a5450") if bought > 0 else Kit.LINE, 12, 1, 12, 12))
+	parent.add_child(panel)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	panel.add_child(row)
+	var badge := IconBadge.new()
+	badge.icon_id = entry.id
+	badge.custom_minimum_size = Vector2(36, 36)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(badge)
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 4)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(info)
+	Kit.label(info, entry.name, 17, Color.WHITE, true)
+	Kit.label(info, entry.description, 15, Kit.MUTED, true)
+	var progress := HBoxContainer.new()
+	progress.add_theme_constant_override("separation", 8)
+	info.add_child(progress)
+	_pips(progress, bought, top_rank)
+	Kit.label(progress, "%d/%d" % [bought, top_rank], 14, Kit.DIM)
+	var buy := Button.new()
+	buy.custom_minimum_size = Vector2(84, 44)
+	buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	if maxed:
+		buy.text = "Max"
+		Kit.style_button(buy, "secondary", 16, 10, 8.0)
+		buy.disabled = true
+	else:
+		buy.text = str(price)
+		buy.icon = Kit.core_texture()
+		buy.add_theme_constant_override("icon_max_width", 16)
+		buy.add_theme_constant_override("h_separation", 6)
+		var affordable: bool = int(profile.cores) >= price
+		Kit.style_button(buy, "amber" if affordable else "secondary", 17, 10, 8.0)
+		buy.disabled = not affordable
+		buy.tooltip_text = "Install rank %d" % (bought + 1) if affordable else "Need %d more cores" % (price - int(profile.cores))
+	buy.pressed.connect(_purchase.bind(entry.id))
+	row.add_child(buy)
+
+func _refund_tap() -> void:
+	if confirm_key == "refund":
+		confirm_key = ""
+		_respec()
+	else:
+		confirm_key = "refund"
+		_show_hangar()
+
+# ---------------------------------------------------------------------------
+# Ships & pilots
+# ---------------------------------------------------------------------------
+
+func _open_loadout(from: String) -> void:
+	loadout_return = from
+	confirm_key = ""
+	_show_loadout()
+
+func _loadout_back() -> void:
+	confirm_key = ""
+	if loadout_return == "menu":
+		_show_menu()
+	else:
+		_show_hangar()
+
+func _show_loadout() -> void:
+	var prior: int = reading_scroll.scroll_vertical if mode == "loadout" and is_instance_valid(reading_scroll) else 0
+	mode = "loadout"
+	var view := _page(1.0, true, 560.0)
+	_page_header(view.top, "Next flight", "Ships & pilots", _loadout_back, true)
+	_tabs(view.top, ["Ships", "Pilots"], loadout_tab, _loadout_tab)
+	var body: VBoxContainer = view.body
+	var ships := loadout_tab == "Ships"
+	var entries: Array = Catalog.SHIPS if ships else Catalog.PILOTS
+	for entry in entries:
+		_loadout_card(body, entry, ships)
+	_keep_scroll(reading_scroll, prior)
+	_focus(_ui_button(reading_footer, "Done", _loadout_back, "primary", 54, true))
+
+func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
+	var key := "ship" if ships else "pilot"
+	var owned_key := "ships_owned" if ships else "pilots_owned"
+	var id: String = str(entry.id)
+	var owned: bool = id in profile[owned_key]
+	var equipped: bool = profile[key] == id
+	var cost: int = int(entry.cost)
+	var armed := confirm_key == key + ":" + id
+	var card := _tap_card(parent, _loadout_tap.bind(key, id), Kit.CYAN, equipped)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.content.add_child(row)
+	if ships:
+		var thumb := HangarBay.new()
+		thumb.ship_id = id
+		thumb.labels = false
+		thumb.custom_minimum_size = Vector2(72, 72)
+		thumb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(thumb)
+	else:
+		var badge := IconBadge.new()
+		badge.icon_id = id
+		badge.custom_minimum_size = Vector2(44, 44)
+		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(badge)
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 4)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(info)
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 8)
+	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	info.add_child(head)
+	var names := VBoxContainer.new()
+	names.add_theme_constant_override("separation", 0)
+	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	head.add_child(names)
+	var title := Kit.label(names, _name_part(entry.name, 0), 18, Color.WHITE)
+	title.add_theme_font_override("font", Kit.font(0, 0.45))
+	var role := _name_part(entry.name, 1) if ships else str(entry.get("trait", "")).capitalize()
+	if ships and role.is_empty():
+		role = "All-rounder"
+	Kit.label(names, role, 15, Kit.MUTED)
+	if equipped:
+		var chip := _chip(head, "Equipped", Kit.CYAN, true)
+		Kit.glyph(chip.get_child(0), "check", Kit.CYAN, 14)
+	elif owned:
+		_chip(head, "Equip", Kit.TEXT)
+	elif armed:
+		_chip(head, "Tap to confirm", Kit.AMBER, true)
+	else:
+		var price := _chip(head, str(cost), Kit.AMBER if int(profile.cores) >= cost else Kit.DIM)
+		var price_row: HBoxContainer = price.get_child(0)
+		var icon := Kit.core_icon(14)
+		price_row.add_child(icon)
+		price_row.move_child(icon, 0)
+	Kit.label(info, entry.description, 15, Kit.MUTED, true)
+	if ships:
+		var stats := GridContainer.new()
+		stats.columns = 3
+		stats.add_theme_constant_override("h_separation", 10)
+		stats.add_theme_constant_override("v_separation", 2)
+		stats.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		info.add_child(stats)
+		var values := [["Hull", float(entry.hull) / 160.0], ["Shield", float(entry.shield) / 80.0], ["Speed", (float(entry.movement) - 0.6) / 0.7]]
+		for stat in values:
+			var stat_name := Kit.caps(stats, str(stat[0]), Kit.DIM, 12)
+			stat_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		for stat in values:
+			Kit.meter(stats, float(stat[1]), Kit.CYAN, 5)
+		Kit.label(info, "Starts with " + str(sim.content.abilities[str(entry.signature)].name), 15, Kit.CYAN)
+	if not owned and int(profile.cores) < cost:
+		Kit.label(info, "Need %d more cores" % (cost - int(profile.cores)), 14, Kit.DIM)
+	elif armed:
+		Kit.label(info, "Unlock for %d cores? Tap again to confirm." % cost, 15, Kit.AMBER, true)
+
+func _loadout_tap(key: String, id: String) -> void:
+	var owned_key := "ships_owned" if key == "ship" else "pilots_owned"
+	if id in profile[owned_key]:
+		confirm_key = ""
+		if profile[key] != id:
+			_select_loadout(key, id)
+		return
+	var entries: Array = Catalog.SHIPS if key == "ship" else Catalog.PILOTS
+	var cost := 0
+	for candidate in entries:
+		if candidate.id == id:
+			cost = int(candidate.cost)
+	if int(profile.cores) < cost:
+		return
+	# Unlocks are permanent purchases, so they take a second tap to confirm.
+	var token := key + ":" + id
+	if confirm_key == token:
+		confirm_key = ""
+		_select_loadout(key, id)
+	else:
+		confirm_key = token
+		_show_loadout()
+
+# ---------------------------------------------------------------------------
+# Level-up draft
+# ---------------------------------------------------------------------------
+
+func _show_cards(play_sound: bool = true) -> void:
+	mode = "cards"
+	_save_run()
+	draft_guard = 0.35
+	var view := _page(0.93, true, 520.0)
+	var top: VBoxContainer = view.top
+	var body: VBoxContainer = view.body
+	var title := "Remove an upgrade" if banish_mode else "Choose an upgrade"
+	_page_header(top, "Level %d  ·  Stage %d" % [sim.level, sim.stage], title)
+	if banish_mode:
+		Kit.label(top, "Tap one to take it out of this run's draft pool. %d removal%s left." % [sim.banishes_left, "" if sim.banishes_left == 1 else "s"], 16, Kit.DANGER, true)
+	else:
+		var names := PackedStringArray()
+		for slot in sim.active_slots:
+			names.append(str(sim.content.abilities[str(slot)].name))
+		Kit.label(top, "Abilities %d of 4:  %s" % [names.size(), ", ".join(names) if not names.is_empty() else "none yet"], 15, Kit.MUTED, true)
+	for i in range(sim.cards.size()):
+		_draft_card(body, i)
+	if banish_mode:
+		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
+	else:
+		if sim.rerolls_left > 0:
+			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand")
+		if sim.skips_left > 0:
+			_draft_tool("Skip", "+12 hull", _draft_action.bind("skip", 0), "Take no upgrade and repair 12 hull")
+		if sim.banishes_left > 0:
+			_draft_tool("Remove", "%d left" % sim.banishes_left, _toggle_banish, "Take one upgrade out of this run's pool")
+	if not card_buttons.is_empty():
+		_focus(card_buttons[0])
+	if play_sound:
+		sound.play("card")
+
+func _draft_tool(title: String, detail: String, action: Callable, tooltip: String) -> void:
+	var tool := _ui_button(reading_footer, "%s\n%s" % [title, detail], action, "secondary", 58, true)
+	tool.add_theme_font_size_override("font_size", 15)
+	tool.tooltip_text = tooltip
+
+func _draft_card(parent: Node, i: int) -> void:
+	var card: Dictionary = sim.cards[i]
+	var id: String = str(card.id)
+	var tag: String = str(card.tag)
+	var current: int = int(sim.upgrades.get(id, 0))
+	var is_new_ability := tag == "ABILITY" and current == 0
+	var fusion: String = sim.fusion_hint(id) if is_new_ability else ""
+	var accent := Kit.CYAN
+	var tag_text := ""
+	if not fusion.is_empty():
+		accent = Kit.VIOLET
+		tag_text = "Fusion  ·  frees a slot"
+	elif is_new_ability:
+		tag_text = "New ability  ·  slot %d of 4" % (sim.active_slots.size() + 1)
+	elif tag == "RECOVERY":
+		accent = Color("7afcc0")
+		tag_text = "Recovery"
+	else:
+		var next_rank: int = mini(int(card.max), current + (1 if tag == "ABILITY" and current == 0 else 2))
+		accent = Kit.CYAN if tag == "ABILITY" else (Kit.AMBER if tag == "WEAPON" else Color("9fcbff"))
+		tag_text = "%s  ·  rank %d to %d" % [tag.capitalize(), current, next_rank]
+	var removable := banish_mode and id != "repair"
+	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
+	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
+	var hit: Button = view.button
+	if banish_mode and not removable:
+		hit.disabled = true
+		view.panel.modulate = Color(1, 1, 1, 0.45)
+	card_buttons.append(hit)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	view.content.add_child(row)
+	var badge := IconBadge.new()
+	badge.icon_id = id
+	badge.custom_minimum_size = Vector2(40, 40)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	row.add_child(badge)
+	var info := VBoxContainer.new()
+	info.add_theme_constant_override("separation", 3)
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(info)
+	Kit.caps(info, tag_text, accent, 13)
+	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + str(card.name)
+	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
+	title.add_theme_font_override("font", Kit.font(0, 0.45))
+	Kit.label(info, str(card.description), 16, Kit.TEXT, true)
+	if not fusion.is_empty():
+		Kit.label(info, "Fuses into %s." % fusion.get_slice(":", 0), 15, Kit.VIOLET, true)
+	elif current < 10 and tag in ["WEAPON", "SYSTEM"]:
+		var milestone: int = 5 if current < 5 else 10
+		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
+		if not reward.is_empty():
+			Kit.label(info, "Rank %d: %s" % [milestone, reward], 15, Kit.MUTED, true)
+	if tag in ["WEAPON", "SYSTEM"]:
+		var link: String = sim.passive_hint(id)
+		if not link.is_empty():
+			Kit.label(info, "Pair bonus: " + link.get_slice(":", 0), 15, Kit.AMBER, true)
+
+func _toggle_banish() -> void:
+	if mode != "cards":
+		return
+	banish_mode = not banish_mode and sim.banishes_left > 0
+	_show_cards(false)
+
+func _draft_action(action: String, index: int) -> void:
+	if mode != "cards" or draft_guard > 0.0:
+		return
+	var changed: bool = sim.reroll_cards() if action == "reroll" else (sim.banish_card(index) if action == "banish" else sim.skip_cards())
+	if not changed:
+		return
+	banish_mode = false
+	if sim.cards.is_empty():
+		mode = "playing"
+		_clear_overlay()
+		accumulator = -0.25
+		_save_run()
+	else:
+		_show_cards()
+
+func _choose(index: int) -> void:
+	# A short guard stops a combat tap from picking a card the instant the draft opens.
+	if mode == "cards" and draft_guard <= 0.0 and not banish_mode and sim.choose_card(index):
+		_clear_overlay()
+		mode = "playing"
+		accumulator = -0.25
+		_save_run()
+
+# ---------------------------------------------------------------------------
+# Pause and build
+# ---------------------------------------------------------------------------
+
+func _show_pause() -> void:
+	mode = "paused"
+	sheet_base = "paused"
+	_save_run()
+	var seconds := int(sim.time - sim.stage_start)
+	var box := _sheet("Paused", "Stage %d  ·  %s  ·  %02d:%02d" % [sim.stage, sim.stage_name().capitalize(), seconds / 60, seconds % 60])
+	Kit.label(box, "Your flight is saved. Nothing moves until you resume.", 15, Kit.MUTED, true)
+	var resume := _ui_button(box, "Resume", _toggle_pause, "primary", 56)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
 	box.add_child(row)
-	var effects_toggle := _button(row, "Effects " + ("on" if profile.sound else "off"), _toggle_sound)
-	var music_toggle := _button(row, "Music " + ("on" if profile.music else "off"), _toggle_music)
-	var glow_toggle := _button(row, "Glow " + ("low" if profile.reduced else "full"), _toggle_fx)
-	for toggle in [effects_toggle, music_toggle, glow_toggle]:
-		toggle.add_theme_font_size_override("font_size", _text_size(12))
-	_wrapped(box, "Keys 1–4 · B: build · Tab: speed · Esc: pause", 12, MUTED)
+	_ui_button(row, "Build", _show_build, "secondary", 48, true)
+	_ui_button(row, "Settings", _show_settings, "secondary", 48, true)
+	_ui_button(box, "Save and quit to title", _show_menu, "ghost", 44)
+	_focus(resume)
+
+func _show_build() -> void:
+	if mode not in ["playing", "paused", "build"]:
+		return
+	if mode in ["playing", "paused"]:
+		build_return_mode = mode
+	var prior: int = reading_scroll.scroll_vertical if mode == "build" and is_instance_valid(reading_scroll) else 0
+	mode = "build"
+	_save_run()
+	var view := _page(0.95, true, 540.0)
+	var body: VBoxContainer = view.body
+	_page_header(view.top, "%s  ·  Pilot %s" % [_name_part(Catalog.ship(sim.ship_id).name, 0), _name_part(Catalog.pilot(sim.pilot_id).name, 0)], "Build")
+	_tiles(body, [["Hull", "%d/%d" % [sim.hull, sim.max_hull], Kit.CYAN], ["Shield", "%d/%d" % [sim.shield, sim.max_shield], Color("9fcbff")], ["Level", str(sim.level)]])
+	_section(body, "Active abilities")
+	for slot in range(Catalog.ACTIVE_SLOTS):
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 12, 1, 12, 10))
+		body.add_child(panel)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		panel.add_child(row)
+		var text := VBoxContainer.new()
+		text.add_theme_constant_override("separation", 0)
+		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if slot >= sim.active_slots.size():
+			var slot_number := Kit.label(row, str(slot + 1), 17, Kit.DIM)
+			slot_number.custom_minimum_size.x = 36
+			row.add_child(text)
+			Kit.label(text, "Empty slot", 16, Kit.DIM)
+			Kit.label(text, "Draft an ability to fill it.", 15, Kit.DIM)
+			continue
+		var id: String = str(sim.active_slots[slot])
+		var badge := IconBadge.new()
+		badge.icon_id = id
+		badge.custom_minimum_size = Vector2(36, 36)
+		row.add_child(badge)
+		row.add_child(text)
+		var fused: Dictionary = sim.fusion_spec(id)
+		if not fused.is_empty():
+			var part_a: String = str(fused.parts[0])
+			var part_b: String = str(fused.parts[1])
+			Kit.label(text, str(fused.name), 17, Kit.VIOLET)
+			Kit.label(text, "Fused: %s rank %d + %s rank %d" % [sim.content.abilities[part_a].name, sim.upgrades[part_a], sim.content.abilities[part_b].name, sim.upgrades[part_b]], 15, Kit.MUTED, true)
+		else:
+			Kit.label(text, str(sim.content.abilities[id].name), 17, Color.WHITE)
+			Kit.label(text, "Rank %d of 10" % int(sim.upgrades[id]), 15, Kit.MUTED)
+	var pairs: Array = sim.active_passive_links()
+	if not pairs.is_empty():
+		_section(body, "Paired upgrades")
+		for i in range(pairs.size() if build_show_all else mini(3, pairs.size())):
+			_info_card(body, str(pairs[i].name), str(pairs[i].description), Kit.AMBER)
+		if not build_show_all and pairs.size() > 3:
+			Kit.label(body, "%d more in the full list below." % (pairs.size() - 3), 15, Kit.MUTED)
+	var combos: Array = sim.active_synergies()
+	if not combos.is_empty():
+		_section(body, "Build bonuses")
+		for combo in combos:
+			_info_card(body, str(combo.name), str(combo.description), Kit.CYAN)
+	if not sim.prototypes.is_empty():
+		_section(body, "Prototype")
+		for id in sim.prototypes:
+			var spec: Dictionary = sim.prototype_spec(str(id))
+			_info_card(body, str(spec.name), "Gain: %s\nCost: %s" % [spec.benefit, spec.cost], Kit.CYAN)
+	if not sim.route_choice.is_empty():
+		Kit.label(body, "Current route: " + _route_name(sim.route_choice), 16, Kit.CYAN)
+	_ui_button(body, "Hide full equipment list" if build_show_all else "Show weapons, systems and Hangar ranks", _toggle_build_details, "ghost", 44)
+	if build_show_all:
+		for group in [["WEAPON", "Automatic weapons"], ["SYSTEM", "Ship systems"]]:
+			_section(body, str(group[1]))
+			for entry in sim.content.cards:
+				if entry.tag == group[0] and int(sim.upgrades.get(entry.id, 0)) > 0:
+					_info_card(body, "%s  ·  rank %d/10" % [entry.name, sim.upgrades[entry.id]], str(entry.description), Kit.AMBER if group[0] == "WEAPON" else Color("9fcbff"))
+		_section(body, "Hangar ranks")
+		var hangar_lines := PackedStringArray()
+		for entry in Catalog.HANGAR:
+			var rank: int = int(sim.meta.get(entry.id, 0))
+			if rank > 0:
+				hangar_lines.append("%s  ·  rank %d" % [entry.name, rank])
+		Kit.label(body, "\n".join(hangar_lines) if not hangar_lines.is_empty() else "No Hangar upgrades yet.", 15, Kit.MUTED, true)
+	_keep_scroll(reading_scroll, prior)
+	var resume := _ui_button(reading_footer, "Back to pause" if build_return_mode == "paused" else "Resume", _toggle_pause, "primary", 54, true)
+	_ui_button(reading_footer, "Quit to title", _build_to_menu, "secondary", 54, true)
+	_focus(resume)
+
+func _route_name(id: String) -> String:
+	return str({"repair": "Repair", "overclock": "More damage", "bounty": "Bounty run"}.get(id, id.capitalize()))
+
+# ---------------------------------------------------------------------------
+# Boss down, intermission and results
+# ---------------------------------------------------------------------------
+
+func _big_stat(parent: Node, value: String, caption: String, color: Color) -> void:
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 0)
+	stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(stack)
+	var number := Kit.label(stack, value, 30, color)
+	number.add_theme_font_override("font", Kit.font(0, 0.6))
+	Kit.caps(stack, caption, Kit.MUTED, 12)
+
+func _show_stage_clear(reset_clock: bool = true) -> void:
+	if reset_clock:
+		stage_clear_clock = 0.0
+	mode = "stage_clear"
+	_save_run()
+	_clear_overlay()
+	var screen := get_viewport_rect().size
+	var inset := _insets()
+	var shade := ColorRect.new()
+	shade.color = Color(0.005, 0.012, 0.025, 0.22)
+	shade.size = screen
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(shade)
+	var is_final: bool = sim.stage == sim.stage_count()
+	var headline := VBoxContainer.new()
+	headline.position = Vector2(16, float(inset.top) + 10.0)
+	headline.size = Vector2(screen.x - 32, 0)
+	headline.add_theme_constant_override("separation", 2)
+	headline.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(headline)
+	var eyebrow := Kit.caps(headline, "Stage %d of %d cleared" % [sim.stage, sim.stage_count()], Kit.AMBER, 15)
+	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var title := Kit.label(headline, "%s destroyed" % sim.boss_name(), 32, Color.WHITE, true)
+	title.add_theme_font_override("font", Kit.font(0, 0.7))
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var panel := PanelContainer.new()
+	var style := Kit.box(Color(Color("0a1626"), 0.96), Kit.AMBER, 18, 2, 18, 16)
+	panel.add_theme_stylebox_override("panel", style)
+	overlay.add_child(panel)
+	var w := minf(520.0, screen.x - 24.0)
+	panel.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	panel.offset_left = -w * 0.5
+	panel.offset_right = w * 0.5
+	panel.offset_top = -float(inset.bottom) - 4.0
+	panel.offset_bottom = -float(inset.bottom) - 4.0
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	panel.add_child(content)
+	Kit.caps(content, str(sim.stage_spec().reward_label), Kit.AMBER, 14)
+	var stats := HBoxContainer.new()
+	stats.add_theme_constant_override("separation", 12)
+	content.add_child(stats)
+	_big_stat(stats, str(sim.payout()), "Cores so far", Kit.AMBER)
+	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
+	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
+	if is_final:
+		Kit.label(content, "All four stages cleared. Your full report is next.", 16, Kit.TEXT, true)
+	else:
+		var next: Dictionary = sim.content.stages[sim.stage]
+		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
+	stage_clear_button = _ui_button(content, "Claim victory" if is_final else "Warp to " + str(sim.stage_spec().transition).capitalize(), _begin_warp, "primary", 58)
+	stage_clear_button.disabled = stage_clear_clock < 1.2
+	if not stage_clear_button.disabled:
+		_focus(stage_clear_button)
+	if reset_clock:
+		sound.play("boss-explosion", -4.0)
+
+func _show_prototypes() -> void:
+	mode = "prototype"
+	_save_run()
+	var view := _page(0.95, true, 540.0)
+	_page_header(view.top, "Between stages  ·  step 1 of 2", "Pick a prototype")
+	Kit.label(view.top, "You keep it for the rest of the run. Every prototype has a cost.", 16, Kit.MUTED, true)
+	for i in range(sim.prototype_offers.size()):
+		var spec: Dictionary = sim.prototype_spec(str(sim.prototype_offers[i]))
+		var card := _tap_card(view.body, _choose_prototype.bind(i), Kit.CYAN)
+		card_buttons.append(card.button)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 8)
+		head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.content.add_child(head)
+		var title := Kit.label(head, str(spec.name), 19, Color.WHITE, true)
+		title.add_theme_font_override("font", Kit.font(0, 0.45))
+		_chip(head, str(spec.role).capitalize(), Kit.MUTED)
+		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
+	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
+	if not card_buttons.is_empty():
+		_focus(card_buttons[0])
+
+func _gain_cost(parent: Node, gain: String, cost: String) -> void:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 4)
+	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(grid)
+	for pair in [["Gain", gain, Kit.CYAN, Kit.TEXT], ["Cost", cost, Kit.AMBER, Color("ffd9b0")]]:
+		var tag := Kit.caps(grid, str(pair[0]), pair[2], 13)
+		tag.custom_minimum_size = Vector2(44, 23)
+		tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		tag.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		Kit.label(grid, str(pair[1]), 16, pair[3], true)
+
+func _show_route_choice() -> void:
+	mode = "route"
+	_save_run()
+	var view := _page(0.95, true, 540.0)
+	_page_header(view.top, "Between stages  ·  step 2 of 2", "Choose your route")
+	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
+	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
+	var routes := [
+		{"id": "repair", "tag": "Safe", "gain": "Repair 55% of hull. Shields refilled.", "cost": "No extra rewards.", "accent": Kit.CYAN},
+		{"id": "overclock", "tag": "Aggressive", "gain": "Automatic weapons deal 25% more damage next stage.", "cost": "Repair only 10% of hull. Shields start at 60%.", "accent": Kit.AMBER},
+		{"id": "bounty", "tag": "Risky", "gain": "+%d base cores if you beat the next boss. Repair 30%% of hull." % (20 * (sim.stage + 1)), "cost": "Enemies get 30% more health, damage and spawns.", "accent": Kit.DANGER},
+	]
+	for route in routes:
+		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
+		card_buttons.append(card.button)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 8)
+		head.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.content.add_child(head)
+		var title := Kit.label(head, _route_name(str(route.id)), 19, Color.WHITE, true)
+		title.add_theme_font_override("font", Kit.font(0, 0.45))
+		_chip(head, str(route.tag), route.accent)
+		_gain_cost(card.content, str(route.gain), str(route.cost))
+	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
+	if not card_buttons.is_empty():
+		_focus(card_buttons[0])
+
+func _show_results() -> void:
+	mode = "results"
+	var view := _page(1.0, true, 540.0)
+	var body: VBoxContainer = view.body
+	_page_header(view.top, "Stage %d of %d  ·  %s" % [sim.stage, sim.stage_count(), sim.difficulty.capitalize()], "Victory" if sim.won else "Ship destroyed")
+	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
+	var hero := PanelContainer.new()
+	hero.add_theme_stylebox_override("panel", Kit.box(Color("1b160f"), Color("4d3c22"), 16, 1, 16, 14))
+	body.add_child(hero)
+	var hero_row := HBoxContainer.new()
+	hero_row.add_theme_constant_override("separation", 12)
+	hero.add_child(hero_row)
+	hero_row.add_child(Kit.core_icon(30))
+	var earned := Kit.label(hero_row, "+%d" % sim.payout(), 40, Kit.AMBER)
+	earned.add_theme_font_override("font", Kit.font(0, 0.7))
+	var hero_text := VBoxContainer.new()
+	hero_text.add_theme_constant_override("separation", 0)
+	hero_text.alignment = BoxContainer.ALIGNMENT_CENTER
+	hero_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hero_row.add_child(hero_text)
+	Kit.label(hero_text, "cores earned", 16, Kit.TEXT)
+	Kit.label(hero_text, "%d in your wallet" % int(profile.cores), 15, Kit.MUTED)
+	_ui_button(body, "Spend them in the Hangar", _show_hangar, "amber", 48)
+	_tiles(body, [["Kills", str(sim.kills)], ["Stages", "%d/%d" % [sim.stage_clears, sim.stage_count()]], ["Abilities used", str(sim.ability_uses)]])
+	var build_lines := PackedStringArray()
+	for slot in sim.active_slots:
+		var fusion: Dictionary = sim.fusion_spec(str(slot))
+		if not fusion.is_empty():
+			build_lines.append("Fusion: " + str(fusion.name))
+	for link in sim.active_passive_links():
+		build_lines.append("Pair: " + str(link.name))
+	for combo in sim.active_synergies():
+		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
+	for id in sim.prototypes:
+		var spec: Dictionary = sim.prototype_spec(str(id))
+		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
+	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
+	if sim.bounty_earned > 0:
+		_info_card(body, "Bounty contracts", "%d base cores from bounty runs." % sim.bounty_earned, Kit.AMBER)
+	_info_card(body, "Ship at the end", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled], Color("9fcbff"))
+	var damage_lines := PackedStringArray()
+	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		var value: float = float(sim.damage_taken.get(kind, 0.0))
+		if value > 0.0:
+			var name: String = str({"ordnance": "Missiles", "hazard": "Hazards", "heavy": "Heavy beams"}.get(kind, kind.capitalize()))
+			damage_lines.append("%s   %.0f" % [name, value])
+	_info_card(body, "Damage taken", "\n".join(damage_lines) if not damage_lines.is_empty() else "No incoming damage recorded.", Kit.DANGER)
+	var weapons: Array = []
+	for key in sim.damage_dealt:
+		var value: float = float(sim.damage_dealt[key])
+		if value > 0:
+			weapons.append({"name": str(key).capitalize(), "damage": value})
+	weapons.sort_custom(func(a, b): return a.damage > b.damage)
+	var weapon_lines := PackedStringArray()
+	for i in range(mini(5, weapons.size())):
+		weapon_lines.append("%s   %.0f" % [weapons[i].name, weapons[i].damage])
+	_info_card(body, "Top weapons", "\n".join(weapon_lines) if not weapon_lines.is_empty() else "No weapon damage recorded.", Kit.AMBER)
+	var recap := PackedStringArray()
+	for i in range(sim.events.size() - 1, -1, -1):
+		var event: Dictionary = sim.events[i]
+		if event.time >= sim.time - 10.0 and recap.size() < 5:
+			recap.append("%.1fs before the end  ·  %s" % [sim.time - event.time, event.message])
+	_info_card(body, "Final ten seconds", "\n".join(recap) if not recap.is_empty() else "Nothing logged in the final ten seconds.", Kit.MUTED)
+	var again := _ui_button(reading_footer, "Fly again", _new_run, "primary", 56, true)
+	_ui_button(reading_footer, "Title", _show_menu, "secondary", 56, true)
+	_focus(again)
 
 func _new_run() -> void:
-	draft_page = 0
+	banish_mode = false
 	profile.runs += 1
 	build_show_all = false
 	_save_profile()
@@ -402,7 +1534,7 @@ func _new_run() -> void:
 	_start_flight()
 
 func _resume_run() -> void:
-	draft_page = 0
+	banish_mode = false
 	var state := services.read_save(Services.RUN)
 	sim = Simulation.new()
 	if not sim.restore(state):
@@ -489,9 +1621,13 @@ func _process(delta: float) -> void:
 				shake = maxf(shake, minf(4.0, effect.life * 9.0))
 	world.position = Vector2(sin(visual_time * 79), cos(visual_time * 83)) * shake
 	_update_hud()
-	build_button.visible = mode in ["playing", "paused", "build"]
-	pause_button.visible = mode in ["playing", "paused", "build"]
-	speed_button.visible = mode in ["playing", "paused", "build"]
+	draft_guard = maxf(0.0, draft_guard - delta)
+	# Combat chrome only shows while a flight is on screen; menus own the whole display.
+	var in_flight: bool = mode in ["playing", "paused", "warp"] or (mode == "settings" and sheet_base == "paused")
+	for control in [hud, status, build_button, pause_button, speed_button]:
+		control.visible = in_flight
+	for button in ability_buttons.values():
+		button.visible = in_flight
 	speed_button.text = str(game_speed) + "×"
 	queue_redraw()
 	world.queue_redraw()
@@ -540,101 +1676,6 @@ func _activate(id: String) -> void:
 		if not sim.cards.is_empty():
 			_show_cards()
 
-func _show_cards() -> void:
-	mode = "cards"
-	_save_run()
-	var compact := _compact_ui()
-	var page_size := 2 if compact else maxi(1, sim.cards.size())
-	var max_page: int = maxi(0, int(ceil(float(sim.cards.size()) / float(page_size))) - 1)
-	draft_page = clampi(draft_page, 0, max_page)
-	var first: int = draft_page * page_size
-	var last: int = mini(sim.cards.size(), first + page_size)
-	var view := _reading_screen(470)
-	var header: VBoxContainer = view.header
-	var body: VBoxContainer = view.body
-	var footer: HBoxContainer = view.footer
-	_label(header, "Pick an upgrade", 24, Color.WHITE)
-	_wrapped(header, "Level %d  |  Options %d-%d of %d" % [sim.level, first + 1, last, sim.cards.size()], 15, MUTED)
-	if sim.stage > 1 and sim.time - sim.stage_start < 1.0:
-		_wrapped(header, "Stage %d: %s" % [sim.stage, sim.stage_name()], 15, AMBER)
-	# No long four-choice column on phones. Two full-width cards per page.
-	if compact:
-		reading_scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	for i in range(first, last):
-		var card: Dictionary = sim.cards[i]
-		var id: String = str(card.id)
-		var current: int = int(sim.upgrades.get(id, 0))
-		var increment: int = 1 if card.tag == "ABILITY" and current == 0 else 2
-		var next_rank: int = mini(int(card.max), current + increment)
-		var heading: String = "%d. %s" % [i + 1, card.name]
-		var is_fusion: bool = card.tag == "ABILITY" and current == 0 and not sim.fusion_hint(id).is_empty()
-		var detail: String = "Fuses with equipped ability. One slot freed." if is_fusion else (("New ability  |  Slot %d of 4" % (sim.active_slots.size() + 1)) if card.tag == "ABILITY" and current == 0 else ("%s  |  Rank %d to %d" % [card.tag.capitalize(), current, next_rank]))
-		detail += "\n" + str(card.description)
-		if current < 10 and id != "repair":
-			var milestone: int = 5 if current < 5 else 10
-			detail += "\nRank %d: %s" % [milestone, str(card.get("rank5" if milestone == 5 else "rank10", ""))]
-		if card.tag == "ABILITY" and current == 0:
-			var fusion: String = sim.fusion_hint(id)
-			if not fusion.is_empty():
-				detail += "\nFuses into " + fusion.get_slice(":", 0) + ". Frees a slot."
-		elif card.tag in ["WEAPON", "SYSTEM"]:
-			var link: String = sim.passive_hint(id)
-			if not link.is_empty():
-				detail += "\nPair bonus: " + link.get_slice(":", 0)
-		var card_panel := _reading_card(body, heading, detail, CYAN if card.tag == "ABILITY" else AMBER)
-		var actions := HBoxContainer.new()
-		actions.add_theme_constant_override("separation", 8)
-		card_panel.get_child(0).add_child(actions)
-		var pick := _button(actions, "Take " + str(card.name), _choose.bind(i), i == first)
-		pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		pick.custom_minimum_size.y = 48
-		pick.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card_buttons.append(pick)
-		if sim.banishes_left > 0 and id != "repair":
-			var drop := _button(actions, "Remove", _draft_action.bind("banish", i))
-			drop.custom_minimum_size.y = 48
-			drop.tooltip_text = "Remove %s from this run's upgrade pool" % card.name
-	if compact and max_page > 0:
-		var prev := _reading_cta(footer, "Prev", _draft_page.bind(-1))
-		prev.disabled = draft_page == 0
-		var next := _reading_cta(footer, "Next", _draft_page.bind(1))
-		next.disabled = draft_page == max_page
-	if sim.rerolls_left > 0:
-		_reading_cta(footer, "Reroll", _draft_action.bind("reroll", 0))
-	if sim.skips_left > 0:
-		_reading_cta(footer, "Skip", _draft_action.bind("skip", 0))
-	if not card_buttons.is_empty():
-		card_buttons[0].grab_focus()
-	sound.play("card")
-
-func _draft_page(direction: int) -> void:
-	if mode != "cards":
-		return
-	draft_page = maxi(0, draft_page + direction)
-	_show_cards()
-
-
-func _draft_action(action: String, index: int) -> void:
-	var changed: bool = sim.reroll_cards() if action == "reroll" else (sim.banish_card(index) if action == "banish" else sim.skip_cards())
-	if not changed:
-		return
-	draft_page = 0
-	if sim.cards.is_empty():
-		mode = "playing"
-		_clear_overlay()
-		accumulator = -0.25
-		_save_run()
-	else:
-		_show_cards()
-
-func _choose(index: int) -> void:
-	if mode == "cards" and sim.choose_card(index):
-		draft_page = 0
-		_clear_overlay()
-		mode = "playing"
-		accumulator = -0.25
-		_save_run()
-
 func _toggle_pause() -> void:
 	if mode == "build":
 		if build_return_mode == "paused":
@@ -649,61 +1690,6 @@ func _toggle_pause() -> void:
 		mode = "playing"
 		_clear_overlay()
 		accumulator = 0.0
-
-func _show_pause() -> void:
-	mode = "paused"
-	_save_run()
-	var box := _panel()
-	_label(box, "Paused", 28, CYAN)
-	_wrapped(box, "Your ship, upgrades and cooldowns are saved.")
-	_button(box, "Continue flight", _toggle_pause, true).grab_focus()
-	_button(box, "Inspect build", _show_build)
-	_button(box, "Effects: " + ("on" if profile.sound else "off"), _toggle_sound)
-	_button(box, "Music: " + ("on" if profile.music else "off"), _toggle_music)
-	_button(box, "Glow: " + ("low" if profile.reduced else "full"), _toggle_fx)
-	_button(box, "Save & return to hangar", _show_menu)
-
-func _show_stage_clear(reset_clock: bool = true) -> void:
-	if reset_clock:
-		stage_clear_clock = 0.0
-	mode = "stage_clear"
-	_save_run()
-	_clear_overlay()
-	var screen := get_viewport_rect().size
-	var shade := ColorRect.new()
-	shade.color = Color(0.005, 0.012, 0.025, 0.19)
-	shade.size = screen
-	shade.mouse_filter = Control.MOUSE_FILTER_STOP
-	overlay.add_child(shade)
-	var layout := VBoxContainer.new()
-	layout.position = Vector2(14, 12)
-	layout.size = screen - Vector2(28, 26)
-	layout.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	overlay.add_child(layout)
-	var top := _wrapped(layout, "STAGE %d / 4  ·  %s DESTROYED" % [sim.stage, sim.boss_name().to_upper()], 22, AMBER)
-	top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var space := Control.new()
-	space.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	space.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layout.add_child(space)
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _style(Color("0a1726", 0.96), AMBER, 2))
-	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	layout.add_child(panel)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 9)
-	panel.add_child(content)
-	_wrapped(content, sim.stage_spec().reward_label.to_upper(), 21, AMBER)
-	_wrapped(content, "%d cores so far  |  %d enemies down\nCores are paid out when the run ends." % [sim.payout(), sim.kills], 16, Color.WHITE)
-	var next_text := "All four stages cleared. See how your run went." if sim.stage == sim.stage_count() else "Next: %s. Pick a prototype, then choose your next route." % sim.stage_spec().transition
-	_wrapped(content, next_text, 16, Color.WHITE)
-	stage_clear_button = _button(content, "Claim victory & see report" if sim.stage == sim.stage_count() else "Warp to " + str(sim.stage_spec().transition), _begin_warp, true)
-	stage_clear_button.disabled = stage_clear_clock < 1.2
-	stage_clear_button.custom_minimum_size.y = 58
-	if not stage_clear_button.disabled:
-		stage_clear_button.grab_focus()
-	if reset_clock:
-		sound.play("boss-explosion", -4.0)
 
 func _begin_warp() -> void:
 	if mode != "stage_clear" or stage_clear_clock < 1.2:
@@ -725,65 +1711,12 @@ func _complete_warp() -> void:
 		return
 	_show_prototypes()
 
-func _show_prototypes() -> void:
-	mode = "prototype"
-	_save_run()
-	var view := _reading_screen(540)
-	var header: VBoxContainer = view.header
-	var body: VBoxContainer = view.body
-	var footer: HBoxContainer = view.footer
-	_label(header, "Pick a prototype", 26, CYAN)
-	_wrapped(header, "Keep one of these for the rest of this run.", 15, Color.WHITE)
-	_wrapped(header, "Each has a downside. You only get one.", 14, AMBER)
-	var first: Button = null
-	for i in range(sim.prototype_offers.size()):
-		var id: String = str(sim.prototype_offers[i])
-		var spec: Dictionary = sim.prototype_spec(id)
-		var card := _reading_card(body, "%d  /  %s  [%s]" % [i + 1, spec.name, spec.role], "%s\nBENEFIT  %s\nTRADEOFF  %s" % [spec.description, spec.benefit, spec.cost], CYAN)
-		var content: VBoxContainer = card.get_child(0)
-		var choose := _button(content, "Take " + str(spec.name), _choose_prototype.bind(i), i == 0)
-		choose.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		choose.custom_minimum_size.y = 50
-		if first == null:
-			first = choose
-	_reading_cta(footer, "Save and exit", _show_menu)
-	if first != null:
-		first.grab_focus()
-
 func _choose_prototype(index: int) -> void:
 	if mode != "prototype" or not sim.choose_prototype(index):
 		return
 	sound.play("card")
 	_save_run()
 	_show_route_choice()
-
-func _show_route_choice() -> void:
-	mode = "route"
-	_save_run()
-	var view := _reading_screen(540)
-	var header: VBoxContainer = view.header
-	var body: VBoxContainer = view.body
-	var footer: HBoxContainer = view.footer
-	_label(header, "Choose the next route", 26, CYAN)
-	_wrapped(header, "NEXT: %s  ·  STAGE %d OF 4" % [sim.stage_spec().transition, sim.stage + 1], 15, Color.WHITE)
-	_wrapped(header, "Repair, hit harder, or take a harder stage for more cores.", 14, MUTED)
-	var routes := [
-		{"id":"repair", "name":"REPAIR", "text":"Repair 55% of hull and refill shields. No extra rewards.", "action":"Take repair"},
-		{"id":"overclock", "name":"MORE DAMAGE", "text":"Guns deal 25% more damage next stage. Repair just 10% hull and start with 60% shields.", "action":"Take damage"},
-		{"id":"bounty", "name":"BOUNTY RUN", "text":"Get +%d base cores if you beat the next boss. Enemies have 30%% more health, damage and spawns. Repair 30%% hull." % (20 * (sim.stage + 1)), "action":"Take bounty"}
-	]
-	var first: Button = null
-	for route in routes:
-		var card := _reading_card(body, str(route.name), str(route.text), AMBER if route.id == "bounty" else CYAN)
-		var content: VBoxContainer = card.get_child(0)
-		var button := _button(content, str(route.action), _choose_route.bind(str(route.id)), route.id == "repair")
-		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size.y = 52
-		if first == null:
-			first = button
-	_reading_cta(footer, "Save and exit", _show_menu)
-	if first != null:
-		first.grab_focus()
 
 func _choose_route(id: String) -> void:
 	if mode != "route" or not sim.choose_route(id):
@@ -815,185 +1748,6 @@ func _finish() -> void:
 		_save_profile()
 	services.delete_run()
 	_show_results()
-
-func _show_results() -> void:
-	mode = "results"
-	var view := _reading_screen(540)
-	var header: VBoxContainer = view.header
-	var body: VBoxContainer = view.body
-	var footer: HBoxContainer = view.footer
-	_label(header, "You made it" if sim.won else "Run over", 27, CYAN if sim.won else AMBER)
-	_wrapped(header, "Reached %s  ·  %s" % [sim.stage_name(), sim.difficulty.to_upper()], 17, Color.WHITE)
-	_wrapped(header, "Stage %d of %d  ·  %02d:%02d flight time" % [sim.stage, sim.stage_count(), int(sim.time) / 60, int(sim.time) % 60], 15, MUTED)
-	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated\nBase cores earned through bounty contracts: %d" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses, sim.bounty_earned], AMBER)
-	var build_lines := PackedStringArray()
-	for slot in sim.active_slots:
-		var fusion: Dictionary = sim.fusion_spec(str(slot))
-		if not fusion.is_empty():
-			build_lines.append("Fusion: " + str(fusion.name))
-	for link in sim.active_passive_links():
-		build_lines.append("Pair: " + str(link.name))
-	for combo in sim.active_synergies():
-		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
-	for id in sim.prototypes:
-		var spec: Dictionary = sim.prototype_spec(str(id))
-		build_lines.append(str(spec.name) + " - " + str(spec.benefit))
-	_reading_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No pairs or prototypes this time.", CYAN)
-	_reading_card(body, "FINAL SHIP STATUS", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled])
-	_label(body, "Damage taken", 19, AMBER)
-	var damage_lines := PackedStringArray()
-	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
-		var value: float = float(sim.damage_taken.get(kind, 0.0))
-		if value > 0.0:
-			var name: String = str({"ordnance":"Missiles", "hazard":"Hazards", "heavy":"Heavy beams"}.get(kind, kind.capitalize()))
-			damage_lines.append("%s   %.0f" % [name, value])
-	_reading_card(body, "INCOMING DAMAGE", "\n".join(damage_lines) if not damage_lines.is_empty() else "No incoming damage recorded.")
-	var weapons: Array = []
-	for key in sim.damage_dealt:
-		var value: float = float(sim.damage_dealt[key])
-		if value > 0:
-			weapons.append({"name":str(key).capitalize(), "damage":value})
-	weapons.sort_custom(func(a, b): return a.damage > b.damage)
-	var weapon_lines := PackedStringArray()
-	for i in range(mini(5, weapons.size())):
-		weapon_lines.append("%s   %.0f" % [weapons[i].name, weapons[i].damage])
-	_reading_card(body, "TOP WEAPONS", "\n".join(weapon_lines) if not weapon_lines.is_empty() else "No weapon damage recorded.")
-	_label(body, "Final seconds", 19, AMBER)
-	var recap := PackedStringArray()
-	for i in range(sim.events.size() - 1, -1, -1):
-		var event: Dictionary = sim.events[i]
-		if event.time >= sim.time - 10.0 and recap.size() < 5:
-			recap.append("%.1fs ago  ·  %s" % [sim.time - event.time, event.message])
-	_reading_card(body, "FLIGHT RECORDER", "\n".join(recap) if not recap.is_empty() else "No events during the final ten seconds.")
-	_button(body, "Visit Hangar  ·  %d cores available" % profile.cores, _show_hangar)
-	var again := _reading_cta(footer, "Fly again", _new_run, true)
-	_reading_cta(footer, "Main menu", _show_menu)
-	again.grab_focus()
-
-func _show_hangar() -> void:
-	mode = "hangar"
-	_clear_overlay()
-	var screen := get_viewport_rect().size
-	var compact := screen.x < 760
-	var shade := ColorRect.new()
-	shade.color = Color(0.015, 0.025, 0.045, 1.0)
-	shade.size = screen
-	overlay.add_child(shade)
-	var margin := MarginContainer.new()
-	margin.position = Vector2(18, 18)
-	margin.size = screen - Vector2(36, 36)
-	overlay.add_child(margin)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 12)
-	margin.add_child(layout)
-	var header := HBoxContainer.new()
-	layout.add_child(header)
-	var heading := VBoxContainer.new()
-	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(heading)
-	_label(heading, Catalog.ship(profile.ship).name.to_upper() + " / DOCK 07", 11, CYAN)
-	_label(heading, "Hangar", 34, Color.WHITE)
-	var wallet := VBoxContainer.new()
-	header.add_child(wallet)
-	_label(wallet, "%d" % profile.cores, 30, AMBER)
-	_label(wallet, "CORES", 11, MUTED)
-	var body: BoxContainer = VBoxContainer.new() if compact else HBoxContainer.new()
-	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_theme_constant_override("separation", 18)
-	layout.add_child(body)
-	var hero := VBoxContainer.new()
-	hero.custom_minimum_size.x = 0 if compact else 280
-	body.add_child(hero)
-	var bay := HangarBay.new()
-	bay.ship_id = profile.ship
-	bay.custom_minimum_size = Vector2(0 if compact else 280, 126 if compact else 290)
-	bay.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hero.add_child(bay)
-	_button(hero, "Pilots & ships · %s / %s" % [Catalog.ship(profile.ship).name, Catalog.pilot(profile.pilot).name], _show_loadout)
-	if not compact:
-		_label(hero, "Flight configuration", 20, Color.WHITE)
-		_wrapped(hero, "HULL  %d    SHIELD  %d\nWEAPON DAMAGE  +%d%%\nABILITY RECHARGE  +%d%%" % [int(Catalog.ship(profile.ship).hull) + profile.hangar.hull * 10, int(Catalog.ship(profile.ship).shield) + profile.hangar.shield * 8 + (20 if profile.pilot == "engineer" else 0), profile.hangar.damage * 8, profile.hangar.ability_cooldown * 3], 14, CYAN)
-		_wrapped(hero, "22 upgrade tracks plus permanent pilot and ship unlocks. Current suspended flights keep their original loadout.", 14)
-		_wrapped(hero, "Draft from 20 active abilities, with a maximum of four equipped at once.", 14)
-	var workshop := VBoxContainer.new()
-	workshop.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	workshop.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	body.add_child(workshop)
-	var tabs: Container = GridContainer.new() if compact else HBoxContainer.new()
-	if compact:
-		(tabs as GridContainer).columns = 3
-		tabs.add_theme_constant_override("h_separation", 4)
-		tabs.add_theme_constant_override("v_separation", 4)
-	else:
-		tabs.add_theme_constant_override("separation", 4)
-	workshop.add_child(tabs)
-	for group in Catalog.GROUPS:
-		var tab := _button(tabs, group, _hangar_tab.bind(group), group == hangar_category)
-		tab.custom_minimum_size = Vector2(0, 46 if compact else 38)
-		tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tab.add_theme_font_size_override("font_size", _text_size(11 if compact else 13))
-		for style in ["normal", "hover", "pressed", "disabled"]:
-			var box: StyleBoxFlat = tab.get_theme_stylebox(style).duplicate()
-			box.content_margin_left = 6
-			box.content_margin_right = 6
-			tab.add_theme_stylebox_override(style, box)
-	hangar_scroll = ScrollContainer.new()
-	hangar_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	hangar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	workshop.add_child(hangar_scroll)
-	var grid := GridContainer.new()
-	grid.columns = 1 if compact else 2
-	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 12)
-	hangar_scroll.add_child(grid)
-	var index := 0
-	for entry in Catalog.HANGAR:
-		if entry.group != hangar_category:
-			continue
-		index += 1
-		var bought: int = int(profile.hangar[entry.id])
-		var maxed: bool = bought >= int(entry.max)
-		var price := Catalog.price(entry.id, bought)
-		var panel := PanelContainer.new()
-		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		panel.custom_minimum_size.x = 0 if compact else 220
-		panel.add_theme_stylebox_override("panel", _style(Color("101f2b"), Color("49736b") if bought > 0 else Color("293d50")))
-		grid.add_child(panel)
-		var card := VBoxContainer.new()
-		card.add_theme_constant_override("separation", 8)
-		panel.add_child(card)
-		_label(card, "%02d   /   %s" % [index, entry.group.to_upper()], 10, AMBER)
-		var name_row := HBoxContainer.new()
-		card.add_child(name_row)
-		var badge := IconBadge.new()
-		badge.icon_id = entry.id
-		name_row.add_child(badge)
-		_wrapped(name_row, entry.name, 19, Color.WHITE)
-		_wrapped(card, entry.description, 13, MUTED)
-		var pips := HBoxContainer.new()
-		pips.add_theme_constant_override("separation", 4)
-		card.add_child(pips)
-		for tier in range(int(entry.max)):
-			var pip := ColorRect.new()
-			pip.color = CYAN if tier < bought else Color("23394a")
-			pip.custom_minimum_size = Vector2(20, 4)
-			pips.add_child(pip)
-		var buy := _button(card, "FULLY INSTALLED" if maxed else "Install · %d cores    %d / %d" % [price, bought, entry.max], _purchase.bind(entry.id))
-		buy.custom_minimum_size.y = 48 if compact else 38
-		buy.add_theme_font_size_override("font_size", _text_size(12))
-		buy.disabled = maxed or profile.cores < price
-	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 8)
-	layout.add_child(footer)
-	var launch := _button(footer, "Launch", _new_run, true)
-	launch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var refund := _button(footer, "Refund" if compact else "Refund · %d" % Catalog.refund(profile.hangar), _respec)
-	refund.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	refund.add_theme_font_size_override("font_size", _text_size(13))
-	var back := _button(footer, "Back", _show_menu)
-	back.add_theme_font_size_override("font_size", _text_size(13))
-	launch.grab_focus()
 
 func _hangar_tab(group: String) -> void:
 	hangar_category = group
@@ -1037,7 +1791,9 @@ func _toggle_fx() -> void:
 	_refresh_panel()
 
 func _refresh_panel() -> void:
-	if mode == "menu":
+	if mode == "settings":
+		_show_settings()
+	elif mode == "menu":
 		_show_menu()
 	elif mode == "paused":
 		_show_pause()
@@ -1064,7 +1820,7 @@ func _notification(what: int) -> void:
 func _input(event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
-	if event.keycode in [KEY_ESCAPE, KEY_P]:
+	if event.keycode in [KEY_ESCAPE, KEY_P] and mode in ["playing", "paused", "build"]:
 		_toggle_pause()
 		get_viewport().set_input_as_handled()
 	elif mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
@@ -1082,10 +1838,16 @@ func _input(event: InputEvent) -> void:
 			_activate_slot(0 if event.keycode == KEY_SPACE else event.keycode - KEY_1)
 			get_viewport().set_input_as_handled()
 	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
-		var local_choice: int = event.keycode - KEY_1
-		# Number keys on a paged phone draft may only choose the visible hand.
-		if not _compact_ui() or local_choice < 2:
-			_choose(draft_page * 2 + local_choice if _compact_ui() else local_choice)
+		_choose(event.keycode - KEY_1)
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ESCAPE and mode in ["settings", "briefing", "abandon"]:
+		_close_sheet()
+		get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ESCAPE and mode in ["hangar", "loadout"]:
+		if mode == "loadout":
+			_loadout_back()
+		else:
+			_show_menu()
 		get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -1125,76 +1887,6 @@ func _cycle_speed() -> void:
 	_save_profile()
 	speed_button.text = str(game_speed) + "×"
 
-func _show_build() -> void:
-	if mode not in ["playing", "paused", "build"]:
-		return
-	if mode in ["playing", "paused"]:
-		build_return_mode = mode
-	mode = "build"
-	_save_run()
-	var view := _reading_screen(540)
-	var header: VBoxContainer = view.header
-	var body: VBoxContainer = view.body
-	var footer: HBoxContainer = view.footer
-	_label(header, "Build", 26, CYAN)
-	_wrapped(header, "%s / %s  |  Stage %d  |  Level %d" % [Catalog.ship(sim.ship_id).name, Catalog.pilot(sim.pilot_id).name, sim.stage, sim.level], 15, Color.WHITE)
-	_reading_card(body, "Ship", "Hull %d/%d  |  Shield %d/%d  |  %d of 4 slots" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.active_slots.size()])
-	_label(body, "Active abilities", 18, AMBER)
-	for slot in range(Catalog.ACTIVE_SLOTS):
-		if slot >= sim.active_slots.size():
-			_wrapped(body, "%d. Empty slot" % (slot + 1), 16)
-			continue
-		var id: String = str(sim.active_slots[slot])
-		var fused: Dictionary = sim.fusion_spec(id)
-		if not fused.is_empty():
-			var part_a: String = str(fused.parts[0])
-			var part_b: String = str(fused.parts[1])
-			_wrapped(body, "%d. %s (fused)\n    %s rank %d + %s rank %d" % [slot + 1, fused.name, sim.content.abilities[part_a].name, sim.upgrades[part_a], sim.content.abilities[part_b].name, sim.upgrades[part_b]], 16, CYAN)
-		else:
-			_wrapped(body, "%d. %s  |  Rank %d of 10" % [slot + 1, sim.content.abilities[id].name, sim.upgrades[id]], 16, CYAN)
-	var pairs: Array = sim.active_passive_links()
-	if not pairs.is_empty():
-		_label(body, "Paired upgrades", 18, AMBER)
-		for i in range(pairs.size() if build_show_all else mini(3, pairs.size())):
-			_wrapped(body, str(pairs[i].name) + ": " + str(pairs[i].description), 15)
-		if not build_show_all and pairs.size() > 3:
-			_wrapped(body, "%d more pairs. Open details to see them." % (pairs.size() - 3), 15)
-	var combos: Array = sim.active_synergies()
-	if not combos.is_empty():
-		_label(body, "Build bonuses", 18, AMBER)
-		for combo in combos:
-			_wrapped(body, str(combo.name).capitalize() + ": " + str(combo.description), 15)
-	if not sim.prototypes.is_empty():
-		_label(body, "PROTOTYPES", 18, AMBER)
-		for id in sim.prototypes:
-			var spec: Dictionary = sim.prototype_spec(str(id))
-			_wrapped(body, str(spec.name) + ": " + str(spec.benefit) + ". Cost: " + str(spec.cost), 15)
-	if not sim.route_choice.is_empty():
-		_wrapped(body, "Current route: " + sim.route_choice.capitalize(), 15, CYAN)
-	_button(body, "Hide equipment details" if build_show_all else "Show weapons, systems and Hangar", _toggle_build_details)
-	if build_show_all:
-		_label(body, "Automatic weapons", 18, AMBER)
-		for entry in sim.content.cards:
-			if entry.tag == "WEAPON" and int(sim.upgrades.get(entry.id, 0)) > 0:
-				_wrapped(body, "%s  |  Rank %d/10\n%s" % [entry.name, sim.upgrades[entry.id], entry.description], 15)
-		_label(body, "Ship systems", 18, AMBER)
-		for entry in sim.content.cards:
-			if entry.tag == "SYSTEM" and int(sim.upgrades.get(entry.id, 0)) > 0:
-				_wrapped(body, "%s  |  Rank %d/10\n%s" % [entry.name, sim.upgrades[entry.id], entry.description], 15)
-		_label(body, "Hangar upgrades", 18, AMBER)
-		var hangar_count := 0
-		for entry in Catalog.HANGAR:
-			var rank: int = int(sim.meta.get(entry.id, 0))
-			if rank > 0:
-				hangar_count += 1
-				_wrapped(body, "%s  |  Rank %d" % [entry.name, rank], 15)
-		if hangar_count == 0:
-			_wrapped(body, "No Hangar upgrades yet.", 15)
-	var resume := _reading_cta(footer, "Back to pause" if build_return_mode == "paused" else "Resume", _toggle_pause, true)
-	_reading_cta(footer, "Main menu", _build_to_menu)
-	resume.grab_focus()
-
-
 func _toggle_build_details() -> void:
 	build_show_all = not build_show_all
 	_show_build()
@@ -1205,46 +1897,6 @@ func _build_to_menu() -> void:
 	_save_run()
 	_show_menu()
 
-
-func _show_loadout() -> void:
-	mode = "loadout"
-	var box := _panel(540)
-	_label(box, "FLIGHT CREW & FLEET", 26, CYAN)
-	_wrapped(box, "Unlocks are permanent. Equip one ship and one pilot; both apply to your next new flight. Suspended runs remain unchanged.", 13)
-	_label(box, "AVAILABLE CORES  %d" % profile.cores, 17, AMBER)
-	var nav := HBoxContainer.new()
-	box.add_child(nav)
-	_button(nav, "‹ Hangar", _show_hangar)
-	var tabs := HBoxContainer.new()
-	box.add_child(tabs)
-	for tab in ["Ships", "Pilots"]:
-		var button := _button(tabs, tab, _loadout_tab.bind(tab), tab == loadout_tab)
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var entries: Array = Catalog.SHIPS if loadout_tab == "Ships" else Catalog.PILOTS
-	var key := "ship" if loadout_tab == "Ships" else "pilot"
-	var owned_key := "ships_owned" if loadout_tab == "Ships" else "pilots_owned"
-	for entry in entries:
-		var panel := PanelContainer.new()
-		panel.add_theme_stylebox_override("panel", _style(Color("152435"), CYAN if profile[key] == entry.id else Color("314458")))
-		box.add_child(panel)
-		var row := HBoxContainer.new()
-		panel.add_child(row)
-		var badge := IconBadge.new()
-		badge.icon_id = entry.id
-		badge.custom_minimum_size = Vector2(42, 42)
-		row.add_child(badge)
-		var details := VBoxContainer.new()
-		details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(details)
-		_label(details, entry.name, 17, Color.WHITE)
-		_wrapped(details, entry.description, 12)
-		var is_owned: bool = entry.id in profile[owned_key]
-		var equipped: bool = profile[key] == entry.id
-		var label_text := "EQUIPPED" if equipped else ("EQUIP" if is_owned else "UNLOCK · %d" % entry.cost)
-		var choose := _button(details, label_text, _select_loadout.bind(key, entry.id))
-		choose.custom_minimum_size.y = 36
-		choose.disabled = equipped or (not is_owned and profile.cores < int(entry.cost))
-	_button(box, "Back to Hangar", _show_hangar, true).grab_focus()
 
 func _loadout_tab(value: String) -> void:
 	loadout_tab = value
@@ -1280,5 +1932,5 @@ func _draw() -> void:
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
 		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "S T A R / R U N", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, CYAN)
-		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  0.5", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
