@@ -636,6 +636,10 @@ func _test_prototype_and_route_choices() -> void:
 	check(risk.enemies[0].hp > baseline.enemies[0].hp, "Risk contract must have meaningfully stronger enemies")
 	risk.enemies.clear()
 	risk._spawn_boss()
+	var baseline_boss := Sim.new(889)
+	baseline_boss.stage = 3
+	baseline_boss._spawn_boss()
+	check(risk.enemies[0].max_hp > baseline_boss.enemies[0].max_hp and risk.enemies[1].max_hp > baseline_boss.enemies[1].max_hp, "High-risk contracts must increase both boss core and module durability")
 	risk._damage_enemy(risk.enemies[0], 1000000.0, "pulse")
 	check(risk.bounty_earned == 60 and risk.bonus_cores >= 60, "Bounties must pay only when the risked next-stage boss is beaten")
 	var clock := Sim.new(890)
@@ -651,6 +655,11 @@ func _test_prototype_and_route_choices() -> void:
 	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time"]:
 		legacy.erase(key)
 	check(Sim.new().restore(legacy), "An older v0.5 flight without strategic fields must remain resumable")
+	var safeguard := Sim.new(891)
+	safeguard.prototypes = ["emergency_safeguard"]
+	safeguard.safeguard_used = true
+	safeguard._spawn_boss()
+	check(safeguard.safeguard_used, "Emergency Safeguard must not reset when the boss spawns during the same stage")
 
 func _test_new_stage_threats() -> void:
 	var sim := Sim.new(707)
