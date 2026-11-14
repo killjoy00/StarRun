@@ -1,5 +1,5 @@
 {
-  "version": 5,
+  "version": 6,
   "duration": 300,
   "boss_at": 240,
   "abilities": {
@@ -532,5 +532,180 @@
       "transition": "",
       "reward_label": "Citadel conquered"
     }
-  ]
+  ],
+  "prototypes": [
+    {
+      "id": "bastion_lattice",
+      "name": "Bastion Lattice",
+      "role": "FORTRESS",
+      "description": "Shield regeneration +40%. Automatic weapon damage -12%.",
+      "benefit": "+40% shield regen",
+      "cost": "-12% weapon damage"
+    },
+    {
+      "id": "volatile_core",
+      "name": "Volatile Core",
+      "role": "ASSAULT",
+      "description": "Automatic weapon damage +30%. Hull damage taken +25%.",
+      "benefit": "+30% weapon damage",
+      "cost": "+25% incoming hull damage"
+    },
+    {
+      "id": "null_harmonics",
+      "name": "Null Harmonics",
+      "role": "CONTROL",
+      "description": "Ability cooldowns -22%. Automatic weapon damage -12%.",
+      "benefit": "-22% ability cooldown",
+      "cost": "-12% weapon damage"
+    },
+    {
+      "id": "salvage_charter",
+      "name": "Salvage Charter",
+      "role": "SALVAGE",
+      "description": "Earn +35% cores from the run. Automatic weapon damage -15%.",
+      "benefit": "+35% total cores",
+      "cost": "-15% weapon damage"
+    },
+    {
+      "id": "breach_optics",
+      "name": "Breach Optics",
+      "role": "BOSS HUNTER",
+      "description": "Deal +70% damage to boss components. Deal -10% damage to other targets.",
+      "benefit": "+70% damage to boss modules",
+      "cost": "-10% other damage"
+    },
+    {
+      "id": "mirror_cell",
+      "name": "Mirror Cell",
+      "role": "FORTRESS",
+      "description": "Shield maximum +30% immediately. Ability cooldowns +15%.",
+      "benefit": "+30% shield capacity",
+      "cost": "+15% ability cooldown"
+    },
+    {
+      "id": "echo_coil",
+      "name": "Echo Coil",
+      "role": "ASSAULT",
+      "description": "Active ability damage +40%. Ability cooldowns +18%.",
+      "benefit": "+40% active damage",
+      "cost": "+18% cooldown"
+    },
+    {
+      "id": "emergency_safeguard",
+      "name": "Emergency Safeguard",
+      "role": "DEFENSE",
+      "description": "First shield break each stage instantly restores 30 shield. Weapon damage -10%.",
+      "benefit": "30 shield on first break per stage",
+      "cost": "-10% weapon damage"
+    }
+  ],
+  "synergies": [
+    {
+      "id": "fortress",
+      "name": "FORTRESS",
+      "first": [
+        "aegis"
+      ],
+      "second": [
+        "capacitor",
+        "barrier",
+        "deflector",
+        "mend"
+      ],
+      "description": "Shield regen +60% and incoming hull damage -15%; weapon damage -18%."
+    },
+    {
+      "id": "assault",
+      "name": "GLASS CANNON",
+      "first": [
+        "overdrive",
+        "focus"
+      ],
+      "second": [
+        "strike",
+        "barrage",
+        "overload"
+      ],
+      "description": "Weapon damage +28% and ability damage +20%; incoming hull damage +28%."
+    },
+    {
+      "id": "control",
+      "name": "CONTROL",
+      "first": [
+        "emp",
+        "chrono",
+        "jammer"
+      ],
+      "second": [
+        "nova",
+        "flak",
+        "prism",
+        "decoy"
+      ],
+      "description": "Ability cooldowns -18% and enemy bullets slow 12%; weapon damage -12%."
+    },
+    {
+      "id": "salvager",
+      "name": "SALVAGER",
+      "first": [
+        "salvage"
+      ],
+      "second": [
+        "siphon",
+        "reboot",
+        "mend"
+      ],
+      "description": "Run payout +25% and salvaged kills earn more cores; weapon damage -18%."
+    }
+  ],
+  "boss_modules": {
+    "boss2": [
+      {
+        "role": "launch_bay",
+        "name": "Port Launch Bay",
+        "offset_x": -88,
+        "offset_y": 27,
+        "hp": 1800
+      },
+      {
+        "role": "launch_bay",
+        "name": "Starboard Launch Bay",
+        "offset_x": 88,
+        "offset_y": 27,
+        "hp": 1800
+      }
+    ],
+    "boss3": [
+      {
+        "role": "vent",
+        "name": "Port Cooling Vent",
+        "offset_x": -65,
+        "offset_y": 39,
+        "hp": 2450
+      },
+      {
+        "role": "vent",
+        "name": "Starboard Cooling Vent",
+        "offset_x": 65,
+        "offset_y": 39,
+        "hp": 2450
+      }
+    ],
+    "boss4": [
+      {
+        "role": "pylon",
+        "name": "Left Shield Pylon",
+        "offset_x": -105,
+        "offset_y": 14,
+        "hp": 2900
+      },
+      {
+        "role": "pylon",
+        "name": "Right Shield Pylon",
+        "offset_x": 105,
+        "offset_y": 14,
+        "hp": 2900
+      }
+    ]
+  }
 }
