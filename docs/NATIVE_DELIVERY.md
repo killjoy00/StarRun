@@ -1,12 +1,12 @@
 # Native delivery and human playtest gates
 
-**Updated for StarRun v0.7.0 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Updated for StarRun v0.7.2 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
 The StarRun repo has deterministic 60 Hz simulation, save/checkpoint regression tests, strict Godot script parse checks, phone-layout UAT checks, and Web/Windows/Linux playable exports in GitHub Actions. A native iPhone Xcode project is compiled without signing in StarRun CI.
 
-The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.7.0 (build 1007)** upload succeeded in the [shared TestFlight workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43546788036), using immutable source commit `c9ea98f205dca4ae175f02d84cae0c277f17acde`. This verifies signing and delivery to App Store Connect, **not** Apple processing, tester assignment, physical-device usability, ads or any purchase integration.
+The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.7.2 (build 1008)** upload succeeded in the [shared TestFlight workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43554473009), using immutable source commit `e0a4697f7ca7b11879c0673adc9e47471dcaa6b5`. The source includes both the separate menu redesign in PR #12 and the combat readability/reroll pass in PR #13. This verifies signing and delivery to App Store Connect, **not** Apple processing, tester assignment, physical-device usability, ads or any purchase integration.
 
 No Vercel dependency is required. CI prevents nonfatal Godot parser errors from slipping through an otherwise green iOS export.
 
@@ -46,4 +46,4 @@ With one fixed signature and up to three drafted actives, players should be able
 This release includes the menu redesign from PR #12 (merged at `7cf7c42`) plus
 combat readability, immediate fusion/rank milestone cues and the permanent
 per-stage reroll correction. See [ART_AUDIO.md](ART_AUDIO.md#combat-readability--november-13-2026-central)
-for behavior and verification. Signing/upload status is recorded after delivery.
+for behavior and verification. **Build 1008 was signed and uploaded successfully on November 13, 2026 at 10:03 p.m. Central.** The upload log confirms `Upload succeeded` and `EXPORT SUCCEEDED`. Apple reported the package was processing; tester availability has not been independently confirmed. The release passed 584 simulation assertions, 209 layout checks, 85 rendered visual checks, all playable exports and the native iPhone compile.
