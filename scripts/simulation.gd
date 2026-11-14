@@ -42,6 +42,15 @@ var corrosion_left := 0.0
 var heat_left := 0.0
 var gravity_left := 0.0
 var last_boss_position := Vector2(270, 135)
+var boss_spawn_time := 0.0
+var prototypes: Array = []
+var prototype_offers: Array = []
+var intermission_step := "" # "", "prototype", "route", "ready"
+var route_choice := ""
+var stage_power := 1.0
+var stage_risk := 1.0
+var bounty_earned := 0
+var safeguard_used := false
 var bonus_cores := 0
 var mend_left := 0.0
 var mend_rate := 0.0
@@ -182,7 +191,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
-	if ended or stage_transition_queued or not cards.is_empty():
+	if ended or stage_transition_queued or not intermission_step.is_empty() or not cards.is_empty():
 		return
 	tick += 1
 	time = tick * DT
@@ -218,7 +227,7 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale())
+		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -248,6 +257,114 @@ func stage_count() -> int:
 
 func _enemy_limit() -> int:
 	return 20 + (stage - 1) * 5
+
+func _has_prototype(id: String) -> bool:
+	return id in prototypes
+
+func active_synergies() -> Array:
+	var found: Array = []
+	for spec in content.synergies:
+		var has_first := false
+		var has_second := false
+		for id in spec.first:
+			if id in active_slots:
+				has_first = true
+		for id in spec.second:
+			if id in active_slots:
+				has_second = true
+		if has_first and has_second:
+			found.append(spec)
+	return found
+
+func synergy_active(id: String) -> bool:
+	for item in active_synergies():
+		if str(item.id) == id:
+			return true
+	return false
+
+func synergy_hint(ability: String) -> String:
+	if ability in active_slots:
+		return ""
+	for spec in content.synergies:
+		if synergy_active(str(spec.id)):
+			continue
+		var belongs_first: bool = ability in spec.first
+		var belongs_second: bool = ability in spec.second
+		if (belongs_first and spec.second.any(func(id): return id in active_slots)) or (belongs_second and spec.first.any(func(id): return id in active_slots)):
+			return str(spec.name) + ": " + str(spec.description)
+	return ""
+
+func _alive_modules(role: String = "") -> int:
+	var count := 0
+	for enemy in enemies:
+		if enemy.kind == "boss_module" and enemy.hp > 0.0 and (role.is_empty() or str(enemy.role) == role):
+			count += 1
+	return count
+
+func _boss_core() -> Dictionary:
+	for enemy in enemies:
+		if str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"] and enemy.hp > 0.0:
+			return enemy
+	return {}
+
+func boss_phase_label() -> String:
+	if not boss_spawned:
+		return ""
+	if stage == 1:
+		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
+	if stage == 2:
+		return "LAUNCH BAYS ONLINE" if _alive_modules("launch_bay") > 0 else "LAUNCH BAYS DESTROYED"
+	if stage == 3:
+		if _alive_modules("vent") == 0:
+			return "CORE EXPOSED - VENTS DESTROYED"
+		return "CORE EXPOSED" if floori((time - boss_spawn_time) / 9.0) % 2 == 1 else "FURNACE SEALED - TARGET VENTS"
+	if stage == 4:
+		if _alive_modules("pylon") > 0:
+			return "SHIELD PYLONS ACTIVE"
+		var core: Dictionary = _boss_core()
+		return "FINAL ONSLAUGHT" if not core.is_empty() and float(core.hp) / float(core.max_hp) < 0.35 else "CORE SHIELD DOWN"
+	return ""
+
+func begin_intermission() -> bool:
+	if not stage_transition_queued or stage >= stage_count() or not intermission_step.is_empty():
+		return false
+	var available: Array = []
+	for spec in content.prototypes:
+		if spec.id not in prototypes:
+			available.append(str(spec.id))
+	prototype_offers.clear()
+	while prototype_offers.size() < mini(3, available.size()):
+		prototype_offers.append(available.pop_at(rng.randi_range(0, available.size() - 1)))
+	intermission_step = "prototype"
+	return true
+
+func prototype_spec(id: String) -> Dictionary:
+	for spec in content.prototypes:
+		if spec.id == id:
+			return spec
+	return {}
+
+func choose_prototype(index: int) -> bool:
+	if intermission_step != "prototype" or index < 0 or index >= prototype_offers.size():
+		return false
+	var id: String = str(prototype_offers[index])
+	if id in prototypes or prototype_spec(id).is_empty():
+		return false
+	prototypes.append(id)
+	if id == "mirror_cell":
+		max_shield *= 1.3
+		shield = minf(max_shield, shield + max_shield * 0.3)
+	intermission_step = "route"
+	_log("Prototype installed: " + str(prototype_spec(id).name))
+	return true
+
+func choose_route(id: String) -> bool:
+	if intermission_step != "route" or id not in ["repair", "overclock", "bounty"]:
+		return false
+	route_choice = id
+	intermission_step = "ready"
+	_log("Warp route selected: " + id)
+	return true
 
 func _spawn_enemy() -> void:
 	if enemies.size() >= _enemy_limit():
@@ -292,7 +409,7 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale()
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
@@ -310,6 +427,8 @@ func _spawn_hazard() -> void:
 
 func _spawn_boss() -> void:
 	boss_spawned = true
+	boss_spawn_time = time
+	safeguard_used = false
 	enemies.clear()
 	bullets.clear()
 	charges.clear()
@@ -318,38 +437,56 @@ func _spawn_boss() -> void:
 	heavy_ready_at = time + 3.0
 	var spec := stage_spec()
 	var hp := float(spec.boss_hp) * threat_scale()
-	enemies.append({"id": next_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
+	var boss_id: int = next_id
+	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
-	_log(str(spec.boss_name) + " arrived · shield refilled, +15 hull")
+	for part in content.boss_modules.get(str(spec.boss), []):
+		var part_hp: float = float(part.hp) * threat_scale()
+		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
+		next_id += 1
+	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
 
 func advance_stage() -> bool:
 	if not stage_transition_queued or stage_clears != stage:
 		return false
-	stage_transition_queued = false
 	if stage >= stage_count():
+		stage_transition_queued = false
 		ended = true
 		won = true
-		_log("The Citadel has fallen · full run complete")
+		_log("The Citadel has fallen - full run complete")
 		return true
+	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
+		return false
 	stage += 1
 	stage_start = time
 	boss_spawned = false
+	boss_spawn_time = 0.0
+	stage_transition_queued = false
+	intermission_step = ""
+	prototype_offers.clear()
 	enemies.clear()
 	bullets.clear()
 	shots.clear()
 	charges.clear()
 	effects.clear()
-	shield = max_shield
-	hull = minf(max_hull, hull + max_hull * 0.30)
+	stage_power = 1.25 if route_choice == "overclock" else 1.0
+	stage_risk = 1.30 if route_choice == "bounty" else 1.0
+	var repair_fraction := 0.55 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.30)
+	hull = minf(max_hull, hull + max_hull * repair_fraction)
+	shield = max_shield * (0.60 if route_choice == "overclock" else 1.0)
+	safeguard_used = false
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
 	pending_levels += 1
-	_log("STAGE %d · %s · NEW THREATS" % [stage, stage_name()])
+	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	return true
 
-# Preserve older gameplay checks that explicitly advance the first stage.
+# Historical test shim; regular gameplay always uses both decisions.
 func _enter_stage_two() -> void:
+	if begin_intermission():
+		choose_prototype(0)
+		choose_route("repair")
 	advance_stage()
 
 func _update_enemies() -> void:
@@ -934,7 +1071,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
