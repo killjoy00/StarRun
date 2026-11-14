@@ -63,7 +63,10 @@ func _run() -> void:
 		print("UI size physical=%s logical=%s" % [str(dimensions), str(logical)])
 		check(scene.field.position.x >= 0 and scene.field.end.x <= logical.x, "Playfield must fit horizontally")
 		check(scene.ability_a.get_global_rect().end.y <= logical.y, "Controls must fit below playfield")
-		check(scene.ability_a.get_global_rect().end.x <= scene.ability_b.position.x, "Ability labels must not overlap at phone sizes")
+		check(scene.ability_a.get_global_rect().end.x <= scene.ability_b.position.x, "Ability buttons must not overlap")
+		if logical.x < 760:
+			check(scene.ability_buttons[0].position.y == scene.ability_buttons[3].position.y, "All four combat buttons should share one row on phones")
+			check(scene.ability_buttons[0].size.x >= 75.0, "Phone combat buttons need usable width")
 		for button in scene.ability_buttons.values():
 			check(button.get_global_rect().end.y <= logical.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= logical.x, "Four equipped ability buttons must fit phone and desktop screens")
 		check(scene.pause_button.get_global_rect().end.y < scene.field.position.y, "Pause must fit above the playfield")
@@ -124,13 +127,23 @@ func _run() -> void:
 		scene.sim._offer_cards()
 		scene._show_cards()
 		await process_frame
-		check(scene.card_buttons.size() == 4, "Four-card drafts must render all choices alongside draft tools")
+		check(scene.card_buttons.size() == (2 if logical.x < 760 else 4), "Phone draft should show two readable cards per page, desktop all four")
+		if logical.x < 760:
+			check(scene.reading_scroll.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Phone drafts should not need long vertical scrolling")
+			var first_card_text: String = scene.card_buttons[0].text
+			scene._draft_page(1)
+			await process_frame
+			check(scene.draft_page == 1 and scene.card_buttons.size() == 2 and scene.card_buttons[0].text != first_card_text, "Next button must reveal the other two choices without changing the hand")
+			scene._draft_page(-1)
+			await process_frame
+			check(scene.draft_page == 0 and scene.card_buttons[0].text == first_card_text, "Previous button must return to the same choices")
 		scene.sim.cards.clear()
 		scene._new_run()
 		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
 		scene._show_build()
 		await process_frame
 		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")
+		check(_contains_text(scene.reading_scroll, "Active abilities"), "Build should show equipped buttons before the optional long equipment list")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Build summary must fit and wrap on mobile")
 		check(scene.reading_scroll.size.y > 100, "Build cards must scroll in usable area")
 		for control in scene.reading_footer.get_children():
