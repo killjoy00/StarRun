@@ -750,6 +750,7 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 
 func _update_bullets() -> void:
 	var ship := ship_position()
+	var control_pace: float = 0.88 if synergy_active("control") else 1.0
 	for bullet in bullets:
 		if bullet.kind == "ordnance":
 			var target := Vector2(70 if ship.x > 270 else 470, 700) if decoy_left > 0.0 else ship
@@ -761,7 +762,7 @@ func _update_bullets() -> void:
 				if bullet.p.distance_to(ship) < (105.0 if bullet.kind == "slag" else 83.0):
 					_hit(bullet.damage, "hazard", "Molten slag" if bullet.kind == "slag" else "Proximity mine")
 				bullet.hp = 0.0
-		var bullet_pace: float = (0.45 if chrono_left > 0 else 1.0) * (0.88 if synergy_active("control") else 1.0)
+		var bullet_pace: float = (0.45 if chrono_left > 0 else 1.0) * control_pace
 		bullet.p += bullet.v * DT * bullet_pace
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
@@ -869,7 +870,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "boss_module":
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if salvage_left > 0.0:
-		bonus_cores += 1 + int(upgrades.salvage / 2)
+		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
 	var is_boss: bool = str(enemy.kind).begins_with("boss")
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
@@ -1079,12 +1080,17 @@ func _offer_cards(consume_level: bool = true) -> void:
 	while cards.size() < 3 + int(meta.extra_card) and not pool.is_empty():
 		var index := rng.randi_range(0, pool.size() - 1)
 		cards.append(pool.pop_at(index))
-	# Offer a new active at levels 2, 4 and 6 until all four slots are filled.
+	# At every even early level, show a discoverable synergy partner alongside
+	# independent upgrades. No automatic installation or extra active slot.
 	if active_slots.size() < Catalog.ACTIVE_SLOTS and level % 2 == 0:
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
 			cards[-1] = learnable[rng.randi_range(0, learnable.size() - 1)]
+		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and not synergy_hint(str(c.id)).is_empty())
+		var partners := learnable.filter(func(c): return not synergy_hint(str(c.id)).is_empty())
+		if not has_partner and not partners.is_empty():
+			cards[0] = partners[rng.randi_range(0, partners.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
 		var has_defense := false
 		for card in cards:
