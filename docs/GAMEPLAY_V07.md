@@ -1,6 +1,6 @@
 # StarRun v0.7: equipment pairs, stronger upgrades, easier phone controls
 
-**State:** implemented on the v0.7 branch for testing. Keep separate from the public build until Godot, replay, UI and unsigned iPhone checks pass. Signed TestFlight and real-device acceptance are separate release gates.
+**State (November 13, 2026 Central):** merged into `main` in [PR #10](https://github.com/killjoy00/StarRun/pull/10), commit `c9ea98f205dca4ae175f02d84cae0c277f17acde`. Passed 409 simulation assertions, 173 responsive UI checks, strict parsing, Web/Windows/Linux exports and an unsigned iPhone build. **v0.7.0 build 1007 was signed and uploaded to TestFlight successfully** in [the shared release workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43546788036). Apple processing, tester availability and hands-on device acceptance still require checking.
 
 ## Player feedback addressed
 
@@ -58,4 +58,4 @@ Specific weapon unlocks: second and third Pulse barrels; second and third seeker
 5. Existing v0.6 saves, boss phases, Prototype offers, routes, and rewards still work.
 6. A human tester can distinguish the new turret from placeholder geometry and understand what a fused ability does from the Build screen.
 
-**Still required:** full CI, unsigned iPhone compile, signed TestFlight upload, physical iPhone readability/touch QA, and balance/fun testing. None is implied by creating this document.
+**Still required:** confirm Apple has finished processing build 1007 and enabled testers, then run physical iPhone readability/touch QA and human balance/fun testing. Successful automated builds and upload do not prove that the new turret looks good on a device or that every build is fun.

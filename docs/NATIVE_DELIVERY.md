@@ -1,12 +1,12 @@
 # Native delivery and human playtest gates
 
-**Updated for the v0.7 development branch.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Updated for StarRun v0.7.0 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
 The StarRun repo has deterministic 60 Hz simulation, save/checkpoint regression tests, strict Godot script parse checks, phone-layout UAT checks, and Web/Windows/Linux playable exports in GitHub Actions. A native iPhone Xcode project is compiled without signing in StarRun CI.
 
-The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.6.0 (build 1006)** upload succeeded in the existing shared TestFlight workflow. That verifies delivery to App Store Connect, **not** physical-device UX, Apple processing status, tester-group assignment or any advertising/store functionality. Later StarRun gameplay versions are not TestFlight-delivered until their specific release upload passes.
+The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.7.0 (build 1007)** upload succeeded in the [shared TestFlight workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43546788036), using immutable source commit `c9ea98f205dca4ae175f02d84cae0c277f17acde`. This verifies signing and delivery to App Store Connect, **not** Apple processing, tester assignment, physical-device usability, ads or any purchase integration.
 
 No Vercel dependency is required. CI prevents nonfatal Godot parser errors from slipping through an otherwise green iOS export.
 
@@ -25,7 +25,7 @@ Prove an exported build through Steam with Steam Deck controller play, real achi
 
 ## v0.7 specific acceptance
 
-Check ten active fusions for one-button use and a freed slot; test four occupied slots when a valid partner is offered; verify eight passive pairs and rank 5/10 bonuses (including legacy checkpoint migration); check that the new Stage 1 turret is recognizable and that no mobile screen requires four-card vertical scrolling. [GAMEPLAY_V07.md](GAMEPLAY_V07.md) specifies individual cases. Signed v0.7 TestFlight has not been claimed here.
+Check ten active fusions for one-button use and a freed slot; test four occupied slots when a valid partner is offered; verify eight passive pairs and rank 5/10 bonuses (including legacy checkpoint migration); check that the new Stage 1 turret is recognizable and that no mobile screen requires four-card vertical scrolling. [GAMEPLAY_V07.md](GAMEPLAY_V07.md) specifies individual cases. Signed v0.7 build 1007 uploaded successfully. Apple processing and physical iPhone acceptance remain outstanding.
 
 ## Human fun gate
 
