@@ -981,7 +981,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.28
 	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
 		amount *= 0.28
-	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0)):
+	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0) + (0.08 if weapon == "lance" and passive_link_active("lance_sight") else 0.0)):
 		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
 	enemy.hp -= amount
@@ -1199,6 +1199,21 @@ func _activate_fusion(id: String, strength: float) -> void:
 	# One cast, one cooldown, and one occupied slot for the two source abilities.
 	match id:
 		"nova_aegis":
+			# Countering a telegraphed beam or a shot about to connect pays off.
+			# Firing as soon as the cooldown ends still clears bullets, but loses
+			# the shield, hull and cooldown rebate of a well-timed counter.
+			var counter_window: bool = charges.any(func(c): return float(c.remaining) <= 0.7)
+			if not counter_window:
+				var soon: Vector2 = ship_position(time + 0.30)
+				for bullet in bullets:
+					if (bullet.p + bullet.v * 0.30).distance_squared_to(soon) < 65.0 * 65.0:
+						counter_window = true
+						break
+			if counter_window:
+				shield = minf(max_shield, shield + 40.0 * strength)
+				hull = minf(max_hull, hull + 12.0 * strength)
+				cooldowns[id] *= 0.65
+				_log("Nova Guard countered incoming fire")
 			aegis_left = maxf(aegis_left, 3.8 * strength)
 			shield = minf(max_shield, shield + 28.0 * strength)
 			beams_cancelled += charges.size()
