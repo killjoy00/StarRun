@@ -15,7 +15,7 @@ StarRun still offers **20 original active abilities**. Each has one fixed partne
 
 | Original abilities | New active | What one cast does |
 |---|---|---|
-| Aegis + Nova | Nova Guard | Full protection, bullet clear, beam cancel, shield refill and damage |
+| Aegis + Nova | Nova Guard | Protect and blast; counter a near-hit for extra healing and a cooldown refund |
 | Overdrive + Rail Strike | Railstorm | Faster guns plus three heavy hits |
 | Chrono + EMP | Time Lock | Slow attacks, cancel beams and silence guns |
 | Repair Drones + Capacitor | Repair Matrix | Hull repair, shield refill, chaff barrier, clear heat and corrosion |
@@ -41,7 +41,7 @@ Both required weapon/system upgrades must be installed; no extra button or slot 
 | Coolant + Amplifier | Shorter cooldowns and higher ability effects |
 | Repair Bots + Data Collector | Stronger repair and more XP from kills |
 | Arc + Autoloader | Faster lightning and another chain target |
-| Lance + Targeting | Stronger beam damage, including on boss modules |
+| Lance + Targeting | Stronger Lance damage, including on boss modules, plus a higher critical chance |
 
 ## Rank 5 and rank 10 upgrades
 
