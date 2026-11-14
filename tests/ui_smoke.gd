@@ -22,6 +22,14 @@ func check(ok: bool, message: String) -> void:
 	if not ok:
 		failures += 1
 		push_error(message)
+func _unwrapped_long_label(node: Node) -> bool:
+	if node is Label and node.text.length() > 70 and node.autowrap_mode == TextServer.AUTOWRAP_OFF:
+		return true
+	for child in node.get_children():
+		if _unwrapped_long_label(child):
+			return true
+	return false
+
 func _run() -> void:
 	check(ProjectSettings.get_setting("display/window/stretch/mode") == "canvas_items", "Retina phones must use adaptive canvas stretching")
 	check(ProjectSettings.get_setting("display/window/stretch/aspect") == "expand", "Phone aspect ratio must expand instead of letterboxing")
@@ -76,6 +84,10 @@ func _run() -> void:
 		center = scene.overlay.get_child(1)
 		panel = center.get_child(0)
 		check(panel.get_global_rect().position.y >= 0 and panel.get_global_rect().end.y <= logical.y, "Flight recorder must fit the screen")
+		check(scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Results must wrap instead of forcing horizontal scrolling")
+		check(scene.reading_scroll.size.y > 100, "Results report must preserve usable scrolling space")
+		for control in scene.reading_footer.get_children():
+			check(control.get_global_rect().end.y < logical.y and control.size.y >= 44, "Report navigation must stay pinned and touchable at every size")
 		scene.profile.cores = 100
 		for group in scene.Catalog.GROUPS:
 			scene._hangar_tab(group)
@@ -110,6 +122,11 @@ func _run() -> void:
 		scene._show_build()
 		await process_frame
 		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Build summary must fit and wrap on mobile")
+		check(scene.reading_scroll.size.y > 100, "Build cards must scroll in usable area")
+		for control in scene.reading_footer.get_children():
+			check(control.get_global_rect().end.y < logical.y and control.size.y >= 44, "Resume and main-menu buttons must stay on screen")
+		check(not _unwrapped_long_label(scene.reading_scroll), "Build descriptions must use word wrapping")
 		scene._toggle_pause()
 		check(scene.mode == "playing", "Closing the build view must resume combat")
 	scene._show_menu()
@@ -118,6 +135,41 @@ func _run() -> void:
 	check(scene.profile.difficulty != old_difficulty, "Menu difficulty selector must advance")
 	scene._new_run()
 	check(scene.sim.difficulty == scene.profile.difficulty and scene.sim.active_slots.size() == 1, "Difficulty and signature ability must apply to the next flight")
+	scene._show_build()
+	var preserved: Dictionary = scene.sim.snapshot()
+	scene._build_to_menu()
+	check(scene.mode == "menu" and not scene.services.read_save(scene.Services.RUN).is_empty(), "Main menu must be one tap away without discarding the suspended flight")
+	scene._resume_run()
+	check(scene.sim.snapshot() == preserved, "Returning from Build through the menu must exactly preserve the flight")
+	var themes := {}
+	for stage_id in range(1, 5):
+		scene.sim.stage = stage_id
+		scene.world.sim = scene.sim
+		themes[scene.world._visual_theme_id()] = true
+	check(themes.size() == 4, "All four stages need distinct visual themes")
+	scene.sim.stage = 1
+	scene.sim.stage_clears = 0
+	scene.sim._spawn_boss()
+	scene.sim._damage_enemy(scene.sim.enemies[0], 999999.0, "pulse")
+	scene._show_stage_clear()
+	check(scene.mode == "stage_clear" and scene.stage_clear_button.disabled, "Boss ceremony must be acknowledged and briefly display its explosion")
+	scene.stage_clear_clock = 1.5
+	scene._show_stage_clear(false)
+	check(not scene.stage_clear_button.disabled, "Warp button must become available after the celebration")
+	scene._begin_warp()
+	check(scene.mode == "warp", "One click should begin a distinct warp animation")
+	scene._complete_warp()
+	check(scene.sim.stage == 2 and scene.mode == "cards", "Warp must advance to Stage 2 and offer the milestone upgrade")
+	scene.sim.cards.clear()
+	scene.sim.stage = 4
+	scene.sim.stage_clears = 4
+	scene.sim.stage_transition_queued = true
+	scene._show_stage_clear()
+	scene.stage_clear_clock = 1.5
+	scene._show_stage_clear(false)
+	scene._begin_warp()
+	check(scene.mode == "results" and scene.sim.won, "Claiming the final boss victory should open the readable report")
+	check(scene.reading_footer.get_child_count() == 2, "Results must offer both Fly Again and Main Menu actions")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame
