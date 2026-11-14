@@ -32,3 +32,48 @@ The material illustrations are combined with programmatic parallax, asteroids, e
 - Headless verification imports assets but does not start audio-device playback.
 
 Human listening and real-device frame-time, heat, memory and mobile audio-interruption checks remain external QA gates. The source retains the automated simulation, course continuity, checkpoint and responsive-layout checks.
+
+## Combat readability — November 13, 2026 Central
+
+Enemy attacks share a dark rim and a coral danger edge in every stage. Small
+shots are round, status rounds are diamonds with their original effect colors
+inside, missiles have pointed bodies and tails, and mines/bombs have fuse rings.
+The same shapes and outlines remain in reduced-effects mode. Friendly shots,
+explosions, Nova and lightning render before live hostile projectiles. Beam
+warnings render above friendly effects too; their dashed lane uses the existing
+33-pixel collision half-width. No damage, hitboxes, trajectories or timing changed.
+
+Shield depletion emits a distinct break event. A short fractured ring follows
+the ship for 0.75 real seconds, including at faster play speeds. The empty shield
+bar becomes segmented and says **SHIELD DOWN** until shield returns. Reduced
+effects keeps the ring stationary, with no screen flash or extra camera shake.
+An instant Emergency Safeguard repair still shows the break but does not leave
+an empty-shield warning. A new stage clears the previous break animation.
+
+The draft highlights cards that immediately fuse or cross rank 5/10 with a thin
+accent border. Milestone text says **Now** only when that pick grants the bonus;
+ordinary phone cards avoid extra future-bonus paragraphs. An affordable next
+Hangar rank has a hollow amber pip beside the existing price button. No recipe
+pinning, new encounter objectives, or new death-report flow was added.
+
+### Reroll correction
+
+**Hangar → Tactics → Reroll uplinks** already existed, but its uses were granted
+once per flight. It now provides one reroll per purchased rank **each stage**;
+unused stage uses do not accumulate. Nyx's separate bonus remains one extra
+reroll per flight, held in reserve until the stage allowance is spent. Resuming
+preserves remaining uses; older checkpoints are not refilled mid-stage. New
+checkpoints also explicitly retain the chosen ship and pilot.
+
+### Verification
+
+- Simulation/save suite: 584 assertions passed, including stage refills,
+  exhausted/resumed hands, the one-off pilot reserve, shield breaks and Aegis.
+- Existing responsive UI suite: 209 checks at 375×667, 390×844 and 1280×800.
+- `tests/visual_readability.gd`: rendered overlap comparisons for all ten enemy
+  projectile types on all four backgrounds, normal/reduced effects, shield cue
+  duration/reset, and phone draft/Hangar captures. Run with an X11 display:
+  `godot --path . --audio-driver Dummy --script tests/visual_readability.gd`.
+  Captures default to `/tmp/starrun-visuals`; use `-- --output=PATH` to change it.
+- Phone-sized renders have been inspected. Physical iPhone performance and
+  readability remain a device check; no TestFlight release is implied by these tests.

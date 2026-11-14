@@ -40,3 +40,10 @@ v0.7.1 changes only screens outside combat (title, settings, briefing, Hangar, S
 ## Human fun gate
 
 With one fixed signature and up to three drafted actives, players should be able to identify active Fortress/Glass Cannon/Control/Salvager combos, explain tradeoffs of the Prototype and route choices, and describe why they held an ability for a specific boss phase. Monitor decision comprehension and voluntary replays. Check progression on Normal/Hard/Insane and whether Stage 2–4 pressure ramps without sudden unavoidable damage. A maxed-out ship clearing Stage 1 easily is **intentional**. Bot scores are test diagnostics, not evidence of human enjoyment.
+
+## v0.7.2 combined beta
+
+This release includes the menu redesign from PR #12 (merged at `7cf7c42`) plus
+combat readability, immediate fusion/rank milestone cues and the permanent
+per-stage reroll correction. See [ART_AUDIO.md](ART_AUDIO.md#combat-readability--november-13-2026-central)
+for behavior and verification. Signing/upload status is recorded after delivery.

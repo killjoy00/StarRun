@@ -59,6 +59,7 @@ var emergency_used := false
 var arc_timer := 0.0
 var lance_timer := 0.0
 var rerolls_left := 0
+var pilot_rerolls_left := 0 # Tactician bonus lasts one flight; Hangar uses refill each stage.
 var banishes_left := 0
 var skips_left := 0
 var banished: Array = []
@@ -121,7 +122,8 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	var signature: String = chassis.signature
 	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0)))
 	active_slots = [signature]
-	rerolls_left = meta.rerolls + (1 if pilot_id == "tactician" else 0)
+	pilot_rerolls_left = 1 if pilot_id == "tactician" else 0
+	rerolls_left = meta.rerolls + pilot_rerolls_left
 	banishes_left = meta.banishes
 	skips_left = meta.skips
 
@@ -569,6 +571,7 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	stage_start = time
 	boss_spawned = false
 	boss_spawn_time = 0.0
@@ -1056,6 +1059,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
 		shield_offline = 1.5 if passive_link_active("shield_cycle") else 3.0
+		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
@@ -1347,6 +1351,9 @@ func _offer_cards(consume_level: bool = true) -> void:
 func reroll_cards() -> bool:
 	if cards.is_empty() or rerolls_left <= 0:
 		return false
+	# Spend the renewable stage allowance before the one-off pilot bonus.
+	if rerolls_left <= pilot_rerolls_left:
+		pilot_rerolls_left = maxi(0, pilot_rerolls_left - 1)
 	rerolls_left -= 1
 	_offer_cards(false)
 	return true
@@ -1424,9 +1431,9 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
@@ -1441,6 +1448,9 @@ func restore(state: Dictionary) -> bool:
 				set(key, merged)
 			else:
 				set(key, state[key])
+	# Preserve an older save's remaining uses; start stage refills at its next warp.
+	if not state.has("pilot_rerolls_left"):
+		pilot_rerolls_left = mini(rerolls_left, 1) if pilot_id == "tactician" else 0
 	movement_version = int(state.get("movement_version", 1))
 	if not state.has("active_slots"):
 		active_slots.clear()
