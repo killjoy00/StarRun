@@ -259,6 +259,10 @@ func _layout() -> void:
 		_show_build()
 	elif mode == "stage_clear":
 		_show_stage_clear(false)
+	elif mode == "prototype":
+		_show_prototypes()
+	elif mode == "route":
+		_show_route_choice()
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -420,7 +424,11 @@ func _start_flight() -> void:
 	sound.play("start")
 	_save_run()
 	if sim.stage_transition_queued:
-		_show_stage_clear()
+		match sim.intermission_step:
+			"prototype": _show_prototypes()
+			"route": _show_route_choice()
+			"ready": _finish_intermission()
+			_: _show_stage_clear()
 
 func _process(delta: float) -> void:
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
@@ -541,6 +549,10 @@ func _show_cards() -> void:
 		var levels := 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
 		var growth := "NEW ABILITY · SLOT %d/4" % (sim.active_slots.size() + 1) if current == 0 and card.tag == "ABILITY" else ("LV %d → %d" % [current, mini(int(card.max), current + levels)] if card.id != "repair" else "REPAIR")
 		var title := "%d   %s\n%s · %s\n%s" % [i + 1, card.name.to_upper(), card.tag, growth, card.description]
+		if card.tag == "ABILITY" and current == 0:
+			var synergy: String = sim.synergy_hint(str(card.id))
+			if not synergy.is_empty():
+				title += "\nCOMBO UNLOCK: " + synergy
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 10)
 		box.add_child(row)
@@ -553,7 +565,7 @@ func _show_cards() -> void:
 		button.add_theme_font_size_override("font_size", _text_size(14))
 		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		button.custom_minimum_size.y = 108 if _compact_ui() else 88
+		button.custom_minimum_size.y = (156 if _compact_ui() else 112) if title.contains("COMBO UNLOCK:") else (108 if _compact_ui() else 88)
 		card_buttons.append(button)
 		if sim.banishes_left > 0 and card.id != "repair":
 			var banish := _button(box, "Banish %s · %d left" % [card.name, sim.banishes_left], _draft_action.bind("banish", i))
@@ -673,8 +685,79 @@ func _begin_warp() -> void:
 func _complete_warp() -> void:
 	if mode != "warp":
 		return
-	if not sim.advance_stage():
+	if not sim.begin_intermission():
 		_show_stage_clear(false)
+		return
+	_show_prototypes()
+
+func _show_prototypes() -> void:
+	mode = "prototype"
+	_save_run()
+	var view := _reading_screen(540)
+	var header: VBoxContainer = view.header
+	var body: VBoxContainer = view.body
+	var footer: HBoxContainer = view.footer
+	_label(header, "CHOOSE A PROTOTYPE", 26, CYAN)
+	_wrapped(header, "Stage %d cleared. Install one permanent upgrade for the rest of this flight." % sim.stage, 15, Color.WHITE)
+	_wrapped(header, "Every Prototype has a benefit and a cost. The other two options are lost.", 14, AMBER)
+	var first: Button = null
+	for i in range(sim.prototype_offers.size()):
+		var id: String = str(sim.prototype_offers[i])
+		var spec: Dictionary = sim.prototype_spec(id)
+		var card := _reading_card(body, "%d  /  %s  [%s]" % [i + 1, spec.name, spec.role], "%s\nBENEFIT  %s\nTRADEOFF  %s" % [spec.description, spec.benefit, spec.cost], CYAN)
+		var content: VBoxContainer = card.get_child(0)
+		var choose := _button(content, "Install " + str(spec.name), _choose_prototype.bind(i), i == 0)
+		choose.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		choose.custom_minimum_size.y = 50
+		if first == null:
+			first = choose
+	_wrapped(footer, "1 OF 3  ·  THE CHOICE LASTS ALL FLIGHT", 14, MUTED)
+	if first != null:
+		first.grab_focus()
+
+func _choose_prototype(index: int) -> void:
+	if mode != "prototype" or not sim.choose_prototype(index):
+		return
+	sound.play("card")
+	_save_run()
+	_show_route_choice()
+
+func _show_route_choice() -> void:
+	mode = "route"
+	_save_run()
+	var view := _reading_screen(540)
+	var header: VBoxContainer = view.header
+	var body: VBoxContainer = view.body
+	var footer: HBoxContainer = view.footer
+	_label(header, "CHOOSE YOUR NEXT ROUTE", 26, CYAN)
+	_wrapped(header, "NEXT: %s  ·  STAGE %d OF 4" % [sim.stage_spec().transition, sim.stage + 1], 15, Color.WHITE)
+	_wrapped(header, "One immediate decision: restore your hull, push your damage or gamble for extra cores.", 14, MUTED)
+	var routes := [
+		{"id":"repair", "name":"SAFE PASSAGE", "text":"Repair 55% of max hull. Restore full shields. No extra power or bounty.", "action":"Repair and continue"},
+		{"id":"overclock", "name":"REDLINE JUMP", "text":"+25% automatic weapon damage for the next stage. Repair only 10% hull, start with 60% shields.", "action":"Overclock and continue"},
+		{"id":"bounty", "name":"HIGH-RISK CONTRACT", "text":"Next stage: +30% enemy health, damage and spawn pressure. Finish its boss for a +%d base-core bounty. Repair 30%% hull." % (20 * (sim.stage + 1)), "action":"Accept bounty and continue"}
+	]
+	var first: Button = null
+	for route in routes:
+		var card := _reading_card(body, str(route.name), str(route.text), AMBER if route.id == "bounty" else CYAN)
+		var content: VBoxContainer = card.get_child(0)
+		var button := _button(content, str(route.action), _choose_route.bind(str(route.id)), route.id == "repair")
+		button.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		button.custom_minimum_size.y = 52
+		if first == null:
+			first = button
+	_wrapped(footer, "The decision is saved before the next stage begins.", 14, MUTED)
+	if first != null:
+		first.grab_focus()
+
+func _choose_route(id: String) -> void:
+	if mode != "route" or not sim.choose_route(id):
+		return
+	_finish_intermission()
+
+func _finish_intermission() -> void:
+	if not sim.advance_stage():
+		_show_route_choice()
 		return
 	mode = "playing"
 	_clear_overlay()
@@ -682,6 +765,7 @@ func _complete_warp() -> void:
 	last_sector = _sector_name(sim.time)
 	banner_text = "STAGE %d / 4  ·  %s" % [sim.stage, sim.stage_name()]
 	banner_clock = 5.0
+	sound.play("start")
 	_save_run()
 	if sim.pending_levels > 0:
 		sim._offer_cards()
