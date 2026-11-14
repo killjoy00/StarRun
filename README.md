@@ -60,4 +60,4 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 - `data/content.json` — enemies, abilities and upgrade cards
 - `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-**v0.7 adds fused abilities, passive pairings and improved phone navigation; real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.
+**v0.7.1 redesigns every menu and between-stage screen for phones (see [native delivery gates](docs/NATIVE_DELIVERY.md#v071-menu-redesign-acceptance)); v0.7 added fused abilities and passive pairings. Real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.
