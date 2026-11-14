@@ -1296,7 +1296,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	for card in content.cards:
 		if upgrades[card.id] < int(card.max) and card.id not in banished:
-			if card.tag == "ABILITY" and upgrades[card.id] == 0 and active_slots.size() >= Catalog.ACTIVE_SLOTS:
+			if card.tag == "ABILITY" and upgrades[card.id] == 0 and not _can_learn_active(str(card.id)):
 				continue
 			pool.append(card.duplicate(true))
 	cards.clear()
@@ -1306,13 +1306,13 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append(pool.pop_at(index))
 	# At every even early level, show a discoverable synergy partner alongside
 	# independent upgrades. No automatic installation or extra active slot.
-	if active_slots.size() < Catalog.ACTIVE_SLOTS and level % 2 == 0:
+	if level % 2 == 0:
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
 			cards[-1] = learnable[rng.randi_range(0, learnable.size() - 1)]
-		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and not synergy_hint(str(c.id)).is_empty())
-		var partners := learnable.filter(func(c): return not synergy_hint(str(c.id)).is_empty())
+		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and (not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty()))
+		var partners := learnable.filter(func(c): return not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty())
 		if not has_partner and not partners.is_empty():
 			cards[0] = partners[rng.randi_range(0, partners.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
@@ -1358,11 +1358,11 @@ func choose_card(index: int) -> bool:
 	else:
 		var card: Dictionary = cards[index]
 		if card.tag == "ABILITY" and int(upgrades[id]) == 0:
-			if active_slots.size() >= Catalog.ACTIVE_SLOTS:
+			if not _can_learn_active(id):
 				return false
 			active_slots.append(id)
 		var before: int = int(upgrades[id])
-		var increment: int = 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
+		var increment: int = 1 if card.tag == "ABILITY" and before == 0 else 2
 		upgrades[id] = mini(int(card.max), before + increment)
 		var gained := int(upgrades[id]) - before
 		if id == "hull":
@@ -1371,6 +1371,20 @@ func choose_card(index: int) -> bool:
 		if id == "shield":
 			max_shield += 10 * gained
 			shield = minf(max_shield, shield + 10 * gained)
+		if id in ["hull", "shield"]:
+			for milestone in [5, 10]:
+				var marker: String = id + str(milestone)
+				if before < milestone and rank_at(id, milestone) and marker not in capacity_milestones:
+					capacity_milestones.append(marker)
+					var bonus: float = (25.0 if milestone == 5 else 50.0) if id == "hull" else (18.0 if milestone == 5 else 35.0)
+					if id == "hull":
+						max_hull += bonus
+						hull = minf(max_hull, hull + bonus)
+					else:
+						max_shield += bonus
+						shield = minf(max_shield, shield + bonus)
+		if card.tag == "ABILITY":
+			_try_fuse()
 	_log("Installed " + cards[index].name)
 	cards.clear()
 	return true
