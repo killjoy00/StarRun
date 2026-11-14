@@ -733,9 +733,9 @@ func _show_route_choice() -> void:
 	_wrapped(header, "NEXT: %s  ·  STAGE %d OF 4" % [sim.stage_spec().transition, sim.stage + 1], 15, Color.WHITE)
 	_wrapped(header, "One immediate decision: restore your hull, push your damage or gamble for extra cores.", 14, MUTED)
 	var routes := [
-		{"id":"repair", "name":"SAFE PASSAGE", "text":"Repair 55% of max hull. Restore full shields. No extra power or bounty.", "action":"Repair and continue"},
-		{"id":"overclock", "name":"REDLINE JUMP", "text":"+25% automatic weapon damage for the next stage. Repair only 10% hull, start with 60% shields.", "action":"Overclock and continue"},
-		{"id":"bounty", "name":"HIGH-RISK CONTRACT", "text":"Next stage: +30% enemy health, damage and spawn pressure. Finish its boss for a +%d base-core bounty. Repair 30%% hull." % (20 * (sim.stage + 1)), "action":"Accept bounty and continue"}
+		{"id":"repair", "name":"SAFE PASSAGE", "text":"BENEFIT  Repair 55% of max hull and fully restore shields.\nTRADEOFF  No extra damage or core bounty.", "action":"Repair and continue"},
+		{"id":"overclock", "name":"REDLINE JUMP", "text":"BENEFIT  +25% automatic weapon damage for the next stage.\nTRADEOFF  Repair only 10% hull and start with 60% shields.", "action":"Overclock and continue"},
+		{"id":"bounty", "name":"HIGH-RISK CONTRACT", "text":"BENEFIT  +%d base cores for defeating the next boss.\nTRADEOFF  +30%% enemy health, damage and spawn pressure; repair only 30%% hull." % (20 * (sim.stage + 1)), "action":"Accept bounty and continue"}
 	]
 	var first: Button = null
 	for route in routes:
