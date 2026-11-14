@@ -1,24 +1,28 @@
-# Native delivery gates
+# Native delivery and human playtest gates
 
-The first playable uses Godot 4.6.3, with a matching pinned export-template set. Moving to another engine version requires repeating exports, replay tests, and device checks.
+**Updated November 13, 2026.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
-## Automated now
+## Automation now working
 
-GitHub Actions builds Web, Windows, and Linux after simulation checks. Linux's exported executable receives a headless startup check. Downloadable artifacts are retained for 30 days. There is no Vercel dependency.
+The StarRun repo has deterministic 60 Hz simulation, save/checkpoint regression tests, strict Godot script parse checks, phone-layout UAT checks, and Web/Windows/Linux playable exports in GitHub Actions. A native iPhone Xcode project is compiled without signing in StarRun CI.
 
-## iOS / TestFlight — still required
+The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.4.0 (build 1004)** upload succeeded and Apple accepted it on November 13. That verifies delivery to App Store Connect, **not** physical-device UX, Apple processing status, tester-group assignment or any advertising/store functionality. Later StarRun gameplay versions are not TestFlight-delivered until their specific release upload passes.
 
-1. Register a unique bundle identifier and App Store Connect app. Reuse the existing Apple team and signing workflow where available; do not reset another app's credentials.
-2. Add a macOS workflow using the matching Godot export templates, export to Xcode, archive/sign, then upload through App Store Connect. A successful headless Linux export is not evidence that this works.
-3. Install on a physical supported iPhone, including a small 16:9 device if supported. Verify ability reach, card text, safe areas, phone interruptions, audio, persistence and exact resume.
-4. Run the 2,000 enemy plus 500 player-projectile render/collision stress case for sustained performance, not just average frame rate. Record device, renderer, thermal conditions and p95 frame time. This is not yet passed.
-5. Spike ads with a maintained plugin, including consent decline, no fill, cancellation, failure and offline behavior. Never make a run depend on an ad loading.
-6. Spike a real non-consumable purchase, pending/cancelled purchase, restore, and entitlement recovery on a clean installation. Evaluate both the legacy InAppStore plugin and the community `godot-sdk-integrations/godot-storekit2` option against the pinned engine. The latter describes its API as unstable.
+No Vercel dependency is required. CI prevents nonfatal Godot parser errors from slipping through an otherwise green iOS export.
 
-## Steam — still required
+## Still required before claiming iPhone launch readiness
 
-Prove an exported build through Steam, controller play on Steam Deck, a real achievement and cloud-save conflict handling. The unsigned Linux/Windows playtest builds do not establish Steam SDK integration or Deck verification.
+1. **Physical iPhone UAT:** test small and current portrait aspect ratios, safe areas, four ability buttons, card wrapping, and menus. On the v0.5 game specifically test a Build view with many installed systems and Hangar upgrades, a long Results report, fixed bottom navigation, and a saved run resumed after returning to the main menu.
+2. **Four-stage walkthrough:** verify Ion Storm, Solar Foundry and Void Citadel have distinct palettes and silhouettes in motion, not merely color filters; validate ten new enemies' attack shapes and damage labels; check that each boss victory plays a visible multi-burst explosion, displays the reward/next destination and cannot be skipped unintentionally. Tap Warp/Claim and verify the transition and correct saved state.
+3. **Performance:** sustained normal gameplay and dense projectile stress (including ≥500 enemy bullets and 100 player shots, then a 2,000/500 engineering probe) at 1× and 3× speed. Record device, thermal condition, p50/p95 frame time and visual clarity. Compact projectile storage/render batching remain separate optimization options if the benchmark fails.
+4. **Audio / accessibility:** heavy attack cue remains audible; large explosions and warp do not obscure the next UI choice. Validate reduced glow and screen sensitivity, VoiceOver expectations, contrast, readable minimum 16-point phone text and ≥44-point touch controls.
+5. **Ads integration:** test a maintained iOS plugin and Apple tracking consent/no fill/offline/failure paths without interrupting deterministic combat. No ad flow is claimed working.
+6. **StoreKit:** test a real non-consumable purchase, refund and restore, pending/cancelled purchase, clean install and entitlement recovery. No purchase flow is claimed working.
+
+## Steam still required
+
+Prove an exported build through Steam with Steam Deck controller play, real achievement, and cloud-save conflict handling. A signed iPhone upload or unsigned Linux/Windows build does not establish Steam readiness.
 
 ## Human fun gate
 
-Players should understand the two buttons, deliberately hold or spend one in response to a threat, understand their final damage sequence, and want another attempt. Compare intentional play with immediate activation; count meaningful choices and explanations, not just button frequency. Do not expand to four levels until this is observed.
+With one fixed signature and up to three drafted actives, players should describe why they held an ability for a specific attack, feel that level-ups matter, and voluntarily try another build. Check progression on Normal/Hard/Insane and whether Stage 2–4 pressure ramps without sudden unavoidable damage. A maxed-out ship clearing Stage 1 easily is **intentional**. Bot scores are test diagnostics, not evidence of human enjoyment.
