@@ -678,7 +678,7 @@
         "nova"
       ],
       "cooldown": 22,
-      "description": "Block and blast. Counter just before a hit to heal and cut the cooldown."
+      "description": "Block and blast. Counter an incoming hit for a much stronger blast, healing and faster recharge."
     },
     {
       "id": "railstorm",
