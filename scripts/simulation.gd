@@ -44,6 +44,7 @@ var gravity_left := 0.0
 var last_boss_position := Vector2(270, 135)
 var boss_spawn_time := 0.0
 var prototypes: Array = []
+var capacity_milestones: Array = [] # Tracks one-time rank 5/10 hull and shield increases.
 var prototype_offers: Array = []
 var intermission_step := "" # "", "prototype", "route", "ready"
 var route_choice := ""
@@ -93,6 +94,10 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
 			cooldowns[id] = 0.0
+	for fusion in content.fusions:
+		content.abilities[str(fusion.id)] = {"name": str(fusion.name), "cooldown": float(fusion.cooldown)}
+		cooldowns[str(fusion.id)] = 0.0
+		upgrades[str(fusion.id)] = 0
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
@@ -213,11 +218,18 @@ func step() -> void:
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
-	hull = minf(max_hull, hull + (upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)) * DT)
+	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)
+	if rank_at("repair_bots", 5): repair_rate += 0.35
+	if rank_at("repair_bots", 10): repair_rate += 0.70
+	if passive_link_active("field_recovery"): repair_rate *= 1.40
+	hull = minf(max_hull, hull + repair_rate * DT)
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
 		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT
+		if rank_at("regen", 5): recharge += 0.55 * DT
+		if rank_at("regen", 10): recharge += 1.0 * DT
+		if passive_link_active("shield_cycle"): recharge *= 1.40
 		if synergy_active("fortress"):
 			recharge *= 1.60
 		if _has_prototype("bastion_lattice"):
@@ -266,16 +278,110 @@ func _enemy_limit() -> int:
 func _has_prototype(id: String) -> bool:
 	return id in prototypes
 
+func fusion_spec(id: String) -> Dictionary:
+	for fusion in content.fusions:
+		if str(fusion.id) == id:
+			return fusion
+	return {}
+
+func _source_active(id: String) -> bool:
+	if id in active_slots:
+		return true
+	for fusion in content.fusions:
+		if str(fusion.id) in active_slots and id in fusion.parts:
+			return true
+	return false
+
+func fusion_hint(id: String) -> String:
+	for fusion in content.fusions:
+		if id in fusion.parts:
+			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
+			if other in active_slots:
+				return str(fusion.name) + ": " + str(fusion.description) + " (frees one slot)"
+			return ""
+	return ""
+
+func _can_learn_active(id: String) -> bool:
+	if active_slots.size() < Catalog.ACTIVE_SLOTS:
+		return true
+	for fusion in content.fusions:
+		if id in fusion.parts:
+			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
+			if other in active_slots:
+				return true # Instantly replaces two buttons with one.
+	return false
+
+func _try_fuse() -> void:
+	for fusion in content.fusions:
+		var first: String = str(fusion.parts[0])
+		var second: String = str(fusion.parts[1])
+		if first not in active_slots or second not in active_slots:
+			continue
+		var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
+		var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
+		active_slots.erase(first)
+		active_slots.erase(second)
+		active_slots.insert(insert_at, str(fusion.id))
+		upgrades[str(fusion.id)] = 1
+		cooldowns[str(fusion.id)] = current_cd
+		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
+
+func active_passive_links() -> Array:
+	var pairs: Array = []
+	for link in content.passive_links:
+		if int(upgrades.get(str(link.requires[0]), 0)) > 0 and int(upgrades.get(str(link.requires[1]), 0)) > 0:
+			pairs.append(link)
+	return pairs
+
+func passive_link_active(id: String) -> bool:
+	for link in active_passive_links():
+		if str(link.id) == id:
+			return true
+	return false
+
+func passive_hint(id: String) -> String:
+	for link in content.passive_links:
+		if id in link.requires:
+			var other: String = str(link.requires[1]) if str(link.requires[0]) == id else str(link.requires[0])
+			if int(upgrades.get(other, 0)) > 0:
+				return str(link.name) + ": " + str(link.description)
+	return ""
+
+func rank_at(id: String, milestone: int) -> bool:
+	return int(upgrades.get(id, 0)) >= milestone
+
+func _active_rank_scale(id: String) -> float:
+	var sources: Array = [id]
+	var spec: Dictionary = fusion_spec(id)
+	if not spec.is_empty():
+		sources = spec.parts
+	var total := 0.0
+	for source in sources:
+		var rank: int = int(upgrades.get(str(source), 0))
+		total += 1.0 + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
+	return total / maxf(1.0, float(sources.size()))
+
+func _active_rank_cooldown(id: String) -> float:
+	var sources: Array = [id]
+	var spec: Dictionary = fusion_spec(id)
+	if not spec.is_empty():
+		sources = spec.parts
+	var total := 0.0
+	for source in sources:
+		var rank: int = int(upgrades.get(str(source), 0))
+		total += 1.0 - (0.10 if rank >= 5 else 0.0) - (0.10 if rank >= 10 else 0.0)
+	return total / maxf(1.0, float(sources.size()))
+
 func active_synergies() -> Array:
 	var found: Array = []
 	for spec in content.synergies:
 		var has_first := false
 		var has_second := false
 		for id in spec.first:
-			if id in active_slots:
+			if _source_active(str(id)):
 				has_first = true
 		for id in spec.second:
-			if id in active_slots:
+			if _source_active(str(id)):
 				has_second = true
 		if has_first and has_second:
 			found.append(spec)
@@ -295,7 +401,7 @@ func synergy_hint(ability: String) -> String:
 			continue
 		var belongs_first: bool = ability in spec.first
 		var belongs_second: bool = ability in spec.second
-		if (belongs_first and spec.second.any(func(id): return id in active_slots)) or (belongs_second and spec.first.any(func(id): return id in active_slots)):
+		if (belongs_first and spec.second.any(func(other): return _source_active(str(other)))) or (belongs_second and spec.first.any(func(other): return _source_active(str(other)))):
 			return str(spec.name) + ": " + str(spec.description)
 	return ""
 
@@ -627,19 +733,21 @@ func _update_charges() -> void:
 
 func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
+	if rank_at("autoloader", 5): rate += 0.15
+	if rank_at("autoloader", 10): rate += 0.25
 	if gravity_left > 0.0:
 		rate *= 0.72
 	pulse_timer -= DT * rate
 	seeker_timer -= DT * rate
-	arc_timer -= DT * rate
+	arc_timer -= DT * rate * (1.15 if passive_link_active("arc_feed") else 1.0)
 	lance_timer -= DT * rate
 	var bank := clampf(ship_velocity().x * 0.004, -0.32, 0.32)
 	var origin := ship_position() + Vector2(0, -34).rotated(bank)
 	if upgrades.pulse > 0 and pulse_timer <= 0.0:
 		pulse_timer += 0.19
-		var barrels := 2 if upgrades.pulse >= 5 else 1
+		var barrels := 3 if rank_at("pulse", 10) else (2 if rank_at("pulse", 5) else 1)
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0), "weapon": "pulse", "target": -1})
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		seeker_timer += (0.62 if pilot_id == "hunter" else 0.70)
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
@@ -662,21 +770,23 @@ func _update_weapons() -> void:
 				target_id = int(chosen.id)
 				target_pos = chosen.p
 		if target_id != -1:
-			shots.append({"p": origin, "v": (target_pos - origin).normalized() * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0), "weapon": "seeker", "target": target_id})
+			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
+			for n in range(volley):
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
 		var start := origin
-		for chain in range(2 + int(upgrades.arc) / 2):
+		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0)):
 			var target := _nearest(start, visited)
 			if target.is_empty() or start.distance_to(target.p) > 640:
 				break
 			visited.append(target.id)
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
-			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0), "arc")
+			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
 	if upgrades.lance > 0 and lance_timer <= 0.0 and not enemies.is_empty():
-		lance_timer = 2.4
+		lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
 		var target := _nearest(origin)
 		for enemy in enemies:
 			if not charges.is_empty() and enemy.id == charges[0].source:
@@ -687,10 +797,10 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power(), "lance")
+					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power() * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0), "lance")
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
 	if synergy_active("fortress"):
 		power *= 0.82
 	if synergy_active("assault"):
@@ -710,6 +820,9 @@ func weapon_power() -> float:
 
 func ability_power() -> float:
 	var power: float = 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
+	if rank_at("amplifier", 5): power += 0.15
+	if rank_at("amplifier", 10): power += 0.25
+	if passive_link_active("quick_charge"): power *= 1.15
 	if synergy_active("assault"):
 		power *= 1.20
 	if _has_prototype("echo_coil"):
@@ -720,6 +833,8 @@ func hull_damage_multiplier() -> float:
 	var factor := 1.0
 	if synergy_active("fortress"):
 		factor *= 0.85
+	if passive_link_active("reinforced_plating"):
+		factor *= 0.90
 	if synergy_active("assault"):
 		factor *= 1.28
 	if _has_prototype("volatile_core"):
@@ -730,6 +845,9 @@ func cooldown_multiplier() -> float:
 	var factor := 1.0
 	if synergy_active("control"):
 		factor *= 0.82
+	if rank_at("coolant", 5): factor *= 0.95
+	if rank_at("coolant", 10): factor *= 0.90
+	if passive_link_active("quick_charge"): factor *= 0.88
 	if _has_prototype("null_harmonics"):
 		factor *= 0.78
 	if _has_prototype("mirror_cell"):
@@ -863,8 +981,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.28
 	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
 		amount *= 0.28
-	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < upgrades.targeting * 0.05:
-		amount *= 2.0
+	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0) + (0.08 if weapon == "lance" and passive_link_active("lance_sight") else 0.0)):
+		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
 	enemy.hp -= amount
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
@@ -881,7 +999,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.25 if pilot_id == "scavenger" else 0.0))
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0))
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -928,7 +1046,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			if cooldowns[id] > 0.0:
 				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0)
 	if kind == "chaff":
-		reduced = maxf(amount * 0.25, amount - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0))
+		reduced = maxf(reduced * 0.25, reduced - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0) - (0.65 if rank_at("armor", 5) else 0.0) - (1.10 if rank_at("armor", 10) else 0.0) - (0.25 if passive_link_active("reinforced_plating") else 0.0))
 	var shield_damage := minf(shield, reduced)
 	var had_shield := shield > 0.0
 	shield -= shield_damage
@@ -937,8 +1055,8 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
-		shield_offline = 3.0
-		_log("Shield broke - offline for 3 seconds")
+		shield_offline = 1.5 if passive_link_active("shield_cycle") else 3.0
+		_log("Shield broke")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
 			shield_offline = 0.0
@@ -959,14 +1077,18 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		_log("Emergency field deployed")
 
 func activate(ability: String) -> bool:
-	if ended or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
+	if ended or stage_transition_queued or not intermission_step.is_empty() or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier()
+	var effect_strength: float = ability_power() * _active_rank_scale(ability)
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
 	shield = minf(max_shield, shield + meta.reserve_shield * 5)
-	_log(ability.capitalize() + " activated")
+	_log(str(content.abilities[ability].name) + " used")
+	if not fusion_spec(ability).is_empty():
+		_activate_fusion(ability, effect_strength)
+		return true
 	if ability == "aegis":
-		aegis_left = (1.8 + (upgrades.aegis - 1) * 0.25) * ability_power()
+		aegis_left = (1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength
 	elif ability == "nova":
 		beams_cancelled += charges.size()
 		charges.clear()
@@ -974,20 +1096,20 @@ func activate(ability: String) -> bool:
 		bullets.clear()
 		effects.append({"kind": "nova", "p": ship_position(), "life": 0.65, "max_life": 0.65, "born": tick})
 		for enemy in enemies:
-			_damage_enemy(enemy, 65.0 * (1 + (upgrades.nova - 1) * 0.25) * ability_power(), "nova")
+			_damage_enemy(enemy, 65.0 * (1 + (upgrades.nova - 1) * 0.25) * effect_strength, "nova")
 		enemies = enemies.filter(func(e): return e.hp > 0.0)
 	elif ability == "barrage":
 		var targets := enemies.filter(func(e): return e.hp > 0)
 		for i in range(7 + (int(upgrades.barrage) - 1) * 2):
 			var target: Dictionary = targets[i % targets.size()] if not targets.is_empty() else {}
-			shots.append({"p":ship_position() + Vector2(0, -30), "v":Vector2.UP.rotated((i - 3) * 0.14) * 650, "damage":(24 + upgrades.barrage * 5) * ability_power(), "weapon":"barrage", "target":int(target.get("id", -1))})
+			shots.append({"p":ship_position() + Vector2(0, -30), "v":Vector2.UP.rotated((i - 3) * 0.14) * 650, "damage":(24 + upgrades.barrage * 5) * effect_strength, "weapon":"barrage", "target":int(target.get("id", -1))})
 	elif ability == "overdrive":
-		overdrive_left = (4.0 + (upgrades.overdrive - 1) * 0.6) * ability_power()
+		overdrive_left = (4.0 + (upgrades.overdrive - 1) * 0.6) * effect_strength
 	elif ability == "chrono":
-		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * ability_power()
+		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * effect_strength
 	elif ability == "mend":
 		mend_left = 4.0
-		mend_rate = (24 + (upgrades.mend - 1) * 6) * ability_power() / 4.0
+		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -996,11 +1118,11 @@ func activate(ability: String) -> bool:
 		prevented += stopped * 12.0
 		for enemy in enemies:
 			if enemy.kind in ["missile_bomber", "minelayer", "slag_bomber", "boss2", "boss3", "boss4"]:
-				_damage_enemy(enemy, 30.0 * ability_power(), "flak")
+				_damage_enemy(enemy, 30.0 * effect_strength, "flak")
 	elif ability == "emp":
 		beams_cancelled += charges.size()
 		charges.clear()
-		emp_left = (3.0 + upgrades.emp * 0.25) * ability_power()
+		emp_left = (3.0 + upgrades.emp * 0.25) * effect_strength
 	elif ability == "deflector":
 		var remaining: Array = []
 		var absorbed := 0
@@ -1022,34 +1144,34 @@ func activate(ability: String) -> bool:
 				if enemy.id == charge.source:
 					target = enemy
 		if not target.is_empty():
-			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * ability_power(), "strike")
+			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * effect_strength, "strike")
 	elif ability == "prism":
 		var remaining: Array = []
 		var reflected := 0
 		for bullet in bullets:
 			if reflected < 18 and bullet.kind in ["chaff", "ion", "corrosion", "disrupt"] and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
 				var target := _nearest(bullet.p)
-				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * ability_power(), "weapon": "barrage", "target": int(target.get("id", -1))})
+				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * effect_strength, "weapon": "barrage", "target": int(target.get("id", -1))})
 				reflected += 1
 			else:
 				remaining.append(bullet)
 		bullets = remaining
 		prevented += reflected * 1.5
 	elif ability == "barrier":
-		barrier_left = (6.0 + upgrades.barrier * 0.75) * ability_power()
+		barrier_left = (6.0 + upgrades.barrier * 0.75) * effect_strength
 	elif ability == "capacitor":
 		shield_offline = 0.0
-		shield = minf(max_shield, shield + (30.0 + upgrades.capacitor * 15.0) * ability_power())
+		shield = minf(max_shield, shield + (30.0 + upgrades.capacitor * 15.0) * effect_strength)
 	elif ability == "focus":
-		focus_left = (6.0 + upgrades.focus * 0.6) * ability_power()
+		focus_left = (6.0 + upgrades.focus * 0.6) * effect_strength
 	elif ability == "decoy":
-		decoy_left = (5.0 + upgrades.decoy * 0.6) * ability_power()
+		decoy_left = (5.0 + upgrades.decoy * 0.6) * effect_strength
 	elif ability == "jammer":
-		jammer_left = (5.0 + upgrades.jammer * 0.5) * ability_power()
+		jammer_left = (5.0 + upgrades.jammer * 0.5) * effect_strength
 	elif ability == "siphon":
 		var target := _nearest(ship_position())
 		if not target.is_empty():
-			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * ability_power())
+			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * effect_strength)
 			_damage_enemy(target, dealt, "siphon")
 			hull = minf(max_hull, hull + dealt * 0.30)
 	elif ability == "overload":
@@ -1062,22 +1184,137 @@ func activate(ability: String) -> bool:
 				remaining.append(bullet)
 		bullets = remaining
 		for enemy in enemies:
-			_damage_enemy(enemy, minf(250.0, 35.0 + detonated * 5.0 + upgrades.overload * 14.0) * ability_power(), "overload")
+			_damage_enemy(enemy, minf(250.0, 35.0 + detonated * 5.0 + upgrades.overload * 14.0) * effect_strength, "overload")
 	elif ability == "reboot":
 		for id in active_slots:
 			if id != "reboot":
-				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot)
+				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot * effect_strength)
 	elif ability == "salvage":
-		salvage_left = (10.0 + upgrades.salvage * 1.0) * ability_power()
+		salvage_left = (10.0 + upgrades.salvage * 1.0) * effect_strength
 	if ability not in ["aegis", "nova"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
+
+func _activate_fusion(id: String, strength: float) -> void:
+	# One cast, one cooldown, and one occupied slot for the two source abilities.
+	match id:
+		"nova_aegis":
+			# Countering a telegraphed beam or a shot about to connect pays off.
+			# Firing as soon as the cooldown ends still clears bullets, but loses
+			# the shield, hull and cooldown rebate of a well-timed counter.
+			var counter_window: bool = charges.any(func(c): return float(c.remaining) <= 0.7)
+			if not counter_window:
+				var soon: Vector2 = ship_position(time + 0.30)
+				for bullet in bullets:
+					if (bullet.p + bullet.v * 0.30).distance_squared_to(soon) < 65.0 * 65.0:
+						counter_window = true
+						break
+			if counter_window:
+				shield = minf(max_shield, shield + 40.0 * strength)
+				hull = minf(max_hull, hull + 12.0 * strength)
+				cooldowns[id] *= 0.65
+				_log("Nova Guard countered incoming fire")
+			aegis_left = maxf(aegis_left, 3.8 * strength)
+			shield = minf(max_shield, shield + 28.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			prevented += bullets.reduce(func(sum, b): return sum + float(b.damage), 0.0)
+			bullets.clear()
+			# The blast is deliberately modest on an early cast; a true counter
+			# is much more powerful. This makes timing matter more than spam.
+			var blast: float = (235.0 if counter_window else 70.0) * strength
+			for enemy in enemies:
+				_damage_enemy(enemy, blast, "nova")
+			effects.append({"kind":"nova", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick})
+		"railstorm":
+			overdrive_left = maxf(overdrive_left, 7.0 * strength)
+			for n in range(3):
+				var target: Dictionary = _nearest(ship_position())
+				if not target.is_empty():
+					_damage_enemy(target, 180.0 * strength, "strike")
+			effects.append({"kind":"strike", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
+		"stasis_lock":
+			chrono_left = maxf(chrono_left, 6.0 * strength)
+			emp_left = maxf(emp_left, 5.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			for enemy in enemies:
+				_damage_enemy(enemy, 45.0 * strength, "nova")
+			effects.append({"kind":"chrono", "p":ship_position(), "life":0.75, "max_life":0.75, "born":tick})
+		"repair_matrix":
+			mend_left = 6.0
+			mend_rate = (62.0 * strength) / mend_left
+			shield_offline = 0.0
+			shield = minf(max_shield, shield + 65.0 * strength)
+			barrier_left = maxf(barrier_left, 4.0 * strength)
+			corrosion_left = 0.0
+			heat_left = 0.0
+		"missile_grid":
+			var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine", "slag"]).size()
+			bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
+			prevented += stopped * 12.0
+			var targets: Array = enemies.filter(func(e): return float(e.hp) > 0.0)
+			for n in range(14):
+				if targets.is_empty():
+					break
+				var target: Dictionary = targets[n % targets.size()]
+				shots.append({"p":ship_position() + Vector2((n % 3 - 1) * 9, -28), "v":Vector2.UP.rotated((n - 7) * 0.10) * 710.0, "damage":40.0 * strength, "weapon":"barrage", "target":int(target.id)})
+			effects.append({"kind":"barrage", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
+		"scrap_converter":
+			salvage_left = maxf(salvage_left, 16.0 * strength)
+			var target: Dictionary = _nearest(ship_position())
+			if not target.is_empty():
+				var dealt: float = minf(float(target.hp), 175.0 * strength)
+				_damage_enemy(target, dealt, "siphon")
+				hull = minf(max_hull, hull + dealt * 0.55)
+		"prism_focus":
+			focus_left = maxf(focus_left, 9.0 * strength)
+			var kept: Array = []
+			var turned := 0
+			for bullet in bullets:
+				if turned < 25 and bullet.p.distance_squared_to(ship_position()) < 400.0 * 400.0:
+					var target: Dictionary = _nearest(bullet.p)
+					if not target.is_empty():
+						shots.append({"p":bullet.p, "v":Vector2.UP * 700.0, "damage":35.0 * strength, "weapon":"barrage", "target":int(target.id)})
+						turned += 1
+						continue
+				kept.append(bullet)
+			bullets = kept
+			prevented += turned * 2.0
+		"reflective_wall":
+			barrier_left = maxf(barrier_left, 10.0 * strength)
+			var absorbed := bullets.filter(func(b): return b.kind in ["chaff", "ion", "corrosion", "disrupt"]).size()
+			bullets = bullets.filter(func(b): return b.kind not in ["chaff", "ion", "corrosion", "disrupt"])
+			shield = minf(max_shield, shield + absorbed * 3.5 * strength)
+			prevented += absorbed * 2.0
+			for n in range(mini(12, absorbed)):
+				var target: Dictionary = _nearest(ship_position())
+				if not target.is_empty():
+					shots.append({"p":ship_position(), "v":Vector2.UP * 720.0, "damage":28.0 * strength, "weapon":"barrage", "target":int(target.id)})
+		"ghost_signal":
+			jammer_left = maxf(jammer_left, 10.0 * strength)
+			decoy_left = maxf(decoy_left, 10.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			var stopped := bullets.filter(func(b): return b.kind == "ordnance").size()
+			bullets = bullets.filter(func(b): return b.kind != "ordnance")
+			prevented += stopped * 12.0
+		"reactor_surge":
+			for slot in active_slots:
+				if str(slot) != id:
+					cooldowns[str(slot)] = maxf(0.0, float(cooldowns.get(str(slot), 0.0)) * 0.25 - 2.0)
+			var detonated := bullets.filter(func(b): return b.kind == "chaff").size()
+			bullets = bullets.filter(func(b): return b.kind != "chaff")
+			for enemy in enemies:
+				_damage_enemy(enemy, minf(320.0, 70.0 + detonated * 7.0) * strength, "overload")
+	effects.append({"kind":"nova", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+
 
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	for card in content.cards:
 		if upgrades[card.id] < int(card.max) and card.id not in banished:
-			if card.tag == "ABILITY" and upgrades[card.id] == 0 and active_slots.size() >= Catalog.ACTIVE_SLOTS:
+			if card.tag == "ABILITY" and upgrades[card.id] == 0 and not _can_learn_active(str(card.id)):
 				continue
 			pool.append(card.duplicate(true))
 	cards.clear()
@@ -1087,13 +1324,13 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append(pool.pop_at(index))
 	# At every even early level, show a discoverable synergy partner alongside
 	# independent upgrades. No automatic installation or extra active slot.
-	if active_slots.size() < Catalog.ACTIVE_SLOTS and level % 2 == 0:
+	if level % 2 == 0:
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
 			cards[-1] = learnable[rng.randi_range(0, learnable.size() - 1)]
-		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and not synergy_hint(str(c.id)).is_empty())
-		var partners := learnable.filter(func(c): return not synergy_hint(str(c.id)).is_empty())
+		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and (not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty()))
+		var partners := learnable.filter(func(c): return not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty())
 		if not has_partner and not partners.is_empty():
 			cards[0] = partners[rng.randi_range(0, partners.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
@@ -1139,11 +1376,11 @@ func choose_card(index: int) -> bool:
 	else:
 		var card: Dictionary = cards[index]
 		if card.tag == "ABILITY" and int(upgrades[id]) == 0:
-			if active_slots.size() >= Catalog.ACTIVE_SLOTS:
+			if not _can_learn_active(id):
 				return false
 			active_slots.append(id)
 		var before: int = int(upgrades[id])
-		var increment: int = 2 if card.tag in ["WEAPON", "SYSTEM"] else 1
+		var increment: int = 1 if card.tag == "ABILITY" and before == 0 else 2
 		upgrades[id] = mini(int(card.max), before + increment)
 		var gained := int(upgrades[id]) - before
 		if id == "hull":
@@ -1152,6 +1389,20 @@ func choose_card(index: int) -> bool:
 		if id == "shield":
 			max_shield += 10 * gained
 			shield = minf(max_shield, shield + 10 * gained)
+		if id in ["hull", "shield"]:
+			for milestone in [5, 10]:
+				var marker: String = id + str(milestone)
+				if before < milestone and rank_at(id, milestone) and marker not in capacity_milestones:
+					capacity_milestones.append(marker)
+					var bonus: float = (25.0 if milestone == 5 else 50.0) if id == "hull" else (18.0 if milestone == 5 else 35.0)
+					if id == "hull":
+						max_hull += bonus
+						hull = minf(max_hull, hull + bonus)
+					else:
+						max_shield += bonus
+						shield = minf(max_shield, shield + bonus)
+		if card.tag == "ABILITY":
+			_try_fuse()
 	_log("Installed " + cards[index].name)
 	cards.clear()
 	return true
@@ -1173,7 +1424,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -1198,6 +1449,20 @@ func restore(state: Dictionary) -> bool:
 				active_slots.append(id)
 	if difficulty not in Catalog.DIFFICULTIES:
 		difficulty = "normal"
+	# Older saved flights had rank 5 upgrades but no one-time capacity rewards.
+	if not state.has("capacity_milestones"):
+		capacity_milestones = []
+		for track in ["hull", "shield"]:
+			for milestone in [5, 10]:
+				if rank_at(track, milestone):
+					var bonus: float = (25.0 if milestone == 5 else 50.0) if track == "hull" else (18.0 if milestone == 5 else 35.0)
+					capacity_milestones.append(track + str(milestone))
+					if track == "hull":
+						max_hull += bonus
+						hull = minf(max_hull, hull + bonus)
+					else:
+						max_shield += bonus
+						shield = minf(max_shield, shield + bonus)
 	_build_course()
 	rng.state = state.rng
 	return true

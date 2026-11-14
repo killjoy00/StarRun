@@ -34,6 +34,7 @@ func _run() -> void:
 	_test_prototype_and_route_choices()
 	_test_new_stage_threats()
 	_test_20_active_pool()
+	_test_fusions_and_milestones()
 	var seeds := 12
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -365,9 +366,34 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 				best = i
 		sim.choose_card(best)
 	if strategy == "on_cooldown":
-		for id in Catalog.ABILITIES:
-			sim.activate(id)
+		for id in sim.active_slots:
+			sim.activate(str(id))
 	elif strategy == "timed":
+		# Fusions replace both original buttons. The bot must time the fused cast,
+		# rather than trying to press two abilities that no longer exist.
+		var urgent_beam := false
+		for beam in sim.charges:
+			urgent_beam = urgent_beam or float(beam.remaining) < 0.55
+		var near_shots := 0
+		for bullet in sim.bullets:
+			if (bullet.p + bullet.v * 0.30).distance_squared_to(sim.ship_position(sim.time + 0.30)) < 65.0 * 65.0:
+				near_shots += 1
+		if urgent_beam or near_shots >= 1 or (sim.shield < sim.max_shield - 20 and sim.bullets.size() >= 8):
+			sim.activate("nova_aegis")
+		if urgent_beam or sim.bullets.size() >= 20:
+			sim.activate("stasis_lock")
+			sim.activate("ghost_signal")
+		if sim.boss_spawned or sim.enemies.size() >= 3:
+			sim.activate("railstorm")
+			sim.activate("missile_grid")
+			sim.activate("prism_focus")
+		if sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield - 30:
+			sim.activate("repair_matrix")
+		if sim.hull < sim.max_hull - 20 and sim.enemies.size() > 0:
+			sim.activate("scrap_converter")
+		if sim.bullets.size() >= 15:
+			sim.activate("reflective_wall")
+			sim.activate("reactor_surge")
 		if sim.enemies.size() >= 3 or sim.boss_spawned:
 			sim.activate("barrage")
 			sim.activate("overdrive")
@@ -399,8 +425,11 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 			sim.activate("siphon")
 		if not sim.charges.is_empty():
 			sim.activate("emp")
-		if sim.bullets.size() >= 12:
+		var incoming_rockets: bool = sim.bullets.any(func(b): return str(b.kind) in ["ordnance", "mine", "slag"])
+		if incoming_rockets:
 			sim.activate("flak")
+			sim.activate("missile_grid")
+		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
 		if sim.enemies.size() >= 3:
@@ -419,15 +448,20 @@ func _test_20_active_pool() -> void:
 		check(sim.content.abilities.has(id) and sim.content.cards.any(func(card): return card.id == id and card.tag == "ABILITY"), "Each active needs cooldown and draft card")
 		if id != "aegis":
 			_install(sim, id)
-		check(id in sim.active_slots and sim.activate(id), "Every active must cast once installed: " + id)
+		var actual: String = id
+		if id not in sim.active_slots:
+			for fusion in sim.content.fusions:
+				if id in fusion.parts and str(fusion.id) in sim.active_slots:
+					actual = str(fusion.id)
+		check(sim._source_active(id) and sim.activate(actual), "Every original active must work directly or as a fusion: " + id)
 	var sim := Sim.new(20)
 	check(not sim.activate("nova"), "Unslotted abilities must not cast")
-	for id in ["nova", "flak", "emp"]:
+	for id in ["flak", "emp", "strike"]:
 		_install(sim, id)
 	check(sim.active_slots.size() == 4, "Three installed abilities fill all four slots")
 	sim.level = 8
 	sim._offer_cards()
-	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0), "Full active bars must not receive unusable ability cards")
+	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar may only offer new abilities that immediately fuse with an equipped one")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
 
@@ -604,7 +638,7 @@ func _test_synergy_tradeoffs() -> void:
 	check(base.synergy_hint("capacitor").contains("FORTRESS"), "Upgrade drafts must explain synergy opportunities without requiring a wiki")
 	base.level = 2
 	base._offer_cards()
-	check(base.cards.any(func(card): return card.tag == "ABILITY" and base.upgrades[card.id] == 0 and not base.synergy_hint(str(card.id)).is_empty()), "First even-level draft must offer a real synergy partner")
+	check(base.cards.any(func(card): return card.tag == "ABILITY" and base.upgrades[card.id] == 0 and (not base.synergy_hint(str(card.id)).is_empty() or not base.fusion_hint(str(card.id)).is_empty())), "Even-level drafts should offer a real pairing for a starting ability")
 	check(base.active_slots.size() == 1, "Draft guidance must not install extra actives automatically")
 
 func _test_prototype_and_route_choices() -> void:
@@ -660,6 +694,95 @@ func _test_prototype_and_route_choices() -> void:
 	safeguard.safeguard_used = true
 	safeguard._spawn_boss()
 	check(safeguard.safeguard_used, "Emergency Safeguard must not reset when the boss spawns during the same stage")
+
+
+func _test_fusions_and_milestones() -> void:
+	var content := Sim.new(1901).content
+	check(content.fusions.size() == 10 and content.passive_links.size() == 8, "Twenty base actives must have ten fusions and eight passive links")
+	for card in content.cards:
+		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
+	for pair in content.fusions:
+		var sim := Sim.new(1901)
+		for component in pair.parts:
+			if int(sim.upgrades.get(str(component), 0)) == 0:
+				_install(sim, str(component))
+		check(str(pair.id) in sim.active_slots and sim._source_active(str(pair.parts[0])) and sim._source_active(str(pair.parts[1])), "Fusion must replace two active buttons: " + str(pair.id))
+		check(sim.active_slots.size() == (1 if "aegis" in pair.parts else 2), "Fusion must free one equipped slot, not add a fifth button")
+		check(not sim.activate(str(pair.parts[0])) and not sim.activate(str(pair.parts[1])), "Consumed components cannot cast separately: " + str(pair.id))
+		var old_uses: int = sim.ability_uses
+		check(sim.activate(str(pair.id)) and sim.ability_uses == old_uses + 1 and float(sim.cooldowns[str(pair.id)]) > 0.0, "Fused button must cast one new skill with a real cooldown: " + str(pair.id))
+		var snap: Dictionary = sim.snapshot()
+		var clone := Sim.new(2)
+		check(clone.restore(snap) and clone.snapshot() == snap, "Fused skills and source ranks must survive save/restore: " + str(pair.id))
+	var counter := Sim.new(1909)
+	counter.active_slots = ["nova_aegis"]
+	counter.upgrades.aegis = 1
+	counter.upgrades.nova = 1
+	counter.upgrades.nova_aegis = 1
+	counter.hull = counter.max_hull - 30.0
+	var plain := Sim.new(1909)
+	plain.active_slots = ["nova_aegis"]
+	plain.upgrades.aegis = 1
+	plain.upgrades.nova = 1
+	plain.upgrades.nova_aegis = 1
+	plain.hull = plain.max_hull - 30.0
+	counter.charges.append({"source":0, "x":270.0, "remaining":0.5, "duration":1.8, "damage":29.0})
+	counter._add_enemy("station", Vector2(260, 120))
+	plain._add_enemy("station", Vector2(260, 120))
+	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
+	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull, "A well-timed fusion counter must earn real healing and a shorter cooldown")
+	check(counter.kills > plain.kills, "A timed Nova Guard counter must hit much harder than firing it early")
+	var slots := Sim.new(1902)
+	for name in ["flak", "emp", "strike"]:
+		_install(slots, name)
+	check(slots.active_slots.size() == 4 and slots._can_learn_active("nova"), "A matching fusion partner should be draftable even when four slots are filled")
+	_install(slots, "nova")
+	check("nova_aegis" in slots.active_slots and slots.active_slots.size() == 4, "A full build must fuse immediately instead of exceeding four buttons")
+	var free_slot := Sim.new(1903)
+	_install(free_slot, "nova")
+	check(free_slot.active_slots.size() == 1 and "nova_aegis" in free_slot.active_slots, "Pairing the signature ability must reopen the slot")
+	for link in content.passive_links:
+		var sim := Sim.new(1904)
+		for part in link.requires:
+			if int(sim.upgrades.get(str(part), 0)) == 0:
+				_install(sim, str(part))
+		check(sim.passive_link_active(str(link.id)), "Both equipped passive tracks must trigger the defined team-up: " + str(link.id))
+	var tank := Sim.new(1905)
+	tank.upgrades.armor = 1
+	tank.upgrades.hull = 1
+	check(tank.passive_link_active("reinforced_plating") and tank.hull_damage_multiplier() < Sim.new(1905).hull_damage_multiplier(), "Armor + Hull must reduce actual incoming damage")
+	var first := Sim.new(1906)
+	first.upgrades.hull = 4
+	first.cards = [first.content.cards.filter(func(card): return card.id == "hull")[0]]
+	var hp: float = first.max_hull
+	check(first.choose_card(0) and first.upgrades.hull == 6 and first.max_hull == hp + 36.0 + 25.0 and first.capacity_milestones.has("hull5"), "Crossing rank 5 must pay a one-time larger hull bonus")
+	first.upgrades.hull = 9
+	first.cards = [first.content.cards.filter(func(card): return card.id == "hull")[0]]
+	hp = first.max_hull
+	check(first.choose_card(0) and first.upgrades.hull == 10 and first.max_hull == hp + 18.0 + 50.0 and first.capacity_milestones.has("hull10"), "Crossing rank 10 must pay another one-time hull bonus")
+	var saved: Dictionary = first.snapshot()
+	var resume := Sim.new(9)
+	check(resume.restore(saved) and resume.max_hull == first.max_hull and resume.capacity_milestones == first.capacity_milestones, "Capacity milestones must not pay twice on restore")
+	var old: Dictionary = saved.duplicate(true)
+	old.erase("capacity_milestones")
+	old.max_hull -= 75.0
+	old.hull -= 75.0
+	var migrated := Sim.new(9)
+	check(migrated.restore(old) and migrated.max_hull == first.max_hull, "Old v0.6 saves must receive existing rank milestones exactly once")
+	var starter := Sim.new(1907)
+	var ranked := Sim.new(1907)
+	ranked.upgrades.aegis = 5
+	check(starter.activate("aegis") and ranked.activate("aegis") and ranked.cooldowns.aegis < starter.cooldowns.aegis and ranked.aegis_left > starter.aegis_left, "Rank 5 active milestone must improve cooldown and effect")
+	var maxed := Sim.new(1907)
+	maxed.upgrades.aegis = 10
+	check(maxed.activate("aegis") and maxed.cooldowns.aegis < ranked.cooldowns.aegis and maxed.aegis_left > ranked.aegis_left, "Rank 10 active milestone must improve both again")
+	var guns := Sim.new(1908)
+	guns.upgrades.pulse = 10
+	guns.upgrades.seeker = 10
+	guns._add_enemy("drone", Vector2(250, 150))
+	guns._update_weapons()
+	check(guns.shots.filter(func(shot): return shot.weapon == "pulse").size() == 3 and guns.shots.filter(func(shot): return shot.weapon == "seeker").size() == 3, "Rank 10 pulse and seeker volleys must change live weapon behavior")
+
 
 func _test_new_stage_threats() -> void:
 	var sim := Sim.new(707)

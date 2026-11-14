@@ -314,13 +314,19 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	if kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
 	elif kind == "station":
-		draw_set_transform(p, sin(visual_time * 0.3 + enemy.phase) * 0.09)
-		draw_rect(Rect2(-38,-22,76,44),Color("66778b"))
-		draw_rect(Rect2(-57,-10,114,20),Color("34495a"))
-		draw_rect(Rect2(-18,-32,36,64),Color("9ba8ab"))
-		draw_circle(Vector2(0,0),8,Color("ffc078"))
-		draw_line(Vector2(-43,0),Vector2(-65,-13),Color("f4b96b"),3)
-		draw_line(Vector2(43,0),Vector2(65,-13),Color("f4b96b"),3)
+		# Old gray box with a yellow dot was placeholder art. Keep the station's
+		# broad turret silhouette, but give it the same layered hull as the ships.
+		draw_set_transform(p, sin(visual_time * 0.25 + enemy.phase) * 0.045)
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-51),Vector2(51,-33),Vector2(67,11),Vector2(43,43),Vector2(-43,43),Vector2(-67,11),Vector2(-51,-33)]), Color("10283c"))
+		for side in [-1, 1]:
+			draw_colored_polygon(PackedVector2Array([Vector2(side*20,-30),Vector2(side*68,-36),Vector2(side*77,2),Vector2(side*48,31),Vector2(side*24,13)]),Color("2a5064"))
+			draw_colored_polygon(PackedVector2Array([Vector2(side*37,-17),Vector2(side*65,-22),Vector2(side*57,15),Vector2(side*34,8)]),Color("426f83"))
+			draw_line(Vector2(side*48,-25),Vector2(side*60,11),Color("8dcbd4",0.78),2.5,true)
+			draw_circle(Vector2(side*52,17),4,Color("ef9a60"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-40),Vector2(20,-17),Vector2(15,27),Vector2(0,43),Vector2(-15,27),Vector2(-20,-17)]),Color("36576c"))
+		draw_rect(Rect2(-8,-57,16,42),Color("133044"))
+		draw_rect(Rect2(-4,-64,8,30),Color("78aec0"))
+		draw_line(Vector2(-15,27),Vector2(15,27),Color("aacbd4"),2,true)
 		draw_set_transform(Vector2.ZERO)
 	else:
 		var size := Vector2(190,190) if boss else Vector2(66,66)
