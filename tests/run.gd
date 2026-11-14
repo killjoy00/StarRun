@@ -425,8 +425,11 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 			sim.activate("siphon")
 		if not sim.charges.is_empty():
 			sim.activate("emp")
-		if sim.bullets.size() >= 12:
+		var incoming_rockets: bool = sim.bullets.any(func(b): return str(b.kind) in ["ordnance", "mine", "slag"])
+		if incoming_rockets:
 			sim.activate("flak")
+			sim.activate("missile_grid")
+		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
 		if sim.enemies.size() >= 3:
