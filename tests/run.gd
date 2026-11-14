@@ -724,8 +724,11 @@ func _test_fusions_and_milestones() -> void:
 	plain.upgrades.nova_aegis = 1
 	plain.hull = plain.max_hull - 30.0
 	counter.charges.append({"source":0, "x":270.0, "remaining":0.5, "duration":1.8, "damage":29.0})
+	counter._add_enemy("station", Vector2(260, 120))
+	plain._add_enemy("station", Vector2(260, 120))
 	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
 	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull, "A well-timed fusion counter must earn real healing and a shorter cooldown")
+	check(counter.kills > plain.kills, "A timed Nova Guard counter must hit much harder than firing it early")
 	var slots := Sim.new(1902)
 	for name in ["flak", "emp", "strike"]:
 		_install(slots, name)
