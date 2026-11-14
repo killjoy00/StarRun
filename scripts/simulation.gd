@@ -298,7 +298,7 @@ func fusion_hint(id: String) -> String:
 			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
 			if other in active_slots:
 				return str(fusion.name) + ": " + str(fusion.description) + " (frees one slot)"
-			return "Pair with " + str(content.abilities[other].name) + " to make " + str(fusion.name) + "."
+			return ""
 	return ""
 
 func _can_learn_active(id: String) -> bool:
@@ -1077,14 +1077,18 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		_log("Emergency field deployed")
 
 func activate(ability: String) -> bool:
-	if ended or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
+	if ended or stage_transition_queued or not intermission_step.is_empty() or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier()
+	var effect_strength: float = ability_power() * _active_rank_scale(ability)
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
 	shield = minf(max_shield, shield + meta.reserve_shield * 5)
-	_log(ability.capitalize() + " activated")
+	_log(str(content.abilities[ability].name) + " used")
+	if not fusion_spec(ability).is_empty():
+		_activate_fusion(ability, effect_strength)
+		return true
 	if ability == "aegis":
-		aegis_left = (1.8 + (upgrades.aegis - 1) * 0.25) * ability_power()
+		aegis_left = (1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength
 	elif ability == "nova":
 		beams_cancelled += charges.size()
 		charges.clear()
@@ -1092,20 +1096,20 @@ func activate(ability: String) -> bool:
 		bullets.clear()
 		effects.append({"kind": "nova", "p": ship_position(), "life": 0.65, "max_life": 0.65, "born": tick})
 		for enemy in enemies:
-			_damage_enemy(enemy, 65.0 * (1 + (upgrades.nova - 1) * 0.25) * ability_power(), "nova")
+			_damage_enemy(enemy, 65.0 * (1 + (upgrades.nova - 1) * 0.25) * effect_strength, "nova")
 		enemies = enemies.filter(func(e): return e.hp > 0.0)
 	elif ability == "barrage":
 		var targets := enemies.filter(func(e): return e.hp > 0)
 		for i in range(7 + (int(upgrades.barrage) - 1) * 2):
 			var target: Dictionary = targets[i % targets.size()] if not targets.is_empty() else {}
-			shots.append({"p":ship_position() + Vector2(0, -30), "v":Vector2.UP.rotated((i - 3) * 0.14) * 650, "damage":(24 + upgrades.barrage * 5) * ability_power(), "weapon":"barrage", "target":int(target.get("id", -1))})
+			shots.append({"p":ship_position() + Vector2(0, -30), "v":Vector2.UP.rotated((i - 3) * 0.14) * 650, "damage":(24 + upgrades.barrage * 5) * effect_strength, "weapon":"barrage", "target":int(target.get("id", -1))})
 	elif ability == "overdrive":
-		overdrive_left = (4.0 + (upgrades.overdrive - 1) * 0.6) * ability_power()
+		overdrive_left = (4.0 + (upgrades.overdrive - 1) * 0.6) * effect_strength
 	elif ability == "chrono":
-		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * ability_power()
+		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * effect_strength
 	elif ability == "mend":
 		mend_left = 4.0
-		mend_rate = (24 + (upgrades.mend - 1) * 6) * ability_power() / 4.0
+		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -1114,11 +1118,11 @@ func activate(ability: String) -> bool:
 		prevented += stopped * 12.0
 		for enemy in enemies:
 			if enemy.kind in ["missile_bomber", "minelayer", "slag_bomber", "boss2", "boss3", "boss4"]:
-				_damage_enemy(enemy, 30.0 * ability_power(), "flak")
+				_damage_enemy(enemy, 30.0 * effect_strength, "flak")
 	elif ability == "emp":
 		beams_cancelled += charges.size()
 		charges.clear()
-		emp_left = (3.0 + upgrades.emp * 0.25) * ability_power()
+		emp_left = (3.0 + upgrades.emp * 0.25) * effect_strength
 	elif ability == "deflector":
 		var remaining: Array = []
 		var absorbed := 0
@@ -1140,34 +1144,34 @@ func activate(ability: String) -> bool:
 				if enemy.id == charge.source:
 					target = enemy
 		if not target.is_empty():
-			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * ability_power(), "strike")
+			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * effect_strength, "strike")
 	elif ability == "prism":
 		var remaining: Array = []
 		var reflected := 0
 		for bullet in bullets:
 			if reflected < 18 and bullet.kind in ["chaff", "ion", "corrosion", "disrupt"] and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
 				var target := _nearest(bullet.p)
-				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * ability_power(), "weapon": "barrage", "target": int(target.get("id", -1))})
+				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * effect_strength, "weapon": "barrage", "target": int(target.get("id", -1))})
 				reflected += 1
 			else:
 				remaining.append(bullet)
 		bullets = remaining
 		prevented += reflected * 1.5
 	elif ability == "barrier":
-		barrier_left = (6.0 + upgrades.barrier * 0.75) * ability_power()
+		barrier_left = (6.0 + upgrades.barrier * 0.75) * effect_strength
 	elif ability == "capacitor":
 		shield_offline = 0.0
-		shield = minf(max_shield, shield + (30.0 + upgrades.capacitor * 15.0) * ability_power())
+		shield = minf(max_shield, shield + (30.0 + upgrades.capacitor * 15.0) * effect_strength)
 	elif ability == "focus":
-		focus_left = (6.0 + upgrades.focus * 0.6) * ability_power()
+		focus_left = (6.0 + upgrades.focus * 0.6) * effect_strength
 	elif ability == "decoy":
-		decoy_left = (5.0 + upgrades.decoy * 0.6) * ability_power()
+		decoy_left = (5.0 + upgrades.decoy * 0.6) * effect_strength
 	elif ability == "jammer":
-		jammer_left = (5.0 + upgrades.jammer * 0.5) * ability_power()
+		jammer_left = (5.0 + upgrades.jammer * 0.5) * effect_strength
 	elif ability == "siphon":
 		var target := _nearest(ship_position())
 		if not target.is_empty():
-			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * ability_power())
+			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * effect_strength)
 			_damage_enemy(target, dealt, "siphon")
 			hull = minf(max_hull, hull + dealt * 0.30)
 	elif ability == "overload":
@@ -1180,16 +1184,113 @@ func activate(ability: String) -> bool:
 				remaining.append(bullet)
 		bullets = remaining
 		for enemy in enemies:
-			_damage_enemy(enemy, minf(250.0, 35.0 + detonated * 5.0 + upgrades.overload * 14.0) * ability_power(), "overload")
+			_damage_enemy(enemy, minf(250.0, 35.0 + detonated * 5.0 + upgrades.overload * 14.0) * effect_strength, "overload")
 	elif ability == "reboot":
 		for id in active_slots:
 			if id != "reboot":
-				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot)
+				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot * effect_strength)
 	elif ability == "salvage":
-		salvage_left = (10.0 + upgrades.salvage * 1.0) * ability_power()
+		salvage_left = (10.0 + upgrades.salvage * 1.0) * effect_strength
 	if ability not in ["aegis", "nova"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
+
+func _activate_fusion(id: String, strength: float) -> void:
+	# One cast, one cooldown, and one occupied slot for the two source abilities.
+	match id:
+		"nova_aegis":
+			aegis_left = maxf(aegis_left, 3.8 * strength)
+			shield = minf(max_shield, shield + 28.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			prevented += bullets.reduce(func(sum, b): return sum + float(b.damage), 0.0)
+			bullets.clear()
+			for enemy in enemies:
+				_damage_enemy(enemy, 100.0 * strength, "nova")
+			effects.append({"kind":"nova", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick})
+		"railstorm":
+			overdrive_left = maxf(overdrive_left, 7.0 * strength)
+			for n in range(3):
+				var target: Dictionary = _nearest(ship_position())
+				if not target.is_empty():
+					_damage_enemy(target, 180.0 * strength, "strike")
+			effects.append({"kind":"strike", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
+		"stasis_lock":
+			chrono_left = maxf(chrono_left, 6.0 * strength)
+			emp_left = maxf(emp_left, 5.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			for enemy in enemies:
+				_damage_enemy(enemy, 45.0 * strength, "nova")
+			effects.append({"kind":"chrono", "p":ship_position(), "life":0.75, "max_life":0.75, "born":tick})
+		"repair_matrix":
+			mend_left = 6.0
+			mend_rate = (62.0 * strength) / mend_left
+			shield_offline = 0.0
+			shield = minf(max_shield, shield + 65.0 * strength)
+			barrier_left = maxf(barrier_left, 4.0 * strength)
+			corrosion_left = 0.0
+			heat_left = 0.0
+		"missile_grid":
+			var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine", "slag"]).size()
+			bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
+			prevented += stopped * 12.0
+			var targets: Array = enemies.filter(func(e): return float(e.hp) > 0.0)
+			for n in range(14):
+				if targets.is_empty():
+					break
+				var target: Dictionary = targets[n % targets.size()]
+				shots.append({"p":ship_position() + Vector2((n % 3 - 1) * 9, -28), "v":Vector2.UP.rotated((n - 7) * 0.10) * 710.0, "damage":40.0 * strength, "weapon":"barrage", "target":int(target.id)})
+			effects.append({"kind":"barrage", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
+		"scrap_converter":
+			salvage_left = maxf(salvage_left, 16.0 * strength)
+			var target: Dictionary = _nearest(ship_position())
+			if not target.is_empty():
+				var dealt: float = minf(float(target.hp), 175.0 * strength)
+				_damage_enemy(target, dealt, "siphon")
+				hull = minf(max_hull, hull + dealt * 0.55)
+		"prism_focus":
+			focus_left = maxf(focus_left, 9.0 * strength)
+			var kept: Array = []
+			var turned := 0
+			for bullet in bullets:
+				if turned < 25 and bullet.p.distance_squared_to(ship_position()) < 400.0 * 400.0:
+					var target: Dictionary = _nearest(bullet.p)
+					if not target.is_empty():
+						shots.append({"p":bullet.p, "v":Vector2.UP * 700.0, "damage":35.0 * strength, "weapon":"barrage", "target":int(target.id)})
+						turned += 1
+						continue
+				kept.append(bullet)
+			bullets = kept
+			prevented += turned * 2.0
+		"reflective_wall":
+			barrier_left = maxf(barrier_left, 10.0 * strength)
+			var absorbed := bullets.filter(func(b): return b.kind in ["chaff", "ion", "corrosion", "disrupt"]).size()
+			bullets = bullets.filter(func(b): return b.kind not in ["chaff", "ion", "corrosion", "disrupt"])
+			shield = minf(max_shield, shield + absorbed * 3.5 * strength)
+			prevented += absorbed * 2.0
+			for n in range(mini(12, absorbed)):
+				var target: Dictionary = _nearest(ship_position())
+				if not target.is_empty():
+					shots.append({"p":ship_position(), "v":Vector2.UP * 720.0, "damage":28.0 * strength, "weapon":"barrage", "target":int(target.id)})
+		"ghost_signal":
+			jammer_left = maxf(jammer_left, 10.0 * strength)
+			decoy_left = maxf(decoy_left, 10.0 * strength)
+			beams_cancelled += charges.size()
+			charges.clear()
+			var stopped := bullets.filter(func(b): return b.kind == "ordnance").size()
+			bullets = bullets.filter(func(b): return b.kind != "ordnance")
+			prevented += stopped * 12.0
+		"reactor_surge":
+			for slot in active_slots:
+				if str(slot) != id:
+					cooldowns[str(slot)] = maxf(0.0, float(cooldowns.get(str(slot), 0.0)) * 0.25 - 2.0)
+			var detonated := bullets.filter(func(b): return b.kind == "chaff").size()
+			bullets = bullets.filter(func(b): return b.kind != "chaff")
+			for enemy in enemies:
+				_damage_enemy(enemy, minf(320.0, 70.0 + detonated * 7.0) * strength, "overload")
+	effects.append({"kind":"nova", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+
 
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
