@@ -731,7 +731,7 @@ func _show_prototypes() -> void:
 	var body: VBoxContainer = view.body
 	var footer: HBoxContainer = view.footer
 	_label(header, "Pick a prototype", 26, CYAN)
-	_wrapped(header, "Keep one of these for the rest of this run." % sim.stage, 15, Color.WHITE)
+	_wrapped(header, "Keep one of these for the rest of this run.", 15, Color.WHITE)
 	_wrapped(header, "Each has a downside. You only get one.", 14, AMBER)
 	var first: Button = null
 	for i in range(sim.prototype_offers.size()):
