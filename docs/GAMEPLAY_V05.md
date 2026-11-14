@@ -1,4 +1,6 @@
-# StarRun v0.5 — Four-stage campaign, boss payoff and readable run screens
+# StarRun v0.5 — Historical four-stage campaign milestone
+
+**Superseded for the current strategic rules by [v0.6 gameplay](GAMEPLAY_V06.md)**, which adds boss subcomponents/phases, synergies, Prototypes and strategic routes. This file preserves the earlier v0.5 release design.
 
 **Status:** gameplay implementation and automated UAT in PR #8. These are the intended rules for the next iOS playtest, not a claim that human balance or real-device readability has passed. This replaces [v0.4 gameplay notes](GAMEPLAY_V04.md) as the current implemented direction.
 

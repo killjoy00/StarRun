@@ -1,10 +1,10 @@
-> **Current implementation (2026-11-13, v0.5):** see [GAMEPLAY_V05.md](GAMEPLAY_V05.md) for the four-stage campaign, 20-actives/four-slots, unique environments and bosses, player-acknowledged warp, and Build/Results UAT requirements. [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) and [GAMEPLAY_V04.md](GAMEPLAY_V04.md) are historical snapshots; proposed features below are explicitly not all implemented.
+> **Current implementation (2026-11-13, v0.6):** see [GAMEPLAY_V06.md](GAMEPLAY_V06.md) for targetable boss modules and changing phases, four two-ability synergy archetypes with tradeoffs, eight Prototype choices and three strategic between-stage routes. [GAMEPLAY_V05.md](GAMEPLAY_V05.md), [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) and [GAMEPLAY_V04.md](GAMEPLAY_V04.md) are historical snapshots; proposed features below are explicitly not all implemented.
 
 # StarRun: Game Design Document
 
 Status: Design direction revised 2026-11-13 for v0.5 gameplay. Working title is the repo name.
 
-The revised gameplay scope was accepted on 2026-11-13. [GAMEPLAY_V05.md](GAMEPLAY_V05.md) is the detailed source for implemented mechanics and specific mobile UAT requirements. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
+The revised strategic gameplay scope was accepted on 2026-11-13. [GAMEPLAY_V06.md](GAMEPLAY_V06.md) is the detailed source for current mechanics, explicitly prioritized boss behaviors and mobile UAT requirements. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
 
 How to read this doc: every item is tagged by where it came from.
 
@@ -50,7 +50,7 @@ StarRun is a roguelike autoshooter with bullet-hell density. A spaceship flies u
 
 **Minute to minute.** Kills grant XP. Each level-up pauses the game and offers cards. Target: one level-up roughly every 30 seconds, faster early and slower late (Proposed).
 
-**Stage to stage (implemented v0.5).** Four minutes of waves lead to a distinct boss in each of four stages. Boss defeat freezes combat for an explicit celebration. The player taps Warp to continue; shields refill, 30% of max hull is repaired and one milestone upgrade draft is awarded. A separate run-defining Prototype relic selection is still proposed, not implemented.
+**Stage to stage (implemented v0.6).** Four minutes of waves lead to a distinct boss in each of four stages. Boss defeat freezes combat for an explicit celebration. The player taps Warp, chooses one of three run-long Prototypes, then chooses a safe-repair, damage-overclock or high-risk bounty route. Hull and shield refills depend on this route, and one extra milestone upgrade draft is still awarded. This is a fixed two-decision intermission with checkpointed choice hands.
 
 **Run to run.** Death or victory pays out Cores. Cores buy permanent upgrades in the Hangar. Milestones unlock new weapons, abilities, Prototypes, and ships.
 
@@ -180,9 +180,9 @@ Card economy tools, all bought in the Hangar (Decided in principle, details Prop
 
 At full slots there are 63 pickable levels (4 weapons, 3 abilities, 6 systems, 5 levels each, minus the original two starting items; the revised start includes a third item). The base-slot ship has 43 available picks before accounting for starting a second ability (42 with that change); the expanded ship has 62 with three starting items. Forty picks would nearly fill the base capacity. Target separate base and expanded budgets before implementing the full game. The first playable uses a smaller explicit 36-pick pool and approximately 14–20 draft choices; see FIRST_PLAYABLE.md.
 
-### 8.4 Prototypes (Proposed)
+### 8.4 Prototypes (8 implemented; additional concepts proposed)
 
-After the bosses of levels 1, 2, and 3 the player picks 1 of 3 Prototypes. These change rules rather than add stats, and give each run an identity. Examples:
+After bosses 1, 2 and 3, v0.6 now offers one of three checkpointed, nonduplicated Prototypes. Eight are implemented, each with a combat/economy advantage and a genuine drawback; see [GAMEPLAY_V06.md](GAMEPLAY_V06.md) for their exact effects. Additional unbuilt concepts from the original design follow:
 
 - **Capacitor Bank**: abilities hold two charges, cooldowns are 30% longer.
 - **Volatile Shields**: when the shield breaks, it fires a free Nova Pulse (20 second lockout).
@@ -214,7 +214,7 @@ Because the player does not aim, enemy roles exist to stress different parts of 
 
 **Elites** are regular enemies with one affix (Armored, Volatile, Rapid, Shielded). This multiplies variety without new art.
 
-Current v0.5 pool: 24 standard enemies/hazards with Stage 2–4-specific attacks, and 4 distinct bosses. Elite affixes remain proposed and are not shipped.
+Current v0.6 pool: 24 standard enemies/hazards with Stage 2–4-specific attacks, and four bosses. Bosses 2–4 also spawn two separate auto-targetable and destructible modules each. Elite affixes remain proposed and are not shipped.
 
 ## 10. Levels
 
@@ -229,9 +229,15 @@ Each boss tests a different part of the build, so a one-dimensional build hits a
 | 3 | Solar Foundry | Molten furnace rails, forge artillery, heat reducing weapon output, shootable slag bombs and splitting ships | **Crucible Engine**: giant furnace reactor with heat spreads and molten mines | Sustained pressure and point defense |
 | 4 | Void Citadel | Black-violet fortress towers, phase-stalking raiders, gravity slowdown and shield-piercing void fire | **Void Regent**: geometric core with orbiting pylons and dual telegraphed beam lanes | Prioritization, layered defense and cooldown discipline |
 
-Implemented between stages: explicit boss-clear celebration, tap-to-warp, refill shields, repair 30% max hull, choose a milestone upgrade. Prototype relic choices remain a future design.
+Implemented between stages in v0.6: explicit boss-clear celebration, tap-to-warp, one of three run-long Prototype relics, and a choice of 55% safe repair / 25% temporary weapon overclock with restricted repair / 30% higher enemy pressure in exchange for a boss-clear bounty. The milestone upgrade draft still follows. Veteran skip-to-stage starts remain a separate proposal.
 
 **After the first clear**: Threat tiers 1 to 10, each adding a modifier (more elites, faster chaff, shorter telegraphs down to the 1.0 second floor). This is where long-term players spend their Hangar power.
+
+### 10.1 Tactical boss parts and strategic builds (implemented v0.6)
+
+The Storm Carrier's two launch bays control fighter spawning and missile salvos. The Crucible Engine's two vents sustain a timed sealed/exposed armor cycle. The Void Regent's two pylons protect its core and enable dual telegraphed beams; below 35% health after pylon removal, its fire intensifies. All six components have their own health and visually readable silhouettes. Automatic weapons prioritize destroying exposed modules without requiring a targeting cursor. A boss is not considered cleared until its main core is destroyed.
+
+Four explicitly authored **two-active-ability synergies** turn the 20-ability pool into visible archetypes: Fortress (defense vs damage), Glass Cannon (damage vs vulnerability), Control (cooldown/slow vs damage), and Salvager (currency vs firepower). Eight run-long Prototypes compound these tradeoffs. After each of the first three bosses, the Prototype hand is checkpointed and followed by a genuine route choice: Safe Passage, Redline Jump or High-Risk Bounty. The next stage's damage/spawn pressure and post-boss payout depend on that route. Detailed triggers and multipliers appear in [GAMEPLAY_V06.md](GAMEPLAY_V06.md).
 
 ## 11. Fairness rules
 
@@ -243,7 +249,7 @@ These are constraints on all content, not suggestions.
 4. No single unavoidable hit may deal more than 35% of base hull at the level it appears in.
 5. The results screen shows damage by class and weapon plus the final ten seconds: damage sources, shield breaks, ability use, and cooldown availability at death.
 6. Limit simultaneous heavy threats and budget burst windows as well as average damage. The first playable allows one heavy charge at a time, globally spaced by 8.5 seconds or more. Every prototype threat has a specified available counter.
-7. Target-priority challenges must be answerable through documented weapon priorities or abilities. Seekers prioritize charging sources, then ordnance, then nearest enemies. Nova interrupts boss charges.
+7. Target-priority challenges must be answerable through documented weapon priorities or abilities. Seekers prioritize charging sources, then ordnance, then valuable boss modules ahead of ordinary enemies. Nova/EMP interrupt boss charges. Pulse homing also modestly favors modules; the player cannot aim manually.
 
 ## 12. Meta-progression: the Hangar
 
@@ -261,7 +267,7 @@ Decided: permanent upgrades between runs, bought freely with points, including t
 | Tactics | Extra card, rerolls, banishes, skip, hold |
 | Salvage | XP gain, Core gain |
 
-**Unlocks** come from milestones, not Cores: weapons, abilities, Prototypes, and ships are added to the pool for doing specific things (clear level 2, kill a boss without losing shield, and so on). This keeps the first-run pool small and readable.
+**Current implementation:** eight Prototypes enter the between-stage choice pool immediately; ships and pilots are unlocked by spending Cores, and active abilities appear through run drafts. Long-term milestone-based Prototype unlocks remain proposed, not implemented.
 
 **Power budget** (Proposed): level 4 at Threat 0 should be clearable with roughly one third of the Hangar filled. The rest of the Hangar is for Threat tiers. A roguelite where the first clear requires a full grind would be a mistake for a paid Steam game.
 
@@ -325,11 +331,11 @@ A 25 minute run is long for a phone. Save the exact run state every ten seconds 
 
 Implemented: stage-themed, shape- and color-coded threats; 16pt minimum mobile body labels; at least 44pt touch targets; reduced-glow mode; readable pinned navigation in Build/Results; audio warning and shield-break cues. Proposed but unverified: full remapping, dedicated flash and shake toggles, VoiceOver support.
 
-### 14.5 Build, Results and between-stage interaction (implemented v0.5; device UAT pending)
+### 14.5 Build, Results and between-stage interaction (implemented v0.6; device UAT pending)
 
 A boss defeat is a **player-recognized milestone**, not an invisible change of wave pool. The explosion and shockwaves are displayed while the deterministic simulation is frozen; after the visual beat, a single explicit **Warp to next stage** action begins a short cinematic transition. After the fourth boss, **Claim victory** ends the run and opens Results. Pending celebrations are checkpointed and never auto-complete on resume.
 
-Build and Results are reading screens, not walls of tiny numbers. Fixed headers provide orientation. The middle section scrolls vertically, with smart word wrapping and no horizontal scrolling. Large fixed-footers keep **Resume flight / Main menu** on Build and **Fly again / Main menu** on Results visible and thumb-reachable. Results leads with salvage, stage reached, survival and threats, then the detailed damage/weapon breakdown and last ten seconds. Build summarizes the four active slots first and keeps long systems/Hangar detail behind an explicit expansion. See the measurable checks in [GAMEPLAY_V05.md](GAMEPLAY_V05.md).
+Build, Prototype, Route and Results are reading screens, not walls of tiny numbers. Fixed headers provide orientation. The middle section scrolls vertically, with smart word wrapping and no horizontal scrolling. Large fixed-footers keep **Resume flight / Main menu** on Build and **Fly again / Main menu** on Results visible and thumb-reachable. Results leads with salvage, stage reached, survival and threats, then the detailed damage/weapon breakdown and last ten seconds. Build summarizes the four active slots first and keeps long systems/Hangar detail behind an explicit expansion. See the measurable checks in [GAMEPLAY_V06.md](GAMEPLAY_V06.md).
 
 ## 15. Art and audio
 

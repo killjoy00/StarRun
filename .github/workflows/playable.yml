@@ -32,9 +32,21 @@ jobs:
             exit 1
           fi
       - name: Phone and Steam Deck layout checks
-        run: godot --headless --path . --script tests/ui_smoke.gd
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/ui_smoke.gd 2>&1 | tee /tmp/starrun-ui.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-ui.log; then
+            echo "::error::Godot reported a runtime script failure during UI tests"
+            exit 1
+          fi
       - name: Replay, fairness, draft, save, and matched-seed balance checks
-        run: godot --headless --path . --script tests/run.gd
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/run.gd 2>&1 | tee /tmp/starrun-simulation.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-simulation.log; then
+            echo "::error::Godot reported a runtime script failure during simulation tests"
+            exit 1
+          fi
   exports:
     name: Web, Windows, and Linux builds
     needs: simulation
