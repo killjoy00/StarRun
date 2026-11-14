@@ -307,6 +307,9 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var kind: String = enemy.kind
+	if kind == "boss_module":
+		_draw_boss_module(enemy)
+		return
 	var boss := kind.begins_with("boss")
 	if kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
@@ -363,11 +366,37 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(tint,0.3))
 		draw_set_transform(Vector2.ZERO)
 	if boss:
-		draw_rect(Rect2(65,14,410,55),Color(0.03,0.035,0.05,0.8))
-		_bar(Rect2(80,24,380,6),enemy.hp/enemy.max_hp,AMBER)
-		draw_string(ThemeDB.fallback_font, Vector2(80,56), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
+		draw_rect(Rect2(65,11,410,82),Color(0.03,0.035,0.05,0.86))
+		_bar(Rect2(80,21,380,7),enemy.hp/enemy.max_hp,AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(80,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(80,78), sim.boss_phase_label(), HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
 	elif enemy.hp < enemy.max_hp:
 		_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+
+func _draw_boss_module(enemy: Dictionary) -> void:
+	var p: Vector2 = enemy.p
+	var role: String = str(enemy.role)
+	var pulse: float = 0.75 + 0.25 * sin(visual_time * 5.0 + float(enemy.id))
+	var tint := Color("6ce5ff") if role == "launch_bay" else (Color("ffae65") if role == "vent" else Color("bb8dff"))
+	draw_set_transform(p, sin(visual_time * 0.8 + enemy.phase) * 0.05)
+	if role == "launch_bay":
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-25), Vector2(26,-14),Vector2(33,19),Vector2(0,33),Vector2(-33,19),Vector2(-26,-14)]),Color("245479"))
+		draw_rect(Rect2(-18,-13,36,23),Color("0a283d"))
+		for i in range(3):
+			draw_line(Vector2(-12+i*12,-11),Vector2(-12+i*12,11),Color(tint,pulse),3,true)
+	elif role == "vent":
+		draw_rect(Rect2(-33,-24,66,48),Color("5c2f24"))
+		for i in range(4):
+			draw_rect(Rect2(-23+i*12,-18,7,36),Color("ff782f",pulse))
+		draw_arc(Vector2.ZERO,37,-PI,0,26,Color(tint,0.7),3,true)
+	else:
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-45),Vector2(28,-4),Vector2(0,40),Vector2(-28,-4)]),Color("3d2368"))
+		draw_colored_polygon(PackedVector2Array([Vector2(0,-32),Vector2(14,0),Vector2(0,27),Vector2(-14,0)]),Color(tint,pulse))
+		draw_arc(Vector2.ZERO,34,visual_time,visual_time+PI*1.4,35,Color(tint,0.7),2,true)
+	draw_set_transform(Vector2.ZERO)
+	draw_arc(p, 36, 0, TAU, 42, Color(tint, 0.48), 1.7, true)
+	_bar(Rect2(p.x-31,p.y+43,62,5),enemy.hp/enemy.max_hp,tint)
+	# Every module is a real auto-targeted enemy, not a decorative weak point.
 
 func _custom_enemy(kind: String) -> bool:
 	return kind in ["ion_frigate", "corroder", "disruptor", "arc_spire", "storm_weaver", "forge_turret", "slag_bomber", "ember_hunter", "splitter", "phase_stalker", "void_lancer", "gravity_sentinel", "echo_carrier", "boss2", "boss3", "boss4"]
