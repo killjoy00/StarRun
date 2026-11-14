@@ -44,6 +44,7 @@ var gravity_left := 0.0
 var last_boss_position := Vector2(270, 135)
 var boss_spawn_time := 0.0
 var prototypes: Array = []
+var capacity_milestones: Array = [] # Tracks one-time rank 5/10 hull and shield increases.
 var prototype_offers: Array = []
 var intermission_step := "" # "", "prototype", "route", "ready"
 var route_choice := ""
@@ -93,6 +94,10 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
 			cooldowns[id] = 0.0
+	for fusion in content.fusions:
+		content.abilities[str(fusion.id)] = {"name": str(fusion.name), "cooldown": float(fusion.cooldown)}
+		cooldowns[str(fusion.id)] = 0.0
+		upgrades[str(fusion.id)] = 0
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
@@ -266,16 +271,110 @@ func _enemy_limit() -> int:
 func _has_prototype(id: String) -> bool:
 	return id in prototypes
 
+func fusion_spec(id: String) -> Dictionary:
+	for fusion in content.fusions:
+		if str(fusion.id) == id:
+			return fusion
+	return {}
+
+func _source_active(id: String) -> bool:
+	if id in active_slots:
+		return true
+	for fusion in content.fusions:
+		if str(fusion.id) in active_slots and id in fusion.parts:
+			return true
+	return false
+
+func fusion_hint(id: String) -> String:
+	for fusion in content.fusions:
+		if id in fusion.parts:
+			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
+			if other in active_slots:
+				return str(fusion.name) + ": " + str(fusion.description) + " (frees one slot)"
+			return "Pair with " + str(content.abilities[other].name) + " to make " + str(fusion.name) + "."
+	return ""
+
+func _can_learn_active(id: String) -> bool:
+	if active_slots.size() < Catalog.ACTIVE_SLOTS:
+		return true
+	for fusion in content.fusions:
+		if id in fusion.parts:
+			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
+			if other in active_slots:
+				return true # Instantly replaces two buttons with one.
+	return false
+
+func _try_fuse() -> void:
+	for fusion in content.fusions:
+		var first: String = str(fusion.parts[0])
+		var second: String = str(fusion.parts[1])
+		if first not in active_slots or second not in active_slots:
+			continue
+		var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
+		var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
+		active_slots.erase(first)
+		active_slots.erase(second)
+		active_slots.insert(insert_at, str(fusion.id))
+		upgrades[str(fusion.id)] = 1
+		cooldowns[str(fusion.id)] = current_cd
+		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
+
+func active_passive_links() -> Array:
+	var pairs: Array = []
+	for link in content.passive_links:
+		if int(upgrades.get(str(link.requires[0]), 0)) > 0 and int(upgrades.get(str(link.requires[1]), 0)) > 0:
+			pairs.append(link)
+	return pairs
+
+func passive_link_active(id: String) -> bool:
+	for link in active_passive_links():
+		if str(link.id) == id:
+			return true
+	return false
+
+func passive_hint(id: String) -> String:
+	for link in content.passive_links:
+		if id in link.requires:
+			var other: String = str(link.requires[1]) if str(link.requires[0]) == id else str(link.requires[0])
+			if int(upgrades.get(other, 0)) > 0:
+				return str(link.name) + ": " + str(link.description)
+	return ""
+
+func rank_at(id: String, milestone: int) -> bool:
+	return int(upgrades.get(id, 0)) >= milestone
+
+func _active_rank_scale(id: String) -> float:
+	var sources: Array = [id]
+	var spec: Dictionary = fusion_spec(id)
+	if not spec.is_empty():
+		sources = spec.parts
+	var total := 0.0
+	for source in sources:
+		var rank: int = int(upgrades.get(str(source), 0))
+		total += 1.0 + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
+	return total / maxf(1.0, float(sources.size()))
+
+func _active_rank_cooldown(id: String) -> float:
+	var sources: Array = [id]
+	var spec: Dictionary = fusion_spec(id)
+	if not spec.is_empty():
+		sources = spec.parts
+	var total := 0.0
+	for source in sources:
+		var rank: int = int(upgrades.get(str(source), 0))
+		total += 1.0 - (0.10 if rank >= 5 else 0.0) - (0.10 if rank >= 10 else 0.0)
+	return total / maxf(1.0, float(sources.size()))
+
 func active_synergies() -> Array:
 	var found: Array = []
 	for spec in content.synergies:
 		var has_first := false
 		var has_second := false
 		for id in spec.first:
-			if id in active_slots:
+			if _source_active(str(id)):
 				has_first = true
 		for id in spec.second:
-			if id in active_slots:
+			if _source_active(str(id)):
 				has_second = true
 		if has_first and has_second:
 			found.append(spec)
@@ -295,7 +394,7 @@ func synergy_hint(ability: String) -> String:
 			continue
 		var belongs_first: bool = ability in spec.first
 		var belongs_second: bool = ability in spec.second
-		if (belongs_first and spec.second.any(func(id): return id in active_slots)) or (belongs_second and spec.first.any(func(id): return id in active_slots)):
+		if (belongs_first and spec.second.any(func(other): return _source_active(str(other)))) or (belongs_second and spec.first.any(func(other): return _source_active(str(other)))):
 			return str(spec.name) + ": " + str(spec.description)
 	return ""
 
@@ -1173,7 +1272,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -1198,6 +1297,20 @@ func restore(state: Dictionary) -> bool:
 				active_slots.append(id)
 	if difficulty not in Catalog.DIFFICULTIES:
 		difficulty = "normal"
+	# Older saved flights had rank 5 upgrades but no one-time capacity rewards.
+	if not state.has("capacity_milestones"):
+		capacity_milestones = []
+		for track in ["hull", "shield"]:
+			for milestone in [5, 10]:
+				if rank_at(track, milestone):
+					var bonus: float = (25.0 if milestone == 5 else 50.0) if track == "hull" else (18.0 if milestone == 5 else 35.0)
+					capacity_milestones.append(track + str(milestone))
+					if track == "hull":
+						max_hull += bonus
+						hull = minf(max_hull, hull + bonus)
+					else:
+						max_shield += bonus
+						shield = minf(max_shield, shield + bonus)
 	_build_course()
 	rng.state = state.rng
 	return true
