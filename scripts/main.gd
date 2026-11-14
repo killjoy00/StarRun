@@ -512,7 +512,7 @@ func _update_hud() -> void:
 		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and _compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else ("FREE" if _compact_ui() else "DRAFT AN ABILITY"))
 		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
-		button.tooltip_text = (sim.content.abilities[id].name + " · Level %d" % sim.upgrades[id]) if learned else "Install an active ability in an upgrade draft"
+		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var badge: Control = button.get_child(0)
 		if badge.get("icon_id") != id:
 			badge.set("icon_id", id)
@@ -524,7 +524,7 @@ func _update_hud() -> void:
 		build_label.text += tag + "S\n"
 		for card in sim.content.cards:
 			if card.tag == tag and sim.upgrades[card.id] > 0:
-				build_label.text += "%s  %d/5\n" % [card.name, sim.upgrades[card.id]]
+				build_label.text += "%s  %d/%d\n" % [card.name, sim.upgrades[card.id], card.max]
 		build_label.text += "\n"
 	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nAmber lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
 
@@ -565,7 +565,8 @@ func _show_cards() -> void:
 		var increment: int = 1 if card.tag == "ABILITY" and current == 0 else 2
 		var next_rank: int = mini(int(card.max), current + increment)
 		var heading: String = "%d. %s" % [i + 1, card.name]
-		var detail: String = ("New active  |  %d of 4 slots" % (sim.active_slots.size() + 1)) if card.tag == "ABILITY" and current == 0 else ("%s  |  Rank %d to %d" % [card.tag.capitalize(), current, next_rank])
+		var is_fusion: bool = card.tag == "ABILITY" and current == 0 and not sim.fusion_hint(id).is_empty()
+		var detail: String = "Fuses with equipped ability. One slot freed." if is_fusion else (("New ability  |  Slot %d of 4" % (sim.active_slots.size() + 1)) if card.tag == "ABILITY" and current == 0 else ("%s  |  Rank %d to %d" % [card.tag.capitalize(), current, next_rank]))
 		detail += "\n" + str(card.description)
 		if current < 10 and id != "repair":
 			var milestone: int = 5 if current < 5 else 10
@@ -824,8 +825,14 @@ func _show_results() -> void:
 	_wrapped(header, "Stage %d of %d  ·  %02d:%02d flight time" % [sim.stage, sim.stage_count(), int(sim.time) / 60, int(sim.time) % 60], 15, MUTED)
 	_reading_card(body, "SALVAGE EARNED", "+%d CORES  ·  %d enemy ships destroyed\n%d stages cleared  ·  %d abilities activated\nBase cores earned through bounty contracts: %d" % [sim.payout(), sim.kills, sim.stage_clears, sim.ability_uses, sim.bounty_earned], AMBER)
 	var build_lines := PackedStringArray()
+	for slot in sim.active_slots:
+		var fusion: Dictionary = sim.fusion_spec(str(slot))
+		if not fusion.is_empty():
+			build_lines.append("Fusion: " + str(fusion.name))
+	for link in sim.active_passive_links():
+		build_lines.append("Pair: " + str(link.name))
 	for combo in sim.active_synergies():
-		build_lines.append(str(combo.name) + " - " + str(combo.description))
+		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + " - " + str(spec.benefit))
