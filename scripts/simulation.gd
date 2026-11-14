@@ -218,11 +218,18 @@ func step() -> void:
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
-	hull = minf(max_hull, hull + (upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)) * DT)
+	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)
+	if rank_at("repair_bots", 5): repair_rate += 0.35
+	if rank_at("repair_bots", 10): repair_rate += 0.70
+	if passive_link_active("field_recovery"): repair_rate *= 1.40
+	hull = minf(max_hull, hull + repair_rate * DT)
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
 		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT
+		if rank_at("regen", 5): recharge += 0.55 * DT
+		if rank_at("regen", 10): recharge += 1.0 * DT
+		if passive_link_active("shield_cycle"): recharge *= 1.40
 		if synergy_active("fortress"):
 			recharge *= 1.60
 		if _has_prototype("bastion_lattice"):
@@ -726,19 +733,21 @@ func _update_charges() -> void:
 
 func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
+	if rank_at("autoloader", 5): rate += 0.15
+	if rank_at("autoloader", 10): rate += 0.25
 	if gravity_left > 0.0:
 		rate *= 0.72
 	pulse_timer -= DT * rate
 	seeker_timer -= DT * rate
-	arc_timer -= DT * rate
+	arc_timer -= DT * rate * (1.15 if passive_link_active("arc_feed") else 1.0)
 	lance_timer -= DT * rate
 	var bank := clampf(ship_velocity().x * 0.004, -0.32, 0.32)
 	var origin := ship_position() + Vector2(0, -34).rotated(bank)
 	if upgrades.pulse > 0 and pulse_timer <= 0.0:
 		pulse_timer += 0.19
-		var barrels := 2 if upgrades.pulse >= 5 else 1
+		var barrels := 3 if rank_at("pulse", 10) else (2 if rank_at("pulse", 5) else 1)
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0), "weapon": "pulse", "target": -1})
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		seeker_timer += (0.62 if pilot_id == "hunter" else 0.70)
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
@@ -761,21 +770,23 @@ func _update_weapons() -> void:
 				target_id = int(chosen.id)
 				target_pos = chosen.p
 		if target_id != -1:
-			shots.append({"p": origin, "v": (target_pos - origin).normalized() * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0), "weapon": "seeker", "target": target_id})
+			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
+			for n in range(volley):
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
 		var start := origin
-		for chain in range(2 + int(upgrades.arc) / 2):
+		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0)):
 			var target := _nearest(start, visited)
 			if target.is_empty() or start.distance_to(target.p) > 640:
 				break
 			visited.append(target.id)
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
-			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0), "arc")
+			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
 	if upgrades.lance > 0 and lance_timer <= 0.0 and not enemies.is_empty():
-		lance_timer = 2.4
+		lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
 		var target := _nearest(origin)
 		for enemy in enemies:
 			if not charges.is_empty() and enemy.id == charges[0].source:
@@ -786,10 +797,10 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power(), "lance")
+					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power() * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0), "lance")
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
 	if synergy_active("fortress"):
 		power *= 0.82
 	if synergy_active("assault"):
@@ -809,6 +820,9 @@ func weapon_power() -> float:
 
 func ability_power() -> float:
 	var power: float = 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
+	if rank_at("amplifier", 5): power += 0.15
+	if rank_at("amplifier", 10): power += 0.25
+	if passive_link_active("quick_charge"): power *= 1.15
 	if synergy_active("assault"):
 		power *= 1.20
 	if _has_prototype("echo_coil"):
@@ -819,6 +833,8 @@ func hull_damage_multiplier() -> float:
 	var factor := 1.0
 	if synergy_active("fortress"):
 		factor *= 0.85
+	if passive_link_active("reinforced_plating"):
+		factor *= 0.90
 	if synergy_active("assault"):
 		factor *= 1.28
 	if _has_prototype("volatile_core"):
@@ -829,6 +845,9 @@ func cooldown_multiplier() -> float:
 	var factor := 1.0
 	if synergy_active("control"):
 		factor *= 0.82
+	if rank_at("coolant", 5): factor *= 0.95
+	if rank_at("coolant", 10): factor *= 0.90
+	if passive_link_active("quick_charge"): factor *= 0.88
 	if _has_prototype("null_harmonics"):
 		factor *= 0.78
 	if _has_prototype("mirror_cell"):
@@ -962,8 +981,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.28
 	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
 		amount *= 0.28
-	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < upgrades.targeting * 0.05:
-		amount *= 2.0
+	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0)):
+		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
 	enemy.hp -= amount
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
@@ -980,7 +999,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.25 if pilot_id == "scavenger" else 0.0))
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0))
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -1027,7 +1046,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			if cooldowns[id] > 0.0:
 				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0)
 	if kind == "chaff":
-		reduced = maxf(amount * 0.25, amount - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0))
+		reduced = maxf(reduced * 0.25, reduced - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0) - (0.65 if rank_at("armor", 5) else 0.0) - (1.10 if rank_at("armor", 10) else 0.0) - (0.25 if passive_link_active("reinforced_plating") else 0.0))
 	var shield_damage := minf(shield, reduced)
 	var had_shield := shield > 0.0
 	shield -= shield_damage
@@ -1036,8 +1055,8 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
-		shield_offline = 3.0
-		_log("Shield broke - offline for 3 seconds")
+		shield_offline = 1.5 if passive_link_active("shield_cycle") else 3.0
+		_log("Shield broke")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
 			shield_offline = 0.0
