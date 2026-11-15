@@ -268,6 +268,9 @@ func step() -> void:
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
+	if time >= next_encounter_at and not boss_spawned:
+		_spawn_encounter()
+		next_encounter_at = time + 66.0 + float((seed_value + encounter_index * 11) % 23)
 	_update_enemies()
 	_update_charges()
 	_update_support()
@@ -563,10 +566,10 @@ func choose_route(id: String) -> bool:
 func _spawn_enemy() -> void:
 	if enemies.size() >= _enemy_limit():
 		return
-	# Each stage has its own recognizable enemy ecology, not a generic harder pool.
+	# Each authored enemy ecology recurs, but endless mixes threats from later worlds.
 	var stage_time := time - stage_start
 	var pool: Array = []
-	match stage:
+	match ((stage - 1) % int(content.stage_count)) + 1:
 		1:
 			pool = ["drone", "drone", "drone", "rusher"]
 			if stage_time > 25:
@@ -598,6 +601,8 @@ func _spawn_enemy() -> void:
 			if stage_time > 110:
 				pool.append_array(["echo_carrier", "void_lancer", "arc_spire", "slag_bomber"])
 
+	if endless_enabled and stage > int(content.stage_count):
+		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
 	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
 
@@ -607,11 +612,33 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
+## Encounter variants are reproducible by seed. Each has a different timing demand:
+## armored escorts, mine-heavy bomber convoys, or protected carrier launches.
+func _spawn_encounter() -> void:
+	if enemies.size() >= _enemy_limit() - 5:
+		return
+	var ecology := ((stage - 1) % int(content.stage_count)) + 1
+	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
+	encounter_index += 1
+	var formation: Array = []
+	match pattern:
+		0:
+			formation = ["shieldguard", "interceptor", "gunship"] if ecology == 1 else (["shieldguard", "ion_frigate", "storm_weaver"] if ecology == 2 else (["shieldguard", "ember_hunter", "splitter"] if ecology == 3 else ["shieldguard", "phase_stalker", "disruptor"]))
+			_log("ESCORT FORMATION - armored lead, interceptors flanking")
+		1:
+			formation = ["missile_bomber", "minelayer", "missile_bomber"] if ecology == 1 else (["missile_bomber", "arc_spire", "ion_frigate"] if ecology == 2 else (["slag_bomber", "forge_turret", "slag_bomber"] if ecology == 3 else ["void_lancer", "gravity_sentinel", "void_lancer"]))
+			_log("BOMBER CONVOY - ordnance incoming")
+		2:
+			formation = ["carrier", "gunship", "interceptor"] if ecology == 1 else (["carrier", "shieldguard", "disruptor"] if ecology == 2 else (["carrier", "slag_bomber", "ember_hunter"] if ecology == 3 else ["echo_carrier", "phase_stalker", "gravity_sentinel"]))
+			_log("ELITE CARRIER - prioritize the launch ship")
+	for i in range(formation.size()):
+		_add_enemy(str(formation[i]), Vector2(120.0 + i * 150.0, -50.0 - i * 65.0))
+
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
 		return
 	var kind := "station"
-	match stage:
+	match ((stage - 1) % int(content.stage_count)) + 1:
 		1: kind = "boulder" if rng.randf() < 0.65 else "station"
 		2: kind = "arc_spire" if rng.randf() < 0.7 else "station"
 		3: kind = "forge_turret" if rng.randf() < 0.6 else "slag_bomber"
@@ -630,6 +657,8 @@ func _spawn_boss() -> void:
 	hull = minf(max_hull, hull + 15)
 	heavy_ready_at = time + 3.0
 	var spec := stage_spec()
+	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
+	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
@@ -734,11 +763,16 @@ func _update_enemies() -> void:
 			continue
 		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
-			var lead := 1.8
+			var lead := 2.15 if kind.begins_with("boss") and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
-				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0
+				var pattern_shift := 0.0
+				if kind.begins_with("boss") and boss_attack_pattern == "sweep":
+					pattern_shift = sin((time - boss_spawn_time) * 0.72) * 75.0
+				elif kind.begins_with("boss") and boss_attack_pattern == "crossfire":
+					pattern_shift = 62.0 if beams_fired % 2 == 0 else -62.0
+				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0 + pattern_shift
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
 			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8))))
 			_log("%s heavy beam charging" % kind.replace("_", " "))
