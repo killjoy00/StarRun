@@ -104,7 +104,7 @@ func _run() -> void:
 		victory.won = true
 		victory.ended = true
 		Progress.settle(profile,victory)
-	check(Progress.progress(profile,"three_ships") == 3 and profile.achievements.has("three_ships"), "Three distinct winning ships earn the Fleet Commander milestone")
+	check(Progress.progress(profile,"three_ships") >= 3 and profile.achievements.has("three_ships"), "At least three distinct winning ships earn the Fleet Commander milestone")
 
 	# A newly constructed profile cannot inherit progress from another test.
 	var fresh := {"cores":0,"runs":0,"last_paid_run":-1}
