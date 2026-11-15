@@ -1,0 +1,138 @@
+extends SceneTree
+## Capture the complete UI matrix on every PR, without touching a player's save.
+## Run with xvfb-run -a godot --path . --audio-driver Dummy --script tests/screenshot_harness.gd
+const Sim = preload("res://scripts/simulation.gd")
+const Main = preload("res://scripts/main.gd")
+class MemoryServices extends "res://scripts/platform_services.gd":
+	var values: Dictionary = {}
+	func write_atomic(path: String, value: Dictionary) -> bool:
+		values[path] = value.duplicate(true)
+		return true
+	func read_save(path: String) -> Dictionary:
+		return values.get(path, {})
+	func delete_run() -> void:
+		values.erase(RUN)
+
+const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
+const SCREENS := [
+	"menu", "settings", "briefing",
+	"hangar-hull", "hangar-weapons", "hangar-abilities",
+	"ships", "pilots", "combat-1", "combat-4",
+	"cards", "cards-banish", "paused", "build",
+	"stage-clear", "prototypes", "route",
+	"results-loss", "results-win", "beam-tutorial", "endless-clear"
+]
+var output := "/tmp/starrun-screenshots"
+var count := 0
+var failures := 0
+
+func _initialize() -> void:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--output="):
+			output = arg.trim_prefix("--output=")
+	create_timer(150.0).timeout.connect(func(): push_error("Screenshot matrix timed out"); quit(1))
+	call_deferred("_run")
+
+func _run() -> void:
+	for dimensions in SIZES:
+		root.size = dimensions
+		await process_frame
+		var scene := Main.new()
+		scene.services = MemoryServices.new()
+		root.add_child(scene)
+		scene.set_process(false)
+		scene.world.set_process(false)
+		scene.sound.enabled = false
+		scene.sound.music_enabled = false
+		scene.profile.cores = 5000
+		scene._layout()
+		var folder := output.path_join("%dx%d" % [dimensions.x, dimensions.y])
+		DirAccess.make_dir_recursive_absolute(folder)
+		for screen in SCREENS:
+			scene.sim = Sim.new(84101, scene.profile.hangar)
+			scene.banish_mode = false
+			scene.stage_clear_clock = 2.0
+			_prepare(scene, screen)
+			scene._update_hud()
+			scene._process(0.0)
+			await process_frame
+			await RenderingServer.frame_post_draw
+			var picture := root.get_texture().get_image()
+			if picture.is_empty() or picture.get_width() != dimensions.x or picture.get_height() != dimensions.y:
+				failures += 1
+				push_error("Screenshot size mismatch: %s / %s" % [str(dimensions), screen])
+				continue
+			var path := folder.path_join(screen + ".png")
+			if picture.save_png(path) != OK:
+				failures += 1
+				push_error("Could not save " + path)
+			else:
+				count += 1
+		scene.queue_free()
+		await process_frame
+	print("SCREENSHOT MATRIX: %d of %d screens (3 sizes) saved to %s" % [count, SIZES.size() * SCREENS.size(), output])
+	quit(0 if failures == 0 and count == SIZES.size() * SCREENS.size() else 1)
+
+func _prepare(scene, screen: String) -> void:
+	match screen:
+		"menu":
+			scene._show_menu()
+		"settings":
+			scene.mode = "menu"
+			scene._show_settings()
+		"briefing":
+			scene.mode = "menu"
+			scene._show_briefing(false)
+		"hangar-hull", "hangar-weapons", "hangar-abilities":
+			scene.hangar_category = {"hangar-hull":"Hull", "hangar-weapons":"Weapons", "hangar-abilities":"Abilities"}[screen]
+			scene._show_hangar()
+		"ships", "pilots":
+			scene.loadout_tab = "Ships" if screen == "ships" else "Pilots"
+			scene._show_loadout()
+		"combat-1", "combat-4":
+			scene.sim.stage = 4 if screen == "combat-4" else 1
+			scene.sim.boss_spawned = screen == "combat-4"
+			scene.mode = "playing"
+			scene._clear_overlay()
+		"cards", "cards-banish":
+			scene.sim.level = 6
+			scene.sim._offer_cards(false)
+			scene.sim.banishes_left = 2
+			scene.banish_mode = screen == "cards-banish"
+			scene._show_cards(false)
+		"paused":
+			scene._show_pause()
+		"build":
+			scene.mode = "playing"
+			scene._show_build()
+		"stage-clear", "prototypes", "route":
+			scene.sim.stage = 1
+			scene.sim.stage_clears = 1
+			scene.sim.stage_transition_queued = true
+			if screen == "stage-clear":
+				scene._show_stage_clear(false)
+			else:
+				scene.sim.begin_intermission()
+				if screen == "prototypes":
+					scene._show_prototypes()
+				else:
+					scene.sim.choose_prototype(0)
+					scene._show_route_choice()
+		"results-loss", "results-win":
+			scene.sim.ended = true
+			scene.sim.won = screen == "results-win"
+			scene.sim.stage = 4 if scene.sim.won else 2
+			scene.sim.stage_clears = 4 if scene.sim.won else 1
+			scene.sim.hull = 0.0 if not scene.sim.won else 80.0
+			scene.sim.damage_taken.heavy = 62.0
+			scene.sim.damage_taken.ordnance = 38.0
+			scene._show_results()
+		"beam-tutorial":
+			scene.sim.charges = [{"x":270.0, "remaining":1.5, "duration":1.8, "source":0, "damage":30.0}]
+			scene._show_beam_tutorial()
+		"endless-clear":
+			scene.sim.endless_enabled = true
+			scene.sim.stage = 5
+			scene.sim.stage_clears = 5
+			scene.sim.stage_transition_queued = true
+			scene._show_stage_clear(false)
