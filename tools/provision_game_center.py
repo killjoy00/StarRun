@@ -64,7 +64,6 @@ def ensure_detail(api, app):
         print("Game Center detail already enabled")
         return detail["id"]
     body = {"data":{"type":"gameCenterDetails",
-                    "attributes":{"challengeEnabled":False},
                     "relationships":{"app":link("apps",appid)}}}
     detail = api.request("POST","/gameCenterDetails",json=body)["data"]
     print("Enabled App Store Connect Game Center detail")
