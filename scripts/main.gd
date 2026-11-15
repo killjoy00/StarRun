@@ -233,7 +233,7 @@ func _layout() -> void:
 	var safe_top: float = float(inset.top) + 7.0
 	var field_top := safe_top + 84.0
 	var reserved := 82.0 if compact else 126.0
-	var usable_height := maxf(240.0, size.y - field_top - reserved - float(inset.bottom))
+	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
@@ -583,12 +583,13 @@ func _sheet(title: String, eyebrow: String = "", dismiss: Callable = Callable(),
 	heading.add_theme_font_override("font", Kit.font(0, 0.45))
 	reading_panel = panel
 	if not bool(profile.get("reduced", false)):
-		var final_y := panel.position.y
-		panel.position.y -= 18.0
-		panel.modulate.a = 0.0
+		# Animate the sheet content, not its bottom-anchored panel: landscape
+		# layouts must keep the container fully inside the safe rectangle.
+		box.position.y = 12.0
+		box.modulate.a = 0.0
 		var entrance := create_tween().set_parallel(true)
-		entrance.tween_property(panel, "position:y", final_y, 0.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-		entrance.tween_property(panel, "modulate:a", 1.0, 0.15)
+		entrance.tween_property(box, "position:y", 0.0, 0.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		entrance.tween_property(box, "modulate:a", 1.0, 0.15)
 	return box
 
 ## A card the whole surface of which is the tap target. Returns its content box.
