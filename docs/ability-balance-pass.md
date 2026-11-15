@@ -33,3 +33,30 @@ The baseline is `main` at the start of this pass. These are small cooldown adjus
 ## Acceptance criteria
 
 The normal four-world campaign must remain completable with reasonable timed inputs, timed counters must beat on-cooldown spam in matched-seed fixtures, World 5 must increase danger above World 4, and each narrow specialist must have a recognizable situation to shine. Review the simulation job's `BALANCE` and `FIXED_BUILD_TIMING` output before merging further numerical changes.
+
+
+## Follow-up: evidence-driven balance pass (2026-11-15)
+
+**Correction to the earlier summary:** These are scripted bots, not human players. The baseline World 1 comparison stops after **World 1**, so 14/24 no-active clears does **not** mean 14 complete campaigns. In the 24-seed World 1 fixture, no active casts cleared 14/24, on-cooldown casts cleared 19/24, and reactive timing cleared 20/24. A separate *fixed-loadout, hard-mode World 1 boss* comparison cleared 24/24 when the Nova Guard fusion was timed versus 5/24 when spammed. That strong single-fusion result does not establish that timing is crucial for all abilities.
+
+The bots always move and fire automatically. "Never" means **no manual active-ability casts**, not that the ship literally does nothing. Bots also choose upgrades. In normal runs, combat and draft share RNG; matched seeds are comparable starting conditions, not an exactly matched sequence of upgrade offers. Results must never be presented as human-player outcomes.
+
+### Changes in this follow-up
+
+- **World 1 pressure:** increase enemy spawn pressure by about 14% *after 110 seconds* (spawn interval x0.88). After 18 seconds of the World 1 boss, non-heavy gun fire also accelerates roughly 14% (interval x0.88). The opening segment, first boss shots and heavy-beam tutorial timing are unchanged. Both changes are initial hypotheses for simulation validation, not a guaranteed target win rate.
+- **Flak:** intercepting ordnance on an imminent collision path, or mines/slag just about to detonate nearby, restores up to 8 shield times effect strength. Casting early still clears ordnance but receives no shield reward.
+- **Jammer:** suppresses future fire as before; when used in the last 1.5 seconds of a telegraphed heavy charge, it *also* cancels that charge and reduces that cast's cooldown by 20%. Early casts do not interrupt an already charging beam.
+- **Rail Strike:** adds 0.8% of maximum boss HP, capped at 2,200 damage *before ability-power scaling*. The existing base strike remains and ordinary enemies receive no HP-based bonus.
+- **Energy Siphon:** adds 0.4% of maximum boss HP, capped at 1,200 extra pre-scaled damage. Healing now uses actual recorded damage after defenses and overkill, capped at 25 times ability-power scaling per cast. This avoids boss HP becoming an unlimited healing source.
+- **Other actives:** no cooldowns changed in this pass.
+
+### Automated measurement and safeguards
+
+- The existing simulation tests retain the quick 24-seed World 1 comparison and fixed-loadout Nova Guard timing gate; they now add close-call / early-cast tests for Flak and Jammer, Rail Strike late-boss/cap assertions, and Siphon actual-damage/healing-cap assertions.
+- The new [balance matrix](../tests/balance_matrix.gd) simulates all four worlds, all six ships, and Normal/Hard/Insane with the three active-use policies. It reports **stage-by-stage clear counts**, entire-campaign victories, casts, mean final hull, and timeouts. This is an automated **diagnostic**, not a passing win-rate target.
+- Every regular PR runs a one-seed **6 x 3 x 3** full-campaign smoke matrix to catch structural regressions. The [weekly balance workflow](../.github/workflows/balance-matrix.yml) runs six matched seeds per ship/difficulty combination: **108 distinct matched seed/configuration fixtures for each policy, 324 scripted trials total**, sharded over 18 jobs, with downloadable logs. Manual workflow dispatch can request 100 seeds per cell for deeper analysis.
+- Do **not** automatically rebalance around the first matrix. Look for World 1 no-active clears around 35-45%, timed-input clears around 75-85%, and a meaningful timed-over-cooldown advantage, then evaluate actual human-player playtesting. These are design hypotheses and must not be misrepresented as current measured performance.
+
+### Next decision criteria
+
+First inspect whether no-cast World 1 clears and timed-over-cooldown differences move in the intended direction; second verify that World 2-4 remain achievable for at least one well-played ship/build; third compare Rail Strike/Siphon boss damage and healing by world without making ranks 5-10 oppressive. If an automated policy fails later stages, determine whether this reflects game difficulty, the scripted upgrade policy, or a simulation timeout before tuning enemies.
