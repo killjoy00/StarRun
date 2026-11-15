@@ -32,6 +32,12 @@ On iPhone, four compact on-screen buttons run left to right on one row. Fused ab
 
 The playfield uses adaptive 390×844 logical canvas scaling on modern portrait iPhones. Phone UI text uses a 16-point minimum. Build and Results use pinned navigation, short summaries and word-wrapped detail. iOS readability and performance still need real-device validation.
 
+## iPhone and TestFlight delivery
+
+**Latest upload: 0.8.1 (1012)** — [signed release](https://github.com/killjoy00/EZTrivia/actions/runs/43733148156) of [PR #17](https://github.com/killjoy00/StarRun/pull/17), including the combat HUD, ability icons/cooldowns/audio/haptics, distinct ship artwork, encounter variety and optional endless worlds after World 4. Apple processing and physical-device acceptance are separate from upload confirmation.
+
+StarRun's iPhone workflow compiles an unsigned app for CI. **Signed TestFlight distribution already exists in [EZTrivia's shared workflow](https://github.com/killjoy00/EZTrivia/blob/main/.github/workflows/starrun-testflight.yml)** using its existing Apple credentials. An immutable source SHA in [the release request](https://github.com/killjoy00/EZTrivia/blob/main/.github/starrun-release-request.json) triggers signing/upload. See [native delivery](docs/NATIVE_DELIVERY.md) for release verification and device checks.
+
 ## Building and running
 
 Pinned to **Godot 4.6.3**, GDScript and the Compatibility renderer. GitHub Actions performs simulation and responsive UI checks, builds Web/Windows/Linux, and compiles an unsigned native iPhone application. Shared Apple signing credentials are in the companion TestFlight release workflow; no secrets are stored in this repo.
