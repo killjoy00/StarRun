@@ -33,6 +33,10 @@ func _unwrapped_long_label(node: Node) -> bool:
 func _contains_text(node: Node, phrase: String) -> bool:
 	if node is Label and str(node.text).contains(phrase):
 		return true
+	if node is RichTextLabel and node.get_parsed_text().contains(phrase):
+		return true
+	if node is Button and str(node.text).contains(phrase):
+		return true
 	for child in node.get_children():
 		if _contains_text(child, phrase):
 			return true
@@ -110,7 +114,15 @@ func _run() -> void:
 		scene._show_menu()
 		await process_frame
 		check(not scene.hud.visible and not scene.ability_a.visible, "Combat HUD must not show through the title screen")
+		check(_contains_text(scene.overlay, "Star/Run"), "The title must display the requested Star/Run wordmark")
+		check(_contains_text(scene.overlay, "DAILY CHALLENGE") and _contains_text(scene.overlay,"UTC"), "The title must advertise a UTC Daily Challenge")
+		check(_contains_text(scene.overlay, "Awards"), "Achievements must be discoverable from the title")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
+		scene._show_achievements()
+		await process_frame
+		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.size.y > 100 and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Achievements page must wrap and scroll at every viewport")
+		scene._show_menu()
 		for sheet in ["settings", "briefing", "pause"]:
 			if sheet == "settings":
 				scene._show_settings()
@@ -255,6 +267,39 @@ func _run() -> void:
 	scene._begin_warp()
 	check(scene.mode == "results" and scene.sim.won, "Claiming the final boss victory should open the readable report")
 	check(scene.reading_footer.get_child_count() == 2, "Results must offer both Fly Again and Main Menu actions")
+	# Daily launch is a separate mode but uses the same single checkpoint slot.
+	scene._show_menu()
+	var daily_id: String = scene.Progress.utc_day()
+	var daily_expected: Dictionary = scene.Progress.daily_setup(daily_id)
+	scene._launch_daily()
+	check(scene.sim.daily_day == daily_id and scene.sim.daily_attempt == 1, "Daily launch stores an immutable UTC date and attempt")
+	check(scene.sim.seed_value == int(daily_expected.seed) and scene.sim.ship_id == str(daily_expected.ship) and scene.sim.pilot_id == str(daily_expected.pilot), "A Daily always uses the global day's ship, pilot, seed and difficulty")
+	check(scene.sim.difficulty == "normal" and scene.sim.meta.damage == 0 and scene.sim.meta.hull == 0, "Daily ignores owned Hangar bonuses without wiping the real profile")
+	var daily_snapshot: Dictionary = scene.sim.snapshot()
+	scene._show_menu()
+	scene._resume_run()
+	check(scene.sim.snapshot() == daily_snapshot, "Daily resume restores the exact date, build and RNG")
+	scene._show_menu()
+	scene._launch_daily()
+	check(scene.mode == "abandon" and scene.pending_launch == "daily", "Starting another Daily with a saved flight requires abandonment confirmation")
+	scene._close_sheet()
+	check(scene.mode == "menu", "Cancelling Daily abandonment returns to title without deleting progress")
+	scene._resume_run()
+	check(scene.sim.snapshot() == daily_snapshot, "Cancelled Daily abandonment preserves the first run")
+	scene.sim.stage = 4
+	scene.sim.stage_clears = 4
+	scene.sim.stage_transition_queued = true
+	scene._show_stage_clear()
+	scene.stage_clear_clock = 1.5
+	scene._show_stage_clear(false)
+	check(scene.stage_clear_secondary == null or not scene.stage_clear_secondary.is_inside_tree(), "Daily must not offer endless scoring after World 4")
+	var stage_before: int = scene.sim.stage
+	scene._continue_endless()
+	check(scene.sim.stage == stage_before and not scene.sim.endless_enabled, "Daily scoring cannot enter Endless mode")
+	scene._begin_warp()
+	check(scene.sim.won and scene.mode == "results" and scene.profile.daily_records.has(daily_id), "Settling the Daily saves the best result locally")
+	check(scene.profile.achievements.has("daily_first"), "Finishing a Daily earns its permanent achievement")
+	check(_contains_text(scene.reading_scroll, "DAILY CHALLENGE"), "Daily results show score, UTC identity and personal best")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame

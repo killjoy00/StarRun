@@ -10,6 +10,7 @@ const CombatHud = preload("res://scripts/combat_hud.gd")
 const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
+const Progress = preload("res://scripts/meta_progress.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -76,6 +77,12 @@ var banish_mode := false
 var loadout_return := "hangar"
 var briefing_launch := false
 var sheet_base := "menu" # Screen shown beneath a settings, briefing or confirmation sheet.
+var pending_launch := "normal" # Normal or daily through abandon confirmation and resize.
+var result_earned_cores := -1
+var result_awards: Array = []
+var result_daily_score := -1
+var result_daily_best := -1
+var result_new_best := false
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -97,6 +104,7 @@ func _ready() -> void:
 		profile.ship = "vanguard"
 	if not profile.get("pilot", "rookie") in profile.pilots_owned:
 		profile.pilot = "rookie"
+	Progress.prepare(profile)
 	game_speed = float(profile.get("speed", 1.0))
 	if game_speed not in speed_options:
 		game_speed = 1.0
@@ -323,9 +331,11 @@ func _layout() -> void:
 		else:
 			_show_briefing(briefing_launch)
 	elif mode == "abandon":
-		_confirm_abandon(sheet_base)
+		_confirm_abandon(sheet_base, pending_launch)
 	elif mode == "menu":
 		_show_menu()
+	elif mode == "achievements":
+		_show_achievements()
 	elif mode == "cards":
 		_show_cards()
 	elif mode == "paused":
@@ -738,31 +748,46 @@ func _render_base(base: String) -> void:
 func _show_menu() -> void:
 	mode = "menu"
 	confirm_key = ""
-	var view := _page(1.0, false, 460.0)
+	var view := _page(1.0, true, 460.0)
 	var top: VBoxContainer = view.top
 	var body: VBoxContainer = view.body
 	var bottom: VBoxContainer = view.bottom
+	# The title is a compact typographic mark, not another dashboard heading.
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 8)
 	top.add_child(bar)
-	var mark := Kit.label(bar, "STARRUN", 32, Kit.CYAN)
-	mark.add_theme_font_override("font", Kit.font(5, 0.7))
-	mark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	bar.add_child(_wallet())
+	var wordmark := RichTextLabel.new()
+	wordmark.name = "StarRunWordmark"
+	wordmark.bbcode_enabled = true
+	wordmark.text = "[color=#eef7ff]Star[/color][color=#ffc078]/[/color][color=#66f5df]Run[/color]"
+	wordmark.fit_content = true
+	wordmark.scroll_active = false
+	wordmark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wordmark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wordmark.custom_minimum_size.y = 58
+	wordmark.add_theme_font_override("normal_font", Kit.font(-1, 0.8))
+	wordmark.add_theme_font_size_override("normal_font_size", 45 if not _compact_ui() else 41)
+	bar.add_child(wordmark)
 	_icon_button(bar, "settings", _show_settings, "Sound and effects")
-	Kit.label(top, "Your ship flies and shoots on its own. You build it, and you choose when to fire its abilities.", 16, Kit.MUTED, true)
-	# Hero: the equipped ship in flight. Tapping it opens Ships & pilots.
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	top.add_child(title_row)
+	var pitch := Kit.caps(title_row, "BUILD  /  REACT  /  REPEAT", Kit.AMBER, 12)
+	pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(_wallet())
+	Kit.label(top, "Your ship flies and fires. You decide what it becomes, and when to use its abilities.", 15, Kit.MUTED, true)
+	# Live ship art is part of the title, not a separate splash screen.
 	var hero_frame := PanelContainer.new()
 	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
-	hero_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hero_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	hero_frame.custom_minimum_size = Vector2(0, 164)
 	hero_frame.clip_contents = true
 	body.add_child(hero_frame)
 	var hero := HangarBay.new()
 	hero.style = "flight"
 	hero.labels = false
 	hero.ship_id = profile.ship
-	hero.custom_minimum_size = Vector2(0, 110)
+	hero.custom_minimum_size = Vector2(0, 142)
 	hero_frame.add_child(hero)
 	var caption := MarginContainer.new()
 	for side in ["left", "right", "bottom"]:
@@ -801,8 +826,25 @@ func _show_menu() -> void:
 	hit.tooltip_text = "Change ship or pilot"
 	hit.pressed.connect(_open_loadout.bind("menu"))
 	hero_frame.add_child(hit)
-	# Difficulty as a visible three-way choice, not a button that cycles.
-	Kit.caps(body, "Difficulty", Kit.MUTED, 13)
+	# The Daily is the same UTC challenge and starting ship for every player.
+	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
+	var record: Dictionary = profile.daily_records.get(daily.day, {})
+	var daily_panel := PanelContainer.new()
+	daily_panel.add_theme_stylebox_override("panel", Kit.box(Color("101b28"), Color("516a73"), 14, 1, 12, 10))
+	body.add_child(daily_panel)
+	var daily_content := VBoxContainer.new()
+	daily_content.add_theme_constant_override("separation", 5)
+	daily_panel.add_child(daily_content)
+	Kit.caps(daily_content, "DAILY CHALLENGE   ·   %s UTC" % str(daily.day), Kit.AMBER, 13)
+	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
+	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
+	Kit.label(daily_content, "%s  ·  %s  ·  Normal" % [_name_part(str(daily_ship.name), 0),_name_part(str(daily_pilot.name), 0)], 16, Kit.TEXT, true)
+	Kit.label(daily_content, "Fixed seed. No Hangar bonuses. Replays improve your own best.", 14, Kit.MUTED, true)
+	var daily_text := "Fly today's challenge"
+	if int(record.get("best_score",-1)) >= 0:
+		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
+	_ui_button(daily_content, daily_text, _launch_daily, "secondary", 48)
+	Kit.caps(body, "Difficulty · regular runs", Kit.MUTED, 13)
 	var segments := HBoxContainer.new()
 	segments.add_theme_constant_override("separation", 6)
 	body.add_child(segments)
@@ -820,24 +862,43 @@ func _show_menu() -> void:
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
 	Kit.label(body, _difficulty_text(current), 15, Kit.MUTED, true)
-	# Actions: secondary row, then the one primary action at the bottom edge.
-	var saved := services.read_save(Services.RUN)
+	# A short navigation rail stays above the thumb-reachable primary action.
+	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 6)
 	bottom.add_child(row)
-	bottom.move_child(row, 0)
 	_ui_button(row, "Hangar", _show_hangar, "secondary", 48, true)
-	_ui_button(row, "How to play", _show_briefing.bind(false), "secondary", 48, true)
+	var awards_button := _ui_button(row, "Awards", _show_achievements, "secondary", 48, true)
+	awards_button.tooltip_text = "Achievements and milestones"
+	_ui_button(row, "Guide", _show_briefing.bind(false), "secondary", 48, true)
 	var primary: Button
 	if saved.is_empty():
-		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
+		primary = _ui_button(reading_footer, "Launch regular flight", _launch, "primary", 60, true)
 	else:
-		_ui_button(row, "New flight", _confirm_abandon.bind("menu"), "secondary", 48, true)
-		primary = _ui_button(reading_footer, "Resume  ·  Stage %d" % int(saved.get("stage", 1)), _resume_run, "primary", 60, true)
+		_ui_button(bottom, "Start a new regular flight", _confirm_abandon.bind("menu"), "ghost", 44)
+		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
+		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
 	if not _touch_first():
 		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
 		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_focus(primary)
+
+
+func _show_achievements() -> void:
+	mode = "achievements"
+	Progress.prepare(profile)
+	var view := _page(1.0, true, 540.0)
+	_page_header(view.top, "PILOT RECORD", "Achievements", _show_menu)
+	var unlocked: Dictionary = profile.achievements
+	Kit.label(view.top, "%d / %d earned  ·  saved on this device" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
+	Kit.label(view.body, "Tough flights are part of the climb. These milestones track the things you've survived, discovered and mastered.", 16, Kit.TEXT, true)
+	for item in Progress.ACHIEVEMENTS:
+		var id: String = str(item.id)
+		var is_unlocked: bool = unlocked.has(id)
+		var done: int = mini(int(item.target), Progress.progress(profile, id))
+		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
+		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
+	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
 
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
@@ -850,6 +911,12 @@ func _launch() -> void:
 	# Launch immediately; the first heavy-beam charge teaches Aegis in context.
 	# The optional How to play briefing remains available from the title.
 	_new_run()
+
+func _launch_daily() -> void:
+	if services.read_save(Services.RUN).is_empty():
+		_new_daily_run()
+	else:
+		_confirm_abandon("menu", "daily")
 
 func _launch_or_confirm(base: String) -> void:
 	if services.read_save(Services.RUN).is_empty():
@@ -933,7 +1000,8 @@ func _briefing_done() -> void:
 	else:
 		_show_menu()
 
-func _confirm_abandon(base: String) -> void:
+func _confirm_abandon(base: String, desired: String = "normal") -> void:
+	pending_launch = "daily" if desired == "daily" else "normal"
 	sheet_base = base
 	_render_base(base)
 	mode = "abandon"
@@ -941,7 +1009,7 @@ func _confirm_abandon(base: String) -> void:
 	var box := _sheet("Abandon your saved flight?", "New flight", _close_sheet, false)
 	Kit.label(box, "You have a flight saved in Stage %d. Starting over deletes it, and it pays out no cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
 	_focus(_ui_button(box, "Resume saved flight", _resume_run, "primary", 54))
-	_ui_button(box, "Abandon and launch", _launch, "danger", 48)
+	_ui_button(box, "Abandon and start daily" if pending_launch == "daily" else "Abandon and launch", _new_daily_run if pending_launch == "daily" else _launch, "danger", 48)
 	_ui_button(box, "Cancel", _close_sheet, "ghost", 44)
 
 # ---------------------------------------------------------------------------
@@ -1450,6 +1518,7 @@ func _big_stat(parent: Node, value: String, caption: String, color: Color) -> vo
 	Kit.caps(stack, caption, Kit.MUTED, 12)
 
 func _show_stage_clear(reset_clock: bool = true) -> void:
+	stage_clear_secondary = null # Never keep a freed Endless button across ceremonies.
 	if reset_clock:
 		stage_clear_clock = 0.0
 	mode = "stage_clear"
@@ -1498,7 +1567,8 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
 	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
 	if is_final:
-		Kit.label(content, "All four worlds cleared. Claim your win, or keep this build and take on harder worlds.", 16, Kit.TEXT, true)
+		var final_copy := "Daily complete. Claim your score and try again for a new personal best." if not sim.daily_day.is_empty() else "All four worlds cleared. Claim your win, or keep this build and take on harder worlds."
+		Kit.label(content, final_copy, 16, Kit.TEXT, true)
 	elif sim.endless_enabled:
 		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
@@ -1506,7 +1576,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
-	if is_final:
+	if is_final and sim.daily_day.is_empty():
 		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	elif sim.endless_enabled:
@@ -1585,7 +1655,8 @@ func _show_results() -> void:
 	mode = "results"
 	var view := _page(1.0, true, 540.0)
 	var body: VBoxContainer = view.body
-	_page_header(view.top, "Stage %d of %d  ·  %s" % [sim.stage, sim.stage_count(), sim.difficulty.capitalize()], "Victory" if sim.won else "Ship destroyed")
+	var qualifier: String = "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
+	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
 	var total_damage := 0.0
 	var worst_kind := ""
@@ -1607,16 +1678,32 @@ func _show_results() -> void:
 	hero_row.add_theme_constant_override("separation", 12)
 	hero.add_child(hero_row)
 	hero_row.add_child(Kit.core_icon(30))
-	var earned := Kit.label(hero_row, "+%d" % sim.payout(), 40, Kit.AMBER)
+	var credited: int = result_earned_cores if result_earned_cores >= 0 else sim.payout()
+	var earned := Kit.label(hero_row, "+%d" % credited, 40, Kit.AMBER)
 	earned.add_theme_font_override("font", Kit.font(0, 0.7))
 	var hero_text := VBoxContainer.new()
 	hero_text.add_theme_constant_override("separation", 0)
 	hero_text.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero_row.add_child(hero_text)
-	Kit.label(hero_text, "cores earned", 16, Kit.TEXT)
+	Kit.label(hero_text, "cores earned" if credited > 0 else "no additional Cores", 16, Kit.TEXT)
 	Kit.label(hero_text, "%d in your wallet" % int(profile.cores), 15, Kit.MUTED)
-	_ui_button(body, "Spend them in the Hangar", _show_hangar, "amber", 48)
+	if not sim.daily_day.is_empty():
+		var day_record: Dictionary = profile.daily_records.get(sim.daily_day, {})
+		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score",-1))
+		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
+		_info_card(body, "DAILY CHALLENGE  ·  %s UTC" % sim.daily_day, "Score %d  ·  Best %d%s
+Same setup for everyone today. Unlimited retries; Cores only on the first finished attempt." % [score, best, "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+	_ui_button(body, "Spend Cores in the Hangar", _show_hangar, "amber", 48)
+	if not result_awards.is_empty():
+		var unlocked := PackedStringArray()
+		for id in result_awards:
+			var entry: Dictionary = Progress.achievement(str(id))
+			if not entry.is_empty():
+				unlocked.append(str(entry.name))
+		_info_card(body, "Achievements unlocked", "
+".join(unlocked), Kit.CYAN)
+		_ui_button(body, "View all achievements", _show_achievements, "secondary", 48)
 	_tiles(body, [["Kills", str(sim.kills)], ["Stages", "%d/%d" % [sim.stage_clears, sim.stage_count()]], ["Abilities used", str(sim.ability_uses)]])
 	var build_lines := PackedStringArray()
 	for slot in sim.active_slots:
@@ -1657,7 +1744,7 @@ func _show_results() -> void:
 		if event.time >= sim.time - 10.0 and recap.size() < 5:
 			recap.append("%.1fs before the end  ·  %s" % [sim.time - event.time, event.message])
 	_info_card(body, "Final ten seconds", "\n".join(recap) if not recap.is_empty() else "Nothing logged in the final ten seconds.", Kit.MUTED)
-	var again := _ui_button(reading_footer, "Fly again", _new_run, "primary", 56, true)
+	var again := _ui_button(reading_footer, "Another daily" if not sim.daily_day.is_empty() else "Fly again", _new_daily_run if not sim.daily_day.is_empty() else _new_run, "primary", 56, true)
 	_ui_button(reading_footer, "Title", _show_menu, "secondary", 56, true)
 	_focus(again)
 
@@ -1665,12 +1752,31 @@ func _new_run() -> void:
 	banish_mode = false
 	profile.runs += 1
 	build_show_all = false
+	result_earned_cores = -1
+	result_awards.clear()
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")))
 	_start_flight()
 
+func _new_daily_run() -> void:
+	# One shared run configuration for each UTC day, regardless of purchases.
+	var setup: Dictionary = Progress.daily_setup(Progress.utc_day())
+	banish_mode = false
+	build_show_all = false
+	result_earned_cores = -1
+	result_awards.clear()
+	profile.runs += 1
+	var attempt: int = Progress.start_daily(profile, str(setup.day))
+	_save_profile()
+	sim = Simulation.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), str(setup.difficulty))
+	sim.daily_day = str(setup.day)
+	sim.daily_attempt = attempt
+	_start_flight()
+
 func _resume_run() -> void:
 	banish_mode = false
+	result_earned_cores = -1
+	result_awards.clear()
 	var state := services.read_save(Services.RUN)
 	sim = Simulation.new()
 	if not sim.restore(state):
@@ -1731,7 +1837,7 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "Time your abilities. Survive four stages."
+	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else "Time your abilities. Survive four stages."
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
@@ -1847,6 +1953,8 @@ func _toggle_pause() -> void:
 		accumulator = 0.0
 
 func _continue_endless() -> void:
+	if not sim.daily_day.is_empty():
+		return # Daily scores end at World 4; no endless farming.
 	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.enable_endless():
 		return
 	_save_run()
@@ -1910,11 +2018,15 @@ func _finish_intermission() -> void:
 
 func _finish() -> void:
 	mode = "results"
-	# Record settlement identity in profile before removing the resume save.
-	if int(profile.last_paid_run) != sim.seed_value:
-		profile.cores += sim.payout()
-		profile.last_paid_run = sim.seed_value
-		_save_profile()
+	# Both ordinary and daily flights settle exactly once, even after a
+	# crash/repeated callback. Only a first daily completion pays Cores.
+	var settlement: Dictionary = Progress.settle(profile, sim)
+	result_earned_cores = int(settlement.earned)
+	result_awards = settlement.awarded
+	result_daily_score = int(settlement.score)
+	result_daily_best = int(settlement.best_score)
+	result_new_best = bool(settlement.new_best)
+	_save_profile()
 	services.delete_run()
 	_show_results()
 
@@ -2062,6 +2174,6 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, screen), Color("050914"))
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
-		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "S T A R / R U N", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, CYAN)
+		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "Star/Run", HORIZONTAL_ALIGNMENT_LEFT, -1, 25, CYAN)
 		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
