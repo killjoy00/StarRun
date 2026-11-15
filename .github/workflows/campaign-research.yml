@@ -30,6 +30,11 @@ jobs:
           - {id: focused-arcwing-mid, ship: arcwing, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
           - {id: focused-arcwing-max, ship: arcwing, difficulty: normal, build: focused, hangar: max, pilot: rookie}
           - {id: focused-haven-max, ship: haven, difficulty: normal, build: focused, hangar: max, pilot: rookie}
+          - {id: focused-bulwark-mid, ship: bulwark, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-haven-mid, ship: haven, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-kestrel-mid, ship: kestrel, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-wraith-mid, ship: wraith, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-wraith-max, ship: wraith, difficulty: normal, build: focused, hangar: max, pilot: rookie}
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Godot
@@ -42,7 +47,7 @@ jobs:
         run: |
           set -o pipefail
           godot --headless --path . --script tests/balance_matrix.gd -- \
-            --seeds=1 --strategy=timed --ship=${{ matrix.ship }} \
+            --seeds=3 --strategy=timed --ship=${{ matrix.ship }} \
             --difficulty=${{ matrix.difficulty }} --build=${{ matrix.build }} --hangar=${{ matrix.hangar }} \
             --pilot=${{ matrix.pilot }} --trace \
             2>&1 | tee research-${{ matrix.id }}.log
