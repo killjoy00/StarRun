@@ -135,8 +135,8 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 		for active_id in sim.active_slots:
 			sim.activate(str(active_id))
 		return
-	var urgent := sim.charges.any(func(c): return float(c.remaining) <= 0.7)
-	var charge_ready := sim.charges.any(func(c): return float(c.remaining) <= 1.5)
+	var urgent: bool = sim.charges.any(func(c): return float(c.remaining) <= 0.7)
+	var charge_ready: bool = sim.charges.any(func(c): return float(c.remaining) <= 1.5)
 	var near_hit := false
 	var close_ordnance := false
 	var ordnance_count := 0
@@ -151,10 +151,10 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 				close_ordnance = true
 			if bullet.kind in ["mine", "slag"] and float(bullet.get("fuse", 10.0)) <= 0.75 and bullet.p.distance_squared_to(sim.ship_position()) < 110.0 * 110.0:
 				close_ordnance = true
-	var injured := sim.hull < sim.max_hull - 25.0
-	var vulnerable := sim.shield < sim.max_shield * 0.55
-	var crowd := sim.enemies.size() >= 3
-	var boss := sim.boss_spawned
+	var injured: bool = sim.hull < sim.max_hull - 25.0
+	var vulnerable: bool = sim.shield < sim.max_shield * 0.55
+	var crowd: bool = sim.enemies.size() >= 3
+	var boss: bool = sim.boss_spawned
 	for active_id in sim.active_slots:
 		var ability: String = str(active_id)
 		var use_now := false
