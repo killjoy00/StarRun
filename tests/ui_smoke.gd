@@ -74,7 +74,10 @@ func _run() -> void:
 			check(scene.ability_buttons[0].position.y == scene.ability_buttons[3].position.y, "All four combat buttons should share one row on phones")
 			check(scene.ability_buttons[0].size.x >= 75.0, "Phone combat buttons need usable width")
 		for button in scene.ability_buttons.values():
-			check(button.get_global_rect().end.y <= logical.y and button.get_global_rect().position.x >= 0 and button.get_global_rect().end.x <= logical.x, "Four equipped ability buttons must fit phone and desktop screens")
+			var bounds: Rect2 = button.get_global_rect()
+			if bounds.end.y > logical.y or bounds.position.x < 0 or bounds.end.x > logical.x:
+				print("HUD_BUTTON_OOB logical=%s position=%s size=%s" % [str(logical), str(bounds.position), str(bounds.size)])
+			check(bounds.end.y <= logical.y and bounds.position.x >= 0 and bounds.end.x <= logical.x, "Four equipped ability buttons must fit phone and desktop screens")
 		check(scene.pause_button.get_global_rect().end.y < scene.field.position.y, "Pause must fit above the playfield")
 		check(scene.build_button.get_global_rect().position.x >= 0 and scene.speed_button.get_global_rect().end.x <= logical.x, "Build and speed controls must fit narrow screens")
 		if logical.x < 760:
