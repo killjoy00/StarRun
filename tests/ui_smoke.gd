@@ -84,7 +84,13 @@ func _run() -> void:
 		var base_style: StyleBoxFlat = scene.ability_buttons[0].get_theme_stylebox("normal")
 		var other_style: StyleBoxFlat = scene.ability_buttons[1].get_theme_stylebox("normal")
 		check(base_style.bg_color == other_style.bg_color and base_style.border_color == other_style.border_color, "First ability must not have a default highlight")
-		check(scene.ability_buttons[0].get_child(0).visible and scene.cooldown_meters[0].value == 100.0, "Ability insignia and ready-state cooldown bar must be visible")
+		check(scene.ability_buttons[0].get_child(0).visible and scene.cooldown_meters[0].value == 100.0, "Ability insignia and cooldown progress remain initialized")
+		check(not scene.cooldown_meters[0].visible, "A ready ability should not look preselected through a full amber progress bar")
+		scene.sim.cooldowns["aegis"] = 4.0
+		scene._update_hud()
+		check(scene.cooldown_meters[0].visible and scene.ability_buttons[0].get_node("AbilityStatus").text.contains("s"), "Cooldown progress appears when the ability is recovering")
+		scene.sim.cooldowns["aegis"] = 0.0
+		scene._update_hud()
 		if logical.x < 760:
 			check(scene.hud.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Combat heading must not overlap Build")
 			check(scene.status.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Timer must not overlap Build")
