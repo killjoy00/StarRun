@@ -340,6 +340,8 @@ func _layout() -> void:
 		_show_prototypes()
 	elif mode == "route":
 		_show_route_choice()
+	elif mode == "beam_tutorial":
+		_show_beam_tutorial()
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -576,6 +578,13 @@ func _sheet(title: String, eyebrow: String = "", dismiss: Callable = Callable(),
 	var heading := Kit.label(titles, title, 24, Color.WHITE, true)
 	heading.add_theme_font_override("font", Kit.font(0, 0.45))
 	reading_panel = panel
+	if not bool(profile.get("reduced", false)):
+		var final_y := panel.position.y
+		panel.position.y += 22.0
+		panel.modulate.a = 0.0
+		var entrance := create_tween().set_parallel(true)
+		entrance.tween_property(panel, "position:y", final_y, 0.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		entrance.tween_property(panel, "modulate:a", 1.0, 0.15)
 	return box
 
 ## A card the whole surface of which is the tap target. Returns its content box.
@@ -1565,6 +1574,19 @@ func _show_results() -> void:
 	var body: VBoxContainer = view.body
 	_page_header(view.top, "Stage %d of %d  ·  %s" % [sim.stage, sim.stage_count(), sim.difficulty.capitalize()], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
+	var total_damage := 0.0
+	var worst_kind := ""
+	var worst_damage := 0.0
+	for kind in sim.damage_taken:
+		var value := float(sim.damage_taken[kind])
+		total_damage += value
+		if value > worst_damage:
+			worst_kind = str(kind)
+			worst_damage = value
+	if not sim.won and total_damage > 0.0:
+		var labels := {"heavy":"heavy beams", "chaff":"small shots", "ordnance":"missiles", "hazard":"hazards", "ion":"ion bursts", "corrosion":"corrosion", "heat":"heat attacks", "gravity":"gravity attacks", "disrupt":"disruption shots", "void":"void attacks"}
+		var advice := {"heavy":"Aegis blocks those. Wait for the charge warning before firing it.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small shots; Deflector converts them into shield.", "hazard":"Watch the incoming lanes and use short defensive windows.", "ion":"Capacitor restores your shield and clears its disruption.", "corrosion":"Avoid the corroders and add repair or armor.", "heat":"Use shield recovery and interrupt the enemy volley.", "gravity":"Use Chrono or Jammer to control crowded firing lanes.", "disrupt":"Jammer silences enemy weapons before they fire.", "void":"Keep a defensive active ready for the Citadel volleys."}
+		_info_card(body, "What took you down", "%d%% of incoming damage came from %s. %s" % [roundi(worst_damage / total_damage * 100.0), str(labels.get(worst_kind, worst_kind)), str(advice.get(worst_kind, "Upgrade your defenses before returning."))], Kit.DANGER)
 	var hero := PanelContainer.new()
 	hero.add_theme_stylebox_override("panel", Kit.box(Color("1b160f"), Color("4d3c22"), 16, 1, 16, 14))
 	body.add_child(hero)
@@ -1645,6 +1667,46 @@ func _resume_run() -> void:
 	if not sim.cards.is_empty():
 		_show_cards()
 
+## First heavy beam is an in-flight lesson, not another preflight paragraph.
+## Simulation ticks stop while this callout is visible; nothing can hit the ship.
+func _show_beam_tutorial() -> void:
+	mode = "beam_tutorial"
+	profile.beam_tutorial_seen = true
+	_save_profile()
+	_clear_overlay()
+	var shade := ColorRect.new()
+	shade.color = Color(0.005, 0.01, 0.025, 0.65)
+	shade.size = get_viewport_rect().size
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(shade)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Kit.box(Color("13283b"), Kit.AMBER, 16, 2, 16, 14))
+	panel.position = Vector2(16.0, field.position.y + 22.0)
+	panel.size = Vector2(get_viewport_rect().size.x - 32.0, 0.0)
+	overlay.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 9)
+	panel.add_child(column)
+	Kit.caps(column, "LIVE TRAINING  ·  HEAVY BEAM", Kit.AMBER, 14)
+	Kit.label(column, "See the warning lane? A heavy beam is charging. Aegis blocks it—save your shield for the moment it fires.", 17, Kit.TEXT, true)
+	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
+	var slot := sim.active_slots.find("aegis")
+	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
+		var button: Button = ability_buttons[slot]
+		var pointer := _label(overlay, "▼  AEGIS", 17, Kit.AMBER)
+		pointer.position = Vector2(button.position.x, button.position.y - 28.0)
+		pointer.size = Vector2(button.size.x + 6.0, 26)
+		pointer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_haptic(60)
+
+func _resume_beam_tutorial() -> void:
+	if mode != "beam_tutorial":
+		return
+	mode = "playing"
+	_clear_overlay()
+	accumulator = 0.0
+
 func _start_flight() -> void:
 	mode = "playing"
 	_clear_overlay()
@@ -1694,6 +1756,8 @@ func _process(delta: float) -> void:
 				_finish()
 			elif not sim.cards.is_empty():
 				_show_cards()
+			elif sim.stage == 1 and not bool(profile.get("beam_tutorial_seen", false)) and "aegis" in sim.active_slots and not sim.charges.is_empty():
+				_show_beam_tutorial()
 		var sector_now := _sector_name(sim.time)
 		if sector_now != last_sector:
 			last_sector = sector_now
