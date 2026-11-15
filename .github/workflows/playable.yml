@@ -25,11 +25,21 @@ jobs:
           godot --headless --path . --check-only --script scripts/simulation.gd
           godot --headless --path . --check-only --script scripts/playfield.gd
           godot --headless --path . --check-only --script tests/balance_matrix.gd
+          godot --headless --path . --check-only --script scripts/meta_progress.gd
+          godot --headless --path . --check-only --script tests/meta_progress.gd
       - name: Check first scene and reject script parse errors
         run: |
           godot --headless --path . --quit-after 10 2>&1 | tee /tmp/starrun-startup.log
           if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-startup.log; then
             echo "::error::Godot reported a script parse failure"
+            exit 1
+          fi
+      - name: Daily Challenge and achievements persistence tests
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/meta_progress.gd 2>&1 | tee /tmp/starrun-meta-progress.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-meta-progress.log; then
+            echo "::error::Godot reported a run-progression script error"
             exit 1
           fi
       - name: Phone and Steam Deck layout checks
