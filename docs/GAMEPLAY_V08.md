@@ -15,7 +15,7 @@ Stage 1 retains its original enemy numbers. Subsequent worlds use fixed authored
 
 Difficulty and route modifiers still apply. Compared with 0.7.2, world 2/3/4 boss hull increased from 10,000/15,500/22,000. Ordinary enemy health was previously only 1.55×/2.15×/2.95×, while most damage did not scale at all.
 
-Aegis and Nova Guard had a permanent invulnerability loop once duration bonuses exceeded the reduced cooldown. Their invulnerability now ends at least 1.5 seconds before that cast's cooldown finishes. Ordinary early casts keep their full duration. Stronger blasts, healing and other effects still benefit from upgrades. Nova Guard's timed counter continues to earn the stronger blast, healing and cooldown rebate. This leaves actual windows where the player needs another defense.
+Aegis and Nova Guard had a permanent invulnerability loop once duration bonuses exceeded the reduced cooldown. Their invulnerability now ends at least 1.5 seconds before that cast's cooldown finishes. Ordinary early casts keep their full duration. Stronger blasts, healing and other effects still benefit from upgrades. Nova Guard blocks for 2.4 base seconds on an early cast and 3.8 on a counter; a timed counter also earns the stronger blast, healing and cooldown rebate. This leaves actual windows where the player needs another defense.
 
 ## Ten new passive upgrades
 
@@ -54,12 +54,14 @@ Scrollable content allows input to pass from cards, labels, icons and purchase b
 
 | World | Mean boss fight, before | Mean boss fight, after | Mean damage received, before | Mean damage received, after |
 |---|---:|---:|---:|---:|
-| 2 | 26.6 s | 59.1 s | 103.4 | 431.0 |
-| 3 | 16.3 s | 72.8 s | 25.9 | 560.2 |
-| 4 | 6.3 s | 65.2 s | 0 | 1,667.0 |
+| 2 | 26.6 s | 59.1 s | 103.4 | 477.1 |
+| 3 | 16.3 s | 73.8 s | 25.9 | 716.7 |
+| 4 | 6.3 s | 64.5 s | 0 | 1,347.0 |
 
 All 12 strong defensive fixtures cleared; healing can restore hull after substantial incoming damage, so ending hull alone is a misleading pressure measure. Six additional runs with abilities unused all failed: world 2 at 125–137 seconds, world 3 at 106–118 seconds, and world 4 at 42–73 seconds. Six runs also stacked the new passives at progressively higher ranks and remained clearable. These are deterministic comparisons, not human win-rate targets.
 
-A separate natural-draft campaign probe uses full-length worlds and no injected upgrades. In its initial four runs, the half-Hangar pilots died in world 2; the full-Hangar pilots cleared worlds 1–3 and died in world 4. This checks that pressure also rises during real progression; the small sample does not establish final balance.
+A separate natural-draft campaign probe uses full-length worlds and no injected upgrades. In a four-run curve check, the half-Hangar pilots died in world 2; both full-Hangar pilots cleared worlds 1–3 and one cleared world 4. This checks that pressure also rises during real progression; the small sample does not establish final balance.
 
 Simulation regression tests cover each new passive's actual effect, all ten fusion offer pools, saved-hand migration, fusion ranks, invulnerability gaps and stage damage. Responsive and rendered tests cover phone layouts, retained combat readability, actual held-button dragging and notch clearance. Physical-device feel and difficulty tuning still depend on the next TestFlight playtest.
+
+The full-run Stage 1 benchmark remains a survival/draft diagnostic (12 seeds per strategy). Because combat and drafts share RNG, different input strategies also receive different draft hands and builds; its ending-hull comparison cannot isolate timing. The timing regression now uses 12 matched seeds **with identical fixed equipment**, an immediate real boss encounter, and no upgrades selected during the fight. Timed counters cleared all 12 fights at 100 average hull; cooldown spam cleared 2 at 3.5 average hull. Both win-count and hull advantages are required. The separate full-run checks still require a no-Hangar Stage 1 clear and a clear survival benefit over never activating abilities.

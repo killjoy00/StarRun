@@ -1259,7 +1259,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 				hull = minf(max_hull, hull + 12.0 * strength)
 				cooldowns[id] *= 0.65
 				_log("Nova Guard countered incoming fire")
-			aegis_left = maxf(aegis_left, minf(3.8 * strength, maxf(0.0, cooldowns[id] - 1.5)))
+			aegis_left = maxf(aegis_left, minf((3.8 if counter_window else 2.4) * strength, maxf(0.0, cooldowns[id] - 1.5)))
 			shield = minf(max_shield, shield + 28.0 * strength)
 			beams_cancelled += charges.size()
 			charges.clear()

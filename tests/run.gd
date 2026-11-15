@@ -43,7 +43,12 @@ func _run() -> void:
 			seeds = int(arg.get_slice("=", 1))
 	var results: Dictionary = _balance(seeds)
 	check(results.timed.wins >= results.never.wins + mini(4, maxi(1, int(seeds / 2))), "Timed inputs must improve survival over no inputs")
-	check(results.timed.mean_hull > results.on_cooldown.mean_hull + 3 or results.timed.wins > results.on_cooldown.wins, "Timing must outperform cooldown spam on matched seeds")
+	# Combat and draft share RNG. Strategy changes draft outcomes, so full-run
+	# hull is diagnostic rather than an isolated test of input timing.
+	var timing: Dictionary = _fixed_build_timing(seeds)
+	check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
+	check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
+	print("FIXED_BUILD_TIMING ", JSON.stringify(timing))
 	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
@@ -737,7 +742,7 @@ func _test_fusions_and_milestones() -> void:
 	counter._add_enemy("station", Vector2(260, 120))
 	plain._add_enemy("station", Vector2(260, 120))
 	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
-	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull, "A well-timed fusion counter must earn real healing and a shorter cooldown")
+	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull and counter.aegis_left > plain.aegis_left, "A well-timed fusion counter must earn real healing and a shorter cooldown")
 	check(counter.kills > plain.kills, "A timed Nova Guard counter must hit much harder than firing it early")
 	var slots := Sim.new(1902)
 	for name in ["flak", "emp", "strike"]:
@@ -1019,3 +1024,36 @@ func _test_long_runs() -> void:
 		sim.stage = stage
 		sim._hit(10, "ion", "test")
 		check(is_equal_approx(sim.damage_taken.ion, 10 * sim.stage_spec().damage_scale), "World damage scale reaches collision resolution")
+
+func _fixed_build_timing(seeds: int) -> Dictionary:
+	var results := {}
+	for strategy in ["on_cooldown", "timed"]:
+		var wins := 0
+		var hull := 0.0
+		var survival := 0.0
+		for seed in range(seeds):
+			var sim := Sim.new(61000 + (seed + 1) * 7919)
+			sim.upgrades.nova = 1
+			sim.active_slots.append("nova")
+			sim._try_fuse()
+			sim.upgrades.pulse = 3
+			sim.upgrades.seeker = 3
+			sim.upgrades.armor = 3
+			sim.upgrades.regen = 2
+			sim._spawn_boss()
+			for frame in range(60 * 120):
+				sim.cards.clear()
+				sim.pending_levels = 0
+				var counter: bool = sim.charges.any(func(c): return c.remaining < 0.55)
+				if not counter:
+					for b in sim.bullets:
+						if (b.p+b.v*0.30).distance_squared_to(sim.ship_position(sim.time+0.30)) < 65*65: counter = true; break
+				if strategy == "on_cooldown" or counter: sim.activate("nova_aegis")
+				sim.step()
+				sim.effects.clear()
+				if sim.ended or sim.stage_transition_queued: break
+			wins += int(sim.stage_transition_queued)
+			hull += sim.hull
+			survival += sim.time
+		results[strategy] = {"wins":wins,"mean_hull":snappedf(hull/seeds,0.1),"seconds":snappedf(survival/seeds,0.1)}
+	return results
