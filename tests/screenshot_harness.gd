@@ -15,7 +15,7 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 
 const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
-	"menu", "settings", "briefing",
+	"menu", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
 	"ships", "pilots", "combat-1", "combat-4",
 	"cards", "cards-banish", "paused", "build",
@@ -79,6 +79,20 @@ func _prepare(scene, screen: String) -> void:
 	match screen:
 		"menu":
 			scene._show_menu()
+		"achievements":
+			scene._show_achievements()
+		"daily-results":
+			scene.sim.daily_day = "2026-11-15"
+			scene.sim.daily_attempt = 1
+			scene.sim.ended = true
+			scene.sim.stage = 2
+			scene.sim.stage_clears = 1
+			scene.sim.kills = 220
+			scene.sim.hull = 0.0
+			scene.result_earned_cores = 0
+			scene.result_daily_score = scene.Progress.daily_score(scene.sim)
+			scene.result_daily_best = scene.result_daily_score
+			scene._show_results()
 		"settings":
 			scene.mode = "menu"
 			scene._show_settings()
