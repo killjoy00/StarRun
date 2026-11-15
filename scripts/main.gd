@@ -244,7 +244,7 @@ func _layout() -> void:
 	hud.position = Vector2(chrome_x, safe_top + 4.0)
 	hud.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 24)
 	status.position = Vector2(chrome_x, safe_top + 28.0)
-	status.size = Vector2(minf(155.0, chrome_width * 0.42), 20)
+	status.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 20)
 	var meter_y := safe_top + 50.0
 	var meter_width := (chrome_width - 10.0) * 0.5
 	hull_meter.position = Vector2(chrome_x, meter_y)
