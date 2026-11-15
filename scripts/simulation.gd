@@ -13,6 +13,12 @@ var course: Array[Dictionary] = []
 var movement_version := 4
 var difficulty := "normal"
 var stage := 1
+var endless_enabled := false
+var endless_stage_spec: Dictionary = {}
+var encounter_index := 0
+var next_encounter_at := 50.0
+var boss_attack_pattern := "sweep"
+var cooldown_totals: Dictionary = {}
 var stage_start := 0.0
 var stage_clears := 0
 var stage_transition_queued := false
@@ -102,9 +108,11 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
 			cooldowns[id] = 0.0
+		cooldown_totals[id] = float(content.abilities[id].cooldown)
 	for fusion in content.fusions:
 		content.abilities[str(fusion.id)] = {"name": str(fusion.name), "cooldown": float(fusion.cooldown)}
 		cooldowns[str(fusion.id)] = 0.0
+		cooldown_totals[str(fusion.id)] = float(fusion.cooldown)
 		upgrades[str(fusion.id)] = 0
 		content.cards.append({"id":str(fusion.id), "name":str(fusion.name), "tag":"ABILITY", "description":str(fusion.description), "max":10, "rank5":"20% stronger effect, 10% shorter cooldown", "rank10":"45% stronger effect, 20% shorter cooldown"})
 	for card in content.cards:
@@ -115,6 +123,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	difficulty = selected_difficulty if selected_difficulty in Catalog.DIFFICULTIES else "normal"
 	seed_value = run_seed
 	rng.seed = run_seed
+	next_encounter_at = 55.0 + float(run_seed % 23)
 	_build_course()
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
@@ -273,7 +282,27 @@ func threat_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
 
 func stage_spec() -> Dictionary:
-	return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
+	if stage <= int(content.stage_count):
+		return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
+	if int(endless_stage_spec.get("_stage", -1)) != stage:
+		var depth := stage - int(content.stage_count)
+		var template: Dictionary = content.stages[(stage - 1) % int(content.stage_count)]
+		var baseline: Dictionary = content.stages[int(content.stage_count) - 1]
+		endless_stage_spec = template.duplicate(true)
+		endless_stage_spec._stage = stage
+		endless_stage_spec.id = "endless_%d" % stage
+		endless_stage_spec.name = "ENDLESS %d · %s" % [depth, template.name]
+		endless_stage_spec.subtitle = "Escalation sector"
+		endless_stage_spec.boss_name = "%s Ascendant" % template.boss_name
+		endless_stage_spec.boss_hp = float(baseline.boss_hp) * pow(1.48, depth)
+		endless_stage_spec.health_scale = float(baseline.health_scale) * pow(1.30, depth)
+		endless_stage_spec.damage_scale = float(baseline.damage_scale) * pow(1.22, depth)
+		endless_stage_spec.spawn_scale = float(baseline.spawn_scale) * pow(1.08, depth)
+		endless_stage_spec.fire_scale = float(baseline.fire_scale) * pow(1.07, depth)
+		endless_stage_spec.module_scale = float(baseline.module_scale) * pow(1.42, depth)
+		endless_stage_spec.transition = "ENDLESS %d" % (depth + 1)
+		endless_stage_spec.reward_label = "Endless world %d cleared" % depth
+	return endless_stage_spec
 
 func boss_name() -> String:
 	return str(stage_spec().boss_name)
@@ -282,10 +311,26 @@ func stage_name() -> String:
 	return str(stage_spec().name)
 
 func stage_count() -> int:
-	return int(content.stage_count)
+	return maxi(int(content.stage_count), stage + 1) if endless_enabled else int(content.stage_count)
+
+func enable_endless() -> bool:
+	if endless_enabled or stage != int(content.stage_count) or not stage_transition_queued or stage_clears != stage:
+		return false
+	endless_enabled = true
+	_log("Endless unlocked: keeping the existing build")
+	return true
+
+func claim_endless() -> bool:
+	if not endless_enabled or not stage_transition_queued or stage_clears != stage:
+		return false
+	stage_transition_queued = false
+	ended = true
+	won = true
+	_log("Endless victory claimed after world %d" % stage)
+	return true
 
 func _enemy_limit() -> int:
-	return 20 + (stage - 1) * 5
+	return mini(55, 20 + (stage - 1) * 5)
 
 func _has_prototype(id: String) -> bool:
 	return id in prototypes
@@ -484,7 +529,7 @@ func begin_intermission() -> bool:
 	prototype_offers.clear()
 	while prototype_offers.size() < mini(3, available.size()):
 		prototype_offers.append(available.pop_at(rng.randi_range(0, available.size() - 1)))
-	intermission_step = "prototype"
+	intermission_step = "route" if prototype_offers.is_empty() else "prototype"
 	return true
 
 func prototype_spec(id: String) -> Dictionary:
@@ -613,6 +658,9 @@ func advance_stage() -> bool:
 	escort_timer = 0.0
 	ion_mines.clear()
 	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
+	encounter_index = 0
+	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
+	endless_stage_spec.clear()
 	stage_start = time
 	boss_spawned = false
 	boss_spawn_time = 0.0
@@ -1208,6 +1256,7 @@ func activate(ability: String) -> bool:
 	if not stage_casts.has(ability):
 		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10
 		stage_casts[ability] = true
+	cooldown_totals[ability] = cooldowns[ability]
 	hull = minf(max_hull, hull + meta.cast_repair)
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
@@ -1567,11 +1616,14 @@ func payout() -> int:
 		base = int(round(base * 1.25))
 	if _has_prototype("salvage_charter"):
 		base = int(round(base * 1.35))
+	if endless_enabled:
+		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
+		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
 	return base
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "endless_enabled", "encounter_index", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -1613,6 +1665,7 @@ func restore(state: Dictionary) -> bool:
 					else:
 						max_shield += bonus
 						shield = minf(max_shield, shield + bonus)
+	endless_stage_spec.clear()
 	_build_course()
 	rng.state = state.rng
 	# Old drafts may contain consumed components, or a new partner that used to
