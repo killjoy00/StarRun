@@ -883,6 +883,23 @@ func _show_menu() -> void:
 		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_focus(primary)
 
+
+func _show_achievements() -> void:
+	mode = "achievements"
+	Progress.prepare(profile)
+	var view := _page(1.0, true, 540.0)
+	_page_header(view.top, "PILOT RECORD", "Achievements", _show_menu)
+	var unlocked: Dictionary = profile.achievements
+	Kit.label(view.top, "%d / %d earned  ·  saved on this device" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
+	Kit.label(view.body, "Tough flights are part of the climb. These milestones track the things you've survived, discovered and mastered.", 16, Kit.TEXT, true)
+	for item in Progress.ACHIEVEMENTS:
+		var id: String = str(item.id)
+		var is_unlocked: bool = unlocked.has(id)
+		var done: int = mini(int(item.target), Progress.progress(profile, id))
+		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
+		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
+	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
 		profile.difficulty = id
@@ -894,6 +911,12 @@ func _launch() -> void:
 	# Launch immediately; the first heavy-beam charge teaches Aegis in context.
 	# The optional How to play briefing remains available from the title.
 	_new_run()
+
+func _launch_daily() -> void:
+	if services.read_save(Services.RUN).is_empty():
+		_new_daily_run()
+	else:
+		_confirm_abandon("menu", "daily")
 
 func _launch_or_confirm(base: String) -> void:
 	if services.read_save(Services.RUN).is_empty():
@@ -1710,12 +1733,31 @@ func _new_run() -> void:
 	banish_mode = false
 	profile.runs += 1
 	build_show_all = false
+	result_earned_cores = -1
+	result_awards.clear()
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")))
 	_start_flight()
 
+func _new_daily_run() -> void:
+	# One shared run configuration for each UTC day, regardless of purchases.
+	var setup: Dictionary = Progress.daily_setup(Progress.utc_day())
+	banish_mode = false
+	build_show_all = false
+	result_earned_cores = -1
+	result_awards.clear()
+	profile.runs += 1
+	var attempt: int = Progress.start_daily(profile, str(setup.day))
+	_save_profile()
+	sim = Simulation.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), str(setup.difficulty))
+	sim.daily_day = str(setup.day)
+	sim.daily_attempt = attempt
+	_start_flight()
+
 func _resume_run() -> void:
 	banish_mode = false
+	result_earned_cores = -1
+	result_awards.clear()
 	var state := services.read_save(Services.RUN)
 	sim = Simulation.new()
 	if not sim.restore(state):
@@ -1776,7 +1818,7 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "Time your abilities. Survive four stages."
+	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else "Time your abilities. Survive four stages."
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
@@ -1955,11 +1997,15 @@ func _finish_intermission() -> void:
 
 func _finish() -> void:
 	mode = "results"
-	# Record settlement identity in profile before removing the resume save.
-	if int(profile.last_paid_run) != sim.seed_value:
-		profile.cores += sim.payout()
-		profile.last_paid_run = sim.seed_value
-		_save_profile()
+	# Both ordinary and daily flights settle exactly once, even after a
+	# crash/repeated callback. Only a first daily completion pays Cores.
+	var settlement: Dictionary = Progress.settle(profile, sim)
+	result_earned_cores = int(settlement.earned)
+	result_awards = settlement.awarded
+	result_daily_score = int(settlement.score)
+	result_daily_best = int(settlement.best_score)
+	result_new_best = bool(settlement.new_best)
+	_save_profile()
 	services.delete_run()
 	_show_results()
 
