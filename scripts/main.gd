@@ -10,6 +10,7 @@ const CombatHud = preload("res://scripts/combat_hud.gd")
 const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
+const Progress = preload("res://scripts/meta_progress.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -76,6 +77,12 @@ var banish_mode := false
 var loadout_return := "hangar"
 var briefing_launch := false
 var sheet_base := "menu" # Screen shown beneath a settings, briefing or confirmation sheet.
+var pending_launch := "normal" # Normal or daily through abandon confirmation and resize.
+var result_earned_cores := -1
+var result_awards: Array = []
+var result_daily_score := -1
+var result_daily_best := -1
+var result_new_best := false
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -97,6 +104,7 @@ func _ready() -> void:
 		profile.ship = "vanguard"
 	if not profile.get("pilot", "rookie") in profile.pilots_owned:
 		profile.pilot = "rookie"
+	Progress.prepare(profile)
 	game_speed = float(profile.get("speed", 1.0))
 	if game_speed not in speed_options:
 		game_speed = 1.0
@@ -323,9 +331,11 @@ func _layout() -> void:
 		else:
 			_show_briefing(briefing_launch)
 	elif mode == "abandon":
-		_confirm_abandon(sheet_base)
+		_confirm_abandon(sheet_base, pending_launch)
 	elif mode == "menu":
 		_show_menu()
+	elif mode == "achievements":
+		_show_achievements()
 	elif mode == "cards":
 		_show_cards()
 	elif mode == "paused":
@@ -933,7 +943,8 @@ func _briefing_done() -> void:
 	else:
 		_show_menu()
 
-func _confirm_abandon(base: String) -> void:
+func _confirm_abandon(base: String, desired: String = "normal") -> void:
+	pending_launch = "daily" if desired == "daily" else "normal"
 	sheet_base = base
 	_render_base(base)
 	mode = "abandon"
@@ -941,7 +952,7 @@ func _confirm_abandon(base: String) -> void:
 	var box := _sheet("Abandon your saved flight?", "New flight", _close_sheet, false)
 	Kit.label(box, "You have a flight saved in Stage %d. Starting over deletes it, and it pays out no cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
 	_focus(_ui_button(box, "Resume saved flight", _resume_run, "primary", 54))
-	_ui_button(box, "Abandon and launch", _launch, "danger", 48)
+	_ui_button(box, "Abandon and start daily" if pending_launch == "daily" else "Abandon and launch", _new_daily_run if pending_launch == "daily" else _launch, "danger", 48)
 	_ui_button(box, "Cancel", _close_sheet, "ghost", 44)
 
 # ---------------------------------------------------------------------------
