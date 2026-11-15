@@ -194,6 +194,7 @@ func _test_new_abilities() -> void:
 	check(sim.active_slots.size() == 4, "A ship starts with one active and can draft exactly three more")
 	_install(sim, "mend")
 	check(sim.upgrades.mend == 0 and sim.active_slots.size() == 4, "A fifth unowned ability must never be equipped")
+	sim.cards.clear() # Discard the deliberately injected, ineligible fifth-slot offer.
 	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
 	var haven := Sim.new(4, {}, "haven")
