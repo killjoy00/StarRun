@@ -9,7 +9,7 @@ static func _short_ability_name(sim, id: String) -> String:
 
 static func refresh(host) -> void:
 	var sim = host.sim
-	host.hud.text = "W%d  ·  LV %02d" % [sim.stage, sim.level] if sim.endless_enabled else "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
+	host.hud.text = "W%d  LV%02d" % [sim.stage, sim.level] if host._compact_ui() else "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
 	host.hull_meter.value = clampf(sim.hull / maxf(1.0, sim.max_hull) * 100.0, 0.0, 100.0)
 	host.shield_meter.value = clampf(sim.shield / maxf(1.0, sim.max_shield) * 100.0, 0.0, 100.0)
 	host.hull_caption.text = "HULL  %d/%d" % [ceili(sim.hull), ceili(sim.max_hull)]
