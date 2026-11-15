@@ -764,6 +764,7 @@ func _test_prototype_and_route_choices() -> void:
 	check(not sim.choose_route("bounty"), "Route choice must not bypass Prototype installation")
 	var skipped := Sim.new(902)
 	skipped.stage_transition_queued = true
+	skipped.stage_clears = skipped.stage # Match a completed boss before the intermission.
 	skipped.difficulty = "insane"
 	var starting_reward := skipped.payout()
 	check(skipped.begin_intermission() and skipped.prototype_offers.size() == 3, "Skip must be offered alongside three unchanged Prototype choices")
