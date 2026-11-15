@@ -873,6 +873,8 @@ func _show_menu() -> void:
 	if int(record.get("best_score",-1)) >= 0:
 		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
 	_ui_button(daily_content, daily_text, _launch_daily, "secondary", 48)
+	if game_center.supports_game_center():
+		_ui_button(daily_content, "Online daily leaderboard · Game Center", _show_game_center_leaderboard, "secondary", 48)
 	Kit.caps(body, "Difficulty · regular runs", Kit.MUTED, 13)
 	var segments := HBoxContainer.new()
 	segments.add_theme_constant_override("separation", 6)
@@ -913,6 +915,44 @@ func _show_menu() -> void:
 	_focus(primary)
 
 
+
+func _queue_toast(title: String, detail: String) -> void:
+	toast_queue.append({"title":title,"detail":detail})
+	if toast_clock <= 0.0:
+		_next_toast()
+
+func _next_toast() -> void:
+	if toast_queue.is_empty():
+		toast_clock = 0.0
+		toast_panel.visible = false
+		return
+	var item: Dictionary = toast_queue.pop_front()
+	toast_title.text = str(item.title).to_upper()
+	toast_detail.text = str(item.detail)
+	toast_panel.visible = true
+	toast_clock = 3.6
+
+func _advance_toast(delta: float) -> void:
+	if toast_clock > 0.0:
+		toast_clock -= delta
+		if toast_clock <= 0.0:
+			_next_toast()
+
+func _show_game_center_leaderboard() -> void:
+	if not game_center.show_leaderboard():
+		_queue_toast("Game Center", "Sign in to Game Center on your iPhone to compare scores.")
+
+func _show_native_achievements() -> void:
+	if not game_center.show_achievements():
+		_queue_toast("Game Center", "Sign in to Game Center on your iPhone to view Apple achievements.")
+
+func _copy_daily_result() -> void:
+	var text_value: String = Progress.daily_share_text(sim)
+	if text_value.is_empty():
+		return
+	DisplayServer.clipboard_set(text_value)
+	_queue_toast("Ready to share", "Daily scorecard copied. Paste it into any message or post.")
+
 func _show_achievements() -> void:
 	mode = "achievements"
 	Progress.prepare(profile)
@@ -921,6 +961,8 @@ func _show_achievements() -> void:
 	var unlocked: Dictionary = profile.achievements
 	Kit.label(view.top, "%d / %d earned  ·  saved on this device" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
 	Kit.label(view.body, "Tough flights are part of the climb. These milestones track the things you've survived, discovered and mastered.", 16, Kit.TEXT, true)
+	if game_center.supports_game_center():
+		_ui_button(view.body, "View Apple Game Center achievements", _show_native_achievements, "secondary", 48)
 	for item in Progress.ACHIEVEMENTS:
 		var id: String = str(item.id)
 		var is_unlocked: bool = unlocked.has(id)
@@ -1723,6 +1765,9 @@ func _show_results() -> void:
 		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
 		_info_card(body, "DAILY CHALLENGE  ·  %s UTC" % sim.daily_day, "Score %d  ·  Best %d%s
 Same setup for everyone today. Unlimited retries; Cores only on the first finished attempt." % [score, best, "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+		_ui_button(body, "Copy & share today's scorecard", _copy_daily_result, "secondary", 50)
+		if game_center.supports_game_center():
+			_ui_button(body, "Online leaderboard · Game Center", _show_game_center_leaderboard, "secondary", 48)
 	_ui_button(body, "Spend Cores in the Hangar", _show_hangar, "amber", 48)
 	if not result_awards.is_empty():
 		var unlocked := PackedStringArray()
@@ -1878,6 +1923,7 @@ func _start_flight() -> void:
 			_: _show_stage_clear()
 
 func _process(delta: float) -> void:
+	_advance_toast(delta)
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
@@ -2058,6 +2104,13 @@ func _finish() -> void:
 	_save_profile()
 	services.delete_run()
 	_show_results()
+	for id in result_awards:
+		var item: Dictionary = Progress.achievement(str(id))
+		if not item.is_empty():
+			_queue_toast("Achievement unlocked", str(item.name))
+	if not result_awards.is_empty():
+		sound.play("card")
+	game_center.sync()
 
 func _hangar_tab(group: String) -> void:
 	hangar_category = group
