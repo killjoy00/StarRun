@@ -951,7 +951,10 @@ func _copy_daily_result() -> void:
 	if text_value.is_empty():
 		return
 	DisplayServer.clipboard_set(text_value)
-	_queue_toast("Ready to share", "Daily scorecard copied. Paste it into any message or post.")
+	# Sharing is user-initiated: acknowledge it immediately, ahead of unlock toasts.
+	toast_queue.push_front({"title":"Ready to share","detail":"Daily scorecard copied. Paste it into any message or post."})
+	toast_clock = 0.0
+	_next_toast()
 
 func _show_achievements() -> void:
 	mode = "achievements"
