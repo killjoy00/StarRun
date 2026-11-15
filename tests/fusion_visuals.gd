@@ -31,7 +31,7 @@ func _viewport(dimensions: Vector2i) -> SubViewport:
 	return view
 func _run() -> void:
 	var content := Sim.new().content
-	var board := _viewport(Vector2i(740,400))
+	var board := _viewport(Vector2i(740,595))
 	var background := ColorRect.new()
 	background.color = Color("080f1b")
 	background.size = board.size
@@ -104,13 +104,21 @@ func _run() -> void:
 			# Add live threats after the cast, including attacks it would normally clear.
 			for p in [Vector2(240,745),Vector2(270,710),Vector2(315,760)]:
 				host.sim.bullets.append({"kind":"chaff","p":p,"v":Vector2(0,100),"damage":1})
+			if fusion.id == "storm_carrier":
+				host.sim.effects.append({"kind":"ion-burst","p":Vector2(270,720),"radius":190,"life":0.4,"max_life":0.65,"born":0})
+				for p in [host.sim.ion_mines[0].p,host.sim.escort_position(0)]:
+					host.sim.bullets.append({"kind":"chaff","p":p,"v":Vector2(0,100),"damage":1})
 			host.sim.charges = [{"x":370.0,"remaining":0.7,"duration":1.8}]
 			field._process(0)
 			field.queue_redraw()
 			var with_fx := await _frame(viewport)
 			with_fx.save_png("/tmp/starrun-visuals/fusion-%s-%s.png" % [fusion.id,"reduced" if reduced else "full"])
 			var effects: Array = host.sim.effects.duplicate(true)
+			var mines: Array = host.sim.ion_mines.duplicate(true)
+			var escort_time: float = host.sim.escort_left
 			host.sim.effects.clear()
+			host.sim.ion_mines.clear()
+			host.sim.escort_left = 0.0
 			field.queue_redraw()
 			var without_fx := await _frame(viewport)
 			for bullet in host.sim.bullets:
@@ -121,6 +129,8 @@ func _run() -> void:
 						visible = visible and with_fx.get_pixelv(p).is_equal_approx(without_fx.get_pixelv(p))
 				check(visible, "Fusion cannot hide a hostile core: " + str(fusion.id))
 			host.sim.effects = effects
+			host.sim.ion_mines = mines
+			host.sim.escort_left = escort_time
 	# Formation is presentation time; speed settings do not shorten the recognition cue.
 	host.sim.effects = [{"kind":"fusion-formed","fusion":"prism_focus","p":Vector2(270,790),"life":1.2,"max_life":1.2,"born":10}]
 	field._process(0)

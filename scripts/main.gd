@@ -7,6 +7,7 @@ const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
 const IconBadge = preload("res://scripts/icon_badge.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
+const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -703,13 +704,19 @@ func _show_menu() -> void:
 	names.add_theme_constant_override("separation", 0)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var portrait := PilotPortrait.new()
+	portrait.pilot_id = profile.pilot
+	portrait.custom_minimum_size = Vector2(44,44)
+	portrait.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	caption_row.add_theme_constant_override("separation",10)
+	caption_row.add_child(portrait)
 	caption_row.add_child(names)
 	var ship: Dictionary = Catalog.ship(profile.ship)
 	var pilot: Dictionary = Catalog.pilot(profile.pilot)
 	var ship_name := Kit.label(names, _name_part(ship.name, 0), 22, Color.WHITE)
 	ship_name.add_theme_font_override("font", Kit.font(1, 0.5))
 	var role := _name_part(ship.name, 1)
-	Kit.label(names, ("%s  ·  " % role if not role.is_empty() else "") + "Pilot " + _name_part(pilot.name, 0), 15, Kit.MUTED)
+	Kit.label(names, ("%s  ·  " % role if not role.is_empty() else "") + "Pilot " + _name_part(pilot.name, 0), 15, Kit.MUTED, true)
 	var change := _chip(caption_row, "Change", Kit.CYAN)
 	Kit.glyph(change.get_child(0), "next", Kit.CYAN, 14)
 	var hit := Button.new()
@@ -1033,11 +1040,11 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 		thumb.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		row.add_child(thumb)
 	else:
-		var badge := IconBadge.new()
-		badge.icon_id = id
-		badge.custom_minimum_size = Vector2(44, 44)
-		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		row.add_child(badge)
+		var portrait := PilotPortrait.new()
+		portrait.pilot_id = id
+		portrait.custom_minimum_size = Vector2(64, 64)
+		portrait.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(portrait)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 4)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1142,7 +1149,7 @@ func _show_cards(play_sound: bool = true) -> void:
 		if sim.rerolls_left > 0:
 			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand. Hangar rerolls refill each stage.")
 		if sim.skips_left > 0:
-			_draft_tool("Skip", "+12 hull", _draft_action.bind("skip", 0), "Take no upgrade and repair 12 hull")
+			_draft_tool("Skip", "+%d hull" % (12 + int(sim.meta.skip_patch) * 6), _draft_action.bind("skip", 0), "Take no upgrade and repair %d hull" % (12 + int(sim.meta.skip_patch) * 6))
 		if sim.banishes_left > 0:
 			_draft_tool("Remove", "%d left" % sim.banishes_left, _toggle_banish, "Take one upgrade out of this run's pool")
 	if not card_buttons.is_empty():

@@ -104,6 +104,14 @@ func _run() -> void:
 		await _drag(card.get_global_rect().get_center(), -150)
 		check(scroll.scroll_vertical > 60, "Holding and dragging a loadout card must scroll")
 		check(scene.profile.cores == wallet and scene.confirm_key.is_empty(), "Dragging must not equip or arm an unlock")
+		scene.reading_scroll.scroll_vertical = 0
+		scene.loadout_tab = "Pilots"
+		scene._show_loadout()
+		await _frame()
+		var portraits := scene.reading_scroll.find_children("*", "Control", true, false).filter(func(c): return c.get_script() == preload("res://scripts/pilot_portrait.gd"))
+		check(portraits.size() == 6, "All pilots use face portraits")
+		await _drag(portraits[0].get_global_rect().get_center(), -150)
+		check(scene.reading_scroll.scroll_vertical > 60 and scene.profile.cores == wallet and scene.confirm_key.is_empty(), "Holding a pilot portrait scrolls without selecting or purchasing")
 		scene.sim = Sim.new(2750)
 		scene.sim.stage = 3
 		scene.sim.cards = []

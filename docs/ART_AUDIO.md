@@ -86,3 +86,5 @@ menu art. A short converging-emblem cue identifies the ability when its rank-5
 pair combines. Fusion effects and projectiles stay below hostile rounds and beam
 warnings; reduced effects preserves their recognizable shapes. See
 [GAMEPLAY_V081.md](GAMEPLAY_V081.md) for formation rules and verification.
+
+The same beta adds six painted pilot faces and a Storm Carrier insignia, escort drones and ion mines. See [pilot asset paths and generation prompts](PILOT_ART.md) and [Hangar expansion](HANGAR_EXPANSION.md).

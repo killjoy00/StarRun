@@ -10,7 +10,8 @@ const PALETTES := {
 	"prism_focus":[Color("b3aff2"),Color("a6e6f2")],
 	"reflective_wall":[Color("a0d7ed"),Color("ddc9fa")],
 	"ghost_signal":[Color("a7a2df"),Color("88d3df")],
-	"reactor_surge":[Color("8be3d8"),Color("f2d38e")]
+	"reactor_surge":[Color("8be3d8"),Color("f2d38e")],
+	"storm_carrier":[Color("83e6d4"),Color("c3a8f3")]
 }
 
 static func polygon(center: Vector2, radius: float, sides: int = 6, rotation: float = -PI / 2.0) -> PackedVector2Array:
@@ -36,6 +37,14 @@ static func badge(item: CanvasItem, id: String, alpha: float = 1.0) -> void:
 		item.draw_line(Vector2(side * 13, -9), Vector2(side * 15, -5), b, 1.6, true)
 		item.draw_line(Vector2(side * 13, 9), Vector2(side * 15, 5), Color(a, alpha * 0.5), 1.0, true)
 	match id:
+		"storm_carrier":
+			for side in [-1,1]:
+				var p := Vector2(side*9,-2)
+				item.draw_colored_polygon(PackedVector2Array([p+Vector2(0,-7),p+Vector2(4,5),p,p+Vector2(-4,5)]),a)
+				item.draw_line(p+Vector2(0,6),p+Vector2(0,10),white,1.3,true)
+			outline(item,polygon(Vector2(0,5),5,4),b,1.7)
+			item.draw_circle(Vector2(0,5),2,white)
+			item.draw_arc(Vector2.ZERO,12,PI*1.15,PI*1.85,16,b,1.5,true)
 		"nova_aegis":
 			var shield := PackedVector2Array([Vector2(-10,-8),Vector2(0,-12),Vector2(10,-8),Vector2(8,5),Vector2(0,12),Vector2(-8,5)])
 			item.draw_colored_polygon(shield, Color(a, alpha * 0.13))

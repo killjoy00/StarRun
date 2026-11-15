@@ -34,10 +34,12 @@ func _run() -> void:
 	_test_synergy_tradeoffs()
 	_test_prototype_and_route_choices()
 	_test_new_stage_threats()
-	_test_20_active_pool()
+	_test_active_pool()
 	_test_fusions_and_milestones()
 	_test_long_runs()
 	_test_fusion_thresholds()
+	_test_expanded_hangar()
+	_test_support_actives()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -259,12 +261,12 @@ func _test_hangar_and_tactics() -> void:
 	var removed: String = sim.cards[0].id
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
-	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 62 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
+	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 68 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
 	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 30, "Existing purchases must retain their original full refund")
 	var credits := 0
 	for entry in Catalog.HANGAR:
 		credits += Catalog.price(entry.id, 0)
-	check(Catalog.refund(hangar) == credits, "Refund must return exactly the price paid across all 22 tracks")
+	check(Catalog.refund(hangar) == credits, "Refund must return exactly the price paid across every Hangar track")
 	sim.shield = 0
 	sim.hull = 40
 	sim._hit(3, "chaff", "test")
@@ -448,14 +450,18 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
+		if sim.enemies.size() >= 2 or sim.boss_spawned:
+			sim.activate("wing_drones")
+			sim.activate("ion_mine")
+			sim.activate("storm_carrier")
 		if sim.enemies.size() >= 3:
 			sim.activate("focus")
 			sim.activate("jammer")
 			sim.activate("strike")
 
 
-func _test_20_active_pool() -> void:
-	check(Catalog.ABILITIES.size() == 20 and Catalog.ACTIVE_SLOTS == 4, "Twenty abilities must compete for four active slots")
+func _test_active_pool() -> void:
+	check(Catalog.ABILITIES.size() == 22 and Catalog.ACTIVE_SLOTS == 4, "Twenty-two abilities must compete for four active slots")
 	var seen := {}
 	for id in Catalog.ABILITIES:
 		check(not seen.has(id), "Ability IDs must be unique")
@@ -717,7 +723,7 @@ func _test_prototype_and_route_choices() -> void:
 
 func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
-	check(content.fusions.size() == 10 and content.passive_links.size() == 8, "Twenty base actives must have ten fusions and eight passive links")
+	check(content.fusions.size() == 11 and content.passive_links.size() == 8, "Twenty-two base actives must have eleven fusions and eight passive links")
 	for card in content.cards:
 		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
@@ -1112,3 +1118,135 @@ func _test_fusion_thresholds() -> void:
 	check(restored.rerolls_left == old_bar.rerolls_left and restored.pending_levels == old_bar.pending_levels, "Migrating the full-bar hand costs no reroll or level")
 	var stable := Sim.new()
 	check(stable.restore(restored.snapshot()) and stable.snapshot() == restored.snapshot(), "The migrated full-bar hand stays fixed on subsequent resumes")
+
+func _test_expanded_hangar() -> void:
+	check(Catalog.HANGAR.size() == 38, "Sixteen new permanent tracks bring the Hangar to 38")
+	var starting := Sim.new(3001,{"arc_start":1,"lance_start":1,"signature_rank":2})
+	check(starting.upgrades.arc == 1 and starting.upgrades.lance == 1, "Purchased starting weapons are installed")
+	check(Sim.new(3001,{"arc_start":1},"arcwing").upgrades.arc == 2, "Charged coil also improves an Arcwing’s starting weapon")
+	check(starting.upgrades.aegis == 3 and starting.active_slots == ["aegis"], "Pilot drills upgrades the signature without filling another slot")
+	check(Sim.new(3001,{"signature_rank":2},"haven").upgrades.mend == 3, "Pilot drills follows the selected ship")
+	var armor := Sim.new(3002,{"beam_plating":4})
+	armor.shield = 0
+	armor._hit(20,"heavy","test beam")
+	check(is_equal_approx(armor.hull,82.4), "Ablative panels reduce an actual beam hit by 12%")
+	var restart := Sim.new(3003,{"shield_restart":4})
+	restart._hit(50,"heavy","break")
+	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.2), "Restart circuit shortens shield-break downtime")
+	var sealed := Sim.new(3004,{"hazard_seals":4})
+	sealed._hit(1,"heat","heat")
+	check(is_equal_approx(sealed.heat_left,4.0), "Sealed systems shorten an actual status hit")
+	var siege := Sim.new(3005,{"boss_damage":5})
+	var target := {"id":99,"kind":"boss","hp":1000.0,"max_hp":1000.0,"p":Vector2(270,130)}
+	siege._damage_enemy(target,100,"pulse")
+	check(is_equal_approx(target.hp,885.0), "Siege targeting applies only to automatic boss damage")
+	target.hp = 1000.0
+	siege._damage_enemy(target,100,"nova")
+	check(is_equal_approx(target.hp,900.0), "Siege targeting does not silently amplify active damage")
+	var normal := Sim.new(3006)
+	var warheads := Sim.new(3006,{"ordnance_damage":4})
+	normal._add_enemy("station",Vector2(270,300))
+	warheads._add_enemy("station",Vector2(270,300))
+	normal._update_weapons()
+	warheads._update_weapons()
+	check(is_equal_approx(warheads.shots.filter(func(v):return v.weapon=="seeker")[0].damage,normal.shots.filter(func(v):return v.weapon=="seeker")[0].damage*1.2), "Warhead tooling strengthens real seeker projectiles")
+	var cast := Sim.new(3007,{"cast_repair":3,"opening_charge":3})
+	cast.hull = 40
+	cast.activate("aegis")
+	normal = Sim.new(3007)
+	normal.activate("aegis")
+	check(cast.hull == 43 and is_equal_approx(cast.cooldowns.aegis,normal.cooldowns.aegis*0.7), "Field patch and Hot start apply to the first cast")
+	var saved := Sim.new()
+	check(saved.restore(cast.snapshot()) and saved.stage_casts.has("aegis"), "Hot start spending survives resume")
+	cast.cooldowns.aegis = 0
+	cast.activate("aegis")
+	check(is_equal_approx(cast.cooldowns.aegis,normal.cooldowns.aegis), "Hot start does not repeat within a world")
+	var warp := Sim.new(3008,{"warp_repairs":3,"banish_relay":2,"banishes":1})
+	warp.hull = 10
+	warp.stage_transition_queued = true
+	warp.stage_clears = 1
+	warp.intermission_step = "ready"
+	warp.route_choice = "overclock"
+	warp.stage_casts.aegis = true
+	warp._launch_escorts(2,6,10)
+	warp._deploy_ion_mines(1,100,150)
+	check(warp.advance_stage() and is_equal_approx(warp.hull,32.0) and warp.banishes_left == 3, "Warp repairs and Banish relay pay at the new world")
+	check(warp.stage_casts.is_empty() and warp.ion_mines.is_empty() and warp.escort_left == 0, "Warp resets first casts and clears support from the previous battlefield")
+	var focused := Sim.new(3009,{"reroll_focus":1})
+	focused.rerolls_left = 100
+	focused._offer_cards(false)
+	var valid := true
+	for i in range(100):
+		focused.reroll_cards()
+		valid = valid and focused.cards.any(func(c):return focused.upgrades.get(c.id,0)>0)
+		var ids := {}
+		for card in focused.cards:
+			valid = valid and not ids.has(card.id)
+			ids[card.id] = true
+	check(valid and focused.rerolls_left == 0, "Focused rerolls offer an owned upgrade without duplicate cards or extra uses")
+	focused.banished = ["aegis","pulse","seeker"]
+	focused._offer_cards(false)
+	focused._focus_reroll()
+	check(not focused.cards.any(func(c):return c.id in focused.banished), "Focused uplink respects removed tracks when nothing owned remains")
+	var skip := Sim.new(3010,{"skip_patch":3,"skips":1})
+	skip.hull = 10
+	skip._offer_cards(false)
+	check(skip.skip_cards() and skip.hull == 40 and skip.skips_left == 0, "Repair stores increase the actual skip heal")
+	var salvage := Sim.new(3011,{"module_salvage":3,"clean_clear":3})
+	salvage._spawn_boss()
+	var part := {"id":99,"name":"Test part","kind":"boss_module","hp":10.0,"max_hp":10.0,"p":Vector2(270,100),"xp":0}
+	salvage._damage_enemy(part,20,"pulse")
+	check(salvage.bonus_cores == 3, "Component salvage pays for a destroyed boss part")
+	salvage.hull = 70
+	salvage._damage_enemy(salvage.enemies[0],100000,"pulse")
+	check(salvage.bonus_cores == 12, "Clean contract pays a healthy world clear")
+	salvage._damage_enemy(salvage.enemies[0],100000,"pulse")
+	check(salvage.bonus_cores == 12, "A destroyed boss cannot pay the contract twice")
+	var legacy: Dictionary = Sim.new().snapshot()
+	for id in ["arc_start","cast_repair","opening_charge","reroll_focus"]: legacy.meta.erase(id)
+	legacy.erase("stage_casts")
+	legacy.erase("ion_mines")
+	var restored := Sim.new()
+	check(restored.restore(legacy) and restored.meta.arc_start == 0 and restored.ion_mines.is_empty(), "Older saves default new purchases and support state safely")
+
+func _test_support_actives() -> void:
+	for rank in [1,5,10]:
+		var drone := Sim.new(3050)
+		drone.active_slots = ["wing_drones"]
+		drone.upgrades.wing_drones = rank
+		drone._add_enemy("station",Vector2(270,600))
+		drone.enemies[0].hp = 10000.0
+		drone.enemies[0].max_hp = 10000.0
+		check(drone.activate("wing_drones") and drone.escort_count == 2+int(rank>=5)+int(rank>=10), "Drone milestones add real escorts at rank " + str(rank))
+		for frame in range(40):
+			drone._update_support()
+			drone._update_shots()
+		check(drone.enemies[0].hp < 10000 and drone.damage_dealt.get("escort",0)>0, "Escort shots must hit real targets")
+		var copy := Sim.new()
+		check(copy.restore(drone.snapshot()) and copy.snapshot() == drone.snapshot(), "Escort count, damage and cadence survive saving")
+		drone.escort_left = Sim.DT
+		drone.escort_timer = 0.0
+		var shots: int = drone.shots.size()
+		drone._update_support()
+		check(drone.escort_left == 0 and drone.shots.size() == shots, "Expired escorts cannot fire one extra volley")
+		var mine := Sim.new(3051)
+		mine.active_slots = ["ion_mine"]
+		mine.upgrades.ion_mine = rank
+		mine._add_enemy("station",Vector2(270,450))
+		mine.enemies[0].hp = 10000.0
+		mine.enemies[0].max_hp = 10000.0
+		check(mine.activate("ion_mine") and mine.ion_mines.size() == (2 if rank == 10 else 1), "Mine rank 10 deploys a second charge")
+		check(mine.ion_mines[0].radius == (190.0 if rank>=5 else 150.0), "Mine rank 5 expands the actual blast radius")
+		mine.bullets = [{"p":mine.ion_mines[0].p,"v":Vector2.ZERO,"kind":"chaff","damage":10},{"p":Vector2(5,5),"v":Vector2.ZERO,"kind":"chaff","damage":10}]
+		copy = Sim.new()
+		check(copy.restore(mine.snapshot()) and copy.snapshot() == mine.snapshot(), "Armed mines survive saving exactly")
+		for frame in range(110): mine._update_support()
+		check(mine.ion_mines.is_empty() and mine.enemies[0].hp < 10000 and mine.bullets.size() == 1 and mine.bullets[0].p == Vector2(5,5), "Timed mines damage their area and clear only nearby shots")
+	var carrier := Sim.new(3052)
+	_fuse_pair(carrier,carrier.fusion_spec("storm_carrier"))
+	check(carrier.activate("storm_carrier") and carrier.escort_count == 4 and carrier.ion_mines.size() == 3, "Storm Carrier combines four escorts and three mines in one active slot")
+
+	carrier.ion_mines.clear()
+	carrier._add_enemy("drone",Vector2(300,930))
+	carrier._deploy_ion_mines(3,100,190)
+	check(carrier.ion_mines.all(func(m):return m.p.x >= 25 and m.p.x <= 515 and m.p.y <= 865), "Ion charges stay visible even when targeting an enemy near the bottom edge")
