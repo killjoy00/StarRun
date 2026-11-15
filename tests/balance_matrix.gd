@@ -273,7 +273,7 @@ func _pick_focused(sim: RefCounted) -> void:
 		weapon_order = ["pulse","seeker","arc","lance"]
 	elif sim.ship_id == "haven":
 		weapon_order = ["seeker","lance","pulse","arc"]
-	var has_counter := sim.active_slots.any(func(id): return id in ["aegis","nova","emp","capacitor","flak","jammer","nova_aegis"])
+	var has_counter: bool = sim.active_slots.any(func(id): return id in ["aegis","nova","emp","capacitor","flak","jammer","nova_aegis"])
 	for idx in range(sim.cards.size()):
 		var card: Dictionary = sim.cards[idx]
 		var id: String = str(card.id)
