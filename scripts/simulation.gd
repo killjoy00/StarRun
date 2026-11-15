@@ -808,7 +808,12 @@ func _update_enemies() -> void:
 					pattern_shift = 62.0 if beams_fired % 2 == 0 else -62.0
 				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0 + pattern_shift
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
-			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8))))
+			var beam_interval := 7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8)))
+			# Early Citadel lancer beams were stacking before new builds could adapt.
+			# The boss retains its original heavy cadence and two-lane pylon phase.
+			if stage == 4 and not boss_spawned and time - stage_start < 135.0:
+				beam_interval = maxf(beam_interval, 7.8)
+			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
 			if jammer_left > 0.0 or emp_left > 0.0:
@@ -1282,9 +1287,12 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
-		# A fraction reaches the hull directly; the remainder hits shields.
-		hull = maxf(0.0, hull - reduced * 0.30 * hull_damage_multiplier())
-		reduced *= 0.70
+		# The Citadel's early void swarms once bypassed shields for 30% on
+		# every hit, disproportionately punishing non-Nova defensive builds.
+		# Preserve the shield-piercing identity while leaving counterplay.
+		var hull_bleed := 0.20 if stage == 4 else 0.30
+		hull = maxf(0.0, hull - reduced * hull_bleed * hull_damage_multiplier())
+		reduced *= 1.0 - hull_bleed
 	elif kind == "corrosion":
 		corrosion_left = maxf(corrosion_left, 5.0 * status_duration_scale())
 	elif kind == "disrupt":
