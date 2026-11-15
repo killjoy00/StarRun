@@ -1,0 +1,65 @@
+name: Campaign balance research
+on:
+  push:
+    branches: ['codex/world2-4-*']
+    paths:
+      - 'tests/balance_matrix.gd'
+      - 'scripts/simulation.gd'
+      - 'data/content.json'
+      - '.github/workflows/campaign-research.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: campaign-research-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  research:
+    name: '${{ matrix.id }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {id: baseline-normal, ship: vanguard, difficulty: normal, build: baseline, hangar: none, pilot: rookie}
+          - {id: focused-normal, ship: vanguard, difficulty: normal, build: focused, hangar: none, pilot: rookie}
+          - {id: focused-mid, ship: vanguard, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-max, ship: vanguard, difficulty: normal, build: focused, hangar: max, pilot: rookie}
+          - {id: focused-bulwark-hard, ship: bulwark, difficulty: hard, build: focused, hangar: max, pilot: rookie}
+          - {id: focused-arcwing-mid, ship: arcwing, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-arcwing-max, ship: arcwing, difficulty: normal, build: focused, hangar: max, pilot: rookie}
+          - {id: focused-haven-max, ship: haven, difficulty: normal, build: focused, hangar: max, pilot: rookie}
+          - {id: focused-bulwark-mid, ship: bulwark, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-haven-mid, ship: haven, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-kestrel-mid, ship: kestrel, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-wraith-mid, ship: wraith, difficulty: normal, build: focused, hangar: mid, pilot: rookie}
+          - {id: focused-wraith-max, ship: wraith, difficulty: normal, build: focused, hangar: max, pilot: rookie}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Validate diagnostic harness
+        run: godot --headless --path . --check-only --script tests/balance_matrix.gd
+      - name: Measure real gameplay without forced kills
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds=3 --strategy=timed --ship=${{ matrix.ship }} \
+            --difficulty=${{ matrix.difficulty }} --build=${{ matrix.build }} --hangar=${{ matrix.hangar }} \
+            --pilot=${{ matrix.pilot }} --trace \
+            2>&1 | tee research-${{ matrix.id }}.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' research-${{ matrix.id }}.log; then
+            echo "::error::Campaign diagnostic reported an error"
+            exit 1
+          fi
+      - name: Preserve full four-world diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-${{ matrix.id }}
+          path: research-${{ matrix.id }}.log
+          if-no-files-found: ignore
+          retention-days: 30

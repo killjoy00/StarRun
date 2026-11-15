@@ -342,7 +342,7 @@
       "id": "mend",
       "name": "Repair drones",
       "tag": "ABILITY",
-      "description": "Repair hull over a few seconds.",
+      "description": "Repair hull over time and purge corrosion and overheating.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -450,7 +450,7 @@
       "id": "deflector",
       "name": "Deflector",
       "tag": "ABILITY",
-      "description": "Turn nearby small shots into shielding.",
+      "description": "Absorb nearby small shots, including status rounds, to restore shield.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -468,7 +468,7 @@
       "id": "prism",
       "name": "Prism reversal",
       "tag": "ABILITY",
-      "description": "Turn enemy shots into your own guided shots.",
+      "description": "Convert nearby small shots, including Ion, Heat and Void, into return fire.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -477,7 +477,7 @@
       "id": "barrier",
       "name": "Chaff barrier",
       "tag": "ABILITY",
-      "description": "Block small shots. Heavy beams still hurt.",
+      "description": "Block all small shots, including status rounds. Beams and explosives still hurt.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"

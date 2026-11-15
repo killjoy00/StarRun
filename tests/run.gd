@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
 	_test_support_actives()
+	_test_late_world_ability_counters()
 	_test_contextual_active_balance()
 	_test_endless_encounters_and_cooldown_captures()
 	var seeds := 24
@@ -123,6 +124,24 @@ func _test_course() -> void:
 	check(max_acceleration < 600.0, "Course corrections must preserve smooth velocity")
 	check(sim.ship_position(20).distance_to(other.ship_position(20)) > 1, "Different seeds must produce distinct routes")
 	check(sim.ship_position(30).distance_to(sim.ship_position(36)) > 5, "New pilot must not repeat the old six-second weave")
+	var long_flight := Sim.new(8821)
+	var before_rng: int = long_flight.rng.state
+	var late_positions: Array = []
+	for index in range(20):
+		late_positions.append(long_flight.ship_position(1500.0 + index * 4.0))
+	var distance := 0.0
+	for index in range(1,late_positions.size()):
+		distance += late_positions[index].distance_to(late_positions[index - 1])
+	check(distance > 200.0, "Pilot course must keep moving after the old 1200-second limit in World 4 and endless")
+	check(long_flight.rng.state == before_rng, "Extending the flight path must not change draft or combat RNG")
+	var saved_long := long_flight.snapshot()
+	var resumed_long := Sim.new(8822)
+	check(resumed_long.restore(saved_long), "Long flight checkpoints must restore without storing the generated course")
+	var same_path := true
+	for index in range(12):
+		var at := 1260.0 + index * 27.0
+		same_path = same_path and long_flight.ship_position(at).distance_to(resumed_long.ship_position(at)) < 0.001
+	check(same_path, "Restoring a late-world flight must reproduce its extended course from the original seed")
 	var legacy := sim.snapshot()
 	legacy.erase("movement_version")
 	other.restore(legacy)
@@ -888,6 +907,24 @@ func _test_new_stage_threats() -> void:
 	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0, "Final boss must telegraph two distinct heavy lanes")
 	sim._hit(2.0, "void", "test")
 	check(sim.hull < sim.max_hull, "Void shots must meaningfully bypass shields")
+	var bleed := Sim.new(9081)
+	bleed.stage = 4
+	bleed._hit(10.0, "void", "test")
+	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * 0.20), "Citadel void must bypass 20% of shields, not the original 30%")
+	var early_lancer := Sim.new(9082)
+	early_lancer.stage = 4
+	early_lancer.time = 35.0
+	early_lancer.heavy_ready_at = 0.0
+	early_lancer._add_enemy("void_lancer",Vector2(250,150))
+	early_lancer._update_enemies()
+	check(early_lancer.charges.size() == 1 and is_equal_approx(early_lancer.heavy_ready_at - early_lancer.time,7.8), "Early Citadel lancer beams give new builds 7.8s between charges")
+	var late_lancer := Sim.new(9082)
+	late_lancer.stage = 4
+	late_lancer.time = 210.0
+	late_lancer.heavy_ready_at = 0.0
+	late_lancer._add_enemy("void_lancer",Vector2(250,150))
+	late_lancer._update_enemies()
+	check(late_lancer.charges.size() == 1 and is_equal_approx(late_lancer.heavy_ready_at - late_lancer.time,4.4), "Later Citadel attacks recover the original heavy cadence before the boss")
 
 func _balance(seeds: int) -> Dictionary:
 	var result: Dictionary = {}
@@ -1080,8 +1117,16 @@ func _test_long_runs() -> void:
 	for stage in [2,3,4]:
 		sim = Sim.new()
 		sim.stage = stage
+		var early_scale: float = sim.stage_damage_scale()
+		sim.time = 240.0
+		var full_scale: float = sim.stage_damage_scale()
+		check(early_scale < full_scale and early_scale > 1.0 and is_equal_approx(full_scale,float(sim.stage_spec().damage_scale)), "Later-world entry pressure ramps to the full authored damage before the boss")
+		sim.time = 0.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion, 10 * sim.stage_spec().damage_scale), "World damage scale reaches collision resolution")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale), "World 2-4 early-ramp damage reaches actual collision resolution without extra XP")
+		sim.time = 240.0
+		sim._hit(10, "ion", "test")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale)), "Late-world damage reaches full pressure, including during the boss")
 
 func _fixed_build_timing(seeds: int) -> Dictionary:
 	var results := {}
@@ -1374,3 +1419,74 @@ func _test_contextual_active_balance() -> void:
 	overkill.hull = 40.0
 	overkill.enemies = [{"id":1, "kind":"drone", "hp":5.0, "max_hp":5.0, "p":Vector2(270,500), "xp":0}]
 	check(overkill.activate("siphon") and is_equal_approx(overkill.hull, 41.5), "Siphon heals only for five actual damage, not for its much larger nominal hit")
+
+
+func _test_late_world_ability_counters() -> void:
+	var kinds := ["chaff", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]
+	for kind in kinds:
+		var barrier := Sim.new(9311)
+		barrier.stage = 4
+		barrier.active_slots = ["barrier"]
+		barrier.upgrades.barrier = 1
+		barrier.shield = 8.0
+		check(barrier.activate("barrier"), "Chaff barrier can activate against " + kind)
+		barrier.bullets = [{"p":barrier.ship_position(), "v":Vector2.ZERO, "damage":12.0, "kind":kind, "source":"test"}]
+		barrier._update_bullets()
+		check(is_equal_approx(barrier.hull,barrier.max_hull) and is_equal_approx(barrier.shield,8.0) and barrier.bullets.is_empty(), "Barrier must counter small " + kind + " rounds without status bleed")
+	var explosive := Sim.new(9312)
+	explosive.active_slots = ["barrier"]
+	explosive.upgrades.barrier = 1
+	explosive.shield = 12.0
+	check(explosive.activate("barrier"), "Barrier can be raised against heavier ordnance")
+	explosive.bullets = [{"p":explosive.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":"ordnance","hp":12.0,"source":"missile_bomber"}]
+	explosive._update_bullets()
+	check(explosive.shield < 12.0, "Barrier still cannot block ordnance or replace Flak")
+	explosive._hit(10.0,"heavy","test")
+	check(explosive.shield == 0.0, "Heavy beams still penetrate the small-shot barrier")
+
+	var shielded := Sim.new(9313)
+	shielded.stage = 4
+	shielded.active_slots = ["deflector"]
+	shielded.upgrades.deflector = 1
+	shielded.shield = 2.0
+	for kind in kinds:
+		shielded.bullets.append({"p":shielded.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":kind,"source":"test"})
+	shielded.bullets.append({"p":shielded.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":"ordnance","hp":12.0,"source":"missile_bomber"})
+	check(shielded.activate("deflector") and shielded.bullets.size() == 1 and shielded.bullets[0].kind == "ordnance", "Deflector absorbs every small status projectile, never the specialist ordnance")
+	check(shielded.shield > 2.0 and shielded.prevented > 0.0, "Deflector converts protected small shots into actual shielding")
+
+	var prism := Sim.new(9314)
+	prism.stage = 4
+	prism.active_slots = ["prism"]
+	prism.upgrades.prism = 1
+	for kind in kinds:
+		prism.bullets.append({"p":prism.ship_position(),"v":Vector2.ZERO,"damage":7.0,"kind":kind,"source":"test"})
+	prism.bullets.append({"p":prism.ship_position(),"v":Vector2.ZERO,"damage":7.0,"kind":"mine","hp":10.0,"fuse":5.0,"source":"minelayer"})
+	check(prism.activate("prism") and prism.shots.size() == kinds.size() and prism.bullets.size() == 1 and prism.bullets[0].kind == "mine", "Prism reflects all seven small-shot types while leaving mines to Flak")
+
+	var repaired := Sim.new(9315)
+	repaired.active_slots = ["mend"]
+	repaired.upgrades.mend = 1
+	repaired.heat_left = 4.0
+	repaired.corrosion_left = 3.0
+	check(repaired.activate("mend") and repaired.heat_left == 0.0 and repaired.corrosion_left == 0.0 and repaired.mend_left > 0.0, "Repair drones purge World 2 corrosion and World 3 overheating on a deliberate cast")
+
+	for kind in ["ion","corrosion","disrupt","heat","gravity","void"]:
+		var standard := Sim.new(9371)
+		standard.stage = 3
+		standard.time = 240.0
+		var haven := Sim.new(9371, {}, "haven")
+		haven.stage = 3
+		haven.time = 240.0
+		standard._hit(10.0, kind, "test")
+		haven._hit(10.0, kind, "test")
+		check(is_equal_approx(float(haven.damage_taken[kind]), float(standard.damage_taken[kind]) * 0.75), "Haven's specialist armor absorbs exactly 25% of " + kind + " status-round damage")
+	var standard_dot := Sim.new(9372)
+	standard_dot.stage = 2
+	standard_dot.corrosion_left = 1.0
+	var haven_dot := Sim.new(9372, {}, "haven")
+	haven_dot.stage = 2
+	haven_dot.corrosion_left = 1.0
+	standard_dot.step()
+	haven_dot.step()
+	check(is_equal_approx(float(haven_dot.damage_taken.corrosion),float(standard_dot.damage_taken.corrosion) * 0.75), "Haven's corrosion resistance also applies to ongoing hull damage, not just the original hit")

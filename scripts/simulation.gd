@@ -10,6 +10,7 @@ var rng := RandomNumberGenerator.new()
 var seed_value := 1
 # A separate seeded course never consumes the combat/draft random stream.
 var course: Array[Dictionary] = []
+var course_pilot := RandomNumberGenerator.new() # Separate from combat RNG; reconstructed from seed on restore.
 var movement_version := 4
 var difficulty := "normal"
 var stage := 1
@@ -147,14 +148,19 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	skips_left = meta.skips
 
 func _build_course() -> void:
-	var pilot := RandomNumberGenerator.new()
-	pilot.seed = seed_value ^ 0x53746172
+	course_pilot.seed = seed_value ^ 0x53746172
 	course.clear()
 	course.append({"t": -6.0, "p": Vector2(270, 790)})
 	course.append({"t": 0.0, "p": Vector2(270, 790)})
-	var arrival := 0.0
-	var previous := Vector2(270, 790)
-	while arrival < 1200.0:
+	_extend_course(1200.0)
+
+func _extend_course(until_time: float) -> void:
+	# Generate only as required. The same seed and independent RNG reproduce
+	# the exact path after save/restore, without consuming draft/combat RNG.
+	var pilot := course_pilot
+	var arrival: float = float(course[-1].t)
+	var previous: Vector2 = course[-1].p
+	while arrival < until_time:
 		var movement: float = float(Catalog.ship(ship_id).movement) if movement_version >= 4 else 1.0
 		arrival += (pilot.randf_range(1.65, 2.8) / movement if movement_version >= 4 else (pilot.randf_range(2.2, 4.0) if movement_version >= 3 else pilot.randf_range(3.8, 7.5)))
 		var target: Vector2
@@ -177,7 +183,11 @@ func ship_position(at: float = -1.0) -> Vector2:
 	# Keep an old suspended flight's original trajectory; all new flights use the new pilot.
 	if movement_version == 1:
 		return Vector2(WIDTH * 0.5 + sin(at * TAU / 6.0) * WIDTH * 0.30, 790.0)
-	# Binary search avoids re-scanning the growing two-stage course for every projectile.
+	# World 4 and endless can pass the old 1200-second course boundary.
+	# Extend before the interpolation lookahead reaches the final segment.
+	if at >= float(course[course.size() - 2].t):
+		_extend_course(at + 45.0)
+	# Binary search avoids re-scanning the growing multi-world course for every projectile.
 	var lo := 1
 	var hi := course.size() - 2
 	while lo < hi:
@@ -230,6 +240,8 @@ func step() -> void:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk
+		if ship_id == "haven":
+			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
 		damage_taken.corrosion += corrosion_damage
 		if hull <= 0.0:
@@ -353,7 +365,16 @@ func fused_into(id: String) -> String:
 	return ""
 
 func stage_damage_scale() -> float:
-	return float(stage_spec().get("damage_scale", 1.0))
+	var scale: float = float(stage_spec().get("damage_scale", 1.0))
+	# Each warp is followed by new status effects and stronger enemies. Ease
+	# players into those mechanics without handing out extra kills or XP.
+	# The encounter reaches its full authored damage well before the boss.
+	if stage in [2, 3, 4] and not boss_spawned:
+		var entry_factor := 0.75 if stage == 2 else (0.82 if stage == 3 else 0.65)
+		var full_at := 155.0 if stage == 2 else (170.0 if stage == 3 else 195.0)
+		var ramp: float = clampf((time - stage_start - 25.0) / (full_at - 25.0), 0.0, 1.0)
+		scale *= lerpf(entry_factor, 1.0, ramp)
+	return scale
 
 func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
@@ -789,7 +810,12 @@ func _update_enemies() -> void:
 					pattern_shift = 62.0 if beams_fired % 2 == 0 else -62.0
 				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0 + pattern_shift
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
-			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8))))
+			var beam_interval := 7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8)))
+			# Early Citadel lancer beams were stacking before new builds could adapt.
+			# The boss retains its original heavy cadence and two-lane pylon phase.
+			if stage == 4 and not boss_spawned and time - stage_start < 135.0:
+				beam_interval = maxf(beam_interval, 7.8)
+			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
 			if jammer_left > 0.0 or emp_left > 0.0:
@@ -1083,6 +1109,11 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 				best = enemy
 	return best
 
+func _is_small_shot(kind: String) -> bool:
+	# Status projectiles are small shots too. Only beams, missiles, mines
+	# and molten slag should bypass the chaff barrier/deflector/prism family.
+	return kind in ["chaff", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]
+
 func _update_bullets() -> void:
 	var ship := ship_position()
 	var control_pace: float = 0.88 if synergy_active("control") else 1.0
@@ -1101,7 +1132,7 @@ func _update_bullets() -> void:
 		bullet.p += bullet.v * DT * bullet_pace
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
-			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
+			if not (barrier_left > 0.0 and _is_small_shot(str(bullet.kind))):
 				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, "Molten slag" if bullet.kind == "slag" else ("Proximity mine" if bullet.kind == "mine" else str(bullet.source)))
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
@@ -1254,6 +1285,10 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount * stage_risk
+	# Haven's support chassis resists damaging status rounds, which dominate
+	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
+	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 	if kind == "ion":
@@ -1263,9 +1298,12 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
-		# A fraction reaches the hull directly; the remainder hits shields.
-		hull = maxf(0.0, hull - reduced * 0.30 * hull_damage_multiplier())
-		reduced *= 0.70
+		# The Citadel's early void swarms once bypassed shields for 30% on
+		# every hit, disproportionately punishing non-Nova defensive builds.
+		# Preserve the shield-piercing identity while leaving counterplay.
+		var hull_bleed := 0.20 if stage == 4 else 0.30
+		hull = maxf(0.0, hull - reduced * hull_bleed * hull_damage_multiplier())
+		reduced *= 1.0 - hull_bleed
 	elif kind == "corrosion":
 		corrosion_left = maxf(corrosion_left, 5.0 * status_duration_scale())
 	elif kind == "disrupt":
@@ -1359,6 +1397,12 @@ func activate(ability: String) -> bool:
 	elif ability == "mend":
 		mend_left = 4.0
 		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
+		# Repair drones are the support counter to the status damage in
+		# Ion Storm and the weapon-suppressing heat of Solar Foundry.
+		if corrosion_left > 0.0 or heat_left > 0.0:
+			corrosion_left = 0.0
+			heat_left = 0.0
+			_log("Repair drones purged corrosion and overheating")
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -1386,7 +1430,7 @@ func activate(ability: String) -> bool:
 		var remaining: Array = []
 		var absorbed := 0
 		for bullet in bullets:
-			if bullet.kind == "chaff" and bullet.p.distance_squared_to(ship_position()) < 300.0 * 300.0:
+			if _is_small_shot(str(bullet.kind)) and bullet.p.distance_squared_to(ship_position()) < 300.0 * 300.0:
 				absorbed += 1
 			else:
 				remaining.append(bullet)
@@ -1410,7 +1454,7 @@ func activate(ability: String) -> bool:
 		var remaining: Array = []
 		var reflected := 0
 		for bullet in bullets:
-			if reflected < 18 and bullet.kind in ["chaff", "ion", "corrosion", "disrupt"] and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
+			if reflected < 18 and _is_small_shot(str(bullet.kind)) and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
 				var target := _nearest(bullet.p)
 				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * effect_strength, "weapon": "barrage", "target": int(target.get("id", -1))})
 				reflected += 1
