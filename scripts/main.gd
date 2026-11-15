@@ -1455,6 +1455,9 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "Active  ·  fusion"
 	elif is_new_ability:
 		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
+	elif id == "core_cache":
+		accent = Kit.AMBER
+		tag_text = "Cores"
 	elif tag == "RECOVERY":
 		accent = Color("7afcc0")
 		tag_text = "Recovery"
