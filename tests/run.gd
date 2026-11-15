@@ -1300,6 +1300,16 @@ func _test_support_actives() -> void:
 
 func _test_contextual_active_balance() -> void:
 	# Situational rewards should be earned at the point of danger, not on every cast.
+
+	var aegis := Sim.new(5300)
+	aegis.shield = 8.0
+	aegis.charges = [{"source":3, "x":270.0, "remaining":0.5, "duration":1.8, "damage":35.0}]
+	check(aegis.activate("aegis") and aegis.shield > 8.0, "Aegis precision cast inside a heavy charge earns shield")
+	var early_aegis := Sim.new(5300)
+	early_aegis.shield = 8.0
+	early_aegis.charges = [{"source":3, "x":270.0, "remaining":1.6, "duration":1.8, "damage":35.0}]
+	check(early_aegis.activate("aegis") and is_equal_approx(early_aegis.shield, 8.0), "Early Aegis keeps immunity but earns no precision reward")
+	check(aegis.cooldowns.aegis < early_aegis.cooldowns.aegis * 0.85 and is_equal_approx(float(aegis.cooldown_totals.aegis),float(aegis.cooldowns.aegis)), "Only precise Aegis casts earn the reflected cooldown rebate")
 	var near := Sim.new(5301)
 	near.active_slots = ["flak"]
 	near.upgrades.flak = 1
