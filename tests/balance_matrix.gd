@@ -19,6 +19,7 @@ func _run() -> void:
 	var hangar_style := "none"
 	var pilot_id := "rookie"
 	var trace := false
+	var require_win := false
 	var seed_offset := 0
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -39,6 +40,8 @@ func _run() -> void:
 			seed_offset = maxi(0, int(arg.get_slice("=", 1)))
 		elif arg == "--trace":
 			trace = true
+		elif arg == "--require-win":
+			require_win = true
 	if build_style not in ["baseline", "focused"] or hangar_style not in ["none", "mid", "max"] or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
@@ -46,6 +49,7 @@ func _run() -> void:
 	var cells := 0
 	var trials := 0
 	var faults := 0
+	var campaign_wins := 0
 	for ship in Catalog.SHIPS:
 		var ship_id: String = str(ship.id)
 		if not only_ship.is_empty() and only_ship != ship_id:
@@ -77,6 +81,7 @@ func _run() -> void:
 					casts += int(result.casts)
 					hull += float(result.hull)
 					campaigns += int(result.won)
+					campaign_wins += int(result.won)
 					for stage_index in range(4):
 						if int(result.clears) > stage_index:
 							clears[stage_index] += 1
@@ -87,10 +92,12 @@ func _run() -> void:
 					"mean_final_hull":snappedf(hull / seeds, 0.1)
 				}))
 	print("BALANCE_MATRIX_SUMMARY ", JSON.stringify({
-		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "build":build_style, "hangar":hangar_style,
+		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "campaign_wins":campaign_wins, "build":build_style, "hangar":hangar_style,
 		"method":"scripted autopilot and auto-weapons, automated upgrades, active policy only"
 	}))
-	quit(1 if cells == 0 or trials == 0 or faults > 0 else 0)
+	if require_win and campaign_wins == 0:
+		push_error("Expected at least one genuine four-world victory using real combat, cards and bosses")
+	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) else 0)
 
 func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie") -> Dictionary:
 	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty)
