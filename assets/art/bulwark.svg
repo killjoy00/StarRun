@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 128 128">
+<defs>
+<linearGradient id="metal" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#dbe6ed"/><stop offset=".34" stop-color="#8095a9"/><stop offset=".62" stop-color="#34495b"/><stop offset="1" stop-color="#182b3b"/></linearGradient>
+<linearGradient id="armor" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#a4b5c9"/><stop offset=".42" stop-color="#536c83"/><stop offset="1" stop-color="#172334"/></linearGradient>
+<linearGradient id="engine" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffffff"/><stop offset=".36" stop-color="#a4b5c9"/><stop offset="1" stop-color="#a4b5c9" stop-opacity="0"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round">
+<path d="M43 8L85 8L99 27L107 51L120 58L121 109L103 122L80 118L64 126L48 118L25 122L7 109L8 58L21 51L29 27Z" fill="#101d2f" stroke="#080e18" stroke-width="5"/>
+<path d="M38 12L90 12L101 47L111 62L111 109L90 115L79 105L49 105L38 115L17 109L17 62L28 47Z" fill="url(#metal)" stroke="#7189aa" stroke-width="2.6"/>
+<path d="M39 17L89 17L84 54L44 54Z" fill="#3b5067" stroke="#c3d2dc" stroke-width="2"/>
+<path d="M49 27L79 27L75 54L53 54Z" fill="#b4cad5" stroke="#172b3c" stroke-width="2"/>
+<path d="M20 63L40 54L48 87L42 108L17 99Z M108 63L88 54L80 87L86 108L111 99Z" fill="url(#armor)" stroke="#d5e2ef" stroke-width="1.8"/>
+<path d="M44 60L84 60L77 98L51 98Z" fill="#263646" stroke="#8499ad" stroke-width="2.4"/>
+<path d="M52 70L76 70L74 84L54 84Z" fill="#ffbe5d" stroke="#fff3b5" stroke-width="2"/>
+<path d="M24 42L43 35L43 52L24 58Z M104 42L85 35L85 52L104 58Z" fill="#5a6f88" stroke="#192a3f" stroke-width="2"/>
+<g fill="#f6bb68" stroke="#1a2430"><rect x="15" y="69" width="9" height="7"/><rect x="104" y="69" width="9" height="7"/><rect x="27" y="28" width="9" height="6"/><rect x="92" y="28" width="9" height="6"/></g>
+<path d="M48 102L42 116L48 127L57 110Z M80 102L86 116L80 127L71 110Z" fill="url(#engine)"/>
+<path d="M36 41L40 55M92 41L88 55" stroke="#eef7ff" stroke-width="2"/></g>
+</svg>
