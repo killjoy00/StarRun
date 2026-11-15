@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 128 128">
+<defs>
+<linearGradient id="metal" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#dbe6ed"/><stop offset=".34" stop-color="#8095a9"/><stop offset=".62" stop-color="#34495b"/><stop offset="1" stop-color="#182b3b"/></linearGradient>
+<linearGradient id="armor" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#8bdc84"/><stop offset=".42" stop-color="#325d45"/><stop offset="1" stop-color="#172334"/></linearGradient>
+<linearGradient id="engine" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffffff"/><stop offset=".36" stop-color="#8bdc84"/><stop offset="1" stop-color="#8bdc84" stop-opacity="0"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round">
+<path d="M48 7L80 7L91 34L110 40L126 70L112 109L92 118L79 112L64 126L49 112L36 118L16 109L2 70L18 40L37 34Z" fill="#14241f" stroke="#0b1715" stroke-width="5"/>
+<path d="M43 11L85 11L87 46L82 108L64 121L46 108L41 46Z" fill="url(#metal)" stroke="#f0f7d4" stroke-width="2.4"/>
+<path d="M18 45L41 41L48 94L35 112L14 99L10 74Z M110 45L87 41L80 94L93 112L114 99L118 74Z" fill="url(#armor)" stroke="#c8f7bf" stroke-width="2"/>
+<circle cx="28" cy="71" r="20" fill="#354c42" stroke="#d4e7d6" stroke-width="3"/><circle cx="100" cy="71" r="20" fill="#354c42" stroke="#d4e7d6" stroke-width="3"/>
+<circle cx="28" cy="71" r="12" fill="#0f663e" stroke="#a6ffb0" stroke-width="2"/><circle cx="100" cy="71" r="12" fill="#0f663e" stroke="#a6ffb0" stroke-width="2"/>
+<circle cx="28" cy="71" r="6" fill="#b9ffc1"/><circle cx="100" cy="71" r="6" fill="#b9ffc1"/>
+<path d="M52 18L76 18L75 54L53 54Z" fill="#f7f8e8" stroke="#d7ddcb" stroke-width="1.8"/>
+<path d="M61 26H67V34H75V40H67V48H61V40H53V34H61Z" fill="#e95450" stroke="#9f2b39" stroke-width="1.2"/>
+<rect x="58" y="63" width="12" height="31" rx="4" fill="#54fa80" stroke="#c3ffbf" stroke-width="2"/>
+<path d="M47 107L45 122L53 127L58 109Z M81 107L83 122L75 127L70 109Z" fill="url(#engine)"/>
+<path d="M38 44L47 61M90 44L81 61M47 100L64 112L81 100" fill="none" stroke="#e3f9d3" stroke-width="2"/></g>
+</svg>
