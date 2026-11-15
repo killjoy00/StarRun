@@ -225,17 +225,24 @@ func _build_ui() -> void:
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
 	for slot in range(Catalog.ACTIVE_SLOTS):
-		ability_buttons[slot] = _button(root, "", _activate_slot.bind(slot), slot == 0)
+		ability_buttons[slot] = _button(root, "", _activate_slot.bind(slot))
 		ability_buttons[slot].focus_mode = Control.FOCUS_NONE
 		var badge := IconBadge.new()
 		badge.icon_id = ""
 		badge.position = Vector2(4, 4)
 		badge.size = Vector2(26, 26)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ability_buttons[slot].add_child(badge)
 		var cooldown := _meter(AMBER)
 		cooldown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ability_buttons[slot].add_child(cooldown)
 		cooldown_meters[slot] = cooldown
+		var ability_name := _label(ability_buttons[slot], "", 16, Color.WHITE)
+		ability_name.name = "AbilityName"
+		ability_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ability_status := _label(ability_buttons[slot], "", 16, CYAN)
+		ability_status.name = "AbilityStatus"
+		ability_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ability_a = ability_buttons[0]
 	ability_b = ability_buttons[1]
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
@@ -276,8 +283,8 @@ func _layout() -> void:
 	var inset := _insets()
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
-	var field_top := safe_top + 84.0
-	var reserved := 102.0 if compact else 196.0
+	var field_top := safe_top + 92.0
+	var reserved := 128.0 if compact else 196.0
 	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
@@ -286,11 +293,15 @@ func _layout() -> void:
 	world.scale = Vector2.ONE * scale_factor
 	var chrome_x := 16.0 if compact else field.position.x
 	var chrome_width := size.x - 32.0 if compact else field.size.x
+	# Reserve horizontal space for the toolbar before placing heading and timer.
+	# Narrow headers abbreviate rather than painting over the Build control.
+	var toolbar_start := size.x - 14.0 - 196.0 if compact else field.end.x - 174.0
+	var top_label_width := maxf(70.0, minf(132.0 if compact else 200.0, toolbar_start - chrome_x - 10.0))
 	hud.position = Vector2(chrome_x, safe_top + 4.0)
-	hud.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 24)
+	hud.size = Vector2(top_label_width, 24)
 	status.position = Vector2(chrome_x, safe_top + 28.0)
-	status.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 20)
-	var meter_y := safe_top + 50.0
+	status.size = Vector2(top_label_width, 20)
+	var meter_y := safe_top + 58.0
 	var meter_width := (chrome_width - 10.0) * 0.5
 	hull_meter.position = Vector2(chrome_x, meter_y)
 	shield_meter.position = Vector2(chrome_x + meter_width + 10.0, meter_y)
@@ -306,43 +317,53 @@ func _layout() -> void:
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
 		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 84.0)
-		button.size = Vector2(button_width, 80.0)
+		button.size = Vector2(button_width, 102.0 if compact else 80.0)
 		button.custom_minimum_size.y = button.size.y
-		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 		button.add_theme_font_size_override("font_size", 16 if compact else 15)
 		var badge: Control = button.get_child(0)
-		badge.visible = true
-		badge.size = Vector2(25, 25)
-		badge.position = Vector2((button_width - 25.0) * 0.5, 2.0) if compact else Vector2(5, 11)
+		# IconBadge starts with a 32pt minimum. Explicitly size it so it
+		# cannot expand back into the name row after the Control resolves.
+		badge.custom_minimum_size = Vector2(28, 28) if compact else Vector2(32, 32)
+		badge.size = badge.custom_minimum_size
+		badge.position = Vector2((button_width - badge.size.x) * 0.5, 5.0) if compact else Vector2(8, 16)
+		var name_label: Label = button.get_node("AbilityName")
+		var status_label: Label = button.get_node("AbilityStatus")
+		for label in [name_label, status_label]:
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if compact else HORIZONTAL_ALIGNMENT_LEFT
+		name_label.position = Vector2(3, 41) if compact else Vector2(44, 13)
+		name_label.size = Vector2(button_width - 6.0, 24) if compact else Vector2(button_width - 50.0, 24)
+		status_label.position = Vector2(3, 70) if compact else Vector2(44, 43)
+		status_label.size = Vector2(button_width - 6.0, 24) if compact else Vector2(button_width - 50.0, 24)
 		var cooldown_bar: ProgressBar = cooldown_meters[i]
-		cooldown_bar.position = Vector2(5.0, button.size.y - 6.0)
-		cooldown_bar.size = Vector2(button_width - 10.0, 3.0)
-		button.add_theme_stylebox_override("normal", _style(Color("103740") if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
-		button.add_theme_color_override("font_color", Color.WHITE)
+		cooldown_bar.position = Vector2(7.0, button.size.y - 6.0)
+		cooldown_bar.size = Vector2(button_width - 14.0, 3.0)
+		# No selected/focused look on slot one; readiness lives in its status.
+		button.add_theme_stylebox_override("normal", _style(Color("102335"), Color("34495e")))
+		button.add_theme_stylebox_override("hover", _style(Color("183a46"), CYAN))
+		button.add_theme_stylebox_override("pressed", _style(Color("20505b"), CYAN))
+		button.add_theme_stylebox_override("disabled", _style(Color("0d1929"), Color("263749")))
 		for state in ["normal", "hover", "pressed", "disabled"]:
-			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
-			compact_style.content_margin_left = 4.0 if compact else 35.0
-			compact_style.content_margin_right = 4.0
-			compact_style.content_margin_top = 25.0 if compact else 4.0
-			compact_style.content_margin_bottom = 7.0 if compact else 4.0
-			button.add_theme_stylebox_override(state, compact_style)
+			var style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
+			style.set_content_margin_all(2.0)
+			button.add_theme_stylebox_override(state, style)
 	var top_height := 44.0 if compact else 36.0
 	var toolbar_right := size.x - 14.0 if compact else field.end.x
-	build_button.position = Vector2(toolbar_right - (202.0 if compact else 165.0), safe_top)
-	build_button.size = Vector2(86 if compact else 74, top_height)
-	speed_button.position = Vector2(toolbar_right - (114.0 if compact else 90.0), safe_top)
-	speed_button.size = Vector2(66 if compact else 46, top_height)
-	for control in [build_button, speed_button]:
+	var pause_width := 44.0 if compact else 42.0
+	var speed_width := 58.0 if compact else 46.0
+	var build_width := 78.0 if compact else 74.0
+	pause_button.position = Vector2(toolbar_right - pause_width, safe_top)
+	pause_button.size = Vector2(pause_width, top_height)
+	speed_button.position = Vector2(pause_button.position.x - 6.0 - speed_width, safe_top)
+	speed_button.size = Vector2(speed_width, top_height)
+	build_button.position = Vector2(speed_button.position.x - 6.0 - build_width, safe_top)
+	build_button.size = Vector2(build_width, top_height)
+	for control in [build_button, speed_button, pause_button]:
 		control.custom_minimum_size.y = top_height
-		control.add_theme_font_size_override("font_size", _text_size(11))
-	pause_button.position = Vector2(toolbar_right - (46.0 if compact else 42.0), safe_top)
-	pause_button.size = Vector2(46 if compact else 42, top_height)
-	pause_button.custom_minimum_size.y = top_height
-	pause_button.add_theme_font_size_override("font_size", _text_size(14))
-	for state in ["normal", "hover", "pressed", "disabled"]:
-		var compact_style: StyleBoxFlat = pause_button.get_theme_stylebox(state).duplicate()
-		compact_style.set_content_margin_all(6)
-		pause_button.add_theme_stylebox_override(state, compact_style)
+		control.add_theme_font_size_override("font_size", _text_size(12))
+		for state in ["normal", "hover", "pressed", "disabled"]:
+			var toolbar_style: StyleBoxFlat = control.get_theme_stylebox(state).duplicate()
+			toolbar_style.set_content_margin_all(4.0)
+			control.add_theme_stylebox_override(state, toolbar_style)
 	var wide := size.x > 950
 	build_label.visible = wide
 	report_label.visible = wide
@@ -812,19 +833,18 @@ func _show_menu() -> void:
 	var pitch := Kit.caps(title_row, "BUILD  /  REACT  /  REPEAT", Kit.AMBER, 12)
 	pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(_wallet())
-	Kit.label(top, "Your ship flies and fires. You decide what it becomes, and when to use its abilities.", 15, Kit.MUTED, true)
 	# Live ship art is part of the title, not a separate splash screen.
 	var hero_frame := PanelContainer.new()
 	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
 	hero_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	hero_frame.custom_minimum_size = Vector2(0, 164)
+	hero_frame.custom_minimum_size = Vector2(0, 150)
 	hero_frame.clip_contents = true
 	body.add_child(hero_frame)
 	var hero := HangarBay.new()
 	hero.style = "flight"
 	hero.labels = false
 	hero.ship_id = profile.ship
-	hero.custom_minimum_size = Vector2(0, 142)
+	hero.custom_minimum_size = Vector2(0, 128)
 	hero_frame.add_child(hero)
 	var caption := MarginContainer.new()
 	for side in ["left", "right", "bottom"]:
@@ -870,13 +890,13 @@ func _show_menu() -> void:
 	daily_panel.add_theme_stylebox_override("panel", Kit.box(Color("101b28"), Color("516a73"), 14, 1, 12, 10))
 	body.add_child(daily_panel)
 	var daily_content := VBoxContainer.new()
-	daily_content.add_theme_constant_override("separation", 5)
+	daily_content.add_theme_constant_override("separation", 3)
 	daily_panel.add_child(daily_content)
 	Kit.caps(daily_content, "DAILY CHALLENGE   ·   %s UTC" % str(daily.day), Kit.AMBER, 13)
 	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
 	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
 	Kit.label(daily_content, "%s  ·  %s  ·  Normal" % [_name_part(str(daily_ship.name), 0),_name_part(str(daily_pilot.name), 0)], 16, Kit.TEXT, true)
-	Kit.label(daily_content, "Fixed seed. No Hangar bonuses. Replays improve your own best.", 14, Kit.MUTED, true)
+	Kit.label(daily_content, "Same seed for everyone · No Hangar bonuses", 14, Kit.MUTED, true)
 	var daily_text := "Fly today's challenge"
 	if int(record.get("best_score",-1)) >= 0:
 		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
@@ -898,9 +918,9 @@ func _show_menu() -> void:
 				segment.add_theme_color_override(state, Kit.MUTED)
 		segment.custom_minimum_size.y = 60
 		segment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
-	Kit.label(body, _difficulty_text(current), 15, Kit.MUTED, true)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -917,7 +937,7 @@ func _show_menu() -> void:
 		_ui_button(bottom, "Start a new regular flight", _confirm_abandon.bind("menu"), "ghost", 44)
 		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
 		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
-	if not _touch_first():
+	if not _touch_first() and not _compact_ui():
 		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
 		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_focus(primary)
@@ -1383,10 +1403,13 @@ func _show_cards(play_sound: bool = true) -> void:
 	var view := _page(0.93, true, 520.0)
 	var top: VBoxContainer = view.top
 	var body: VBoxContainer = view.body
-	var title := "Remove an upgrade" if banish_mode else "Choose an upgrade"
+	var capped: bool = sim.cards.any(func(card): return str(card.id) == "core_cache")
+	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
 	_page_header(top, "Level %d  ·  Stage %d" % [sim.level, sim.stage], title)
 	if banish_mode:
 		Kit.label(top, "Tap one to take it out of this run's draft pool. %d removal%s left." % [sim.banishes_left, "" if sim.banishes_left == 1 else "s"], 16, Kit.DANGER, true)
+	elif capped:
+		Kit.label(top, "All upgrades installed. Repair your ship or bank Cores.", 16, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
 		for slot in sim.active_slots:
@@ -1396,7 +1419,7 @@ func _show_cards(play_sound: bool = true) -> void:
 		_draft_card(body, i)
 	if banish_mode:
 		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
-	else:
+	elif not capped:
 		if sim.rerolls_left > 0:
 			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand. Hangar rerolls refill each stage.")
 		if sim.skips_left > 0:
@@ -1432,6 +1455,9 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "Active  ·  fusion"
 	elif is_new_ability:
 		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
+	elif id == "core_cache":
+		accent = Kit.AMBER
+		tag_text = "Cores"
 	elif tag == "RECOVERY":
 		accent = Color("7afcc0")
 		tag_text = "Recovery"
@@ -1440,7 +1466,7 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "%s  ·  rank %d to %d" % [type_text, current, next_rank]
 	if reaches_milestone and fusion.is_empty():
 		tag_text = "%s  ·  rank %d bonus" % [type_text, milestone]
-	var removable := banish_mode and id != "repair"
+	var removable := banish_mode and id not in ["repair", "core_cache"]
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
 	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
 	# Only a pick that actually fuses or crosses a breakpoint gets an accent edge.
@@ -1455,11 +1481,14 @@ func _draft_card(parent: Node, i: int) -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	view.content.add_child(row)
-	var badge := IconBadge.new()
-	badge.icon_id = fusion if not fusion.is_empty() else id
-	badge.custom_minimum_size = Vector2(40, 40)
-	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	row.add_child(badge)
+	if id == "core_cache":
+		row.add_child(Kit.core_icon(40))
+	else:
+		var badge := IconBadge.new()
+		badge.icon_id = fusion if not fusion.is_empty() else id
+		badge.custom_minimum_size = Vector2(40, 40)
+		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(badge)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 3)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1685,7 +1714,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
-		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
+		Kit.label(content, "Next: %s, %s. Choose a prototype or Cores, then a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
 	if is_final and sim.daily_day.is_empty():
@@ -1718,7 +1747,9 @@ func _show_prototypes() -> void:
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
 		_chip(head, str(spec.role).capitalize(), Kit.MUTED)
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
-	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
+	skip_button.tooltip_text = "Bank %d Cores for this flight's final payout and continue to route selection." % Simulation.PROTOTYPE_SKIP_CORES
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 
@@ -2035,7 +2066,7 @@ func _process(delta: float) -> void:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
-	speed_button.text = str(game_speed) + "×"
+	speed_button.text = _speed_label()
 	queue_redraw()
 	world.queue_redraw()
 
@@ -2106,6 +2137,13 @@ func _complete_warp() -> void:
 
 func _choose_prototype(index: int) -> void:
 	if mode != "prototype" or not sim.choose_prototype(index):
+		return
+	sound.play("card")
+	_save_run()
+	_show_route_choice()
+
+func _skip_prototype() -> void:
+	if mode != "prototype" or not sim.skip_prototype():
 		return
 	sound.play("card")
 	_save_run()
@@ -2246,12 +2284,15 @@ func _cycle_difficulty() -> void:
 	_save_profile()
 	_show_menu()
 
+func _speed_label() -> String:
+	return str(int(game_speed)) + "×" if is_equal_approx(game_speed, float(int(game_speed))) else str(game_speed) + "×"
+
 func _cycle_speed() -> void:
 	var index := speed_options.find(game_speed)
 	game_speed = float(speed_options[(index + 1) % speed_options.size()])
 	profile.speed = game_speed
 	_save_profile()
-	speed_button.text = str(game_speed) + "×"
+	speed_button.text = _speed_label()
 
 func _toggle_build_details() -> void:
 	build_show_all = not build_show_all

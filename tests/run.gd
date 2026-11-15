@@ -207,6 +207,25 @@ func _test_draft_and_cooldowns() -> void:
 	for card in sim.cards:
 		defensive = defensive or card.id in ["armor", "regen", "hull", "aegis", "repair"]
 	check(defensive, "Low hull must offer a legal defensive or repair card")
+	var maxed := Sim.new(812)
+	for card in maxed.content.cards:
+		maxed.upgrades[str(card.id)] = int(card.max)
+	maxed._offer_cards(false)
+	check(maxed.cards.size() == 2 and maxed.cards[0].id == "repair" and maxed.cards[1].id == "core_cache", "Maxed upgrades offer Field repair and banked Cores")
+	maxed.banishes_left = 1
+	check(not maxed.banish_card(1) and maxed.banishes_left == 1, "Core rewards cannot be banished as upgrade tracks")
+	var before_cores := maxed.payout()
+	check(maxed.choose_card(1) and maxed.choice_cores == Sim.MAXED_DRAFT_CORES and maxed.payout() == before_cores + Sim.MAXED_DRAFT_CORES, "Maxed-out salvage banks exactly 5 Cores")
+	check(not maxed.choose_card(1), "Taking a capped reward cannot claim it twice")
+	var cached: Dictionary = maxed.snapshot()
+	var cached_restore := Sim.new(813)
+	check(cached_restore.restore(cached) and cached_restore.snapshot() == cached, "Maxed draft Core rewards survive checkpoint round trips")
+	var repair := Sim.new(814)
+	for card in repair.content.cards:
+		repair.upgrades[str(card.id)] = int(card.max)
+	repair.hull = repair.max_hull - 40.0
+	repair._offer_cards(false)
+	check(repair.choose_card(0) and is_equal_approx(repair.hull, repair.max_hull - 10.0) and repair.choice_cores == 0, "Maxed-out Field repair remains a valid non-Core choice")
 
 func _test_resume() -> void:
 	var original := Sim.new(123456)
@@ -743,6 +762,19 @@ func _test_prototype_and_route_choices() -> void:
 	var restored := Sim.new(1)
 	check(restored.restore(snapshot) and restored.prototype_offers == hand and restored.intermission_step == "prototype", "The exact Prototype hand must survive checkpoint restore")
 	check(not sim.choose_route("bounty"), "Route choice must not bypass Prototype installation")
+	var skipped := Sim.new(902)
+	skipped.stage_transition_queued = true
+	skipped.stage_clears = skipped.stage # Match a completed boss before the intermission.
+	skipped.difficulty = "insane"
+	var starting_reward := skipped.payout()
+	check(skipped.begin_intermission() and skipped.prototype_offers.size() == 3, "Skip must be offered alongside three unchanged Prototype choices")
+	check(skipped.skip_prototype() and skipped.intermission_step == "route" and skipped.prototypes.is_empty(), "Skipping a Prototype proceeds to the route without granting one")
+	check(skipped.choice_cores == Sim.PROTOTYPE_SKIP_CORES and skipped.payout() == starting_reward + Sim.PROTOTYPE_SKIP_CORES, "Prototype skip banks exactly 10 Cores even on Insane")
+	check(not skipped.skip_prototype() and not skipped.choose_prototype(0), "A skipped Prototype cannot be claimed again")
+	var skipped_save: Dictionary = skipped.snapshot()
+	var skipped_restore := Sim.new(903)
+	check(skipped_restore.restore(skipped_save) and skipped_restore.snapshot() == skipped_save, "Skipped Prototype bank and route state survive a checkpoint")
+	check(skipped_restore.choose_route("repair") and skipped_restore.advance_stage(), "Skipped Prototype still lets a flight proceed normally")
 	check(sim.choose_prototype(0), "A valid Prototype must install")
 	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
 	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
@@ -776,7 +808,7 @@ func _test_prototype_and_route_choices() -> void:
 	prototype.prototypes = ["volatile_core", "null_harmonics", "salvage_charter", "breach_optics"]
 	check(prototype.weapon_power() > 0.0 and prototype.cooldown_multiplier() < 1.0 and prototype.payout() > Sim.new().payout(), "Prototype stack must affect combat, cooldown and rewards")
 	var legacy: Dictionary = Sim.new().snapshot()
-	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time"]:
+	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "choice_cores"]:
 		legacy.erase(key)
 	check(Sim.new().restore(legacy), "An older v0.5 flight without strategic fields must remain resumable")
 	var safeguard := Sim.new(891)

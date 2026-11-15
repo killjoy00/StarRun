@@ -18,7 +18,7 @@ const SCREENS := [
 	"menu", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
 	"ships", "pilots", "combat-1", "combat-4",
-	"cards", "cards-banish", "paused", "build",
+	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "beam-tutorial", "endless-clear"
 ]
@@ -115,6 +115,12 @@ func _prepare(scene, screen: String) -> void:
 			scene.sim._offer_cards(false)
 			scene.sim.banishes_left = 2
 			scene.banish_mode = screen == "cards-banish"
+			scene._show_cards(false)
+		"cards-maxed":
+			scene.sim.level = 38
+			for card in scene.sim.content.cards:
+				scene.sim.upgrades[str(card.id)] = int(card.max)
+			scene.sim._offer_cards(false)
 			scene._show_cards(false)
 		"paused":
 			scene._show_pause()

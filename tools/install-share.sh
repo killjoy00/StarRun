@@ -5,12 +5,10 @@ set -euo pipefail
 
 cache="${RUNNER_TEMP:-/tmp}/starrun-ios-share"
 mkdir -p "$cache"
-release_api="https://api.github.com/repos/godot-mobile-plugins/godot-share/releases/tags/v5.2"
-curl --fail --location --retry 3 -H 'Accept: application/vnd.github+json' \
-  "$release_api" -o "$cache/release.json"
-
-python3 - "$cache/release.json" "$cache" <<'PY'
-import json
+# The archive hash comes from the publisher's v5.2 release metadata and is
+# pinned here. Do not call the unauthenticated GitHub releases API on every CI
+# run: shared hosted runners can hit a 403 rate limit before export starts.
+python3 - "$cache" <<'PY'
 import pathlib
 import sys
 import urllib.request
@@ -18,23 +16,16 @@ import hashlib
 import zipfile
 import stat
 
-release = json.loads(pathlib.Path(sys.argv[1]).read_text())
-assert release.get("tag_name") == "v5.2", "Unexpected share-plugin release"
 name = "SharePlugin-iOS-v5.2.zip"
-assets = [a for a in release.get("assets", []) if a.get("name") == name]
-assert len(assets) == 1, "Missing pinned iOS share archive"
-asset = assets[0]
-url = asset.get("browser_download_url", "")
-assert url == "https://github.com/godot-mobile-plugins/godot-share/releases/download/v5.2/" + name, "Unexpected share archive URL"
-expected = asset.get("digest", "")
-assert expected.startswith("sha256:") and len(expected) == 71, "Release asset SHA-256 digest not published"
-path = pathlib.Path(sys.argv[2]) / name
+url = "https://github.com/godot-mobile-plugins/godot-share/releases/download/v5.2/" + name
+expected = "3bcc46dd250532067345812bc03d3e43d4013f3ffe08354217225b0affedb77f"
+path = pathlib.Path(sys.argv[1]) / name
 if not path.is_file():
     req = urllib.request.Request(url, headers={"User-Agent": "StarRun-iOS-CI"})
     with urllib.request.urlopen(req, timeout=90) as source:
         path.write_bytes(source.read())
 actual = hashlib.sha256(path.read_bytes()).hexdigest()
-assert actual == expected.removeprefix("sha256:"), "iOS share plugin SHA-256 mismatch"
+assert actual == expected, "iOS share plugin SHA-256 mismatch"
 
 with zipfile.ZipFile(path) as archive:
     names = archive.namelist()

@@ -4,6 +4,8 @@ const DT := 1.0 / 60.0
 const WIDTH := 540.0
 const HEIGHT := 960.0
 const SAVE_VERSION := 1
+const PROTOTYPE_SKIP_CORES := 10
+const MAXED_DRAFT_CORES := 5
 const Catalog = preload("res://scripts/catalog.gd")
 var content: Dictionary
 var rng := RandomNumberGenerator.new()
@@ -70,6 +72,7 @@ var stage_risk := 1.0
 var bounty_earned := 0
 var safeguard_used := false
 var bonus_cores := 0
+var choice_cores := 0 # Flat, banked rewards. Added after payout multipliers at settlement.
 var mend_left := 0.0
 var mend_rate := 0.0
 var emergency_used := false
@@ -578,6 +581,14 @@ func choose_prototype(index: int) -> bool:
 		shield = minf(max_shield, shield + max_shield * 0.3)
 	intermission_step = "route"
 	_log("Prototype installed: " + str(prototype_spec(id).name))
+	return true
+
+func skip_prototype() -> bool:
+	if intermission_step != "prototype":
+		return false
+	choice_cores += PROTOTYPE_SKIP_CORES
+	intermission_step = "route"
+	_log("Prototype passed: +%d banked Cores" % PROTOTYPE_SKIP_CORES)
 	return true
 
 func choose_route(id: String) -> bool:
@@ -1675,6 +1686,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 			cards[0] = {"id": "repair", "name": "Emergency repair", "tag": "RECOVERY", "description": "Restore 30 hull immediately.", "max": 99}
 	if cards.is_empty():
 		cards.append({"id": "repair", "name": "Field repair", "tag": "RECOVERY", "description": "Restore 30 hull.", "max": 99})
+		cards.append({"id": "core_cache", "name": "Salvage Cores", "tag": "RECOVERY", "description": "Bank %d Cores for the end of this flight." % MAXED_DRAFT_CORES, "max": 99})
 	if consume_level:
 		pending_levels -= 1
 
@@ -1690,7 +1702,7 @@ func reroll_cards() -> bool:
 	return true
 
 func banish_card(index: int) -> bool:
-	if index < 0 or index >= cards.size() or banishes_left <= 0 or cards[index].id == "repair":
+	if index < 0 or index >= cards.size() or banishes_left <= 0 or str(cards[index].id) in ["repair", "core_cache"]:
 		return false
 	banishes_left -= 1
 	banished.append(cards[index].id)
@@ -1713,6 +1725,8 @@ func choose_card(index: int) -> bool:
 		return false
 	if id == "repair":
 		hull = minf(max_hull, hull + 30)
+	elif id == "core_cache":
+		choice_cores += MAXED_DRAFT_CORES
 	else:
 		var card: Dictionary = cards[index]
 		if card.tag == "ABILITY" and int(upgrades[id]) == 0:
@@ -1763,13 +1777,13 @@ func payout() -> int:
 	if endless_enabled:
 		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
 		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
-	return base
+	return base + choice_cores
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
