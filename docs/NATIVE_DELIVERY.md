@@ -1,12 +1,14 @@
 # Native delivery and human playtest gates
 
-**Updated for StarRun v0.8.0 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Updated for StarRun v0.8.1 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
 The StarRun repo has deterministic 60 Hz simulation, save/checkpoint regression tests, strict Godot script parse checks, phone-layout UAT checks, and Web/Windows/Linux playable exports in GitHub Actions. A native iPhone Xcode project is compiled without signing in StarRun CI.
 
-The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses its existing Apple credentials. **StarRun 0.8.0 (build 1009) uploaded successfully** in the [shared release workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43666519593), from immutable source `c3f6014f18ab41d56cd291f3cbe321a64d1135c0` ([PR #14](https://github.com/killjoy00/StarRun/pull/14)). Logs confirm `MARKETING_VERSION = 0.8.0`, `CURRENT_PROJECT_VERSION = 1009`, the signed `com.rsm.starrun` archive, `Upload succeeded` and `EXPORT SUCCEEDED`. The source includes the separate menu redesign in PR #12 and combat readability/rerolls in PR #13. This confirms signing and App Store Connect delivery; Apple processing, tester availability and physical-device acceptance were not verified. The previous beta was 0.7.2 build 1008.
+The TestFlight workflow resides in **killjoy00/EZTrivia** and reuses its existing Apple API credentials. **StarRun 0.8.1 (build 1011) uploaded successfully** in the [shared release workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43678788579), from immutable source `17e60c879349923dcee00e7a6a1e78ffc78adab7` ([PR #16](https://github.com/killjoy00/StarRun/pull/16)). Logs confirm version 0.8.1, build 1011, the verified `com.rsm.starrun` archive, `Upload succeeded` and `EXPORT SUCCEEDED`. It includes the rank-5 fusion and visual changes in PR #15, separate menu redesign in PR #12, combat readability/rerolls in PR #13 and progression/iPhone fixes in PR #14. This confirms App Store Connect delivery; Apple processing, tester availability and physical-device acceptance were not verified. The previous successful beta was [0.8.0 build 1009](https://github.com/killjoy00/EZTrivia/actions/runs/43666519593).
+
+Build 1010 failed before upload because automatic archive signing attempted to create another Apple Development certificate after the account reached its certificate limit. The StarRun release workflow now signs every binary locally with an ad-hoc identity during archive, verifies the complete archive, then uses Apple-managed distribution signing during export/upload. This preserves embedded-code signatures without consuming another disposable development certificate. No existing certificate was revoked and no other app's signing workflow was changed.
 
 No Vercel dependency is required. CI prevents nonfatal Godot parser errors from slipping through an otherwise green iOS export.
 
@@ -55,3 +57,16 @@ Includes the PR #12 menu redesign and PR #13 combat readability pass. This candi
 `tests/touch_and_safe_area.gd` exercises actual viewport press/hold/drag/release events under Godot's touchscreen emulation, including both drag directions, no accidental purchase/selection, a subsequent normal tap, simulated 59-point cutout/34-point home inset, and HUD/toolbar separation. This is automated desktop emulation; physical iPhone acceptance remains the next device check. See [GAMEPLAY_V08.md](GAMEPLAY_V08.md) for measured balance results and upgrade details.
 
 Release verification: 679 simulation assertions, 209 responsive layout checks, 85 rendered readability checks and 43 touch/safe-area checks passed. The [playable pipeline](https://github.com/killjoy00/StarRun/actions/runs/43666158013) produced Web, Windows and Linux builds; the [native iPhone pipeline](https://github.com/killjoy00/StarRun/actions/runs/43666157996) also passed before signing. The exact reviewed source tree was verified again after merge, including ancestry of both earlier visual passes.
+
+
+## v0.8.1 Hangar, pilots and fusions
+
+- **38 permanent Hangar tracks:** 16 added across hull, weapons, abilities, tactics and salvage. Existing purchases and refund values are preserved; new tracks default to zero for older profiles. See [HANGAR_EXPANSION.md](HANGAR_EXPANSION.md).
+- **Six pilot portraits:** painted face portraits replace the pilot symbols on selection cards and the equipped pilot on the menu. Portraits preserve touch scrolling and fit narrow phone layouts. See [PILOT_ART.md](PILOT_ART.md) for assets and generation prompts.
+- **22 active abilities:** Wing Drones provides temporary escorts; Ion Mine places an armed proximity blast. Both at rank 5 combine into Storm Carrier, which occupies one slot.
+- **11 fusions:** both component abilities must reach rank 5 before fusion. Each has a distinct icon and cast effect; formation feedback remains visible through the paused draft transition. Earned legacy fusions remain intact, while invalid old draft offers are refreshed safely. See [GAMEPLAY_V081.md](GAMEPLAY_V081.md).
+- The tougher later worlds, ten additional passives, notch clearance, ability/passive labels, consumed-component filtering and native menu hold-drag fixes from v0.8.0 remain included.
+
+Release verification: **904 simulation assertions, 209 responsive layout checks, 91 readability checks, 106 fusion-rendering checks, 44 expanded Hangar/portrait checks and 47 touch/safe-area checks passed.** The [playable pipeline](https://github.com/killjoy00/StarRun/actions/runs/43677614317) also exported Web, Windows and Linux, and the [native iPhone pipeline](https://github.com/killjoy00/StarRun/actions/runs/43677614291) compiled successfully. The merged tree `1df98871e4b41615f1bd5b337dd43421f7c664d1` exactly matches the tested PR.
+
+On iPhone, check pilot-face scrolling, new Hangar purchases, Wing Drones/Ion Mine through world transitions and save/resume, rank-5 fusion offers and cast visibility, top safe-area clearance and dense-combat performance. Automated rendering and touch emulation do not replace this device check.
