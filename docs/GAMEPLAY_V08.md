@@ -1,6 +1,6 @@
 # StarRun v0.8: later worlds and iPhone controls
 
-November 14, 2026 (Central). This builds on the separately merged menu redesign and combat readability pass. It addresses the feedback from TestFlight 0.7.2 build 1008.
+November 14, 2026 (Central). **Released as TestFlight 0.8.0 build 1009** from [PR #14](https://github.com/killjoy00/StarRun/pull/14); [signed upload succeeded](https://github.com/killjoy00/EZTrivia/actions/runs/43666519593). Apple processing and physical-device acceptance remain unverified. This builds on the separately merged menu redesign and combat readability pass. It addresses the feedback from TestFlight 0.7.2 build 1008.
 
 ## World scaling
 
@@ -60,7 +60,7 @@ Scrollable content allows input to pass from cards, labels, icons and purchase b
 
 All 12 strong defensive fixtures cleared; healing can restore hull after substantial incoming damage, so ending hull alone is a misleading pressure measure. Six additional runs with abilities unused all failed: world 2 at 125–137 seconds, world 3 at 106–118 seconds, and world 4 at 42–73 seconds. Six runs also stacked the new passives at progressively higher ranks and remained clearable. These are deterministic comparisons, not human win-rate targets.
 
-A separate natural-draft campaign probe uses full-length worlds and no injected upgrades. In a four-run curve check, the half-Hangar pilots died in world 2; both full-Hangar pilots cleared worlds 1–3 and one cleared world 4. This checks that pressure also rises during real progression; the small sample does not establish final balance.
+A separate natural-draft campaign probe uses full-length worlds and no injected upgrades. In a four-run curve check, the half-Hangar pilots died in world 2; both full-Hangar pilots cleared worlds 1–3 and died in world 4. This checks that pressure also rises during real progression; the small sample does not establish final balance.
 
 Simulation regression tests cover each new passive's actual effect, all ten fusion offer pools, saved-hand migration, fusion ranks, invulnerability gaps and stage damage. Responsive and rendered tests cover phone layouts, retained combat readability, actual held-button dragging and notch clearance. Physical-device feel and difficulty tuning still depend on the next TestFlight playtest.
 

@@ -1,12 +1,12 @@
 # Native delivery and human playtest gates
 
-**Updated for StarRun v0.8.0 TestFlight candidate.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Updated for StarRun v0.8.0 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
 The StarRun repo has deterministic 60 Hz simulation, save/checkpoint regression tests, strict Godot script parse checks, phone-layout UAT checks, and Web/Windows/Linux playable exports in GitHub Actions. A native iPhone Xcode project is compiled without signing in StarRun CI.
 
-The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses that repo's existing Apple credentials. The StarRun **0.7.2 (build 1008)** upload succeeded in the [shared TestFlight workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43554473009), using immutable source commit `e0a4697f7ca7b11879c0673adc9e47471dcaa6b5`. The source includes both the separate menu redesign in PR #12 and the combat readability/reroll pass in PR #13. This verifies signing and delivery to App Store Connect, **not** Apple processing, tester assignment, physical-device usability, ads or any purchase integration.
+The signed TestFlight workflow resides in **killjoy00/EZTrivia** and reuses its existing Apple credentials. **StarRun 0.8.0 (build 1009) uploaded successfully** in the [shared release workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43666519593), from immutable source `c3f6014f18ab41d56cd291f3cbe321a64d1135c0` ([PR #14](https://github.com/killjoy00/StarRun/pull/14)). Logs confirm `MARKETING_VERSION = 0.8.0`, `CURRENT_PROJECT_VERSION = 1009`, the signed `com.rsm.starrun` archive, `Upload succeeded` and `EXPORT SUCCEEDED`. The source includes the separate menu redesign in PR #12 and combat readability/rerolls in PR #13. This confirms signing and App Store Connect delivery; Apple processing, tester availability and physical-device acceptance were not verified. The previous beta was 0.7.2 build 1008.
 
 No Vercel dependency is required. CI prevents nonfatal Godot parser errors from slipping through an otherwise green iOS export.
 
@@ -53,3 +53,5 @@ for behavior and verification. **Build 1008 was signed and uploaded successfully
 Includes the PR #12 menu redesign and PR #13 combat readability pass. This candidate raises world 2–4 pressure, adds ten passive tracks, removes consumed fusion-component offers, and upgrades fused skills directly. Combat HUD geometry uses the device safe-area insets and a separate toolbar row. Native scroll handling now receives drags starting on cards, icons, text and purchase buttons; dragging cancels the pending button action.
 
 `tests/touch_and_safe_area.gd` exercises actual viewport press/hold/drag/release events under Godot's touchscreen emulation, including both drag directions, no accidental purchase/selection, a subsequent normal tap, simulated 59-point cutout/34-point home inset, and HUD/toolbar separation. This is automated desktop emulation; physical iPhone acceptance remains the next device check. See [GAMEPLAY_V08.md](GAMEPLAY_V08.md) for measured balance results and upgrade details.
+
+Release verification: 679 simulation assertions, 209 responsive layout checks, 85 rendered readability checks and 43 touch/safe-area checks passed. The [playable pipeline](https://github.com/killjoy00/StarRun/actions/runs/43666158013) produced Web, Windows and Linux builds; the [native iPhone pipeline](https://github.com/killjoy00/StarRun/actions/runs/43666157996) also passed before signing. The exact reviewed source tree was verified again after merge, including ancestry of both earlier visual passes.
