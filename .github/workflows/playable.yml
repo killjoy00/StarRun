@@ -26,6 +26,7 @@ jobs:
           godot --headless --path . --check-only --script scripts/playfield.gd
           godot --headless --path . --check-only --script tests/balance_matrix.gd
           godot --headless --path . --check-only --script scripts/meta_progress.gd
+          godot --headless --path . --check-only --script scripts/game_center_bridge.gd
           godot --headless --path . --check-only --script tests/meta_progress.gd
       - name: Check first scene and reject script parse errors
         run: |

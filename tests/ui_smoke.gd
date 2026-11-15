@@ -300,6 +300,13 @@ func _run() -> void:
 	check(scene.sim.won and scene.mode == "results" and scene.profile.daily_records.has(daily_id), "Settling the Daily saves the best result locally")
 	check(scene.profile.achievements.has("daily_first"), "Finishing a Daily earns its permanent achievement")
 	check(_contains_text(scene.reading_scroll, "DAILY CHALLENGE"), "Daily results show score, UTC identity and personal best")
+	check(_contains_text(scene.reading_scroll, "Copy & share"), "Daily results offer a one-tap share action")
+	scene._copy_daily_result()
+	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Copying the scorecard shows a confirmation toast")
+	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Copied scorecard uses immutable original daily UTC date")
+	check(scene.result_awards.has("daily_first") and scene.toast_queue.size() > 0, "New achievements queue nonblocking unlock notifications")
+	scene._advance_toast(4.0)
+	check(scene.toast_panel.visible and scene.toast_title.text == "ACHIEVEMENT UNLOCKED", "Queued achievement notification appears after share toast dismisses")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame
