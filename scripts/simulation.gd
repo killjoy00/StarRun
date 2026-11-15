@@ -265,6 +265,7 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+		# Do not raise late World 1 spawns: extra automatic kills give free XP.
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
@@ -773,6 +774,10 @@ func _update_enemies() -> void:
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
+			# Late World 1 beam pressure is answerable by Aegis/EMP/Nova/Jammer.
+			# This changes damage, not XP or the visible charge warning.
+			if stage == 1 and time - stage_start >= 110.0:
+				damage *= 1.20
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -791,6 +796,14 @@ func _update_enemies() -> void:
 				enemy.fire = 0.5
 				continue
 			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
+			# More shots late in World 1, without granting additional enemy XP.
+			# Boss attacks begin unchanged; the first telegraph stays readable.
+			if stage == 1 and time - stage_start >= 110.0:
+				if kind == "boss":
+					if time - boss_spawn_time >= 18.0:
+						enemy.fire *= 0.80
+				else:
+					enemy.fire *= 0.80
 			if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
 				enemy.fire *= 0.70
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
@@ -1309,6 +1322,21 @@ func activate(ability: String) -> bool:
 		_activate_fusion(ability, effect_strength)
 		return true
 	if ability == "aegis":
+		# A well-read telegraph earns a small resource rebate; blind cooldown
+		# casts still give normal short-lived immunity without the bonus.
+		var imminent := charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.7)
+		if not imminent:
+			var near_ship: Vector2 = ship_position(time + 0.30)
+			for bullet in bullets:
+				if (bullet.p + bullet.v * 0.30).distance_squared_to(near_ship) < 65.0 * 65.0:
+					imminent = true
+					break
+		if imminent:
+			shield = minf(max_shield, shield + 10.0 * effect_strength)
+			cooldowns[ability] *= 0.80
+			cooldown_totals[ability] = cooldowns[ability]
+			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+			_log("Aegis precision counter - shields restored")
 		aegis_left = minf((1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength, maxf(0.0, cooldowns[ability] - 1.5))
 	elif ability == "nova":
 		beams_cancelled += charges.size()
@@ -1334,9 +1362,19 @@ func activate(ability: String) -> bool:
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
+		var close_call := false
+		for bullet in bullets:
+			if bullet.kind == "ordnance" and (bullet.p + bullet.v * 0.45).distance_squared_to(ship_position(time + 0.45)) < 90.0 * 90.0:
+				close_call = true
+			elif bullet.kind in ["mine", "slag"] and float(bullet.get("fuse", 10.0)) <= 0.75 and bullet.p.distance_squared_to(ship_position()) < 110.0 * 110.0:
+				close_call = true
 		var stopped := bullets.filter(func(b): return b.kind in ["ordnance", "mine", "slag"]).size()
 		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
 		prevented += stopped * 12.0
+		if stopped > 0 and close_call:
+			shield = minf(max_shield, shield + 8.0 * effect_strength)
+			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+			_log("Flak close-call intercept - shield restored")
 		for enemy in enemies:
 			if enemy.kind in ["missile_bomber", "minelayer", "slag_bomber", "boss2", "boss3", "boss4"]:
 				_damage_enemy(enemy, 30.0 * effect_strength, "flak")
@@ -1365,7 +1403,9 @@ func activate(ability: String) -> bool:
 				if enemy.id == charge.source:
 					target = enemy
 		if not target.is_empty():
-			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike) * effect_strength, "strike")
+			# A bounded slice of boss max HP keeps Rail Strike useful in later worlds.
+			var boss_bonus := minf(2200.0, float(target.max_hp) * 0.008) if str(target.kind).begins_with("boss") else 0.0
+			_damage_enemy(target, (170.0 + 70.0 * upgrades.strike + boss_bonus) * effect_strength, "strike")
 	elif ability == "prism":
 		var remaining: Array = []
 		var reflected := 0
@@ -1389,12 +1429,26 @@ func activate(ability: String) -> bool:
 		decoy_left = (5.0 + upgrades.decoy * 0.6) * effect_strength
 	elif ability == "jammer":
 		jammer_left = (5.0 + upgrades.jammer * 0.5) * effect_strength
+		# The regular cast suppresses future charges. A cast during the visible
+		# final 1.5s of a beam charge also interrupts it and earns a cooldown rebate.
+		var interrupted := charges.filter(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 1.5).size()
+		if interrupted > 0:
+			charges = charges.filter(func(c): return float(c.remaining) > 1.5)
+			beams_cancelled += interrupted
+			cooldowns[ability] *= 0.80
+			cooldown_totals[ability] = cooldowns[ability]
+			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+			_log("Signal jammer interrupted %d charging beam(s)" % interrupted)
 	elif ability == "siphon":
 		var target := _nearest(ship_position())
 		if not target.is_empty():
-			var dealt := minf(target.hp, (75.0 + upgrades.siphon * 38.0) * effect_strength)
-			_damage_enemy(target, dealt, "siphon")
-			hull = minf(max_hull, hull + dealt * 0.30)
+			# Scale boss damage modestly, but never allow late-world boss HP to
+			# create limitless healing. Heal only for damage actually inflicted.
+			var boss_bonus := minf(1200.0, float(target.max_hp) * 0.004) if str(target.kind).begins_with("boss") else 0.0
+			var before: float = float(damage_dealt.get("siphon", 0.0))
+			_damage_enemy(target, (75.0 + upgrades.siphon * 38.0 + boss_bonus) * effect_strength, "siphon")
+			var actual: float = maxf(0.0, float(damage_dealt.get("siphon", 0.0)) - before)
+			hull = minf(max_hull, hull + minf(25.0 * effect_strength, actual * 0.30))
 	elif ability == "overload":
 		var remaining: Array = []
 		var detonated := 0

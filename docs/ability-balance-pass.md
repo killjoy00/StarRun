@@ -33,3 +33,37 @@ The baseline is `main` at the start of this pass. These are small cooldown adjus
 ## Acceptance criteria
 
 The normal four-world campaign must remain completable with reasonable timed inputs, timed counters must beat on-cooldown spam in matched-seed fixtures, World 5 must increase danger above World 4, and each narrow specialist must have a recognizable situation to shine. Review the simulation job's `BALANCE` and `FIXED_BUILD_TIMING` output before merging further numerical changes.
+
+
+## Follow-up: evidence-driven balance pass (2026-11-15)
+
+**Correction to the earlier summary:** These are scripted bots, not human players. The baseline World 1 comparison stops after **World 1**, so 14/24 no-active clears does **not** mean 14 complete campaigns. In the 24-seed World 1 fixture, no active casts cleared 14/24, on-cooldown casts cleared 19/24, and reactive timing cleared 20/24. A separate *fixed-loadout, hard-mode World 1 boss* comparison cleared 24/24 when the Nova Guard fusion was timed versus 5/24 when spammed. That strong single-fusion result does not establish that timing is crucial for all abilities.
+
+The bots always move and fire automatically. "Never" means **no manual active-ability casts**, not that the ship literally does nothing. Bots also choose upgrades. In normal runs, combat and draft share RNG; matched seeds are comparable starting conditions, not an exactly matched sequence of upgrade offers. Results must never be presented as human-player outcomes.
+
+### Changes in this follow-up
+
+- **World 1 pressure:** preserve enemy **spawn rate/XP**, but after 110 seconds accelerate enemy gunfire (interval x0.80) and make the well-telegraphed heavy beams hit 20% harder. The World 1 boss's non-heavy gunfire accelerates only after its first 18 seconds (interval x0.80). The opening segment and heavy-beam warning length remain unchanged. These are simulation hypotheses, not guaranteed win-rate targets.
+
+- **Aegis precision:** casting in the final 0.7 seconds of a heavy-beam warning or just before a projectile hit restores 10 base shield and rebates 20% cooldown, in addition to regular blocking. A blind cast still prevents damage but gains no extra shield/recharge. This is intended to widen the ordinary timed-vs-cooldown advantage beyond the specialized Nova Guard fixture.
+- **Flak:** intercepting ordnance on an imminent collision path, or mines/slag just about to detonate nearby, restores up to 8 shield times effect strength. Casting early still clears ordnance but receives no shield reward.
+- **Jammer:** suppresses future fire as before; when used in the last 1.5 seconds of a telegraphed heavy charge, it *also* cancels that charge and reduces that cast's cooldown by 20%. Early casts do not interrupt an already charging beam.
+- **Rail Strike:** adds 0.8% of maximum boss HP, capped at 2,200 damage *before ability-power scaling*. The existing base strike remains and ordinary enemies receive no HP-based bonus.
+- **Energy Siphon:** adds 0.4% of maximum boss HP, capped at 1,200 extra pre-scaled damage. Healing now uses actual recorded damage after defenses and overkill, capped at 25 times ability-power scaling per cast. This avoids boss HP becoming an unlimited healing source.
+- **Other actives:** no cooldowns changed in this pass.
+
+### Automated measurement and safeguards
+
+- The existing simulation tests retain the quick 24-seed World 1 comparison and fixed-loadout Nova Guard timing gate; they now add close-call / early-cast tests for Flak and Jammer, Rail Strike late-boss/cap assertions, and Siphon actual-damage/healing-cap assertions.
+- The new [balance matrix](../tests/balance_matrix.gd) simulates all four worlds, all six ships, and Normal/Hard/Insane with the three active-use policies. It reports **stage-by-stage clear counts**, entire-campaign victories, casts, mean final hull, and timeouts. This is an automated **diagnostic**, not a passing win-rate target.
+- Every regular PR runs **six parallel, representative ship/difficulty pairs**, one seed for all three policies per pair (18 scripted full-campaign trials total), to catch structural regressions without serializing all simulations in the primary job. Together the six pairs cover all ships and three difficulties; these PR smoke checks are not a statistically representative balance study. The [weekly balance workflow](../.github/workflows/balance-matrix.yml) covers the **complete six-ship x three-difficulty grid** with six matched seeds per cell: **108 distinct matched seed/configuration fixtures per policy, 324 scripted trials total**, sharded over 18 jobs, with downloadable logs. Manual workflow dispatch can request 100 seeds per cell for deeper analysis.
+- Do **not** automatically rebalance around the first matrix. Look for World 1 no-active clears around 35-45%, timed-input clears around 75-85%, and a meaningful timed-over-cooldown advantage, then evaluate actual human-player playtesting. These are design hypotheses and must not be misrepresented as current measured performance.
+
+### Next decision criteria
+
+First inspect whether no-cast World 1 clears and timed-over-cooldown differences move in the intended direction; second verify that World 2-4 remain achievable for at least one well-played ship/build; third compare Rail Strike/Siphon boss damage and healing by world without making ranks 5-10 oppressive. If an automated policy fails later stages, determine whether this reflects game difficulty, the scripted upgrade policy, or a simulation timeout before tuning enemies.
+
+
+**Iterative test result:** The *rejected first approach* increased spawn frequency and thereby fed the autopilot more kill XP: World 1 no-cast clears rose from 14/24 (previous baseline) to **16/24**, on-cooldown cleared 18/24, and timed cleared 19/24. The fixed Nova Guard Hard boss remained timing-dependent (24/24 vs 0/24), but the overall comparison got worse. That spawn change was reverted and replaced with projectile pressure and heavy-beam damage. Do not cite the 16/24 as the new final tuned outcome.
+
+**Projectile-pressure iteration:** On the 24-scripted-seed World 1 fixture, maintaining spawn XP while raising avoidable projectile pressure yielded 8/24 no-active clears, 18/24 on-cooldown clears and 19/24 reactive clears. This materially improves the need for active use but timing beats cooldown only marginally, so Aegis now also rewards a precise counter; new results must be measured before claiming any additional improvement. The dedicated fixed-loadout Nova Guard fixture remains 24/24 timed vs 5/24 on-cooldown.

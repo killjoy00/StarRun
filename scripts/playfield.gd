@@ -586,6 +586,14 @@ func _draw_effect(effect: Dictionary) -> void:
 		_draw_fusion_cast(effect, alpha, age)
 	elif effect.kind == "fusion-formed":
 		_draw_fusion_formed(effect, alpha, age)
+	elif effect.kind == "timed-counter":
+		# A successful defensive read should be unmistakable, not a generic explosion.
+		var radius := 43.0 + age * 43.0
+		draw_arc(p, radius, 0, TAU, 40, Color(CYAN, alpha * 0.90), 3.0, true)
+		for spoke in range(4):
+			var direction := Vector2.from_angle(spoke * TAU / 4.0 + PI / 4.0)
+			draw_line(p + direction * (radius - 9), p + direction * (radius + 9), Color(SHIELD, alpha), 2.6, true)
+		draw_string(ThemeDB.fallback_font, p + Vector2(-45, -62), "COUNTER", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(CYAN, alpha))
 	elif effect.kind in ["arc", "lance"]:
 		var end: Vector2 = effect.to
 		var color := Color("bba5ff") if effect.kind == "arc" else Color("ffdb96")

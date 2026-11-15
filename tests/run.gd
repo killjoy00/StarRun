@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
 	_test_support_actives()
+	_test_contextual_active_balance()
 	_test_endless_encounters_and_cooldown_captures()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
@@ -1295,3 +1296,81 @@ func _test_support_actives() -> void:
 	carrier._add_enemy("drone",Vector2(300,930))
 	carrier._deploy_ion_mines(3,100,190)
 	check(carrier.ion_mines.all(func(m):return m.p.x >= 25 and m.p.x <= 515 and m.p.y <= 865), "Ion charges stay visible even when targeting an enemy near the bottom edge")
+
+
+func _test_contextual_active_balance() -> void:
+	# Situational rewards should be earned at the point of danger, not on every cast.
+
+	var aegis := Sim.new(5300)
+	aegis.shield = 8.0
+	aegis.charges = [{"source":3, "x":270.0, "remaining":0.5, "duration":1.8, "damage":35.0}]
+	check(aegis.activate("aegis") and aegis.shield > 8.0, "Aegis precision cast inside a heavy charge earns shield")
+	var early_aegis := Sim.new(5300)
+	early_aegis.shield = 8.0
+	early_aegis.charges = [{"source":3, "x":270.0, "remaining":1.6, "duration":1.8, "damage":35.0}]
+	check(early_aegis.activate("aegis") and is_equal_approx(early_aegis.shield, 8.0), "Early Aegis keeps immunity but earns no precision reward")
+	check(aegis.cooldowns.aegis < early_aegis.cooldowns.aegis * 0.85 and is_equal_approx(float(aegis.cooldown_totals.aegis),float(aegis.cooldowns.aegis)), "Only precise Aegis casts earn the reflected cooldown rebate")
+	var near := Sim.new(5301)
+	near.active_slots = ["flak"]
+	near.upgrades.flak = 1
+	near.shield = 10.0
+	near.bullets = [{"p":near.ship_position() + Vector2(0,-60), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
+	check(near.activate("flak") and near.bullets.is_empty() and near.shield > 10.0, "Flak earns a shield reward for imminent ordnance")
+	var far := Sim.new(5301)
+	far.active_slots = ["flak"]
+	far.upgrades.flak = 1
+	far.shield = 10.0
+	far.bullets = [{"p":far.ship_position() + Vector2(0,-320), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
+	check(far.activate("flak") and far.bullets.is_empty() and is_equal_approx(far.shield,10.0), "Early Flak clears ordnance but earns no close-call shield")
+	var jam := Sim.new(5302)
+	jam.active_slots = ["jammer"]
+	jam.upgrades.jammer = 1
+	jam.charges = [{"source":3, "x":270.0, "remaining":0.8, "duration":1.8, "damage":35.0}]
+	check(jam.activate("jammer") and jam.charges.is_empty() and jam.beams_cancelled == 1, "Well-timed Jammer interrupts an existing charging beam")
+	var early := Sim.new(5302)
+	early.active_slots = ["jammer"]
+	early.upgrades.jammer = 1
+	early.charges = [{"source":3, "x":270.0, "remaining":1.8, "duration":1.8, "damage":35.0}]
+	check(early.activate("jammer") and early.charges.size() == 1 and early.beams_cancelled == 0, "Early Jammer suppresses new fire but does not retroactively interrupt the beam")
+	check(jam.cooldowns.jammer < early.cooldowns.jammer * 0.85 and is_equal_approx(float(jam.cooldown_totals.jammer),float(jam.cooldowns.jammer)), "Only a successful Jammer interrupt earns the displayed cooldown rebate")
+
+	var rail_one := Sim.new(5303)
+	rail_one.active_slots = ["strike"]
+	rail_one.upgrades.strike = 1
+	rail_one.enemies = [{"id":1, "kind":"boss", "hp":6200.0, "max_hp":6200.0, "p":Vector2(270,135), "xp":0}]
+	check(rail_one.activate("strike"), "Rail Strike can hit the World 1 boss")
+	var rail_four := Sim.new(5303)
+	rail_four.stage = 4
+	rail_four.active_slots = ["strike"]
+	rail_four.upgrades.strike = 1
+	rail_four.enemies = [{"id":1, "kind":"boss4", "hp":225000.0, "max_hp":225000.0, "p":Vector2(270,135), "xp":0}]
+	check(rail_four.activate("strike"), "Rail Strike can hit the World 4 boss")
+	check(float(rail_four.damage_dealt.get("strike",0.0)) > float(rail_one.damage_dealt.get("strike",0.0)) * 3.0, "Rail Strike remains relevant against later-world boss HP")
+	var rail_cap := Sim.new(5303)
+	rail_cap.active_slots = ["strike"]
+	rail_cap.upgrades.strike = 10
+	rail_cap.enemies = [{"id":1, "kind":"boss4", "hp":10000000.0, "max_hp":10000000.0, "p":Vector2(270,135), "xp":0}]
+	check(rail_cap.activate("strike") and float(rail_cap.damage_dealt.get("strike",0.0)) <= (170.0 + 70.0 * 10.0 + 2200.0) * rail_cap.ability_power() * rail_cap._active_rank_scale("strike") + 0.01, "Rail Strike percent-based boss damage is capped even at rank 10")
+
+	var drained := Sim.new(5304)
+	drained.active_slots = ["siphon"]
+	drained.upgrades.siphon = 1
+	drained.hull = 40.0
+	drained.enemies = [{"id":1, "kind":"shieldguard", "hp":1000.0, "max_hp":1000.0, "p":Vector2(270,500), "xp":0}]
+	check(drained.activate("siphon"), "Energy Siphon can strike an armored target")
+	var actual: float = float(drained.damage_dealt.get("siphon",0.0))
+	check(actual > 0.0 and is_equal_approx(drained.hull, 40.0 + minf(25.0, actual * 0.30)), "Siphon healing uses actual damage after target armor, not advertised raw damage")
+	var late_siphon := Sim.new(5304)
+	late_siphon.stage = 4
+	late_siphon.active_slots = ["siphon"]
+	late_siphon.upgrades.siphon = 10
+	late_siphon.hull = 40.0
+	late_siphon.enemies = [{"id":1, "kind":"boss4", "hp":225000.0, "max_hp":225000.0, "p":Vector2(270,135), "xp":0}]
+	check(late_siphon.activate("siphon") and late_siphon.damage_dealt.siphon > actual * 3.0 and late_siphon.hull <= 40.0 + 25.0 * late_siphon.ability_power() * late_siphon._active_rank_scale("siphon") + 0.01, "World 4 Siphon scales boss damage but cannot heal past the per-cast cap")
+
+	var overkill := Sim.new(5305)
+	overkill.active_slots = ["siphon"]
+	overkill.upgrades.siphon = 1
+	overkill.hull = 40.0
+	overkill.enemies = [{"id":1, "kind":"drone", "hp":5.0, "max_hp":5.0, "p":Vector2(270,500), "xp":0}]
+	check(overkill.activate("siphon") and is_equal_approx(overkill.hull, 41.5), "Siphon heals only for five actual damage, not for its much larger nominal hit")
