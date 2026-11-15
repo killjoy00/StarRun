@@ -71,7 +71,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String) ->
 	var sim := Sim.new(seed, {}, ship_id, "rookie", difficulty)
 	var timed_out := false
 	var fault := false
-	for frame in range(4 * 60 * 600):
+	for _frame in range(4 * 60 * 600):
 		if sim.ended:
 			break
 		if sim.stage_transition_queued:
