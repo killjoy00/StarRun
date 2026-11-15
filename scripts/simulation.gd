@@ -311,30 +311,34 @@ func _source_active(id: String) -> bool:
 			return true
 	return false
 
-func fusion_hint(id: String) -> String:
+const FUSION_RANK := 5
+
+func fusion_target(id: String) -> String:
+	# Preview only a pick that will actually complete a rank-5 pair.
+	var current := int(upgrades.get(id, 0))
+	var after_pick := mini(10, current + (1 if current == 0 else 2))
 	for fusion in content.fusions:
 		if id in fusion.parts:
 			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
-			if other in active_slots:
-				return str(fusion.name) + ": " + str(fusion.description) + " (frees one slot)"
-			return ""
+			if id in active_slots and other in active_slots and after_pick >= FUSION_RANK and int(upgrades[other]) >= FUSION_RANK:
+				return str(fusion.id)
 	return ""
 
-func _can_learn_active(id: String) -> bool:
-	if active_slots.size() < Catalog.ACTIVE_SLOTS:
-		return true
-	for fusion in content.fusions:
-		if id in fusion.parts:
-			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
-			if other in active_slots:
-				return true # Instantly replaces two buttons with one.
-	return false
+func fusion_hint(id: String) -> String:
+	var target := fusion_target(id)
+	if target.is_empty(): return ""
+	var spec := fusion_spec(target)
+	return str(spec.name) + ": " + str(spec.description) + " (frees one slot)"
+
+func _can_learn_active(_id: String) -> bool:
+	# New actives start at rank 1, so none can bypass a full bar by fusing.
+	return active_slots.size() < Catalog.ACTIVE_SLOTS
 
 func _try_fuse() -> void:
 	for fusion in content.fusions:
 		var first: String = str(fusion.parts[0])
 		var second: String = str(fusion.parts[1])
-		if first not in active_slots or second not in active_slots:
+		if first not in active_slots or second not in active_slots or int(upgrades[first]) < FUSION_RANK or int(upgrades[second]) < FUSION_RANK:
 			continue
 		var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
 		var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
@@ -343,6 +347,7 @@ func _try_fuse() -> void:
 		active_slots.insert(insert_at, str(fusion.id))
 		upgrades[str(fusion.id)] = 1
 		cooldowns[str(fusion.id)] = current_cd
+		effects.append({"kind":"fusion-formed", "fusion":str(fusion.id), "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
 		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
 
 func active_passive_links() -> Array:
@@ -1242,6 +1247,7 @@ func activate(ability: String) -> bool:
 
 func _activate_fusion(id: String, strength: float) -> void:
 	# One cast, one cooldown, and one occupied slot for the two source abilities.
+	var visual := {"kind":"fusion-cast", "fusion":id, "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick, "targets":[]}
 	match id:
 		"nova_aegis":
 			# Countering a telegraphed beam or a shot about to connect pays off.
@@ -1254,6 +1260,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 					if (bullet.p + bullet.v * 0.30).distance_squared_to(soon) < 65.0 * 65.0:
 						counter_window = true
 						break
+			visual["counter"] = counter_window
 			if counter_window:
 				shield = minf(max_shield, shield + 40.0 * strength)
 				hull = minf(max_hull, hull + 12.0 * strength)
@@ -1270,14 +1277,13 @@ func _activate_fusion(id: String, strength: float) -> void:
 			var blast: float = (235.0 if counter_window else 70.0) * strength
 			for enemy in enemies:
 				_damage_enemy(enemy, blast, "nova")
-			effects.append({"kind":"nova", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick})
 		"railstorm":
 			overdrive_left = maxf(overdrive_left, 7.0 * strength)
 			for n in range(3):
 				var target: Dictionary = _nearest(ship_position())
 				if not target.is_empty():
+					visual.targets.append(target.p)
 					_damage_enemy(target, 180.0 * strength, "strike")
-			effects.append({"kind":"strike", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
 		"stasis_lock":
 			chrono_left = maxf(chrono_left, 6.0 * strength)
 			emp_left = maxf(emp_left, 5.0 * strength)
@@ -1285,7 +1291,6 @@ func _activate_fusion(id: String, strength: float) -> void:
 			charges.clear()
 			for enemy in enemies:
 				_damage_enemy(enemy, 45.0 * strength, "nova")
-			effects.append({"kind":"chrono", "p":ship_position(), "life":0.75, "max_life":0.75, "born":tick})
 		"repair_matrix":
 			mend_left = 6.0
 			mend_rate = (62.0 * strength) / mend_left
@@ -1303,12 +1308,12 @@ func _activate_fusion(id: String, strength: float) -> void:
 				if targets.is_empty():
 					break
 				var target: Dictionary = targets[n % targets.size()]
-				shots.append({"p":ship_position() + Vector2((n % 3 - 1) * 9, -28), "v":Vector2.UP.rotated((n - 7) * 0.10) * 710.0, "damage":40.0 * strength, "weapon":"barrage", "target":int(target.id)})
-			effects.append({"kind":"barrage", "p":ship_position(), "life":0.7, "max_life":0.7, "born":tick})
+				shots.append({"p":ship_position() + Vector2((n % 3 - 1) * 9, -28), "v":Vector2.UP.rotated((n - 7) * 0.10) * 710.0, "damage":40.0 * strength, "weapon":"barrage", "fusion":id, "target":int(target.id)})
 		"scrap_converter":
 			salvage_left = maxf(salvage_left, 16.0 * strength)
 			var target: Dictionary = _nearest(ship_position())
 			if not target.is_empty():
+				visual.targets.append(target.p)
 				var dealt: float = minf(float(target.hp), 175.0 * strength)
 				_damage_enemy(target, dealt, "siphon")
 				hull = minf(max_hull, hull + dealt * 0.55)
@@ -1320,7 +1325,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 				if turned < 25 and bullet.p.distance_squared_to(ship_position()) < 400.0 * 400.0:
 					var target: Dictionary = _nearest(bullet.p)
 					if not target.is_empty():
-						shots.append({"p":bullet.p, "v":Vector2.UP * 700.0, "damage":35.0 * strength, "weapon":"barrage", "target":int(target.id)})
+						shots.append({"p":bullet.p, "v":Vector2.UP * 700.0, "damage":35.0 * strength, "weapon":"barrage", "fusion":id, "target":int(target.id)})
 						turned += 1
 						continue
 				kept.append(bullet)
@@ -1335,7 +1340,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 			for n in range(mini(12, absorbed)):
 				var target: Dictionary = _nearest(ship_position())
 				if not target.is_empty():
-					shots.append({"p":ship_position(), "v":Vector2.UP * 720.0, "damage":28.0 * strength, "weapon":"barrage", "target":int(target.id)})
+					shots.append({"p":ship_position(), "v":Vector2.UP * 720.0, "damage":28.0 * strength, "weapon":"barrage", "fusion":id, "target":int(target.id)})
 		"ghost_signal":
 			jammer_left = maxf(jammer_left, 10.0 * strength)
 			decoy_left = maxf(decoy_left, 10.0 * strength)
@@ -1352,7 +1357,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 			bullets = bullets.filter(func(b): return b.kind != "chaff")
 			for enemy in enemies:
 				_damage_enemy(enemy, minf(320.0, 70.0 + detonated * 7.0) * strength, "overload")
-	effects.append({"kind":"nova", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+	effects.append(visual)
 
 
 func _offer_cards(consume_level: bool = true) -> void:
@@ -1524,7 +1529,8 @@ func restore(state: Dictionary) -> bool:
 						shield = minf(max_shield, shield + bonus)
 	_build_course()
 	rng.state = state.rng
-	# Old drafts may contain the component of an already-fused active.
-	if cards.any(func(card): return not fused_into(str(card.id)).is_empty()):
+	# Old drafts may contain consumed components, or a new partner that used to
+	# bypass a full bar when fusions happened at rank 1. Rebuild those once.
+	if cards.any(func(card): return not fused_into(str(card.id)).is_empty() or (card.tag == "ABILITY" and int(upgrades[card.id]) == 0 and not _can_learn_active(str(card.id)))):
 		_offer_cards(false)
 	return true

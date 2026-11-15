@@ -77,3 +77,12 @@ checkpoints also explicitly retain the chosen ship and pilot.
   Captures default to `/tmp/starrun-visuals`; use `-- --output=PATH` to change it.
 - Phone-sized renders have been inspected. Physical iPhone performance and
   readability remain a device check; no TestFlight release is implied by these tests.
+
+## Fusion artwork — v0.8.1
+
+All ten fused abilities now use distinct vector insignia and cast effects. Shared
+hexagonal frames, restrained two-tone palettes and white cores fit the existing
+menu art. A short converging-emblem cue identifies the ability when its rank-5
+pair combines. Fusion effects and projectiles stay below hostile rounds and beam
+warnings; reduced effects preserves their recognizable shapes. See
+[GAMEPLAY_V081.md](GAMEPLAY_V081.md) for formation rules and verification.

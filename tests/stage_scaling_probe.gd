@@ -43,8 +43,13 @@ func _run() -> void:
 						sim.pending_levels = 0
 					if not idle and (not sim.charges.is_empty() or sim.bullets.size() > 18):
 						sim.activate("nova_aegis")
+						if "nova_aegis" not in sim.active_slots:
+							sim.activate("aegis")
+							sim.activate("nova")
 					if not idle and (sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield * 0.5):
 						sim.activate("repair_matrix")
+						sim.activate("mend")
+						sim.activate("capacitor")
 					sim.step()
 					sim.effects.clear()
 					max_bullets = maxi(max_bullets, sim.bullets.size())
