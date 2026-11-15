@@ -937,7 +937,7 @@ func _show_menu() -> void:
 		_ui_button(bottom, "Start a new regular flight", _confirm_abandon.bind("menu"), "ghost", 44)
 		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
 		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
-	if not _touch_first():
+	if not _touch_first() and not _compact_ui():
 		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
 		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_focus(primary)
