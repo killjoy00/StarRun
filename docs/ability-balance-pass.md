@@ -43,7 +43,7 @@ The bots always move and fire automatically. "Never" means **no manual active-ab
 
 ### Changes in this follow-up
 
-- **World 1 pressure:** increase enemy spawn pressure by about 14% *after 110 seconds* (spawn interval x0.88). After 18 seconds of the World 1 boss, non-heavy gun fire also accelerates roughly 14% (interval x0.88). The opening segment, first boss shots and heavy-beam tutorial timing are unchanged. Both changes are initial hypotheses for simulation validation, not a guaranteed target win rate.
+- **World 1 pressure:** preserve enemy **spawn rate/XP**, but after 110 seconds accelerate enemy gunfire (interval x0.80) and make the well-telegraphed heavy beams hit 20% harder. The World 1 boss's non-heavy gunfire accelerates only after its first 18 seconds (interval x0.80). The opening segment and heavy-beam warning length remain unchanged. These are simulation hypotheses, not guaranteed win-rate targets.
 - **Flak:** intercepting ordnance on an imminent collision path, or mines/slag just about to detonate nearby, restores up to 8 shield times effect strength. Casting early still clears ordnance but receives no shield reward.
 - **Jammer:** suppresses future fire as before; when used in the last 1.5 seconds of a telegraphed heavy charge, it *also* cancels that charge and reduces that cast's cooldown by 20%. Early casts do not interrupt an already charging beam.
 - **Rail Strike:** adds 0.8% of maximum boss HP, capped at 2,200 damage *before ability-power scaling*. The existing base strike remains and ordinary enemies receive no HP-based bonus.
@@ -60,3 +60,6 @@ The bots always move and fire automatically. "Never" means **no manual active-ab
 ### Next decision criteria
 
 First inspect whether no-cast World 1 clears and timed-over-cooldown differences move in the intended direction; second verify that World 2-4 remain achievable for at least one well-played ship/build; third compare Rail Strike/Siphon boss damage and healing by world without making ranks 5-10 oppressive. If an automated policy fails later stages, determine whether this reflects game difficulty, the scripted upgrade policy, or a simulation timeout before tuning enemies.
+
+
+**Iterative test result:** The *rejected first approach* increased spawn frequency and thereby fed the autopilot more kill XP: World 1 no-cast clears rose from 14/24 (previous baseline) to **16/24**, on-cooldown cleared 18/24, and timed cleared 19/24. The fixed Nova Guard Hard boss remained timing-dependent (24/24 vs 0/24), but the overall comparison got worse. That spawn change was reverted and replaced with projectile pressure and heavy-beam damage. Do not cite the 16/24 as the new final tuned outcome.
