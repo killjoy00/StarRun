@@ -1699,7 +1699,7 @@ func _show_beam_tutorial() -> void:
 	Kit.caps(column, "LIVE TRAINING  ·  HEAVY BEAM", Kit.AMBER, 14)
 	Kit.label(column, "See the warning lane? A heavy beam is charging. Aegis blocks it—save your shield for the moment it fires.", 17, Kit.TEXT, true)
 	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
-	var slot := sim.active_slots.find("aegis")
+	var slot: int = sim.active_slots.find("aegis")
 	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
 		var button: Button = ability_buttons[slot]
 		var pointer := _label(overlay, "▼  AEGIS", 17, Kit.AMBER)
