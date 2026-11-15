@@ -64,6 +64,7 @@ var build_return_mode := "playing"
 var build_show_all := false
 var stage_clear_clock := 0.0
 var stage_clear_button: Button
+var stage_clear_secondary: Button
 var warp_clock := 0.0
 var reading_panel: Control
 var reading_scroll: ScrollContainer
@@ -351,6 +352,7 @@ func _clear_overlay() -> void:
 		child.queue_free()
 	card_buttons.clear()
 	stage_clear_button = null
+	stage_clear_secondary = null
 
 func _touch_first() -> bool:
 	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
@@ -1505,11 +1507,11 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
 	if is_final:
-		var endless_button := _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
-		endless_button.disabled = stage_clear_clock < 1.2
+		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
+		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	elif sim.endless_enabled:
-		var claim_button := _ui_button(content, "Claim victory with this build", _claim_endless, "secondary", 50)
-		claim_button.disabled = stage_clear_clock < 1.2
+		stage_clear_secondary = _ui_button(content, "Claim victory with this build", _claim_endless, "secondary", 50)
+		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	if not stage_clear_button.disabled:
 		_focus(stage_clear_button)
 	if reset_clock:
@@ -1750,6 +1752,8 @@ func _process(delta: float) -> void:
 		stage_clear_clock += delta
 		if stage_clear_button != null and stage_clear_clock >= 1.2:
 			stage_clear_button.disabled = false
+		if stage_clear_secondary != null and stage_clear_clock >= 1.2:
+			stage_clear_secondary.disabled = false
 		if (before < 0.55 and stage_clear_clock >= 0.55) or (before < 1.05 and stage_clear_clock >= 1.05):
 			sound.play("explosion", -7.0)
 	elif mode == "warp":
