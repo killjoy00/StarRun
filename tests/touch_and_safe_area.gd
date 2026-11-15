@@ -79,7 +79,7 @@ func _run() -> void:
 		var logical: Vector2 = scene.get_viewport_rect().size
 		for control in [scene.hud, scene.status, scene.build_button, scene.speed_button, scene.pause_button]:
 			check(control.position.y >= 59, "All HUD controls must clear the simulated iPhone cutout")
-		check(scene.hud.get_global_rect().end.y <= scene.build_button.get_global_rect().position.y, "HUD text must not overlap the top buttons")
+		check(not scene.hud.get_global_rect().intersects(scene.build_button.get_global_rect()) and not scene.status.get_global_rect().intersects(scene.build_button.get_global_rect()), "HUD text must not overlap the top buttons")
 		check(scene.field.position.y > scene.pause_button.get_global_rect().end.y, "Playfield begins below toolbar")
 		for control in scene.ability_buttons.values():
 			check(control.get_global_rect().end.y <= logical.y - 34, "Ability controls clear the home indicator")
