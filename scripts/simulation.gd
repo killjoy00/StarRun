@@ -240,6 +240,8 @@ func step() -> void:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk
+		if ship_id == "haven":
+			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
 		damage_taken.corrosion += corrosion_damage
 		if hull <= 0.0:
@@ -1283,6 +1285,10 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount * stage_risk
+	# Haven's support chassis resists damaging status rounds, which dominate
+	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
+	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 	if kind == "ion":
