@@ -265,9 +265,7 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		# Preserve the onboarding window; make late World 1 require defensive choices.
-		if stage == 1 and stage_time >= 110.0:
-			pace *= 0.88
+		# Do not raise late World 1 spawns: extra automatic kills give free XP.
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
@@ -776,6 +774,10 @@ func _update_enemies() -> void:
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
+			# Late World 1 beam pressure is answerable by Aegis/EMP/Nova/Jammer.
+			# This changes damage, not XP or the visible charge warning.
+			if stage == 1 and time - stage_start >= 110.0:
+				damage *= 1.20
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -794,9 +796,14 @@ func _update_enemies() -> void:
 				enemy.fire = 0.5
 				continue
 			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
-			# The first warning and opening boss attacks are unchanged.
-			if stage == 1 and kind == "boss" and time - boss_spawn_time >= 18.0:
-				enemy.fire *= 0.88
+			# More shots late in World 1, without granting additional enemy XP.
+			# Boss attacks begin unchanged; the first telegraph stays readable.
+			if stage == 1 and time - stage_start >= 110.0:
+				if kind == "boss":
+					if time - boss_spawn_time >= 18.0:
+						enemy.fire *= 0.80
+				else:
+					enemy.fire *= 0.80
 			if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
 				enemy.fire *= 0.70
 			var flight_time: float = enemy.p.distance_to(ship_position()) / 215.0
