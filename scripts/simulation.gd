@@ -771,14 +771,16 @@ func _update_enemies() -> void:
 			continue
 		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
-			var lead := 2.15 if kind.begins_with("boss") and boss_attack_pattern == "delayed fan" else 1.8
+			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
-				if kind.begins_with("boss") and boss_attack_pattern == "sweep":
+				# Keep the primary heavy beam aimed at the ship. Only auxiliary
+				# lanes sweep or crossfire; timing the counter must stay valuable.
+				if beam > 0 and kind.begins_with("boss") and boss_attack_pattern == "sweep":
 					pattern_shift = sin((time - boss_spawn_time) * 0.72) * 75.0
-				elif kind.begins_with("boss") and boss_attack_pattern == "crossfire":
+				elif beam > 0 and kind.begins_with("boss") and boss_attack_pattern == "crossfire":
 					pattern_shift = 62.0 if beams_fired % 2 == 0 else -62.0
 				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0 + pattern_shift
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
