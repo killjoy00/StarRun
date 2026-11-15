@@ -188,3 +188,16 @@ static func achievement(id: String) -> Dictionary:
 		if str(item.id) == id:
 			return item
 	return {}
+
+
+# A paste-ready scorecard that does not expose a player's device ID or profile.
+# Use the immutable UTC day from the saved run, never the wall-clock on replay.
+static func daily_share_text(sim: RefCounted) -> String:
+	if str(sim.daily_day).is_empty():
+		return ""
+	var ship: Dictionary = Catalog.ship(str(sim.ship_id))
+	var pilot: Dictionary = Catalog.pilot(str(sim.pilot_id))
+	var outcome := "FOUR WORLDS CLEARED" if bool(sim.won) else "Worlds cleared: %d/4" % mini(int(sim.stage_clears),4)
+	return "Star/Run · Daily %s UTC\nScore: %d\n%s\nShip: %s · Pilot: %s\nSame seed. How far can you get?\n#StarRun" % [
+		str(sim.daily_day), daily_score(sim), outcome, str(ship.name), str(pilot.name)
+	]
