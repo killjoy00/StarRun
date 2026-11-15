@@ -1107,6 +1107,11 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 				best = enemy
 	return best
 
+func _is_small_shot(kind: String) -> bool:
+	# Status projectiles are small shots too. Only beams, missiles, mines
+	# and molten slag should bypass the chaff barrier/deflector/prism family.
+	return kind in ["chaff", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]
+
 func _update_bullets() -> void:
 	var ship := ship_position()
 	var control_pace: float = 0.88 if synergy_active("control") else 1.0
@@ -1125,7 +1130,7 @@ func _update_bullets() -> void:
 		bullet.p += bullet.v * DT * bullet_pace
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
-			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
+			if not (barrier_left > 0.0 and _is_small_shot(str(bullet.kind))):
 				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, "Molten slag" if bullet.kind == "slag" else ("Proximity mine" if bullet.kind == "mine" else str(bullet.source)))
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
@@ -1386,6 +1391,12 @@ func activate(ability: String) -> bool:
 	elif ability == "mend":
 		mend_left = 4.0
 		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
+		# Repair drones are the support counter to the status damage in
+		# Ion Storm and the weapon-suppressing heat of Solar Foundry.
+		if corrosion_left > 0.0 or heat_left > 0.0:
+			corrosion_left = 0.0
+			heat_left = 0.0
+			_log("Repair drones purged corrosion and overheating")
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -1413,7 +1424,7 @@ func activate(ability: String) -> bool:
 		var remaining: Array = []
 		var absorbed := 0
 		for bullet in bullets:
-			if bullet.kind == "chaff" and bullet.p.distance_squared_to(ship_position()) < 300.0 * 300.0:
+			if _is_small_shot(str(bullet.kind)) and bullet.p.distance_squared_to(ship_position()) < 300.0 * 300.0:
 				absorbed += 1
 			else:
 				remaining.append(bullet)
@@ -1437,7 +1448,7 @@ func activate(ability: String) -> bool:
 		var remaining: Array = []
 		var reflected := 0
 		for bullet in bullets:
-			if reflected < 18 and bullet.kind in ["chaff", "ion", "corrosion", "disrupt"] and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
+			if reflected < 18 and _is_small_shot(str(bullet.kind)) and bullet.p.distance_squared_to(ship_position()) < 310.0 * 310.0:
 				var target := _nearest(bullet.p)
 				shots.append({"p": bullet.p, "v": Vector2.UP * 630.0, "damage": (15.0 + upgrades.prism * 4.0) * effect_strength, "weapon": "barrage", "target": int(target.get("id", -1))})
 				reflected += 1
