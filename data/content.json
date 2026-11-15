@@ -432,7 +432,7 @@
       "id": "flak",
       "name": "Flak screen",
       "tag": "ABILITY",
-      "description": "Shoot down missiles, mines and slag.",
+      "description": "Shoot down ordnance; close-call interceptions restore 8 shield.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -459,7 +459,7 @@
       "id": "strike",
       "name": "Rail strike",
       "tag": "ABILITY",
-      "description": "Hit the strongest enemy with a heavy shot.",
+      "description": "Hit the strongest enemy; deals extra capped damage to bosses.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -513,7 +513,7 @@
       "id": "jammer",
       "name": "Signal jammer",
       "tag": "ABILITY",
-      "description": "Delay enemy guns and stop new beams.",
+      "description": "Suppress enemy guns; interrupt a charging beam for faster recharge.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -522,7 +522,7 @@
       "id": "siphon",
       "name": "Energy siphon",
       "tag": "ABILITY",
-      "description": "Drain an enemy to repair your hull.",
+      "description": "Drain a target and heal based on damage actually dealt (max 25).",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
