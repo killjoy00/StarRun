@@ -1566,7 +1566,8 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
 	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
 	if is_final:
-		Kit.label(content, "All four worlds cleared. Claim your win, or keep this build and take on harder worlds.", 16, Kit.TEXT, true)
+		var final_copy := "Daily complete. Claim your score and try again for a new personal best." if not sim.daily_day.is_empty() else "All four worlds cleared. Claim your win, or keep this build and take on harder worlds."
+		Kit.label(content, final_copy, 16, Kit.TEXT, true)
 	elif sim.endless_enabled:
 		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
@@ -1574,7 +1575,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
-	if is_final:
+	if is_final and sim.daily_day.is_empty():
 		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	elif sim.endless_enabled:
@@ -1653,7 +1654,8 @@ func _show_results() -> void:
 	mode = "results"
 	var view := _page(1.0, true, 540.0)
 	var body: VBoxContainer = view.body
-	_page_header(view.top, "Stage %d of %d  ·  %s" % [sim.stage, sim.stage_count(), sim.difficulty.capitalize()], "Victory" if sim.won else "Ship destroyed")
+	var qualifier := "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else sim.difficulty.capitalize()
+	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
 	var total_damage := 0.0
 	var worst_kind := ""
@@ -1675,16 +1677,32 @@ func _show_results() -> void:
 	hero_row.add_theme_constant_override("separation", 12)
 	hero.add_child(hero_row)
 	hero_row.add_child(Kit.core_icon(30))
-	var earned := Kit.label(hero_row, "+%d" % sim.payout(), 40, Kit.AMBER)
+	var credited: int = result_earned_cores if result_earned_cores >= 0 else sim.payout()
+	var earned := Kit.label(hero_row, "+%d" % credited, 40, Kit.AMBER)
 	earned.add_theme_font_override("font", Kit.font(0, 0.7))
 	var hero_text := VBoxContainer.new()
 	hero_text.add_theme_constant_override("separation", 0)
 	hero_text.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero_row.add_child(hero_text)
-	Kit.label(hero_text, "cores earned", 16, Kit.TEXT)
+	Kit.label(hero_text, "cores earned" if credited > 0 else "no additional Cores", 16, Kit.TEXT)
 	Kit.label(hero_text, "%d in your wallet" % int(profile.cores), 15, Kit.MUTED)
-	_ui_button(body, "Spend them in the Hangar", _show_hangar, "amber", 48)
+	if not sim.daily_day.is_empty():
+		var day_record: Dictionary = profile.daily_records.get(sim.daily_day, {})
+		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score",-1))
+		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
+		_info_card(body, "DAILY CHALLENGE  ·  %s UTC" % sim.daily_day, "Score %d  ·  Best %d%s
+Same setup for everyone today. Unlimited retries; Cores only on the first finished attempt." % [score, best, "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+	_ui_button(body, "Spend Cores in the Hangar", _show_hangar, "amber", 48)
+	if not result_awards.is_empty():
+		var unlocked := PackedStringArray()
+		for id in result_awards:
+			var entry: Dictionary = Progress.achievement(str(id))
+			if not entry.is_empty():
+				unlocked.append(str(entry.name))
+		_info_card(body, "Achievements unlocked", "
+".join(unlocked), Kit.CYAN)
+		_ui_button(body, "View all achievements", _show_achievements, "secondary", 48)
 	_tiles(body, [["Kills", str(sim.kills)], ["Stages", "%d/%d" % [sim.stage_clears, sim.stage_count()]], ["Abilities used", str(sim.ability_uses)]])
 	var build_lines := PackedStringArray()
 	for slot in sim.active_slots:
@@ -1725,7 +1743,7 @@ func _show_results() -> void:
 		if event.time >= sim.time - 10.0 and recap.size() < 5:
 			recap.append("%.1fs before the end  ·  %s" % [sim.time - event.time, event.message])
 	_info_card(body, "Final ten seconds", "\n".join(recap) if not recap.is_empty() else "Nothing logged in the final ten seconds.", Kit.MUTED)
-	var again := _ui_button(reading_footer, "Fly again", _new_run, "primary", 56, true)
+	var again := _ui_button(reading_footer, "Another daily" if not sim.daily_day.is_empty() else "Fly again", _new_daily_run if not sim.daily_day.is_empty() else _new_run, "primary", 56, true)
 	_ui_button(reading_footer, "Title", _show_menu, "secondary", 56, true)
 	_focus(again)
 
@@ -1934,6 +1952,8 @@ func _toggle_pause() -> void:
 		accumulator = 0.0
 
 func _continue_endless() -> void:
+	if not sim.daily_day.is_empty():
+		return # Daily scores end at World 4; no endless farming.
 	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.enable_endless():
 		return
 	_save_run()
@@ -2153,6 +2173,6 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, screen), Color("050914"))
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
-		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "S T A R / R U N", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, CYAN)
+		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "Star/Run", HORIZONTAL_ALIGNMENT_LEFT, -1, 25, CYAN)
 		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
