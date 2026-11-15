@@ -231,7 +231,7 @@ func _layout() -> void:
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
 	var field_top := safe_top + 84.0
-	var reserved := 72.0 if compact else 126.0
+	var reserved := 82.0 if compact else 126.0
 	var usable_height := maxf(240.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
@@ -260,10 +260,10 @@ func _layout() -> void:
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
 		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 56.0)
-		button.size = Vector2(button_width, 62.0 if compact else 50.0)
+		button.size = Vector2(button_width, 72.0 if compact else 50.0)
 		button.custom_minimum_size.y = button.size.y
 		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
-		button.add_theme_font_size_override("font_size", 12 if compact else 15)
+		button.add_theme_font_size_override("font_size", 16 if compact else 15)
 		var badge: Control = button.get_child(0)
 		badge.visible = true
 		badge.size = Vector2(25, 25)
@@ -276,7 +276,7 @@ func _layout() -> void:
 			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
 			compact_style.content_margin_left = 4.0 if compact else 35.0
 			compact_style.content_margin_right = 4.0
-			compact_style.content_margin_top = 23.0 if compact else 4.0
+			compact_style.content_margin_top = 25.0 if compact else 4.0
 			compact_style.content_margin_bottom = 7.0 if compact else 4.0
 			button.add_theme_stylebox_override(state, compact_style)
 	var top_height := 44.0 if compact else 36.0
@@ -582,7 +582,7 @@ func _sheet(title: String, eyebrow: String = "", dismiss: Callable = Callable(),
 	reading_panel = panel
 	if not bool(profile.get("reduced", false)):
 		var final_y := panel.position.y
-		panel.position.y += 22.0
+		panel.position.y -= 18.0
 		panel.modulate.a = 0.0
 		var entrance := create_tween().set_parallel(true)
 		entrance.tween_property(panel, "position:y", final_y, 0.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
