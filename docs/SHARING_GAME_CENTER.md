@@ -18,17 +18,17 @@ Godot iOS builds install the **pinned GameCenterKit 1.0.1** release from \`kerem
 - Recurrence: \`FREQ=DAILY;INTERVAL=1\`, duration \`PT24H\`, next start at UTC midnight
 - All 17 local achievements with IDs \`com.rsm.starrun.<achievement_id>\`, English titles/descriptions, 785 total points (100 max each, 1000 total Apple ceiling).
 
-\`tools/render_game_center_artwork.py\` generates **17 opaque, RGB, 1024×1024, 72 ppi** PNG badges, suitable for the App Store Connect artwork requirements. They are preserved as a GitHub Actions artifact, not distributed as font files.
+\`tools/render_game_center_artwork.py\` generates **17 opaque, RGB, 1024×1024, 72 ppi** PNG badges, suitable for the App Store Connect artwork requirements. They were successfully uploaded and committed in App Store Connect by the [achievement art workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43748596068), and are also preserved as a GitHub Actions artifact. They are not distributed as font files.
 
-\`tools/provision_game_center.py\` is an idempotent Apple API provisioner for the existing App Store Connect app. It creates the Game Center detail (if permitted), Daily board, English localization, 17 achievement definitions and English descriptions. It refuses to silently reconfigure an existing Daily board with incompatible recurrence or Apple achievements with mismatched permanent point values.
+\`tools/provision_game_center.py\` is an idempotent Apple API provisioner for the existing App Store Connect app. It created the Game Center detail, recurring UTC Daily board, English localization, 17 achievement definitions and English descriptions on [November 15, 2026](https://github.com/killjoy00/EZTrivia/actions/runs/43748388148), then uploaded and committed all 17 badge images [successfully](https://github.com/killjoy00/EZTrivia/actions/runs/43748596068). It refuses to silently reconfigure an existing Daily board with incompatible recurrence or Apple achievements with mismatched permanent point values.
 
 The approved-commit workflow lives in the shared Apple-credential repo at \`killjoy00/EZTrivia/.github/workflows/starrun-gamecenter-setup.yml\`. It is triggered through a new \`.github/starrun-gamecenter-request.json\` on that repo's main branch, selecting an immutable reviewed StarRun SHA. **No Apple credentials or IDs are committed into StarRun.**
 
 ## Apple gates that cannot be inferred from a successful code build
 
-1. The Apple Developer app identifier **com.rsm.starrun** must have Game Center enabled and its provisioning profile must include the capability.
-2. The App Store Connect Game Center detail, one recurring Daily board, 17 achievements and the English localizations must exist.
-3. Every achievement's localized **1024×1024 artwork must be uploaded in App Store Connect**. This workflow generates and attaches the artwork; its submission is not falsely treated as completed Apple-side image setup.
+1. App Store Connect's Game Center detail for **com.rsm.starrun** is enabled, and the app's 0.9.1 signed archive/upload succeeded with the Game Center entitlement. Actual native Game Center sign-in remains unverified.
+2. The Game Center detail, recurring UTC Daily board, 17 achievements and their English localizations were created successfully on November 15, 2026.
+3. The 17 localized **1024×1024 artwork files have been uploaded and committed successfully** to App Store Connect. Confirm Apple finishes processing each image in its UI before submitting components for review.
 4. The first Game Center leaderboard and achievement releases must pass Apple's review/publication rules. A successful TestFlight binary upload is not proof that Apple made those metadata resources live.
 5. Native authentication, personal-best submission, award sync, and Game Center panels need an actual iPhone with Game Center signed in and an App Store Connect sandbox/TestFlight build.
 
