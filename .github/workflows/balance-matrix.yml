@@ -1,0 +1,50 @@
+name: Weekly full-campaign balance matrix
+on:
+  schedule:
+    - cron: '0 8 * * 0'
+  workflow_dispatch:
+    inputs:
+      seeds_per_cell:
+        description: 'Matched seeds per ship/difficulty/strategy (6 = 108 seeds across the 18 configurations)'
+        required: false
+        default: '6'
+permissions:
+  contents: read
+concurrency:
+  group: starrun-balance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  balance:
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+        difficulty: [normal, hard, insane]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Simulate full four-world campaigns using matched seeds
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds=${{ github.event.inputs.seeds_per_cell || '6' }} \
+            --ship=${{ matrix.ship }} --difficulty=${{ matrix.difficulty }} \
+            2>&1 | tee balance-${{ matrix.ship }}-${{ matrix.difficulty }}.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" balance-*.log; then
+            echo "::error::Godot reported a runtime script failure"
+            exit 1
+          fi
+      - name: Preserve outcome breakdown per policy and world
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: balance-${{ matrix.ship }}-${{ matrix.difficulty }}
+          path: balance-${{ matrix.ship }}-${{ matrix.difficulty }}.log
+          if-no-files-found: ignore
+          retention-days: 30
