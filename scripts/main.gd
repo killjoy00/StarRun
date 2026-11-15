@@ -6,6 +6,8 @@ const Playfield = preload("res://scripts/playfield.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
 const IconBadge = preload("res://scripts/icon_badge.gd")
+const CombatHud = preload("res://scripts/combat_hud.gd")
+const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const CYAN := Color("66f5df")
@@ -28,6 +30,11 @@ var root: Control
 var overlay: Control
 var hud: Label
 var status: Label
+var hull_meter: ProgressBar
+var shield_meter: ProgressBar
+var hull_caption: Label
+var shield_caption: Label
+var cooldown_meters: Dictionary = {}
 var build_label: Label
 var report_label: Label
 var ability_a: Button
@@ -47,6 +54,7 @@ var low_fx_button: Button
 var card_buttons: Array[Button] = []
 var previous_ready := {}
 var previous_warning := false
+var last_boss_kills := 0
 var last_hull := 100.0
 var card_selection := 0
 var banner_text := ""
@@ -56,6 +64,7 @@ var build_return_mode := "playing"
 var build_show_all := false
 var stage_clear_clock := 0.0
 var stage_clear_button: Button
+var stage_clear_secondary: Button
 var warp_clock := 0.0
 var reading_panel: Control
 var reading_scroll: ScrollContainer
@@ -129,6 +138,26 @@ func _label(parent: Node, text_value: String, font_size: int = 16, color: Color 
 	parent.add_child(label)
 	return label
 
+func _haptic(milliseconds: int) -> void:
+	if OS.has_feature("mobile") and not bool(profile.get("reduced", false)):
+		Input.vibrate_handheld(milliseconds)
+
+func _meter(tint: Color) -> ProgressBar:
+	var meter := ProgressBar.new()
+	meter.show_percentage = false
+	meter.min_value = 0.0
+	meter.max_value = 100.0
+	meter.value = 100.0
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color("162338")
+	background.set_corner_radius_all(6)
+	meter.add_theme_stylebox_override("background", background)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = tint
+	fill.set_corner_radius_all(6)
+	meter.add_theme_stylebox_override("fill", fill)
+	return meter
+
 func _button(parent: Node, title: String, action: Callable, primary: bool = false) -> Button:
 	var button := Button.new()
 	button.text = title
@@ -145,6 +174,7 @@ func _button(parent: Node, title: String, action: Callable, primary: bool = fals
 	button.add_theme_stylebox_override("disabled", _style(Color("101624"), Color("253043")))
 	button.custom_minimum_size.y = 52
 	button.pressed.connect(action)
+	button.pressed.connect(_haptic.bind(12))
 	parent.add_child(button)
 	return button
 
@@ -161,6 +191,12 @@ func _build_ui() -> void:
 	clip.add_child(world)
 	hud = _label(root, "", 18, CYAN)
 	status = _label(root, "", 16, MUTED)
+	hull_meter = _meter(CYAN)
+	shield_meter = _meter(Color("80aaff"))
+	root.add_child(hull_meter)
+	root.add_child(shield_meter)
+	hull_caption = _label(root, "", 14, Color.WHITE)
+	shield_caption = _label(root, "", 14, Color.WHITE)
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
 	for slot in range(Catalog.ACTIVE_SLOTS):
@@ -169,8 +205,12 @@ func _build_ui() -> void:
 		var badge := IconBadge.new()
 		badge.icon_id = ""
 		badge.position = Vector2(4, 4)
-		badge.size = Vector2(25, 25)
+		badge.size = Vector2(26, 26)
 		ability_buttons[slot].add_child(badge)
+		var cooldown := _meter(AMBER)
+		cooldown.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ability_buttons[slot].add_child(cooldown)
+		cooldown_meters[slot] = cooldown
 	ability_a = ability_buttons[0]
 	ability_b = ability_buttons[1]
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
@@ -189,46 +229,68 @@ func _layout() -> void:
 	root.size = size
 	overlay.size = size
 	var inset := _insets()
-	var top_shift := maxf(0.0, float(inset.top) - 14.0) + 8.0
-	var bottom_shift := maxf(0.0, float(inset.bottom) - 14.0)
-	var usable_height := maxf(240, size.y - (176 if _compact_ui() else 238) - top_shift - bottom_shift)
-	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
-	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 91 + top_shift), Vector2(540, 960) * scale_factor)
+	var compact := _compact_ui()
+	var safe_top: float = float(inset.top) + 7.0
+	var field_top := safe_top + 84.0
+	var reserved := 102.0 if compact else 196.0
+	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
+	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
+	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
 	clip.size = field.size
 	world.scale = Vector2.ONE * scale_factor
-	hud.position = Vector2(field.position.x, 16 + top_shift)
-	hud.size = Vector2(field.size.x, 24)
-	status.position = Vector2(field.position.x, 57 + top_shift)
-	status.size = Vector2(field.size.x, 22)
-	var compact := _compact_ui()
-	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
-	var controls_x := (size.x - controls_width) / 2
-	var button_width := (controls_width - (15 if compact else 6)) / (4 if compact else 2)
+	var chrome_x := 16.0 if compact else field.position.x
+	var chrome_width := size.x - 32.0 if compact else field.size.x
+	hud.position = Vector2(chrome_x, safe_top + 4.0)
+	hud.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 24)
+	status.position = Vector2(chrome_x, safe_top + 28.0)
+	status.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 20)
+	var meter_y := safe_top + 50.0
+	var meter_width := (chrome_width - 10.0) * 0.5
+	hull_meter.position = Vector2(chrome_x, meter_y)
+	shield_meter.position = Vector2(chrome_x + meter_width + 10.0, meter_y)
+	for meter in [hull_meter, shield_meter]:
+		meter.size = Vector2(meter_width, 24.0)
+	hull_caption.position = hull_meter.position + Vector2(7, 1)
+	shield_caption.position = shield_meter.position + Vector2(7, 1)
+	hull_caption.size = Vector2(meter_width - 9.0, 22)
+	shield_caption.size = Vector2(meter_width - 9.0, 22)
+	var controls_width := minf(size.x - 28.0, maxf(330.0, field.size.x))
+	var controls_x := (size.x - controls_width) * 0.5
+	var button_width := (controls_width - (15.0 if compact else 6.0)) / (4.0 if compact else 2.0)
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
-		button.position = Vector2(controls_x + i * (button_width + 5), field.end.y + 9) if compact else Vector2(controls_x + (i % 2) * (button_width + 6), field.end.y + 9 + int(i / 2) * 56)
-		button.size = Vector2(button_width, 54 if compact else 50)
-		button.custom_minimum_size.y = 54 if compact else 50
-		button.add_theme_font_size_override("font_size", _text_size(12))
-		button.get_child(0).visible = not compact # On narrow screens the badges overlap button text.
-		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
+		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 84.0)
+		button.size = Vector2(button_width, 80.0)
+		button.custom_minimum_size.y = button.size.y
+		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.add_theme_font_size_override("font_size", 16 if compact else 15)
+		var badge: Control = button.get_child(0)
+		badge.visible = true
+		badge.size = Vector2(25, 25)
+		badge.position = Vector2((button_width - 25.0) * 0.5, 2.0) if compact else Vector2(5, 11)
+		var cooldown_bar: ProgressBar = cooldown_meters[i]
+		cooldown_bar.position = Vector2(5.0, button.size.y - 6.0)
+		cooldown_bar.size = Vector2(button_width - 10.0, 3.0)
+		button.add_theme_stylebox_override("normal", _style(Color("103740") if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
+		button.add_theme_color_override("font_color", Color.WHITE)
 		for state in ["normal", "hover", "pressed", "disabled"]:
 			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
-			compact_style.content_margin_left = 6
-			compact_style.content_margin_right = 6
-			compact_style.content_margin_top = 6
-			compact_style.content_margin_bottom = 6
+			compact_style.content_margin_left = 4.0 if compact else 35.0
+			compact_style.content_margin_right = 4.0
+			compact_style.content_margin_top = 25.0 if compact else 4.0
+			compact_style.content_margin_bottom = 7.0 if compact else 4.0
 			button.add_theme_stylebox_override(state, compact_style)
 	var top_height := 44.0 if compact else 36.0
-	build_button.position = Vector2(field.end.x - (202 if compact else 165), top_shift + (44 if compact else 45))
+	var toolbar_right := size.x - 14.0 if compact else field.end.x
+	build_button.position = Vector2(toolbar_right - (202.0 if compact else 165.0), safe_top)
 	build_button.size = Vector2(86 if compact else 74, top_height)
-	speed_button.position = Vector2(field.end.x - (114 if compact else 90), top_shift + (44 if compact else 45))
+	speed_button.position = Vector2(toolbar_right - (114.0 if compact else 90.0), safe_top)
 	speed_button.size = Vector2(66 if compact else 46, top_height)
 	for control in [build_button, speed_button]:
 		control.custom_minimum_size.y = top_height
 		control.add_theme_font_size_override("font_size", _text_size(11))
-	pause_button.position = Vector2(field.end.x - (46 if compact else 42), top_shift + (44 if compact else 45))
+	pause_button.position = Vector2(toolbar_right - (46.0 if compact else 42.0), safe_top)
 	pause_button.size = Vector2(46 if compact else 42, top_height)
 	pause_button.custom_minimum_size.y = top_height
 	pause_button.add_theme_font_size_override("font_size", _text_size(14))
@@ -282,6 +344,8 @@ func _layout() -> void:
 		_show_prototypes()
 	elif mode == "route":
 		_show_route_choice()
+	elif mode == "beam_tutorial":
+		_show_beam_tutorial()
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -289,6 +353,7 @@ func _clear_overlay() -> void:
 		child.queue_free()
 	card_buttons.clear()
 	stage_clear_button = null
+	stage_clear_secondary = null
 
 func _touch_first() -> bool:
 	return OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios")
@@ -518,6 +583,14 @@ func _sheet(title: String, eyebrow: String = "", dismiss: Callable = Callable(),
 	var heading := Kit.label(titles, title, 24, Color.WHITE, true)
 	heading.add_theme_font_override("font", Kit.font(0, 0.45))
 	reading_panel = panel
+	if not bool(profile.get("reduced", false)):
+		# Animate the sheet content, not its bottom-anchored panel: landscape
+		# layouts must keep the container fully inside the safe rectangle.
+		box.position.y = 12.0
+		box.modulate.a = 0.0
+		var entrance := create_tween().set_parallel(true)
+		entrance.tween_property(box, "position:y", 0.0, 0.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		entrance.tween_property(box, "modulate:a", 1.0, 0.15)
 	return box
 
 ## A card the whole surface of which is the tap target. Returns its content box.
@@ -774,10 +847,8 @@ func _set_difficulty(id: String) -> void:
 	_show_menu()
 
 func _launch() -> void:
-	# The first flight gets a 20-second briefing; after that Launch means launch.
-	if int(profile.runs) == 0 and not bool(profile.get("briefed", false)):
-		_show_briefing(true)
-		return
+	# Launch immediately; the first heavy-beam charge teaches Aegis in context.
+	# The optional How to play briefing remains available from the title.
 	_new_run()
 
 func _launch_or_confirm(base: String) -> void:
@@ -1398,7 +1469,8 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	headline.add_theme_constant_override("separation", 2)
 	headline.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(headline)
-	var eyebrow := Kit.caps(headline, "Stage %d of %d cleared" % [sim.stage, sim.stage_count()], Kit.AMBER, 15)
+	var progress_title := "Endless world %d cleared" % sim.stage if sim.endless_enabled else "Stage %d of %d cleared" % [sim.stage, sim.stage_count()]
+	var eyebrow := Kit.caps(headline, progress_title, Kit.AMBER, 15)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var title := Kit.label(headline, "%s destroyed" % sim.boss_name(), 32, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.7))
@@ -1426,16 +1498,25 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
 	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
 	if is_final:
-		Kit.label(content, "All four stages cleared. Your full report is next.", 16, Kit.TEXT, true)
+		Kit.label(content, "All four worlds cleared. Claim your win, or keep this build and take on harder worlds.", 16, Kit.TEXT, true)
+	elif sim.endless_enabled:
+		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
 		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
-	stage_clear_button = _ui_button(content, "Claim victory" if is_final else "Warp to " + str(sim.stage_spec().transition).capitalize(), _begin_warp, "primary", 58)
+	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
+	if is_final:
+		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
+		stage_clear_secondary.disabled = stage_clear_clock < 1.2
+	elif sim.endless_enabled:
+		stage_clear_secondary = _ui_button(content, "Claim victory with this build", _claim_endless, "secondary", 50)
+		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	if not stage_clear_button.disabled:
 		_focus(stage_clear_button)
 	if reset_clock:
 		sound.play("boss-explosion", -4.0)
+		_haptic(130)
 
 func _show_prototypes() -> void:
 	mode = "prototype"
@@ -1506,6 +1587,19 @@ func _show_results() -> void:
 	var body: VBoxContainer = view.body
 	_page_header(view.top, "Stage %d of %d  ·  %s" % [sim.stage, sim.stage_count(), sim.difficulty.capitalize()], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
+	var total_damage := 0.0
+	var worst_kind := ""
+	var worst_damage := 0.0
+	for kind in sim.damage_taken:
+		var value := float(sim.damage_taken[kind])
+		total_damage += value
+		if value > worst_damage:
+			worst_kind = str(kind)
+			worst_damage = value
+	if not sim.won and total_damage > 0.0:
+		var labels := {"heavy":"heavy beams", "chaff":"small shots", "ordnance":"missiles", "hazard":"hazards", "ion":"ion bursts", "corrosion":"corrosion", "heat":"heat attacks", "gravity":"gravity attacks", "disrupt":"disruption shots", "void":"void attacks"}
+		var advice := {"heavy":"Aegis blocks those. Wait for the charge warning before firing it.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small shots; Deflector converts them into shield.", "hazard":"Watch the incoming lanes and use short defensive windows.", "ion":"Capacitor restores your shield and clears its disruption.", "corrosion":"Avoid the corroders and add repair or armor.", "heat":"Use shield recovery and interrupt the enemy volley.", "gravity":"Use Chrono or Jammer to control crowded firing lanes.", "disrupt":"Jammer silences enemy weapons before they fire.", "void":"Keep a defensive active ready for the Citadel volleys."}
+		_info_card(body, "What took you down", "%d%% of incoming damage came from %s. %s" % [roundi(worst_damage / total_damage * 100.0), str(labels.get(worst_kind, worst_kind)), str(advice.get(worst_kind, "Upgrade your defenses before returning."))], Kit.DANGER)
 	var hero := PanelContainer.new()
 	hero.add_theme_stylebox_override("panel", Kit.box(Color("1b160f"), Color("4d3c22"), 16, 1, 16, 14))
 	body.add_child(hero)
@@ -1586,11 +1680,52 @@ func _resume_run() -> void:
 	if not sim.cards.is_empty():
 		_show_cards()
 
+## First heavy beam is an in-flight lesson, not another preflight paragraph.
+## Simulation ticks stop while this callout is visible; nothing can hit the ship.
+func _show_beam_tutorial() -> void:
+	mode = "beam_tutorial"
+	profile.beam_tutorial_seen = true
+	_save_profile()
+	_clear_overlay()
+	var shade := ColorRect.new()
+	shade.color = Color(0.005, 0.01, 0.025, 0.65)
+	shade.size = get_viewport_rect().size
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	overlay.add_child(shade)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", Kit.box(Color("13283b"), Kit.AMBER, 16, 2, 16, 14))
+	panel.position = Vector2(16.0, field.position.y + 22.0)
+	panel.size = Vector2(get_viewport_rect().size.x - 32.0, 0.0)
+	overlay.add_child(panel)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 9)
+	panel.add_child(column)
+	Kit.caps(column, "LIVE TRAINING  ·  HEAVY BEAM", Kit.AMBER, 14)
+	Kit.label(column, "See the warning lane? A heavy beam is charging. Aegis blocks it—save your shield for the moment it fires.", 17, Kit.TEXT, true)
+	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
+	var slot: int = sim.active_slots.find("aegis")
+	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
+		var button: Button = ability_buttons[slot]
+		var pointer := _label(overlay, "▼  AEGIS", 17, Kit.AMBER)
+		pointer.position = Vector2(button.position.x, button.position.y - 28.0)
+		pointer.size = Vector2(button.size.x + 6.0, 26)
+		pointer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pointer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_haptic(60)
+
+func _resume_beam_tutorial() -> void:
+	if mode != "beam_tutorial":
+		return
+	mode = "playing"
+	_clear_overlay()
+	accumulator = 0.0
+
 func _start_flight() -> void:
 	mode = "playing"
 	_clear_overlay()
 	accumulator = 0.0
 	last_hull = sim.hull
+	last_boss_kills = sim.stage_clears
 	previous_warning = false
 	previous_ready.clear()
 	for id in sim.active_slots:
@@ -1617,6 +1752,8 @@ func _process(delta: float) -> void:
 		stage_clear_clock += delta
 		if stage_clear_button != null and stage_clear_clock >= 1.2:
 			stage_clear_button.disabled = false
+		if stage_clear_secondary != null and stage_clear_clock >= 1.2:
+			stage_clear_secondary.disabled = false
 		if (before < 0.55 and stage_clear_clock >= 0.55) or (before < 1.05 and stage_clear_clock >= 1.05):
 			sound.play("explosion", -7.0)
 	elif mode == "warp":
@@ -1634,6 +1771,8 @@ func _process(delta: float) -> void:
 				_finish()
 			elif not sim.cards.is_empty():
 				_show_cards()
+			elif sim.stage == 1 and not bool(profile.get("beam_tutorial_seen", false)) and "aegis" in sim.active_slots and not sim.charges.is_empty():
+				_show_beam_tutorial()
 		var sector_now := _sector_name(sim.time)
 		if sector_now != last_sector:
 			last_sector = sector_now
@@ -1642,6 +1781,9 @@ func _process(delta: float) -> void:
 		var warning: bool = not sim.charges.is_empty()
 		if warning and not previous_warning:
 			sound.play("warning")
+			if sim.boss_spawned:
+				banner_text = "BOSS BEAM · %s · USE YOUR DEFENSE" % sim.boss_attack_pattern.to_upper()
+				banner_clock = 2.8
 		previous_warning = warning
 		for key in previous_ready:
 			var ready: bool = sim.cooldowns[key] <= 0 and sim.upgrades[key] > 0
@@ -1650,6 +1792,7 @@ func _process(delta: float) -> void:
 			previous_ready[key] = ready
 		if sim.hull < last_hull:
 			sound.play("hit")
+			_haptic(80 if last_hull - sim.hull >= 15.0 else 35)
 		last_hull = sim.hull
 		save_clock += delta
 		if save_clock > 10:
@@ -1665,8 +1808,8 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp"] or (mode == "settings" and sheet_base == "paused")
-	for control in [hud, status, build_button, pause_button, speed_button]:
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial"] or (mode == "settings" and sheet_base == "paused")
+	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
@@ -1674,39 +1817,8 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	world.queue_redraw()
 
-func _short_ability_name(id: String) -> String:
-	var names := {"overdrive":"DRIVE", "capacitor":"CHARGE", "deflector":"DEFLECT", "barrage":"ROCKETS", "barrier":"BARRIER", "salvage":"SALVAGE", "overload":"OVERLOAD", "repair_matrix":"REPAIR", "nova_aegis":"NOVA GRD", "railstorm":"RAILSTORM", "stasis_lock":"TIME LOCK", "missile_grid":"MISSILES", "scrap_converter":"SCRAP", "prism_focus":"PRISM", "reflective_wall":"REFLECT", "ghost_signal":"GHOST", "reactor_surge":"SURGE", "strike":"RAIL", "reboot":"REBOOT", "siphon":"SIPHON", "focus":"FOCUS", "flak":"FLAK", "chrono":"CHRONO", "jammer":"JAMMER", "decoy":"DECOY", "aegis":"AEGIS", "mend":"REPAIR", "emp":"EMP", "nova":"NOVA", "prism":"PRISM"}
-	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
-
 func _update_hud() -> void:
-	hud.text = "S%d  HULL %03d   SHIELD %02d   LV %02d" % [sim.stage, sim.hull, sim.shield, sim.level]
-	var seconds := int(sim.time - sim.stage_start)
-	status.text = "%s  %02d:%02d" % [sim.difficulty.to_upper(), seconds / 60, seconds % 60]
-	for i in range(Catalog.ACTIVE_SLOTS):
-		var button: Button = ability_buttons[i]
-		var occupied: bool = i < sim.active_slots.size()
-		var id: String = str(sim.active_slots[i]) if occupied else ""
-		var cooldown: float = float(sim.cooldowns.get(id, 0.0))
-		var learned: bool = occupied and int(sim.upgrades.get(id, 0)) > 0
-		var title: String = _short_ability_name(id) if occupied and _compact_ui() else (sim.content.abilities[id].name.to_upper() if occupied else "EMPTY")
-		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and _compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else ("FREE" if _compact_ui() else "DRAFT AN ABILITY"))
-		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
-		button.disabled = mode != "playing" or cooldown > 0 or not learned
-		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
-		var badge: Control = button.get_child(0)
-		if badge.get("icon_id") != id:
-			badge.set("icon_id", id)
-			badge.queue_redraw()
-		if occupied and not previous_ready.has(id):
-			previous_ready[id] = true
-	build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
-	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
-		build_label.text += tag + "S\n"
-		for card in sim.content.cards:
-			if card.tag == tag and sim.upgrades[card.id] > 0 and sim.fused_into(str(card.id)).is_empty():
-				build_label.text += "%s  %d/%d\n" % [card.name, sim.upgrades[card.id], card.max]
-		build_label.text += "\n"
-	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nCoral lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	CombatHud.refresh(self)
 
 func _activate_slot(slot: int) -> void:
 	if slot >= 0 and slot < sim.active_slots.size():
@@ -1714,7 +1826,8 @@ func _activate_slot(slot: int) -> void:
 
 func _activate(id: String) -> void:
 	if mode == "playing" and sim.activate(id):
-		sound.play(id if id in ["aegis", "nova", "barrage", "overdrive", "chrono", "mend"] else "nova")
+		_haptic(38)
+		sound.play_ability(id)
 		if not sim.cards.is_empty():
 			_show_cards()
 
@@ -1732,6 +1845,17 @@ func _toggle_pause() -> void:
 		mode = "playing"
 		_clear_overlay()
 		accumulator = 0.0
+
+func _continue_endless() -> void:
+	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.enable_endless():
+		return
+	_save_run()
+	_begin_warp()
+
+func _claim_endless() -> void:
+	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.claim_endless():
+		return
+	_finish()
 
 func _begin_warp() -> void:
 	if mode != "stage_clear" or stage_clear_clock < 1.2:
@@ -1751,7 +1875,10 @@ func _complete_warp() -> void:
 	if not sim.begin_intermission():
 		_show_stage_clear(false)
 		return
-	_show_prototypes()
+	if sim.intermission_step == "route":
+		_show_route_choice()
+	else:
+		_show_prototypes()
 
 func _choose_prototype(index: int) -> void:
 	if mode != "prototype" or not sim.choose_prototype(index):
@@ -1773,7 +1900,7 @@ func _finish_intermission() -> void:
 	_clear_overlay()
 	accumulator = 0.0
 	last_sector = _sector_name(sim.time)
-	banner_text = "STAGE %d / 4  ·  %s" % [sim.stage, sim.stage_name()]
+	banner_text = "WORLD %d  ·  %s" % [sim.stage, sim.stage_name()]
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
@@ -1860,48 +1987,10 @@ func _notification(what: int) -> void:
 		get_tree().quit()
 
 func _input(event: InputEvent) -> void:
-	if not event is InputEventKey or not event.pressed or event.echo:
-		return
-	if event.keycode in [KEY_ESCAPE, KEY_P] and mode in ["playing", "paused", "build"]:
-		_toggle_pause()
-		get_viewport().set_input_as_handled()
-	elif mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
-		if stage_clear_clock >= 1.2:
-			_begin_warp()
-		get_viewport().set_input_as_handled()
-	elif mode == "playing":
-		if event.keycode == KEY_B:
-			_show_build()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_TAB:
-			_cycle_speed()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_SPACE or (event.keycode >= KEY_1 and event.keycode <= KEY_4):
-			_activate_slot(0 if event.keycode == KEY_SPACE else event.keycode - KEY_1)
-			get_viewport().set_input_as_handled()
-	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
-		_choose(event.keycode - KEY_1)
-		get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and mode in ["settings", "briefing", "abandon"]:
-		_close_sheet()
-		get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and mode in ["hangar", "loadout"]:
-		if mode == "loadout":
-			_loadout_back()
-		else:
-			_show_menu()
-		get_viewport().set_input_as_handled()
+	InputRouter.key(self, event)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventJoypadButton and event.pressed:
-		if event.button_index == JOY_BUTTON_START:
-			_toggle_pause()
-		elif mode == "playing":
-			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B]
-			var index := bindings.find(event.button_index)
-			if index >= 0:
-				_activate_slot(index)
-
+	InputRouter.gamepad(self, event)
 
 func _sector_name(at: float) -> String:
 	if sim.stage > 1:

@@ -1,6 +1,13 @@
 extends Control
 ## A drawn ship-service bay, sharing the actual ship art with flight.
-const SHIP = preload("res://assets/art/vanguard.png")
+const SHIPS = {
+	"vanguard": preload("res://assets/art/vanguard.png"),
+	"kestrel": preload("res://assets/art/kestrel.svg"),
+	"bulwark": preload("res://assets/art/bulwark.svg"),
+	"wraith": preload("res://assets/art/wraith.svg"),
+	"arcwing": preload("res://assets/art/arcwing.svg"),
+	"haven": preload("res://assets/art/haven.svg")
+}
 const Catalog = preload("res://scripts/catalog.gd")
 var ship_id := "vanguard"
 var clock := 0.0
@@ -76,27 +83,5 @@ func _draw_flight(w: float, h: float) -> void:
 	_draw_ship(center, radius)
 
 func _draw_ship(center: Vector2, radius: float) -> void:
-	var ship_size := Vector2.ONE * radius * 1.58
-	draw_texture_rect(SHIP, Rect2(center - ship_size * 0.5, ship_size), false, tint_for(ship_id))
-	# Every chassis has its own silhouette, not just a renamed Vanguard.
-	var wing := radius * 0.48
-	match ship_id:
-		"kestrel":
-			for side in [-1, 1]:
-				draw_colored_polygon(PackedVector2Array([center + Vector2(side*wing*0.35, -wing*0.5), center + Vector2(side*wing*1.25, wing*0.65), center + Vector2(side*wing*0.45, wing*0.2)]), Color("66f5df"))
-		"bulwark":
-			for side in [-1, 1]:
-				draw_rect(Rect2(center + Vector2(side*wing*0.9 - wing*0.25, -wing*0.25), Vector2(wing*0.5, wing)), Color("70899e"))
-				draw_rect(Rect2(center + Vector2(side*wing*0.85 - wing*0.1, -wing*0.5), Vector2(wing*0.2, wing*0.4)), Color("a3d9f1"))
-		"wraith":
-			for side in [-1, 1]:
-				draw_circle(center + Vector2(side*wing*0.83, wing*0.12), wing*0.24, Color("ffb869"))
-				draw_line(center + Vector2(side*wing*0.83, -wing*0.6), center + Vector2(side*wing*0.83, wing*0.1), Color("ffe1a6"), maxf(1.5, wing * 0.08))
-		"arcwing":
-			for side in [-1, 1]:
-				var start := center + Vector2(side*wing*0.45, -wing*0.25)
-				draw_polyline(PackedVector2Array([start, start + Vector2(side*wing*0.6, wing*0.25), start + Vector2(side*wing*0.2, wing*0.62)]), Color("bca9ff"), maxf(1.5, wing * 0.1))
-		"haven":
-			for i in range(3):
-				var bot := center + Vector2.from_angle(clock + i*TAU/3) * wing
-				draw_circle(bot, maxf(2.0, wing * 0.12), Color("7afcc0"))
+	var ship_size := Vector2.ONE * radius * 1.8
+	draw_texture_rect(SHIPS.get(ship_id, SHIPS.vanguard), Rect2(center - ship_size * 0.5, ship_size), false)

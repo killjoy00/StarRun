@@ -9,7 +9,7 @@
     },
     "nova": {
       "name": "Nova",
-      "cooldown": 20
+      "cooldown": 24
     },
     "barrage": {
       "name": "Barrage",
@@ -29,7 +29,7 @@
     },
     "flak": {
       "name": "Flak screen",
-      "cooldown": 16
+      "cooldown": 14
     },
     "emp": {
       "name": "EMP blackout",
@@ -49,7 +49,7 @@
     },
     "barrier": {
       "name": "Chaff barrier",
-      "cooldown": 25
+      "cooldown": 21
     },
     "capacitor": {
       "name": "Capacitor",
@@ -57,15 +57,15 @@
     },
     "focus": {
       "name": "Precision focus",
-      "cooldown": 23
+      "cooldown": 21
     },
     "decoy": {
       "name": "Decoy beacon",
-      "cooldown": 22
+      "cooldown": 20
     },
     "jammer": {
       "name": "Signal jammer",
-      "cooldown": 24
+      "cooldown": 22
     },
     "siphon": {
       "name": "Energy siphon",
@@ -73,15 +73,15 @@
     },
     "overload": {
       "name": "Chain overload",
-      "cooldown": 24
+      "cooldown": 22
     },
     "reboot": {
       "name": "Reactor reboot",
-      "cooldown": 34
+      "cooldown": 30
     },
     "salvage": {
       "name": "Salvage surge",
-      "cooldown": 28
+      "cooldown": 24
     },
     "wing_drones": {
       "name": "Wing drones",
@@ -703,7 +703,7 @@
       "reward_label": "Storm survived",
       "damage_scale": 1.8,
       "fire_scale": 1.15,
-      "module_scale": 2.0
+      "module_scale": 2
     },
     {
       "id": "solar_foundry",
@@ -712,7 +712,7 @@
       "boss": "boss3",
       "boss_name": "Crucible Engine",
       "boss_hp": 80000,
-      "health_scale": 11.0,
+      "health_scale": 11,
       "spawn_scale": 1.9,
       "description": "Heat weakens weapons, molten slag erupts and splitters multiply.",
       "transition": "VOID CITADEL",
@@ -728,14 +728,14 @@
       "boss": "boss4",
       "boss_name": "Void Regent",
       "boss_hp": 225000,
-      "health_scale": 22.0,
+      "health_scale": 22,
       "spawn_scale": 2.2,
       "description": "Phasing raiders, gravity disruption and fortress beam volleys.",
       "transition": "",
       "reward_label": "Citadel conquered",
       "damage_scale": 4.2,
       "fire_scale": 1.6,
-      "module_scale": 5.0
+      "module_scale": 5
     }
   ],
   "prototypes": [

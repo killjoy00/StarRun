@@ -8,6 +8,11 @@ const THREAT_INK := Color("080e1c")
 const SHIELD := Color("80aaff")
 const SHIPS := {
 	"vanguard": preload("res://assets/art/vanguard.png"),
+	"kestrel": preload("res://assets/art/kestrel.svg"),
+	"bulwark": preload("res://assets/art/bulwark.svg"),
+	"wraith": preload("res://assets/art/wraith.svg"),
+	"arcwing": preload("res://assets/art/arcwing.svg"),
+	"haven": preload("res://assets/art/haven.svg"),
 	"drone": preload("res://assets/art/drone.png"),
 	"gunship": preload("res://assets/art/gunship.png"),
 	"sniper": preload("res://assets/art/sniper.png"),
@@ -60,7 +65,8 @@ func _draw() -> void:
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
 	var sector := _sector(sim.time)
-	if sim.stage == 1:
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
+	if visual_stage == 1:
 		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
 		var scroll := visual_time * 105.0
 		var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
@@ -79,7 +85,7 @@ func _draw() -> void:
 		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.82, 0.86, 1.0, 0.16 + depth * 0.25) if sector != 4 else Color(1.0, 0.76, 0.45, 0.16 + depth * 0.25)
 		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
-	for i in range(9 if sim.stage == 1 else (3 if sim.stage == 2 else 0)):
+	for i in range(9 if visual_stage == 1 else (3 if visual_stage == 2 else 0)):
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
@@ -136,30 +142,32 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
 func _visual_theme_id() -> String:
-	return ["debris", "storm", "forge", "void"][clampi(sim.stage - 1, 0, 3)]
+	return ["debris", "storm", "forge", "void"][(sim.stage - 1) % 4]
 
 func _sector(at: float) -> int:
-	if sim.stage > 1:
-		return sim.stage + 3
-	if at < 65.0:
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
+	if visual_stage > 1:
+		return visual_stage + 3
+	var elapsed: float = at - float(sim.stage_start)
+	if elapsed < 65.0:
 		return 0
-	if at < 125.0:
+	if elapsed < 125.0:
 		return 1
-	if at < 190.0:
+	if elapsed < 190.0:
 		return 2
-	if at < 240.0:
+	if elapsed < 240.0:
 		return 3
 	return 4
 
 func _draw_stage_backdrop() -> void:
-	# Each late-game stage has its own silhouette, contrast, and parallax,
-	# rather than recoloring the Debris Belt texture.
-	var base := Color("041c32") if sim.stage == 2 else (Color("26110a") if sim.stage == 3 else Color("0d071b"))
-	var high := Color("064e64") if sim.stage == 2 else (Color("632512") if sim.stage == 3 else Color("261448"))
+	# Endless sectors reuse the authored visual ecologies rather than a flat backdrop.
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
+	var base := Color("041c32") if visual_stage == 2 else (Color("26110a") if visual_stage == 3 else Color("0d071b"))
+	var high := Color("064e64") if visual_stage == 2 else (Color("632512") if visual_stage == 3 else Color("261448"))
 	draw_rect(Rect2(0, 0, 540, 960), base)
 	for band in range(24):
 		draw_rect(Rect2(0, band * 40, 540, 42), base.lerp(high, 0.15 + 0.55 * (1.0 - absf(11.5 - band) / 12.0)))
-	match sim.stage:
+	match visual_stage:
 		2:
 			# Jagged cyan plasma rivers, pale cloud masses, electric ribs.
 			for i in range(10):
@@ -287,30 +295,8 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 		var flame := PackedVector2Array([nozzle + Vector2(-5, 0), nozzle + Vector2(0, thrust * flicker), nozzle + Vector2(5, 0)])
 		draw_colored_polygon(flame, Color(0.24, 0.75, 1.0, 0.65))
 		draw_line(nozzle, nozzle + Vector2(0, thrust * 0.55 * flicker), Color("e5fcff"), 3, true)
-	var tint := Color.WHITE
-	match sim.ship_id:
-		"kestrel": tint = Color("82ffdf")
-		"bulwark": tint = Color("abc3de")
-		"wraith": tint = Color("ffd09e")
-		"arcwing": tint = Color("c5b4ff")
-		"haven": tint = Color("aaf2c6")
-	if sim.ship_id == "kestrel":
-		for side in [-1, 1]:
-			draw_colored_polygon(PackedVector2Array([Vector2(side*16,-22),Vector2(side*46,25),Vector2(side*12,12)]), Color("52dac8"))
-	elif sim.ship_id == "bulwark":
-		for side in [-1, 1]:
-			draw_rect(Rect2(Vector2(side*34-8,-18),Vector2(16,45)),Color("6d8ca5"))
-	elif sim.ship_id == "wraith":
-		for side in [-1, 1]:
-			draw_rect(Rect2(Vector2(side*31-7,-20),Vector2(14,36)),Color("e7a85c"))
-			draw_circle(Vector2(side*31,-22),7,Color("ffe4a6"))
-	elif sim.ship_id == "arcwing":
-		for side in [-1, 1]:
-			draw_polyline(PackedVector2Array([Vector2(side*14,-15),Vector2(side*44,5),Vector2(side*19,27)]),Color("baa5ff"),4)
-	elif sim.ship_id == "haven":
-		for side in [-1, 1]:
-			draw_circle(Vector2(side*33,0),12,Color("6dd9b0"))
-	draw_texture_rect(SHIPS.vanguard, Rect2(-38, -42, 76, 76), false, tint)
+	# Each unlocked chassis now uses its own silhouette and detailed sprite.
+	draw_texture_rect(SHIPS.get(sim.ship_id, SHIPS.vanguard), Rect2(-40, -45, 80, 80), false)
 	if sim.pulse_timer > 0.15:
 		_glow(Vector2(0, -35), 6, Color(0.6, 1, 0.9, 0.8))
 	draw_set_transform(Vector2.ZERO)

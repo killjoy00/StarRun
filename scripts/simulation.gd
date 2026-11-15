@@ -13,6 +13,13 @@ var course: Array[Dictionary] = []
 var movement_version := 4
 var difficulty := "normal"
 var stage := 1
+var endless_enabled := false
+var endless_stage_spec: Dictionary = {}
+var encounter_index := 0
+var encounter_queue: Array = []
+var next_encounter_at := 50.0
+var boss_attack_pattern := "sweep"
+var cooldown_totals: Dictionary = {}
 var stage_start := 0.0
 var stage_clears := 0
 var stage_transition_queued := false
@@ -102,9 +109,11 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
 			cooldowns[id] = 0.0
+		cooldown_totals[id] = float(content.abilities[id].cooldown)
 	for fusion in content.fusions:
 		content.abilities[str(fusion.id)] = {"name": str(fusion.name), "cooldown": float(fusion.cooldown)}
 		cooldowns[str(fusion.id)] = 0.0
+		cooldown_totals[str(fusion.id)] = float(fusion.cooldown)
 		upgrades[str(fusion.id)] = 0
 		content.cards.append({"id":str(fusion.id), "name":str(fusion.name), "tag":"ABILITY", "description":str(fusion.description), "max":10, "rank5":"20% stronger effect, 10% shorter cooldown", "rank10":"45% stronger effect, 20% shorter cooldown"})
 	for card in content.cards:
@@ -115,6 +124,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	difficulty = selected_difficulty if selected_difficulty in Catalog.DIFFICULTIES else "normal"
 	seed_value = run_seed
 	rng.seed = run_seed
+	next_encounter_at = 55.0 + float(run_seed % 23)
 	_build_course()
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
@@ -259,6 +269,9 @@ func step() -> void:
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
+	if time >= next_encounter_at and not boss_spawned:
+		_spawn_encounter()
+		next_encounter_at = time + 66.0 + float((seed_value + encounter_index * 11) % 23)
 	_update_enemies()
 	_update_charges()
 	_update_support()
@@ -273,7 +286,27 @@ func threat_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
 
 func stage_spec() -> Dictionary:
-	return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
+	if stage <= int(content.stage_count):
+		return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
+	if int(endless_stage_spec.get("_stage", -1)) != stage:
+		var depth := stage - int(content.stage_count)
+		var template: Dictionary = content.stages[(stage - 1) % int(content.stage_count)]
+		var baseline: Dictionary = content.stages[int(content.stage_count) - 1]
+		endless_stage_spec = template.duplicate(true)
+		endless_stage_spec._stage = stage
+		endless_stage_spec.id = "endless_%d" % stage
+		endless_stage_spec.name = "ENDLESS %d · %s" % [depth, template.name]
+		endless_stage_spec.subtitle = "Escalation sector"
+		endless_stage_spec.boss_name = "%s Ascendant" % template.boss_name
+		endless_stage_spec.boss_hp = float(baseline.boss_hp) * pow(1.48, depth)
+		endless_stage_spec.health_scale = float(baseline.health_scale) * pow(1.30, depth)
+		endless_stage_spec.damage_scale = float(baseline.damage_scale) * pow(1.22, depth)
+		endless_stage_spec.spawn_scale = float(baseline.spawn_scale) * pow(1.08, depth)
+		endless_stage_spec.fire_scale = float(baseline.fire_scale) * pow(1.07, depth)
+		endless_stage_spec.module_scale = float(baseline.module_scale) * pow(1.42, depth)
+		endless_stage_spec.transition = "ENDLESS %d" % (depth + 1)
+		endless_stage_spec.reward_label = "ENDLESS RUN · BONUS %d" % depth
+	return endless_stage_spec
 
 func boss_name() -> String:
 	return str(stage_spec().boss_name)
@@ -282,10 +315,26 @@ func stage_name() -> String:
 	return str(stage_spec().name)
 
 func stage_count() -> int:
-	return int(content.stage_count)
+	return maxi(int(content.stage_count), stage + 1) if endless_enabled else int(content.stage_count)
+
+func enable_endless() -> bool:
+	if endless_enabled or stage != int(content.stage_count) or not stage_transition_queued or stage_clears != stage:
+		return false
+	endless_enabled = true
+	_log("Endless unlocked: keeping the existing build")
+	return true
+
+func claim_endless() -> bool:
+	if not endless_enabled or not stage_transition_queued or stage_clears != stage:
+		return false
+	stage_transition_queued = false
+	ended = true
+	won = true
+	_log("Endless victory claimed after world %d" % stage)
+	return true
 
 func _enemy_limit() -> int:
-	return 20 + (stage - 1) * 5
+	return mini(55, 20 + (stage - 1) * 5)
 
 func _has_prototype(id: String) -> bool:
 	return id in prototypes
@@ -484,7 +533,7 @@ func begin_intermission() -> bool:
 	prototype_offers.clear()
 	while prototype_offers.size() < mini(3, available.size()):
 		prototype_offers.append(available.pop_at(rng.randi_range(0, available.size() - 1)))
-	intermission_step = "prototype"
+	intermission_step = "route" if prototype_offers.is_empty() else "prototype"
 	return true
 
 func prototype_spec(id: String) -> Dictionary:
@@ -518,10 +567,10 @@ func choose_route(id: String) -> bool:
 func _spawn_enemy() -> void:
 	if enemies.size() >= _enemy_limit():
 		return
-	# Each stage has its own recognizable enemy ecology, not a generic harder pool.
+	# Each authored enemy ecology recurs, but endless mixes threats from later worlds.
 	var stage_time := time - stage_start
 	var pool: Array = []
-	match stage:
+	match ((stage - 1) % int(content.stage_count)) + 1:
 		1:
 			pool = ["drone", "drone", "drone", "rusher"]
 			if stage_time > 25:
@@ -553,6 +602,14 @@ func _spawn_enemy() -> void:
 			if stage_time > 110:
 				pool.append_array(["echo_carrier", "void_lancer", "arc_spire", "slag_bomber"])
 
+	if not encounter_queue.is_empty():
+		# A formation consumes normal spawn opportunities, not extra waves of XP.
+		var formation_slot: int = 3 - encounter_queue.size()
+		var queued_kind: String = str(encounter_queue.pop_front())
+		_add_enemy(queued_kind, Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0))
+		return
+	if endless_enabled and stage > int(content.stage_count):
+		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
 	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
 
@@ -562,11 +619,32 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
+## Encounter variants are reproducible by seed. Each has a different timing demand:
+## armored escorts, mine-heavy bomber convoys, or protected carrier launches.
+func _spawn_encounter() -> void:
+	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
+		return
+	var ecology := ((stage - 1) % int(content.stage_count)) + 1
+	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
+	encounter_index += 1
+	var formation: Array = []
+	match pattern:
+		0:
+			formation = ["shieldguard", "interceptor", "gunship"] if ecology == 1 else (["shieldguard", "ion_frigate", "storm_weaver"] if ecology == 2 else (["shieldguard", "ember_hunter", "splitter"] if ecology == 3 else ["shieldguard", "phase_stalker", "disruptor"]))
+			_log("ESCORT FORMATION - armored lead, interceptors flanking")
+		1:
+			formation = ["missile_bomber", "minelayer", "missile_bomber"] if ecology == 1 else (["missile_bomber", "arc_spire", "ion_frigate"] if ecology == 2 else (["slag_bomber", "forge_turret", "slag_bomber"] if ecology == 3 else ["void_lancer", "gravity_sentinel", "void_lancer"]))
+			_log("BOMBER CONVOY - ordnance incoming")
+		2:
+			formation = ["carrier", "gunship", "interceptor"] if ecology == 1 else (["carrier", "shieldguard", "disruptor"] if ecology == 2 else (["carrier", "slag_bomber", "ember_hunter"] if ecology == 3 else ["echo_carrier", "phase_stalker", "gravity_sentinel"]))
+			_log("ELITE CARRIER - prioritize the launch ship")
+	encounter_queue = formation.duplicate()
+
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
 		return
 	var kind := "station"
-	match stage:
+	match ((stage - 1) % int(content.stage_count)) + 1:
 		1: kind = "boulder" if rng.randf() < 0.65 else "station"
 		2: kind = "arc_spire" if rng.randf() < 0.7 else "station"
 		3: kind = "forge_turret" if rng.randf() < 0.6 else "slag_bomber"
@@ -575,6 +653,7 @@ func _spawn_hazard() -> void:
 	_log("Incoming %s" % kind.replace("_", " "))
 
 func _spawn_boss() -> void:
+	encounter_queue.clear()
 	boss_spawned = true
 	boss_spawn_time = time
 	# The safeguard is once per stage; spawning the boss must not recharge it.
@@ -585,6 +664,8 @@ func _spawn_boss() -> void:
 	hull = minf(max_hull, hull + 15)
 	heavy_ready_at = time + 3.0
 	var spec := stage_spec()
+	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
+	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
@@ -613,6 +694,10 @@ func advance_stage() -> bool:
 	escort_timer = 0.0
 	ion_mines.clear()
 	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
+	encounter_index = 0
+	encounter_queue.clear()
+	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
+	endless_stage_spec.clear()
 	stage_start = time
 	boss_spawned = false
 	boss_spawn_time = 0.0
@@ -686,11 +771,18 @@ func _update_enemies() -> void:
 			continue
 		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
-			var lead := 1.8
+			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
-				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0
+				var pattern_shift := 0.0
+				# Keep the primary heavy beam aimed at the ship. Only auxiliary
+				# lanes sweep or crossfire; timing the counter must stay valuable.
+				if beam > 0 and kind.begins_with("boss") and boss_attack_pattern == "sweep":
+					pattern_shift = sin((time - boss_spawn_time) * 0.72) * 75.0
+				elif beam > 0 and kind.begins_with("boss") and boss_attack_pattern == "crossfire":
+					pattern_shift = 62.0 if beams_fired % 2 == 0 else -62.0
+				var target_x: float = ship_position(time + lead).x + (beam * 2 - beam_count + 1) * 68.0 + pattern_shift
 				charges.append({"source": enemy.id, "x": clampf(target_x, 35.0, 505.0), "remaining": lead, "duration": lead, "damage": damage})
 			heavy_ready_at = time + (7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8))))
 			_log("%s heavy beam charging" % kind.replace("_", " "))
@@ -1208,6 +1300,7 @@ func activate(ability: String) -> bool:
 	if not stage_casts.has(ability):
 		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10
 		stage_casts[ability] = true
+	cooldown_totals[ability] = cooldowns[ability]
 	hull = minf(max_hull, hull + meta.cast_repair)
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
@@ -1567,11 +1660,14 @@ func payout() -> int:
 		base = int(round(base * 1.25))
 	if _has_prototype("salvage_charter"):
 		base = int(round(base * 1.35))
+	if endless_enabled:
+		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
+		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
 	return base
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -1613,6 +1709,7 @@ func restore(state: Dictionary) -> bool:
 					else:
 						max_shield += bonus
 						shield = minf(max_shield, shield + bonus)
+	endless_stage_spec.clear()
 	_build_course()
 	rng.state = state.rng
 	# Old drafts may contain consumed components, or a new partner that used to

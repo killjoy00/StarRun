@@ -67,6 +67,21 @@ jobs:
           if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|Error calling from signal" /tmp/starrun-touch.log; then
             exit 1
           fi
+      - name: Capture 21 UI screens at three viewport sizes
+        run: |
+          set -o pipefail
+          xvfb-run -a godot --path . --audio-driver Dummy --script tests/screenshot_harness.gd 2>&1 | tee /tmp/starrun-screenshots.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|Error calling from signal" /tmp/starrun-screenshots.log; then
+            exit 1
+          fi
+      - name: Attach all screen captures to every PR
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-UI-matrix
+          path: /tmp/starrun-screenshots
+          if-no-files-found: ignore
+          retention-days: 14
       - name: Preserve combat and upgrade previews
         if: always()
         uses: actions/upload-artifact@v4

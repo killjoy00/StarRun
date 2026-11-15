@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
 	_test_support_actives()
+	_test_endless_encounters_and_cooldown_captures()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -56,6 +57,50 @@ func _run() -> void:
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
+
+func _test_endless_encounters_and_cooldown_captures() -> void:
+	var cooldown := Sim.new(7711)
+	check(cooldown.activate("aegis") and is_equal_approx(float(cooldown.cooldown_totals.aegis), float(cooldown.cooldowns.aegis)), "Cooldown meters must capture the actual modified cast cooldown")
+	var campaign := Sim.new(7611)
+	campaign.stage = 4
+	campaign.stage_clears = 4
+	campaign.stage_transition_queued = true
+	check(campaign.stage_count() == 4 and not campaign.ended, "Fourth victory must still offer a real choice before settling")
+	check(campaign.enable_endless() and campaign.stage_count() == 5, "Endless unlock extends the four-world campaign without ending the flight")
+	check(not campaign.enable_endless(), "Continuing into endless is an explicit one-time choice")
+	check(campaign.begin_intermission(), "World 4 continue still requires a strategic intermission")
+	check(campaign.choose_prototype(0) and campaign.choose_route("repair") and campaign.advance_stage(), "Existing loadout continues through the World 5 warp")
+	check(campaign.stage == 5 and campaign.stage_spec().damage_scale > float(campaign.content.stages[3].damage_scale), "World 5 danger must exceed World 4")
+	check(campaign.stage_spec().boss_hp > float(campaign.content.stages[3].boss_hp), "Endless bosses must keep increasing in health")
+	var saved := campaign.snapshot()
+	var restored := Sim.new(7611)
+	check(restored.restore(saved) and restored.snapshot() == saved, "Endless state and per-cast cooldowns must survive checkpoints")
+	campaign._spawn_encounter()
+	check(campaign.encounter_queue.size() == 3 and campaign.encounter_index == 1, "Seeded encounters must queue a three-ship formation")
+	var first_pattern := str(campaign.encounter_queue[0])
+	for i in range(3):
+		campaign._spawn_enemy()
+	check(campaign.enemies.size() == 3 and campaign.encounter_queue.is_empty(), "Formations must replace exactly three normal spawn slots")
+	campaign.enemies.clear()
+	campaign._spawn_encounter()
+	check(campaign.encounter_queue.size() == 3 and str(campaign.encounter_queue[0]) != first_pattern, "Repeat encounters must rotate their formation")
+	campaign.encounter_queue.clear()
+	campaign.enemies.clear()
+	campaign._spawn_boss()
+	check(campaign.boss_spawned and campaign.boss_attack_pattern in ["sweep", "crossfire", "delayed fan"], "Endless boss attack sequences are announced and deterministic")
+	campaign.stage_clears = campaign.stage
+	campaign.stage_transition_queued = true
+	check(campaign.claim_endless() and campaign.ended and campaign.won, "Endless must let the player bank a victorious run")
+	check(not campaign.claim_endless(), "Endless victory can only settle once")
+	var exhausted := Sim.new(7612)
+	exhausted.stage = 5
+	exhausted.endless_enabled = true
+	exhausted.stage_clears = 5
+	exhausted.stage_transition_queued = true
+	for item in exhausted.content.prototypes:
+		exhausted.prototypes.append(str(item.id))
+	check(exhausted.begin_intermission() and exhausted.intermission_step == "route", "After all prototype discoveries, endless must still offer routes")
+	check(exhausted.choose_route("repair") and exhausted.advance_stage() and exhausted.stage == 6, "A depleted prototype pool must never stall endless")
 
 func _test_course() -> void:
 	var sim := Sim.new(8821)

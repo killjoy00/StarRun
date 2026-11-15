@@ -1,5 +1,13 @@
 extends Node
 ## Original, pre-rendered stereo score and effects; presentation observes simulation only.
+const Catalog = preload("res://scripts/catalog.gd")
+const CUE_GROUPS := {
+	"aegis":"shield", "deflector":"shield", "barrier":"shield", "capacitor":"shield", "mend":"shield",
+	"barrage":"missile", "strike":"missile", "prism":"energy", "focus":"energy", "siphon":"energy",
+	"flak":"mine", "ion_mine":"mine", "wing_drones":"drone", "decoy":"drone",
+	"emp":"pulse", "jammer":"pulse", "nova":"pulse", "overload":"pulse",
+	"overdrive":"engine", "chrono":"energy", "reboot":"engine", "salvage":"drone"
+}
 var enabled := true
 var music_enabled := true
 var players: Array[AudioStreamPlayer] = []
@@ -24,6 +32,11 @@ func _ready() -> void:
 		players.append(player)
 	for id in ["pulse", "seeker", "explosion", "boss-explosion", "ready-aegis", "ready-nova", "aegis", "nova", "hit", "shield-break", "card", "start", "warning", "low-hull", "victory", "defeat", "barrage", "overdrive", "chrono", "mend", "ready-barrage", "ready-overdrive", "ready-chrono", "ready-mend"]:
 		sounds[id] = load("res://assets/audio/" + id + ".wav")
+	for id in Catalog.ABILITIES:
+		if not sounds.has(id):
+			sounds[id] = _synthesize_cue(id, false)
+		if not sounds.has("ready-" + id):
+			sounds["ready-" + id] = _synthesize_cue(id, true)
 	cruise = _loop("score-cruise")
 	boss = _loop("score-boss")
 	engine = _loop("engine")
@@ -38,6 +51,60 @@ func _loop(id: String) -> AudioStreamPlayer:
 	if DisplayServer.get_name() != "headless":
 		player.play()
 	return player
+
+## Separate cast and ready cues per active, grouped into recognizable timbres.
+## Runtime synthesis avoids loading dozens of large WAV files on phones.
+func _synthesize_cue(id: String, ready: bool) -> AudioStreamWAV:
+	var kind: String = str(CUE_GROUPS.get(id, "fusion"))
+	var seed_value := absi(id.hash() % 233)
+	var rate := 24000
+	var length := 0.19 if ready else (0.48 if kind in ["shield", "fusion"] else 0.34)
+	var samples := int(rate * length)
+	var pcm := PackedByteArray()
+	pcm.resize(samples * 2)
+	var base := 260.0 + float(seed_value) * 1.4
+	match kind:
+		"shield": base = 190.0 + float(seed_value) * 0.5
+		"missile": base = 120.0 + float(seed_value) * 0.4
+		"mine": base = 95.0 + float(seed_value) * 0.2
+		"drone": base = 600.0 + float(seed_value) * 0.8
+		"pulse": base = 285.0 + float(seed_value) * 0.7
+		"engine": base = 145.0 + float(seed_value) * 0.5
+		"fusion": base = 420.0 + float(seed_value) * 0.5
+	for i in range(samples):
+		var t := float(i) / float(rate)
+		var phase := t / length
+		var gain := minf(1.0, t * 170.0) * pow(1.0 - phase, 1.65)
+		var sweep := -0.52 if kind in ["mine", "missile", "engine"] else 0.28
+		var pitch := base * (1.0 + sweep * phase)
+		var note := sin(TAU * (base * t + base * sweep * t * t / (2.0 * length)))
+		if kind == "drone":
+			note = sin(TAU * (base * t + 24.0 * t * t)) * (0.3 + 0.7 * absf(sin(TAU * 10.0 * t)))
+		elif kind == "mine":
+			note = sin(TAU * pitch * t) * (0.35 + 0.65 * absf(sin(TAU * 7.0 * t)))
+		elif kind == "shield":
+			note = 0.60 * note + 0.40 * sin(TAU * base * 1.5 * t)
+		elif kind == "fusion":
+			note = 0.5 * note + 0.3 * sin(TAU * pitch * 1.5 * t) + 0.2 * sin(TAU * pitch * 2.0 * t)
+		else:
+			note = 0.75 * note + 0.25 * sin(TAU * (base * 2.0) * t)
+		if ready:
+			var pulse := 1.0 if t < 0.07 or (t > 0.10 and t < 0.17) else 0.0
+			gain *= pulse * 0.50
+		pcm.encode_s16(i * 2, clampi(roundi(note * gain * 21500.0), -32767, 32767))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = rate
+	stream.stereo = false
+	stream.data = pcm
+	return stream
+
+func play_ability(id: String) -> void:
+	if not sounds.has(id):
+		sounds[id] = _synthesize_cue(id, false)
+	if not sounds.has("ready-" + id):
+		sounds["ready-" + id] = _synthesize_cue(id, true)
+	play(id, -8.0)
 
 func play(id: String, gain_db: float = -10.0) -> void:
 	if not enabled or not sounds.has(id) or DisplayServer.get_name() == "headless":

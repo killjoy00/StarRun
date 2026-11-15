@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 128 128">
+<defs>
+<linearGradient id="metal" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#dbe6ed"/><stop offset=".34" stop-color="#8095a9"/><stop offset=".62" stop-color="#34495b"/><stop offset="1" stop-color="#182b3b"/></linearGradient>
+<linearGradient id="armor" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fe9a35"/><stop offset=".42" stop-color="#a4421f"/><stop offset="1" stop-color="#172334"/></linearGradient>
+<linearGradient id="engine" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffffff"/><stop offset=".36" stop-color="#fe9a35"/><stop offset="1" stop-color="#fe9a35" stop-opacity="0"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round">
+<path d="M64 2L79 34L81 57L94 52L110 71L127 112L94 101L82 118L64 105L46 118L34 101L1 112L18 71L34 52L47 57L49 34Z" fill="#0e141d" stroke="#0a1018" stroke-width="5"/>
+<path d="M64 7L75 38L72 92L64 110L56 92L53 38Z" fill="url(#armor)" stroke="#ffb264" stroke-width="2"/>
+<path d="M47 59L57 78L55 103L43 111L15 100L28 68Z M81 59L71 78L73 103L85 111L113 100L100 68Z" fill="#b45b24" stroke="#ffd3a1" stroke-width="1.8"/>
+<path d="M64 29L72 46L70 72L64 82L58 72L56 46Z" fill="#ffb23d" stroke="#ffe9ba" stroke-width="2"/>
+<path d="M27 67L39 63L42 96L24 99Z M101 67L89 63L86 96L104 99Z" fill="#2b333c" stroke="#f89d47" stroke-width="2"/>
+<g fill="#ff8936" stroke="#f1d19a" stroke-width="1"><circle cx="30" cy="72" r="3.4"/><circle cx="31" cy="82" r="3.4"/><circle cx="32" cy="92" r="3.4"/><circle cx="98" cy="72" r="3.4"/><circle cx="97" cy="82" r="3.4"/><circle cx="96" cy="92" r="3.4"/></g>
+<path d="M47 105L44 119L51 127L59 106Z M81 105L84 119L77 127L69 106Z" fill="url(#engine)"/>
+<path d="M35 103L46 114M93 103L82 114" stroke="#fff1dd" stroke-width="2"/></g>
+</svg>
