@@ -85,7 +85,7 @@ func _draw() -> void:
 		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.82, 0.86, 1.0, 0.16 + depth * 0.25) if sector != 4 else Color(1.0, 0.76, 0.45, 0.16 + depth * 0.25)
 		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
-	for i in range(9 if sim.stage == 1 else (3 if sim.stage == 2 else 0)):
+	for i in range(9 if visual_stage == 1 else (3 if visual_stage == 2 else 0)):
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
@@ -145,15 +145,17 @@ func _visual_theme_id() -> String:
 	return ["debris", "storm", "forge", "void"][(sim.stage - 1) % 4]
 
 func _sector(at: float) -> int:
-	if sim.stage > 1:
-		return sim.stage + 3
-	if at < 65.0:
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
+	if visual_stage > 1:
+		return visual_stage + 3
+	var elapsed: float = at - float(sim.stage_start)
+	if elapsed < 65.0:
 		return 0
-	if at < 125.0:
+	if elapsed < 125.0:
 		return 1
-	if at < 190.0:
+	if elapsed < 190.0:
 		return 2
-	if at < 240.0:
+	if elapsed < 240.0:
 		return 3
 	return 4
 
