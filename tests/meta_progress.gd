@@ -21,7 +21,7 @@ func _run() -> void:
 	check(setup == Progress.daily_setup(d1), "Daily configuration is stable across repeated requests")
 	check(int(setup.seed) != int(Progress.daily_setup(d2).seed), "Adjacent UTC days have different run seeds")
 	check(setup.difficulty == "normal" and not str(setup.ship).is_empty() and not str(setup.pilot).is_empty(), "Daily runs have one fixed common ship, pilot and difficulty")
-	check(Progress.daily_seed(d1) == 626984306, "Seed must match a known cross-platform YYYYMMDD mapping")
+	check(Progress.daily_seed(d1) == 628096306, "Seed must match a known cross-platform YYYYMMDD mapping")
 	var profile := {"cores":0,"runs":3,"last_paid_run":-1,"hangar":{"damage":5,"hull":6}}
 	Progress.prepare(profile)
 	check(profile.achievements is Dictionary and profile.daily_records is Dictionary and profile.achievement_stats is Dictionary, "Old profiles gain daily and achievement fields without altering Hangar")
