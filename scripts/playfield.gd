@@ -8,6 +8,11 @@ const THREAT_INK := Color("080e1c")
 const SHIELD := Color("80aaff")
 const SHIPS := {
 	"vanguard": preload("res://assets/art/vanguard.png"),
+	"kestrel": preload("res://assets/art/kestrel.svg"),
+	"bulwark": preload("res://assets/art/bulwark.svg"),
+	"wraith": preload("res://assets/art/wraith.svg"),
+	"arcwing": preload("res://assets/art/arcwing.svg"),
+	"haven": preload("res://assets/art/haven.svg"),
 	"drone": preload("res://assets/art/drone.png"),
 	"gunship": preload("res://assets/art/gunship.png"),
 	"sniper": preload("res://assets/art/sniper.png"),
@@ -287,30 +292,8 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 		var flame := PackedVector2Array([nozzle + Vector2(-5, 0), nozzle + Vector2(0, thrust * flicker), nozzle + Vector2(5, 0)])
 		draw_colored_polygon(flame, Color(0.24, 0.75, 1.0, 0.65))
 		draw_line(nozzle, nozzle + Vector2(0, thrust * 0.55 * flicker), Color("e5fcff"), 3, true)
-	var tint := Color.WHITE
-	match sim.ship_id:
-		"kestrel": tint = Color("82ffdf")
-		"bulwark": tint = Color("abc3de")
-		"wraith": tint = Color("ffd09e")
-		"arcwing": tint = Color("c5b4ff")
-		"haven": tint = Color("aaf2c6")
-	if sim.ship_id == "kestrel":
-		for side in [-1, 1]:
-			draw_colored_polygon(PackedVector2Array([Vector2(side*16,-22),Vector2(side*46,25),Vector2(side*12,12)]), Color("52dac8"))
-	elif sim.ship_id == "bulwark":
-		for side in [-1, 1]:
-			draw_rect(Rect2(Vector2(side*34-8,-18),Vector2(16,45)),Color("6d8ca5"))
-	elif sim.ship_id == "wraith":
-		for side in [-1, 1]:
-			draw_rect(Rect2(Vector2(side*31-7,-20),Vector2(14,36)),Color("e7a85c"))
-			draw_circle(Vector2(side*31,-22),7,Color("ffe4a6"))
-	elif sim.ship_id == "arcwing":
-		for side in [-1, 1]:
-			draw_polyline(PackedVector2Array([Vector2(side*14,-15),Vector2(side*44,5),Vector2(side*19,27)]),Color("baa5ff"),4)
-	elif sim.ship_id == "haven":
-		for side in [-1, 1]:
-			draw_circle(Vector2(side*33,0),12,Color("6dd9b0"))
-	draw_texture_rect(SHIPS.vanguard, Rect2(-38, -42, 76, 76), false, tint)
+	# Each unlocked chassis now uses its own silhouette and detailed sprite.
+	draw_texture_rect(SHIPS.get(sim.ship_id, SHIPS.vanguard), Rect2(-40, -45, 80, 80), false)
 	if sim.pulse_timer > 0.15:
 		_glow(Vector2(0, -35), 6, Color(0.6, 1, 0.9, 0.8))
 	draw_set_transform(Vector2.ZERO)
