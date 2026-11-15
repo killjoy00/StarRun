@@ -906,6 +906,24 @@ func _test_new_stage_threats() -> void:
 	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0, "Final boss must telegraph two distinct heavy lanes")
 	sim._hit(2.0, "void", "test")
 	check(sim.hull < sim.max_hull, "Void shots must meaningfully bypass shields")
+	var bleed := Sim.new(9081)
+	bleed.stage = 4
+	bleed._hit(10.0, "void", "test")
+	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * 0.20), "Citadel void must bypass 20% of shields, not the original 30%")
+	var early_lancer := Sim.new(9082)
+	early_lancer.stage = 4
+	early_lancer.time = 35.0
+	early_lancer.heavy_ready_at = 0.0
+	early_lancer._add_enemy("void_lancer",Vector2(250,150))
+	early_lancer._update_enemies()
+	check(early_lancer.charges.size() == 1 and is_equal_approx(early_lancer.heavy_ready_at - early_lancer.time,7.8), "Early Citadel lancer beams give new builds 7.8s between charges")
+	var late_lancer := Sim.new(9082)
+	late_lancer.stage = 4
+	late_lancer.time = 210.0
+	late_lancer.heavy_ready_at = 0.0
+	late_lancer._add_enemy("void_lancer",Vector2(250,150))
+	late_lancer._update_enemies()
+	check(late_lancer.charges.size() == 1 and is_equal_approx(late_lancer.heavy_ready_at - late_lancer.time,4.4), "Later Citadel attacks recover the original heavy cadence before the boss")
 
 func _balance(seeds: int) -> Dictionary:
 	var result: Dictionary = {}
