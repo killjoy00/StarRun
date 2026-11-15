@@ -137,6 +137,36 @@ jobs:
           path: /tmp/starrun-balance-*.log
           if-no-files-found: ignore
           retention-days: 14
+  real_campaign:
+    name: Real four-world completion (no forced boss kills)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: "Require a genuine four-world victory with offered draft cards"
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds=1 --seed-offset=1 --strategy=timed \
+            --ship=arcwing --difficulty=normal --build=focused \
+            --hangar=mid --pilot=rookie --trace --require-win \
+            2>&1 | tee /tmp/starrun-complete-campaign.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-campaign.log; then
+            echo "::error::Godot reported an error during full four-world gameplay"
+            exit 1
+          fi
+      - name: Preserve reproducible full-campaign evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-four-world-victory
+          path: /tmp/starrun-complete-campaign.log
+          if-no-files-found: ignore
+          retention-days: 30
   exports:
     name: Web, Windows, and Linux builds
     needs: simulation
