@@ -107,6 +107,22 @@ func _run() -> void:
 	check(Progress.progress(profile,"three_ships") >= 3 and profile.achievements.has("three_ships"), "At least three distinct winning ships earn the Fleet Commander milestone")
 
 	# A newly constructed profile cannot inherit progress from another test.
+	var share_text: String = Progress.daily_share_text(replay)
+	check(share_text.contains("Star/Run") and share_text.contains(d1) and share_text.contains("Score: %d" % Progress.daily_score(replay)), "Shared Daily scorecard contains brand, original UTC date and actual score")
+	check(share_text.contains("Worlds cleared: 2/4") and share_text.contains("Ship: ") and share_text.contains("Pilot: "), "Daily share text gives meaningful run context")
+	check(not share_text.contains(str(profile.get("last_paid_run"))), "Sharing a run never includes internal payout identifiers")
+	check(Progress.daily_share_text(normal).is_empty(), "Ordinary flights cannot masquerade as a shared Daily")
+	var gc_manifest: Dictionary = JSON.parse_string(FileAccess.get_file_as_string("res://data/game_center.json"))
+	check(gc_manifest.app_bundle == "com.rsm.starrun" and gc_manifest.leaderboard.id == "com.rsm.starrun.daily", "Apple Game Center contract matches the app's bundle and online Daily board")
+	var gc_points := 0
+	var identifiers := {}
+	for entry in gc_manifest.achievements:
+		gc_points += int(entry.points)
+		identifiers[str(entry.id)] = true
+		check(int(entry.points) <= 100 and int(entry.points) > 0, "Apple achievement must be worth between 1 and 100 points")
+	check(gc_points <= 1000 and gc_manifest.achievements.size() == Progress.ACHIEVEMENTS.size(), "Apple's 1000-point cap and achievement count are respected")
+	for achievement in Progress.ACHIEVEMENTS:
+		check(identifiers.has(str(achievement.id)), "Every local achievement has a matching Apple Game Center identifier")
 	var fresh := {"cores":0,"runs":0,"last_paid_run":-1}
 	Progress.prepare(fresh)
 	check(fresh.achievements.is_empty() and Progress.progress(fresh,"daily_first") == 0, "New profiles start with locked, not accidentally awarded, achievements")
