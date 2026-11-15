@@ -272,7 +272,8 @@ func _layout() -> void:
 		var cooldown_bar: ProgressBar = cooldown_meters[i]
 		cooldown_bar.position = Vector2(5.0, button.size.y - 6.0)
 		cooldown_bar.size = Vector2(button_width - 10.0, 3.0)
-		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
+		button.add_theme_stylebox_override("normal", _style(Color("103740") if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
+		button.add_theme_color_override("font_color", Color.WHITE)
 		for state in ["normal", "hover", "pressed", "disabled"]:
 			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
 			compact_style.content_margin_left = 4.0 if compact else 35.0

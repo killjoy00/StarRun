@@ -16,6 +16,7 @@ var stage := 1
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
 var encounter_index := 0
+var encounter_queue: Array = []
 var next_encounter_at := 50.0
 var boss_attack_pattern := "sweep"
 var cooldown_totals: Dictionary = {}
@@ -304,7 +305,7 @@ func stage_spec() -> Dictionary:
 		endless_stage_spec.fire_scale = float(baseline.fire_scale) * pow(1.07, depth)
 		endless_stage_spec.module_scale = float(baseline.module_scale) * pow(1.42, depth)
 		endless_stage_spec.transition = "ENDLESS %d" % (depth + 1)
-		endless_stage_spec.reward_label = "Endless world %d cleared" % depth
+		endless_stage_spec.reward_label = "ENDLESS RUN · BONUS %d" % depth
 	return endless_stage_spec
 
 func boss_name() -> String:
@@ -601,6 +602,12 @@ func _spawn_enemy() -> void:
 			if stage_time > 110:
 				pool.append_array(["echo_carrier", "void_lancer", "arc_spire", "slag_bomber"])
 
+	if not encounter_queue.is_empty():
+		# A formation consumes normal spawn opportunities, not extra waves of XP.
+		var formation_slot: int = 3 - encounter_queue.size()
+		var queued_kind: String = str(encounter_queue.pop_front())
+		_add_enemy(queued_kind, Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0))
+		return
 	if endless_enabled and stage > int(content.stage_count):
 		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
@@ -615,7 +622,7 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 ## Encounter variants are reproducible by seed. Each has a different timing demand:
 ## armored escorts, mine-heavy bomber convoys, or protected carrier launches.
 func _spawn_encounter() -> void:
-	if enemies.size() >= _enemy_limit() - 5:
+	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
 	var ecology := ((stage - 1) % int(content.stage_count)) + 1
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
@@ -631,8 +638,7 @@ func _spawn_encounter() -> void:
 		2:
 			formation = ["carrier", "gunship", "interceptor"] if ecology == 1 else (["carrier", "shieldguard", "disruptor"] if ecology == 2 else (["carrier", "slag_bomber", "ember_hunter"] if ecology == 3 else ["echo_carrier", "phase_stalker", "gravity_sentinel"]))
 			_log("ELITE CARRIER - prioritize the launch ship")
-	for i in range(formation.size()):
-		_add_enemy(str(formation[i]), Vector2(120.0 + i * 150.0, -50.0 - i * 65.0))
+	encounter_queue = formation.duplicate()
 
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
@@ -647,6 +653,7 @@ func _spawn_hazard() -> void:
 	_log("Incoming %s" % kind.replace("_", " "))
 
 func _spawn_boss() -> void:
+	encounter_queue.clear()
 	boss_spawned = true
 	boss_spawn_time = time
 	# The safeguard is once per stage; spawning the boss must not recharge it.
@@ -688,6 +695,7 @@ func advance_stage() -> bool:
 	ion_mines.clear()
 	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	encounter_index = 0
+	encounter_queue.clear()
 	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
 	endless_stage_spec.clear()
 	stage_start = time
@@ -1657,7 +1665,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "endless_enabled", "encounter_index", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

@@ -55,6 +55,8 @@ func _run() -> void:
 			_prepare(scene, screen)
 			scene._update_hud()
 			scene._process(0.0)
+			# Capture the final frame after the 150ms sheet slide, not the dim fade-in.
+			await create_timer(0.20).timeout
 			await process_frame
 			await RenderingServer.frame_post_draw
 			var picture := root.get_texture().get_image()
