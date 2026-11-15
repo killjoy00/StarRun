@@ -64,7 +64,13 @@ func _run() -> void:
 		check(scene.field.position.x >= 0 and scene.field.end.x <= logical.x, "Playfield must fit horizontally")
 		check(scene.ability_a.get_global_rect().end.y <= logical.y, "Controls must fit below playfield")
 		check(scene.ability_a.get_global_rect().end.x <= scene.ability_b.position.x, "Ability buttons must not overlap")
+		check(scene.hull_meter.value == 100.0 and scene.shield_meter.value == 100.0, "Full hull and shield must fill both HUD bars")
+		check(scene.hull_caption.text.begins_with("HULL") and scene.shield_caption.text.begins_with("SHIELD"), "Meters must be labeled with current and max values")
+		check(scene.hull_meter.get_global_rect().end.x < scene.shield_meter.get_global_rect().position.x, "Hull and shield meters must have a visible gap")
+		check(scene.ability_buttons[0].get_child(0).visible and scene.cooldown_meters[0].value == 100.0, "Ability insignia and ready-state cooldown bar must be visible")
 		if logical.x < 760:
+			check(scene.hud.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Combat heading must not overlap Build")
+			check(scene.status.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Timer must not overlap Build")
 			check(scene.ability_buttons[0].position.y == scene.ability_buttons[3].position.y, "All four combat buttons should share one row on phones")
 			check(scene.ability_buttons[0].size.x >= 75.0, "Phone combat buttons need usable width")
 		for button in scene.ability_buttons.values():
