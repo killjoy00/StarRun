@@ -7,7 +7,7 @@ static func key(host, event: InputEvent) -> void:
 		host._toggle_pause()
 		host.get_viewport().set_input_as_handled()
 	elif host.mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
-		if stage_clear_clock >= 1.2:
+		if host.stage_clear_clock >= 1.2:
 			host._begin_warp()
 		host.get_viewport().set_input_as_handled()
 	elif host.mode == "playing":
