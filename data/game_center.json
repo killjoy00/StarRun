@@ -1,0 +1,131 @@
+{
+  "app_bundle": "com.rsm.starrun",
+  "leaderboard": {
+    "id": "com.rsm.starrun.daily",
+    "name": "Star/Run Daily Challenge",
+    "score_max": 1000000,
+    "recurrence": "FREQ=DAILY;INTERVAL=1",
+    "duration": "PT24H"
+  },
+  "achievements": [
+    {
+      "id": "first_finish",
+      "name": "First Debrief",
+      "description": "Finish your first flight.",
+      "points": 10,
+      "icon": "flight"
+    },
+    {
+      "id": "five_runs",
+      "name": "Back in the Cockpit",
+      "description": "Finish five flights.",
+      "points": 20,
+      "icon": "flight"
+    },
+    {
+      "id": "twenty_runs",
+      "name": "Seasoned Pilot",
+      "description": "Finish twenty flights.",
+      "points": 40,
+      "icon": "flight"
+    },
+    {
+      "id": "first_boss",
+      "name": "Break the Belt",
+      "description": "Defeat the Harvester in World 1.",
+      "points": 15,
+      "icon": "boss"
+    },
+    {
+      "id": "second_boss",
+      "name": "Ride the Storm",
+      "description": "Defeat the Storm Carrier in World 2.",
+      "points": 25,
+      "icon": "boss"
+    },
+    {
+      "id": "third_boss",
+      "name": "Out of the Forge",
+      "description": "Defeat the Crucible Engine in World 3.",
+      "points": 35,
+      "icon": "boss"
+    },
+    {
+      "id": "fourth_boss",
+      "name": "Star Runner",
+      "description": "Complete the four-world campaign.",
+      "points": 60,
+      "icon": "boss"
+    },
+    {
+      "id": "hard_win",
+      "name": "Against the Odds",
+      "description": "Win a campaign on Hard.",
+      "points": 70,
+      "icon": "mastery"
+    },
+    {
+      "id": "insane_win",
+      "name": "Beyond Reason",
+      "description": "Win a campaign on Insane.",
+      "points": 100,
+      "icon": "mastery"
+    },
+    {
+      "id": "three_ships",
+      "name": "Fleet Commander",
+      "description": "Win with three different ships.",
+      "points": 70,
+      "icon": "fleet"
+    },
+    {
+      "id": "fusion",
+      "name": "Two Become One",
+      "description": "Finish a flight with a fused ability.",
+      "points": 40,
+      "icon": "fusion"
+    },
+    {
+      "id": "prototypes",
+      "name": "Experimental",
+      "description": "Carry three Prototypes into the same flight.",
+      "points": 40,
+      "icon": "prototype"
+    },
+    {
+      "id": "interrupted",
+      "name": "Cut the Signal",
+      "description": "Cancel five heavy-beam charges in one flight.",
+      "points": 45,
+      "icon": "tactics"
+    },
+    {
+      "id": "defended",
+      "name": "Nothing Gets Through",
+      "description": "Prevent 500 damage in a single flight.",
+      "points": 45,
+      "icon": "tactics"
+    },
+    {
+      "id": "daily_first",
+      "name": "Clockwork Pilot",
+      "description": "Finish a daily challenge.",
+      "points": 20,
+      "icon": "daily"
+    },
+    {
+      "id": "daily_seven",
+      "name": "Regular Orbit",
+      "description": "Finish Daily Challenges on seven different UTC dates.",
+      "points": 60,
+      "icon": "daily"
+    },
+    {
+      "id": "endless_six",
+      "name": "Beyond the Chart",
+      "description": "Clear World 6 in Endless mode.",
+      "points": 90,
+      "icon": "endless"
+    }
+  ]
+}
