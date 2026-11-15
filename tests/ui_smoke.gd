@@ -120,7 +120,7 @@ func _run() -> void:
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
 		scene._show_achievements()
 		await process_frame
-		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "First Debrief"), "The achievements page lists locked milestones")
+		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.size.y > 100 and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Achievements page must wrap and scroll at every viewport")
 		scene._show_menu()
 		for sheet in ["settings", "briefing", "pause"]:
