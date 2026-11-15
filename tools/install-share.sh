@@ -41,12 +41,12 @@ with zipfile.ZipFile(path) as archive:
     for info in archive.infolist():
         entry = pathlib.PurePosixPath(info.filename)
         assert not entry.is_absolute() and ".." not in entry.parts and "\\" not in info.filename, "Unsafe share archive entry"
-        assert info.filename.startswith(("ios/plugins/", "addons/")), "Unexpected share archive path"
+        assert info.filename.startswith(("ios/", "addons/")), f"Unexpected share archive path: {info.filename}"
         assert not stat.S_ISLNK(info.external_attr >> 16), "Symlink forbidden in share archive"
     assert "ios/plugins/SharePlugin.gdip" in names, "Missing native plugin descriptor"
     assert any(p.startswith("ios/plugins/SharePlugin.release.xcframework/") for p in names), "Missing native release library"
     # Extract the iOS-specific binaries only; no Android/editor addon required.
-    archive.extractall(".", members=[i for i in archive.infolist() if i.filename.startswith("ios/plugins/")])
+    archive.extractall(".", members=[i for i in archive.infolist() if i.filename.startswith("ios/")])
 assert pathlib.Path("ios/plugins/SharePlugin.gdip").is_file()
 assert pathlib.Path("ios/plugins/SharePlugin.release.xcframework").is_dir()
 print(f"Verified {name} (SHA-256 {actual}) and installed native iOS share sheet")
