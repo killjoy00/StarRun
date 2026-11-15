@@ -38,7 +38,7 @@ static func daily_setup(day: String) -> Dictionary:
 	return {
 		"day":day, "seed":daily_seed(day),
 		"ship":str(ships[posmod(ordinal, ships.size())].id),
-		"pilot":str(pilots[posmod(ordinal / 7, pilots.size())].id),
+		"pilot":str(pilots[posmod(int(ordinal / 7), pilots.size())].id),
 		"difficulty":"normal"
 	}
 
