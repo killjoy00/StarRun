@@ -7,6 +7,7 @@ const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
 const IconBadge = preload("res://scripts/icon_badge.gd")
 const CombatHud = preload("res://scripts/combat_hud.gd")
+const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const CYAN := Color("66f5df")
@@ -1982,48 +1983,10 @@ func _notification(what: int) -> void:
 		get_tree().quit()
 
 func _input(event: InputEvent) -> void:
-	if not event is InputEventKey or not event.pressed or event.echo:
-		return
-	if event.keycode in [KEY_ESCAPE, KEY_P] and mode in ["playing", "paused", "build"]:
-		_toggle_pause()
-		get_viewport().set_input_as_handled()
-	elif mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
-		if stage_clear_clock >= 1.2:
-			_begin_warp()
-		get_viewport().set_input_as_handled()
-	elif mode == "playing":
-		if event.keycode == KEY_B:
-			_show_build()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_TAB:
-			_cycle_speed()
-			get_viewport().set_input_as_handled()
-		elif event.keycode == KEY_SPACE or (event.keycode >= KEY_1 and event.keycode <= KEY_4):
-			_activate_slot(0 if event.keycode == KEY_SPACE else event.keycode - KEY_1)
-			get_viewport().set_input_as_handled()
-	elif mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
-		_choose(event.keycode - KEY_1)
-		get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and mode in ["settings", "briefing", "abandon"]:
-		_close_sheet()
-		get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and mode in ["hangar", "loadout"]:
-		if mode == "loadout":
-			_loadout_back()
-		else:
-			_show_menu()
-		get_viewport().set_input_as_handled()
+	InputRouter.key(self, event)
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event is InputEventJoypadButton and event.pressed:
-		if event.button_index == JOY_BUTTON_START:
-			_toggle_pause()
-		elif mode == "playing":
-			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B]
-			var index := bindings.find(event.button_index)
-			if index >= 0:
-				_activate_slot(index)
-
+	InputRouter.gamepad(self, event)
 
 func _sector_name(at: float) -> String:
 	if sim.stage > 1:
