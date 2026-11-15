@@ -4,6 +4,7 @@ const FusionArt = preload("res://scripts/fusion_art.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const VIOLET := Color("b3a3ff")
+const TRACK_ICONS := {"beam_plating": "armor", "shield_restart": "regen", "hazard_seals": "insulation", "warp_repairs": "mend", "arc_start": "arc", "lance_start": "pulse", "boss_damage": "boss_hunter", "ordnance_damage": "seeker", "signature_rank": "amplifier", "cast_repair": "repair", "opening_charge": "coolant", "reroll_focus": "rerolls", "banish_relay": "banishes", "skip_patch": "skips", "module_salvage": "cores", "clean_clear": "bounty"}
 var icon_id := "pulse"
 
 func _ready() -> void:
@@ -11,21 +12,33 @@ func _ready() -> void:
 	custom_minimum_size = Vector2(32, 32)
 
 func _draw() -> void:
+	var display_id: String = str(TRACK_ICONS.get(icon_id,icon_id))
 	var s := minf(size.x, size.y) / 36.0
 	var center := size * 0.5
 	var color := CYAN
-	if icon_id in ["seeker", "barrage", "missile_bomber", "mine", "station", "bounty", "wraith"]:
+	if display_id in ["seeker", "barrage", "missile_bomber", "mine", "station", "bounty", "wraith"]:
 		color = AMBER
-	elif icon_id in ["arc", "arcwing", "chrono", "coolant", "tactician", "nyx"]:
+	elif display_id in ["arc", "arcwing", "chrono", "coolant", "tactician", "nyx"]:
 		color = VIOLET
 	draw_set_transform(center, 0.0, Vector2.ONE * s)
-	if FusionArt.PALETTES.has(icon_id):
-		FusionArt.badge(self, icon_id)
+	if FusionArt.PALETTES.has(display_id):
+		FusionArt.badge(self, display_id)
 		draw_set_transform(Vector2.ZERO)
 		return
 	draw_circle(Vector2.ZERO, 17.0, Color(color, 0.08))
 	draw_arc(Vector2.ZERO, 16.0, 0.0, TAU, 28, Color(color, 0.45), 1.3, true)
-	match icon_id:
+	match display_id:
+		"wing_drones":
+			for side in [-1,1]:
+				var p := Vector2(side*7,0)
+				draw_colored_polygon(PackedVector2Array([p+Vector2(0,-10),p+Vector2(5,6),p,p+Vector2(-5,6)]),CYAN)
+				draw_line(p+Vector2(0,6),p+Vector2(0,11),Color.WHITE,1.6,true)
+		"ion_mine":
+			draw_colored_polygon(FusionArt.polygon(Vector2.ZERO,7,4),VIOLET)
+			for i in range(4):
+				var v := Vector2.from_angle(i*TAU/4)
+				draw_line(v*8,v*13,CYAN,2,true)
+			draw_circle(Vector2.ZERO,2,Color.WHITE)
 		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard", "ablative", "insulation", "shield_surge", "shield_focus":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
 			points.append(points[0])

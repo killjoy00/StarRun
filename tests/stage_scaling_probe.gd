@@ -13,7 +13,8 @@ func _run() -> void:
 	var idle: bool = "--idle" in OS.get_cmdline_user_args()
 	var late: bool = "--late-passives" in OS.get_cmdline_user_args()
 	var seeds := [2503] if "--quick" in OS.get_cmdline_user_args() else [2503, 7907]
-	for stage in [2,3,4]:
+	var carrier: bool = "--carrier" in OS.get_cmdline_user_args()
+	for stage in ([4] if carrier else [2,3,4]):
 		for profile in ["mid", "full"]:
 			for seed in seeds:
 				var meta := Catalog.defaults()
@@ -29,6 +30,11 @@ func _run() -> void:
 				sim.shield = sim.max_shield
 				sim.active_slots = ["aegis","nova","mend","capacitor"]
 				sim._try_fuse()
+				if carrier:
+					for part in ["wing_drones","ion_mine"]:
+						sim.active_slots.append(part)
+						sim.upgrades[part] = 5
+					sim._try_fuse()
 				sim.stage = stage
 				if late:
 					for id in ["boss_hunter", "finisher", "opening_salvo", "ablative", "insulation", "shield_surge", "field_medic", "last_stand", "shield_focus", "afterburn"]:
@@ -50,6 +56,7 @@ func _run() -> void:
 						sim.activate("repair_matrix")
 						sim.activate("mend")
 						sim.activate("capacitor")
+					if carrier and not idle and (sim.boss_spawned or sim.enemies.size() >= 3): sim.activate("storm_carrier")
 					sim.step()
 					sim.effects.clear()
 					max_bullets = maxi(max_bullets, sim.bullets.size())

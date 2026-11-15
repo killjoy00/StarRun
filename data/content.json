@@ -82,6 +82,14 @@
     "salvage": {
       "name": "Salvage surge",
       "cooldown": 28
+    },
+    "wing_drones": {
+      "name": "Wing drones",
+      "cooldown": 18
+    },
+    "ion_mine": {
+      "name": "Ion mine",
+      "cooldown": 15
     }
   },
   "enemies": {
@@ -645,6 +653,24 @@
       "rank5": "Another 10% firing speed",
       "rank10": "Another 15% firing speed",
       "min_stage": 2
+    },
+    {
+      "id": "wing_drones",
+      "name": "Wing drones",
+      "tag": "ABILITY",
+      "description": "Launch escort drones that fire at nearby enemies.",
+      "max": 10,
+      "rank5": "A third escort joins the wing",
+      "rank10": "A fourth escort joins the wing"
+    },
+    {
+      "id": "ion_mine",
+      "name": "Ion mine",
+      "tag": "ABILITY",
+      "description": "Place a timed mine near the closest enemy. Its blast hits enemies and clears nearby shots.",
+      "max": 10,
+      "rank5": "Larger blast radius",
+      "rank10": "Drop two mines at once"
     }
   ],
   "stage_count": 4,
@@ -878,6 +904,16 @@
       ],
       "cooldown": 33,
       "description": "Detonate incoming shots and cut cooldowns on your other abilities."
+    },
+    {
+      "id": "storm_carrier",
+      "name": "Storm Carrier",
+      "parts": [
+        "wing_drones",
+        "ion_mine"
+      ],
+      "cooldown": 22,
+      "description": "Launch four escort drones and a spread of three ion mines."
     }
   ],
   "passive_links": [

@@ -30,6 +30,12 @@ var shield_offline := 0.0
 var aegis_left := 0.0
 var cooldowns := {"aegis": 0.0, "nova": 0.0, "barrage": 0.0, "overdrive": 0.0, "chrono": 0.0, "mend": 0.0}
 var upgrades := {"pulse": 1, "seeker": 1, "armor": 0, "regen": 0, "hull": 0, "coolant": 0, "aegis": 0, "nova": 0}
+var stage_casts: Dictionary = {}
+var escort_left := 0.0
+var escort_timer := 0.0
+var escort_count := 0
+var escort_damage := 0.0
+var ion_mines: Array = []
 var aftercast_left := 0.0
 var overdrive_left := 0.0
 var chrono_left := 0.0
@@ -119,10 +125,11 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	shield = max_shield
 	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
-	upgrades.arc = int(chassis.arc)
+	upgrades.arc = int(chassis.arc) + int(meta.arc_start)
+	upgrades.lance = int(meta.lance_start)
 	upgrades.mend = int(chassis.mend)
 	var signature: String = chassis.signature
-	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0)))
+	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0))) + int(meta.signature_rank)
 	active_slots = [signature]
 	pilot_rerolls_left = 1 if pilot_id == "tactician" else 0
 	rerolls_left = meta.rerolls + pilot_rerolls_left
@@ -254,6 +261,7 @@ func step() -> void:
 		next_hazard = time + rng.randf_range(15.0, 23.0)
 	_update_enemies()
 	_update_charges()
+	_update_support()
 	_update_weapons()
 	_update_bullets()
 	_update_shots()
@@ -301,7 +309,7 @@ func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
 
 func status_duration_scale() -> float:
-	return 1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)
+	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
 
 func _source_active(id: String) -> bool:
 	if id in active_slots:
@@ -599,6 +607,11 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	stage_casts.clear()
+	banishes_left += int(meta.banish_relay)
+	escort_left = 0.0
+	escort_timer = 0.0
+	ion_mines.clear()
 	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	stage_start = time
 	boss_spawned = false
@@ -614,7 +627,7 @@ func advance_stage() -> bool:
 	stage_power = 1.25 if route_choice == "overclock" else 1.0
 	stage_risk = 1.30 if route_choice == "bounty" else 1.0
 	var repair_fraction := 0.55 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.30)
-	hull = minf(max_hull, hull + max_hull * repair_fraction)
+	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
 	shield = max_shield * (0.60 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
 	next_spawn = time + 1.5
@@ -762,6 +775,64 @@ func _update_charges() -> void:
 				_hit(charge.damage, "heavy", boss_name() if boss_spawned else "Heavy lancer")
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
+func escort_position(index: int) -> Vector2:
+	var side := -1.0 if index % 2 == 0 else 1.0
+	var p := ship_position() + Vector2(side * (46.0 + (index / 2) * 22.0), 8.0 + (index / 2) * 22.0)
+	return Vector2(clampf(p.x,12,528),p.y)
+
+func _launch_escorts(count: int, duration: float, damage: float) -> void:
+	escort_count = count
+	escort_left = duration
+	escort_damage = damage
+	escort_timer = 0.0
+
+func _deploy_ion_mines(count: int, damage: float, radius: float) -> void:
+	var target := _nearest(ship_position())
+	var anchor: Vector2 = target.p + Vector2(0,100) if not target.is_empty() else ship_position() + Vector2(0,-170)
+	for i in range(count):
+		var p := anchor + Vector2((i - (count-1)*0.5)*100.0,0)
+		p.x = clampf(p.x,25,515)
+		p.y = clampf(p.y,65,865)
+		ion_mines.append({"p":p,"fuse":1.8,"damage":damage,"radius":radius})
+	while ion_mines.size() > 6: ion_mines.pop_front()
+
+func _update_support() -> void:
+	if escort_left > 0.0:
+		escort_left = maxf(0.0,escort_left-DT)
+		escort_timer -= DT
+		if escort_timer <= 0.0 and escort_left > 0.0:
+			escort_timer += 0.5
+			for i in range(escort_count):
+				var p := escort_position(i)
+				var target := _nearest(p)
+				if not target.is_empty() and shots.size() < 500:
+					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":escort_damage,"weapon":"escort","target":int(target.id)})
+	var armed: Array = []
+	for mine in ion_mines:
+		mine.fuse -= DT
+		var contact: bool = mine.fuse < 1.45 and enemies.any(func(e): return e.hp > 0 and e.p.distance_squared_to(mine.p) <= 90.0*90.0)
+		if mine.fuse > 0.0 and not contact:
+			armed.append(mine)
+			continue
+		var radius_squared: float = mine.radius * mine.radius
+		for enemy in enemies:
+			if enemy.p.distance_squared_to(mine.p) <= radius_squared:
+				_damage_enemy(enemy,mine.damage,"ion_mine")
+		var kept: Array = []
+		for bullet in bullets:
+			if bullet.p.distance_squared_to(mine.p) <= radius_squared:
+				prevented += float(bullet.get("damage",0.0))
+			else: kept.append(bullet)
+		bullets = kept
+		effects.append({"kind":"ion-burst","p":mine.p,"radius":mine.radius,"life":0.65,"max_life":0.65,"born":tick})
+	ion_mines = armed
+
+func _focus_reroll() -> void:
+	if cards.any(func(card): return int(upgrades.get(card.id,0)) > 0): return
+	var available: Array = content.cards.filter(func(card): return int(upgrades.get(card.id,0)) > 0 and int(upgrades[card.id]) < int(card.max) and card.id not in banished and fused_into(str(card.id)).is_empty() and (fusion_spec(str(card.id)).is_empty() or card.id in active_slots) and stage >= int(card.get("min_stage",1)))
+	if not available.is_empty() and not cards.is_empty():
+		cards[-1] = available[rng.randi_range(0,available.size()-1)].duplicate(true)
+
 func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
 	if rank_at("autoloader", 5): rate += 0.15
@@ -805,7 +876,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -1008,7 +1079,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		return
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
-			amount *= 1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)
+			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if is_equal_approx(float(enemy.hp), float(enemy.max_hp)):
@@ -1035,6 +1106,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	kills += 1
 	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
+		bonus_cores += int(meta.module_salvage)
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
@@ -1053,6 +1125,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		for i in range(2):
 			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
 	if is_boss:
+		if hull > max_hull * 0.60:
+			bonus_cores += int(meta.clean_clear) * 3
 		if stage_risk > 1.0:
 			var reward: int = 20 * stage
 			bonus_cores += reward
@@ -1076,7 +1150,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		return
 	var reduced := amount * stage_risk
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
-		reduced *= 1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)
+		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
@@ -1103,7 +1177,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
-		shield_offline = 1.5 if passive_link_active("shield_cycle") else 3.0
+		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
@@ -1131,6 +1205,10 @@ func activate(ability: String) -> bool:
 	ability_uses += 1
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
 	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
+	if not stage_casts.has(ability):
+		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10
+		stage_casts[ability] = true
+	hull = minf(max_hull, hull + meta.cast_repair)
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
 	_log(str(content.abilities[ability].name) + " used")
@@ -1239,9 +1317,13 @@ func activate(ability: String) -> bool:
 		for id in active_slots:
 			if id != "reboot":
 				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot * effect_strength)
+	elif ability == "wing_drones":
+		_launch_escorts(2 + int(rank_at("wing_drones",5)) + int(rank_at("wing_drones",10)), (6.0 + (upgrades.wing_drones-1)*0.35) * effect_strength, (12.0 + upgrades.wing_drones*2.5) * effect_strength)
+	elif ability == "ion_mine":
+		_deploy_ion_mines(2 if rank_at("ion_mine",10) else 1, (150.0+upgrades.ion_mine*24.0)*effect_strength, 190.0 if rank_at("ion_mine",5) else 150.0)
 	elif ability == "salvage":
 		salvage_left = (10.0 + upgrades.salvage * 1.0) * effect_strength
-	if ability not in ["aegis", "nova"]:
+	if ability not in ["aegis", "nova", "ion_mine"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
 
@@ -1349,6 +1431,9 @@ func _activate_fusion(id: String, strength: float) -> void:
 			var stopped := bullets.filter(func(b): return b.kind == "ordnance").size()
 			bullets = bullets.filter(func(b): return b.kind != "ordnance")
 			prevented += stopped * 12.0
+		"storm_carrier":
+			_launch_escorts(4, 8.0 * strength, 30.0 * strength)
+			_deploy_ion_mines(3, 260.0 * strength, 190.0)
 		"reactor_surge":
 			for slot in active_slots:
 				if str(slot) != id:
@@ -1408,6 +1493,7 @@ func reroll_cards() -> bool:
 		pilot_rerolls_left = maxi(0, pilot_rerolls_left - 1)
 	rerolls_left -= 1
 	_offer_cards(false)
+	if int(meta.reroll_focus) > 0: _focus_reroll()
 	return true
 
 func banish_card(index: int) -> bool:
@@ -1422,7 +1508,7 @@ func skip_cards() -> bool:
 	if cards.is_empty() or skips_left <= 0:
 		return false
 	skips_left -= 1
-	hull = minf(max_hull, hull + 12)
+	hull = minf(max_hull, hull + 12 + meta.skip_patch * 6)
 	cards.clear()
 	return true
 
@@ -1487,7 +1573,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 

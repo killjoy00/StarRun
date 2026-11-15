@@ -3,7 +3,7 @@ extends RefCounted
 const ACTIVE_SLOTS := 4
 const DIFFICULTIES := ["normal", "hard", "insane"]
 const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
-const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage"]
+const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine"]
 
 # These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
 const PILOTS := [
@@ -46,7 +46,23 @@ const HANGAR := [
 	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"Earn 6% more XP from kills per rank.", "max":5, "cost":6, "step":2},
 	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"Earn 8% more cores after every flight.", "max":5, "cost":6, "step":2},
 	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every flight pays at least 2 additional cores per rank.", "max":3, "cost":8, "step":3},
-	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"Earn 5 additional cores per rank for a boss clear.", "max":3, "cost":8, "step":4}
+	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"Earn 5 additional cores per rank for a boss clear.", "max":3, "cost":8, "step":4},
+	{"id":"beam_plating","name":"Ablative panels","group":"Hull","description":"Beam, missile and mine hits deal 3% less damage per rank.","max":4,"cost":12,"step":5},
+	{"id":"shield_restart","name":"Restart circuit","group":"Hull","description":"Shields recover from a break 0.2 seconds sooner per rank.","max":4,"cost":12,"step":5},
+	{"id":"hazard_seals","name":"Sealed systems","group":"Hull","description":"Status effects last 5% less per rank.","max":4,"cost":14,"step":5},
+	{"id":"warp_repairs","name":"Docking crew","group":"Hull","description":"Repair an extra 4% of maximum hull between worlds per rank.","max":3,"cost":14,"step":7},
+	{"id":"arc_start","name":"Charged coil","group":"Weapons","description":"Start each flight with one extra Arc Coil rank.","max":1,"cost":35,"step":0},
+	{"id":"lance_start","name":"Lance mount","group":"Weapons","description":"Start each flight with a rank-1 Lance.","max":1,"cost":40,"step":0},
+	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Automatic weapons deal 3% more damage to bosses and their parts per rank.","max":5,"cost":14,"step":6},
+	{"id":"ordnance_damage","name":"Warhead tooling","group":"Weapons","description":"Seeker Pods deal 5% more damage per rank.","max":4,"cost":12,"step":5},
+	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship’s starting ability gains one rank per purchase.","max":2,"cost":16,"step":10},
+	{"id":"cast_repair","name":"Field patch kit","group":"Abilities","description":"Each ability use repairs 1 hull per rank.","max":3,"cost":18,"step":8},
+	{"id":"opening_charge","name":"Hot start","group":"Abilities","description":"The first use of each ability per world recharges 10% sooner per rank.","max":3,"cost":18,"step":8},
+	{"id":"reroll_focus","name":"Focused uplink","group":"Tactics","description":"Rerolls include an upgrade you own, when one remains available.","max":1,"cost":35,"step":0},
+	{"id":"banish_relay","name":"Banish relay","group":"Tactics","description":"Regain one upgrade removal per rank when entering a new world.","max":2,"cost":20,"step":12},
+	{"id":"skip_patch","name":"Repair stores","group":"Tactics","description":"Skipping a draft repairs 6 extra hull per rank.","max":3,"cost":8,"step":4},
+	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each destroyed boss part pays 1 extra core per rank.","max":3,"cost":18,"step":8},
+	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Clear a world above 60% hull for 3 extra cores per rank.","max":3,"cost":18,"step":8}
 ]
 
 static func defaults() -> Dictionary:

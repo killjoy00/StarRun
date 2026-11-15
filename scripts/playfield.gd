@@ -88,7 +88,7 @@ func _draw() -> void:
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
 	for shot in sim.shots:
-		var color := CYAN if shot.weapon == "pulse" else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
+		var color := CYAN if shot.weapon in ["pulse", "escort"] else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
 		if shot.has("fusion"):
 			color = FusionArt.PALETTES[str(shot.fusion)][0]
 		var direction: Vector2 = shot.v.normalized()
@@ -102,6 +102,7 @@ func _draw() -> void:
 	for enemy in sim.enemies:
 		_draw_enemy(enemy)
 	_draw_player(ship, velocity)
+	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
 		if effect.kind not in ["beam", "shield-break", "fusion-formed"]:
@@ -585,7 +586,17 @@ func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
 	var age := 1.0 - alpha
 	var p: Vector2 = effect.p
-	if effect.kind == "fusion-cast":
+	if effect.kind in ["ion-burst","ion_mine"]:
+		var radius: float = float(effect.get("radius",60.0))*age
+		for i in range(6):
+			var angle: float = i*TAU/6
+			draw_arc(p,radius,angle,angle+TAU/9,20,Color("bba5ef",alpha),2.5,true)
+			var point := p+Vector2.from_angle(angle)*radius*0.75
+			draw_circle(point,2,Color(CYAN,alpha))
+	elif effect.kind == "wing_drones":
+		for side in [-1,1]:
+			draw_arc(p+Vector2(side*46,8),18+age*24,-PI,0,24,Color(CYAN,alpha),2,true)
+	elif effect.kind == "fusion-cast":
 		_draw_fusion_cast(effect, alpha, age)
 	elif effect.kind == "fusion-formed":
 		_draw_fusion_formed(effect, alpha, age)
@@ -670,6 +681,12 @@ func _draw_fusion_cast(effect: Dictionary, alpha: float, age: float) -> void:
 	var spread := 1.0 - pow(1.0-age,3)
 	var count := 6 if profile.reduced else 12
 	match id:
+		"storm_carrier":
+			for i in range(4):
+				var node: Vector2 = sim.escort_position(i)
+				draw_line(p,node,Color(a,alpha*0.5),1.6,true)
+				FusionArt.outline(self,FusionArt.polygon(node,18+age*16,4),b,1.8)
+			FusionArt.outline(self,FusionArt.polygon(p+Vector2(0,-45),22,4),a,2)
 		"nova_aegis":
 			var r := 48.0 + spread * (210.0 if effect.get("counter",false) else 140.0)
 			FusionArt.outline(self,FusionArt.polygon(p,54),a,2.5)
@@ -782,3 +799,22 @@ func _glow(p: Vector2, radius: float, color: Color) -> void:
 func _bar(rect: Rect2, fraction: float, color: Color) -> void:
 	draw_rect(rect, Color("1d2a3b"))
 	draw_rect(Rect2(rect.position, Vector2(rect.size.x * clampf(fraction, 0, 1), rect.size.y)), color)
+
+func _draw_support() -> void:
+	if sim.escort_left > 0.0:
+		for i in range(sim.escort_count):
+			var p: Vector2 = sim.escort_position(i)
+			var hull := PackedVector2Array([p+Vector2(0,-14),p+Vector2(10,9),p+Vector2(3,5),p+Vector2(0,10),p+Vector2(-3,5),p+Vector2(-10,9)])
+			draw_colored_polygon(hull,Color("244450"))
+			FusionArt.outline(self,hull,Color("a9d8e1"),1.4)
+			draw_line(p+Vector2(0,-7),p+Vector2(0,3),CYAN,2.2,true)
+			draw_line(p+Vector2(0,10),p+Vector2(0,19),Color("badcf4"),2,true)
+	for mine in sim.ion_mines:
+		var p: Vector2 = mine.p
+		var progress: float = clampf(1.0-mine.fuse/1.8,0.0,1.0)
+		FusionArt.outline(self,FusionArt.polygon(p,12,4),Color("c3a8f3"),2)
+		draw_circle(p,3,CYAN)
+		draw_arc(p,19,-PI/2,-PI/2+TAU*progress,32,CYAN,1.5,true)
+		for i in range(4):
+			var v := Vector2.from_angle(i*TAU/4)
+			draw_line(p+v*13,p+v*18,Color("c3a8f3"),1.5,true)

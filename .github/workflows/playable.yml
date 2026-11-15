@@ -53,6 +53,13 @@ jobs:
           if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-fusions.log; then
             exit 1
           fi
+      - name: Expanded Hangar and pilot portrait checks
+        run: |
+          set -o pipefail
+          xvfb-run -a godot --path . --audio-driver Dummy --script tests/hangar_expansion_ui.gd 2>&1 | tee /tmp/starrun-expansion.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script" /tmp/starrun-expansion.log; then
+            exit 1
+          fi
       - name: iPhone safe-area and held-card drag checks
         run: |
           set -o pipefail
