@@ -123,6 +123,24 @@ func _test_course() -> void:
 	check(max_acceleration < 600.0, "Course corrections must preserve smooth velocity")
 	check(sim.ship_position(20).distance_to(other.ship_position(20)) > 1, "Different seeds must produce distinct routes")
 	check(sim.ship_position(30).distance_to(sim.ship_position(36)) > 5, "New pilot must not repeat the old six-second weave")
+	var long_flight := Sim.new(8821)
+	var before_rng: int = long_flight.rng.state
+	var late_positions: Array = []
+	for index in range(20):
+		late_positions.append(long_flight.ship_position(1500.0 + index * 4.0))
+	var distance := 0.0
+	for index in range(1,late_positions.size()):
+		distance += late_positions[index].distance_to(late_positions[index - 1])
+	check(distance > 200.0, "Pilot course must keep moving after the old 1200-second limit in World 4 and endless")
+	check(long_flight.rng.state == before_rng, "Extending the flight path must not change draft or combat RNG")
+	var saved_long := long_flight.snapshot()
+	var resumed_long := Sim.new(8822)
+	check(resumed_long.restore(saved_long), "Long flight checkpoints must restore without storing the generated course")
+	var same_path := true
+	for index in range(12):
+		var at := 1260.0 + index * 27.0
+		same_path = same_path and long_flight.ship_position(at).distance_to(resumed_long.ship_position(at)) < 0.001
+	check(same_path, "Restoring a late-world flight must reproduce its extended course from the original seed")
 	var legacy := sim.snapshot()
 	legacy.erase("movement_version")
 	other.restore(legacy)
@@ -1080,8 +1098,16 @@ func _test_long_runs() -> void:
 	for stage in [2,3,4]:
 		sim = Sim.new()
 		sim.stage = stage
+		var early_scale: float = sim.stage_damage_scale()
+		sim.time = 240.0
+		var full_scale: float = sim.stage_damage_scale()
+		check(early_scale < full_scale and early_scale > 1.0 and is_equal_approx(full_scale,float(sim.stage_spec().damage_scale)), "Later-world entry pressure ramps to the full authored damage before the boss")
+		sim.time = 0.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion, 10 * sim.stage_spec().damage_scale), "World damage scale reaches collision resolution")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale), "World 2-4 early-ramp damage reaches actual collision resolution without extra XP")
+		sim.time = 240.0
+		sim._hit(10, "ion", "test")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale)), "Late-world damage reaches full pressure, including during the boss")
 
 func _fixed_build_timing(seeds: int) -> Dictionary:
 	var results := {}
