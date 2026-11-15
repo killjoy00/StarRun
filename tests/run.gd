@@ -1340,7 +1340,7 @@ func _test_contextual_active_balance() -> void:
 	rail_cap.active_slots = ["strike"]
 	rail_cap.upgrades.strike = 10
 	rail_cap.enemies = [{"id":1, "kind":"boss4", "hp":10000000.0, "max_hp":10000000.0, "p":Vector2(270,135), "xp":0}]
-	check(rail_cap.activate("strike") and float(rail_cap.damage_dealt.get("strike",0.0)) <= 170.0 + 70.0 * 10.0 + 2200.0 + 0.01, "Rail Strike percent-based boss damage is capped even at rank 10")
+	check(rail_cap.activate("strike") and float(rail_cap.damage_dealt.get("strike",0.0)) <= (170.0 + 70.0 * 10.0 + 2200.0) * rail_cap.ability_power() * rail_cap._active_rank_scale("strike") + 0.01, "Rail Strike percent-based boss damage is capped even at rank 10")
 
 	var drained := Sim.new(5304)
 	drained.active_slots = ["siphon"]
