@@ -748,31 +748,46 @@ func _render_base(base: String) -> void:
 func _show_menu() -> void:
 	mode = "menu"
 	confirm_key = ""
-	var view := _page(1.0, false, 460.0)
+	var view := _page(1.0, true, 460.0)
 	var top: VBoxContainer = view.top
 	var body: VBoxContainer = view.body
 	var bottom: VBoxContainer = view.bottom
+	# The title is a compact typographic mark, not another dashboard heading.
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 8)
 	top.add_child(bar)
-	var mark := Kit.label(bar, "STARRUN", 32, Kit.CYAN)
-	mark.add_theme_font_override("font", Kit.font(5, 0.7))
-	mark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	bar.add_child(_wallet())
+	var wordmark := RichTextLabel.new()
+	wordmark.name = "StarRunWordmark"
+	wordmark.bbcode_enabled = true
+	wordmark.text = "[color=#eef7ff]Star[/color][color=#ffc078]/[/color][color=#66f5df]Run[/color]"
+	wordmark.fit_content = true
+	wordmark.scroll_active = false
+	wordmark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wordmark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	wordmark.custom_minimum_size.y = 58
+	wordmark.add_theme_font_override("normal_font", Kit.font(-1, 0.8))
+	wordmark.add_theme_font_size_override("normal_font_size", 45 if not _compact_ui() else 41)
+	bar.add_child(wordmark)
 	_icon_button(bar, "settings", _show_settings, "Sound and effects")
-	Kit.label(top, "Your ship flies and shoots on its own. You build it, and you choose when to fire its abilities.", 16, Kit.MUTED, true)
-	# Hero: the equipped ship in flight. Tapping it opens Ships & pilots.
+	var title_row := HBoxContainer.new()
+	title_row.add_theme_constant_override("separation", 8)
+	top.add_child(title_row)
+	var pitch := Kit.caps(title_row, "BUILD  /  REACT  /  REPEAT", Kit.AMBER, 12)
+	pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(_wallet())
+	Kit.label(top, "Your ship flies and fires. You decide what it becomes, and when to use its abilities.", 15, Kit.MUTED, true)
+	# Live ship art is part of the title, not a separate splash screen.
 	var hero_frame := PanelContainer.new()
 	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
-	hero_frame.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hero_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	hero_frame.custom_minimum_size = Vector2(0, 164)
 	hero_frame.clip_contents = true
 	body.add_child(hero_frame)
 	var hero := HangarBay.new()
 	hero.style = "flight"
 	hero.labels = false
 	hero.ship_id = profile.ship
-	hero.custom_minimum_size = Vector2(0, 110)
+	hero.custom_minimum_size = Vector2(0, 142)
 	hero_frame.add_child(hero)
 	var caption := MarginContainer.new()
 	for side in ["left", "right", "bottom"]:
@@ -811,8 +826,25 @@ func _show_menu() -> void:
 	hit.tooltip_text = "Change ship or pilot"
 	hit.pressed.connect(_open_loadout.bind("menu"))
 	hero_frame.add_child(hit)
-	# Difficulty as a visible three-way choice, not a button that cycles.
-	Kit.caps(body, "Difficulty", Kit.MUTED, 13)
+	# The Daily is the same UTC challenge and starting ship for every player.
+	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
+	var record: Dictionary = profile.daily_records.get(daily.day, {})
+	var daily_panel := PanelContainer.new()
+	daily_panel.add_theme_stylebox_override("panel", Kit.box(Color("101b28"), Color("516a73"), 14, 1, 12, 10))
+	body.add_child(daily_panel)
+	var daily_content := VBoxContainer.new()
+	daily_content.add_theme_constant_override("separation", 5)
+	daily_panel.add_child(daily_content)
+	Kit.caps(daily_content, "DAILY CHALLENGE   ·   %s UTC" % str(daily.day), Kit.AMBER, 13)
+	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
+	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
+	Kit.label(daily_content, "%s  ·  %s  ·  Normal" % [_name_part(str(daily_ship.name), 0),_name_part(str(daily_pilot.name), 0)], 16, Kit.TEXT, true)
+	Kit.label(daily_content, "Fixed seed. No Hangar bonuses. Replays improve your own best.", 14, Kit.MUTED, true)
+	var daily_text := "Fly today's challenge"
+	if int(record.get("best_score",-1)) >= 0:
+		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
+	_ui_button(daily_content, daily_text, _launch_daily, "secondary", 48)
+	Kit.caps(body, "Difficulty · regular runs", Kit.MUTED, 13)
 	var segments := HBoxContainer.new()
 	segments.add_theme_constant_override("separation", 6)
 	body.add_child(segments)
@@ -830,20 +862,22 @@ func _show_menu() -> void:
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
 	Kit.label(body, _difficulty_text(current), 15, Kit.MUTED, true)
-	# Actions: secondary row, then the one primary action at the bottom edge.
-	var saved := services.read_save(Services.RUN)
+	# A short navigation rail stays above the thumb-reachable primary action.
+	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
+	row.add_theme_constant_override("separation", 6)
 	bottom.add_child(row)
-	bottom.move_child(row, 0)
 	_ui_button(row, "Hangar", _show_hangar, "secondary", 48, true)
-	_ui_button(row, "How to play", _show_briefing.bind(false), "secondary", 48, true)
+	var awards_button := _ui_button(row, "Awards", _show_achievements, "secondary", 48, true)
+	awards_button.tooltip_text = "Achievements and milestones"
+	_ui_button(row, "Guide", _show_briefing.bind(false), "secondary", 48, true)
 	var primary: Button
 	if saved.is_empty():
-		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
+		primary = _ui_button(reading_footer, "Launch regular flight", _launch, "primary", 60, true)
 	else:
-		_ui_button(row, "New flight", _confirm_abandon.bind("menu"), "secondary", 48, true)
-		primary = _ui_button(reading_footer, "Resume  ·  Stage %d" % int(saved.get("stage", 1)), _resume_run, "primary", 60, true)
+		_ui_button(bottom, "Start a new regular flight", _confirm_abandon.bind("menu"), "ghost", 44)
+		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
+		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
 	if not _touch_first():
 		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
 		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
