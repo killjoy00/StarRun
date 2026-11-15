@@ -846,10 +846,8 @@ func _set_difficulty(id: String) -> void:
 	_show_menu()
 
 func _launch() -> void:
-	# The first flight gets a 20-second briefing; after that Launch means launch.
-	if int(profile.runs) == 0 and not bool(profile.get("briefed", false)):
-		_show_briefing(true)
-		return
+	# Launch immediately; the first heavy-beam charge teaches Aegis in context.
+	# The optional How to play briefing remains available from the title.
 	_new_run()
 
 func _launch_or_confirm(base: String) -> void:
