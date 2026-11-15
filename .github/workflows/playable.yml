@@ -119,7 +119,7 @@ jobs:
         run: tools/install-godot.sh
       - name: Import project
         run: godot --headless --path . --editor --import --quit
-      - name: Scripted full-campaign smoke: three active-use policies
+      - name: "Scripted full-campaign smoke: three active-use policies"
         run: |
           set -o pipefail
           godot --headless --path . --script tests/balance_matrix.gd -- \
