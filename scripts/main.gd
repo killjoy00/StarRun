@@ -28,6 +28,11 @@ var root: Control
 var overlay: Control
 var hud: Label
 var status: Label
+var hull_meter: ProgressBar
+var shield_meter: ProgressBar
+var hull_caption: Label
+var shield_caption: Label
+var cooldown_meters: Dictionary = {}
 var build_label: Label
 var report_label: Label
 var ability_a: Button
@@ -47,6 +52,7 @@ var low_fx_button: Button
 var card_buttons: Array[Button] = []
 var previous_ready := {}
 var previous_warning := false
+var last_boss_kills := 0
 var last_hull := 100.0
 var card_selection := 0
 var banner_text := ""
@@ -129,6 +135,26 @@ func _label(parent: Node, text_value: String, font_size: int = 16, color: Color 
 	parent.add_child(label)
 	return label
 
+func _haptic(milliseconds: int) -> void:
+	if OS.has_feature("mobile") and not bool(profile.get("reduced", false)):
+		Input.vibrate_handheld(milliseconds)
+
+func _meter(tint: Color) -> ProgressBar:
+	var meter := ProgressBar.new()
+	meter.show_percentage = false
+	meter.min_value = 0.0
+	meter.max_value = 100.0
+	meter.value = 100.0
+	var background := StyleBoxFlat.new()
+	background.bg_color = Color("162338")
+	background.set_corner_radius_all(6)
+	meter.add_theme_stylebox_override("background", background)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = tint
+	fill.set_corner_radius_all(6)
+	meter.add_theme_stylebox_override("fill", fill)
+	return meter
+
 func _button(parent: Node, title: String, action: Callable, primary: bool = false) -> Button:
 	var button := Button.new()
 	button.text = title
@@ -145,6 +171,7 @@ func _button(parent: Node, title: String, action: Callable, primary: bool = fals
 	button.add_theme_stylebox_override("disabled", _style(Color("101624"), Color("253043")))
 	button.custom_minimum_size.y = 52
 	button.pressed.connect(action)
+	button.pressed.connect(_haptic.bind(12))
 	parent.add_child(button)
 	return button
 
@@ -161,6 +188,12 @@ func _build_ui() -> void:
 	clip.add_child(world)
 	hud = _label(root, "", 18, CYAN)
 	status = _label(root, "", 16, MUTED)
+	hull_meter = _meter(CYAN)
+	shield_meter = _meter(Color("80aaff"))
+	root.add_child(hull_meter)
+	root.add_child(shield_meter)
+	hull_caption = _label(root, "", 14, Color.WHITE)
+	shield_caption = _label(root, "", 14, Color.WHITE)
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
 	for slot in range(Catalog.ACTIVE_SLOTS):
@@ -169,8 +202,12 @@ func _build_ui() -> void:
 		var badge := IconBadge.new()
 		badge.icon_id = ""
 		badge.position = Vector2(4, 4)
-		badge.size = Vector2(25, 25)
+		badge.size = Vector2(26, 26)
 		ability_buttons[slot].add_child(badge)
+		var cooldown := _meter(AMBER)
+		cooldown.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ability_buttons[slot].add_child(cooldown)
+		cooldown_meters[slot] = cooldown
 	ability_a = ability_buttons[0]
 	ability_b = ability_buttons[1]
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
@@ -189,46 +226,67 @@ func _layout() -> void:
 	root.size = size
 	overlay.size = size
 	var inset := _insets()
-	var top_shift := maxf(0.0, float(inset.top) - 14.0) + 8.0
-	var bottom_shift := maxf(0.0, float(inset.bottom) - 14.0)
-	var usable_height := maxf(240, size.y - (176 if _compact_ui() else 238) - top_shift - bottom_shift)
-	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
-	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 91 + top_shift), Vector2(540, 960) * scale_factor)
+	var compact := _compact_ui()
+	var safe_top: float = float(inset.top) + 7.0
+	var field_top := safe_top + 84.0
+	var reserved := 72.0 if compact else 126.0
+	var usable_height := maxf(240.0, size.y - field_top - reserved - float(inset.bottom))
+	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
+	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
 	clip.size = field.size
 	world.scale = Vector2.ONE * scale_factor
-	hud.position = Vector2(field.position.x, 16 + top_shift)
-	hud.size = Vector2(field.size.x, 24)
-	status.position = Vector2(field.position.x, 57 + top_shift)
-	status.size = Vector2(field.size.x, 22)
-	var compact := _compact_ui()
-	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
-	var controls_x := (size.x - controls_width) / 2
-	var button_width := (controls_width - (15 if compact else 6)) / (4 if compact else 2)
+	var chrome_x := 16.0 if compact else field.position.x
+	var chrome_width := size.x - 32.0 if compact else field.size.x
+	hud.position = Vector2(chrome_x, safe_top + 4.0)
+	hud.size = Vector2(minf(150.0, chrome_width * 0.41), 24)
+	status.position = Vector2(chrome_x, safe_top + 28.0)
+	status.size = Vector2(minf(155.0, chrome_width * 0.42), 20)
+	var meter_y := safe_top + 50.0
+	var meter_width := (chrome_width - 10.0) * 0.5
+	hull_meter.position = Vector2(chrome_x, meter_y)
+	shield_meter.position = Vector2(chrome_x + meter_width + 10.0, meter_y)
+	for meter in [hull_meter, shield_meter]:
+		meter.size = Vector2(meter_width, 24.0)
+	hull_caption.position = hull_meter.position + Vector2(7, 1)
+	shield_caption.position = shield_meter.position + Vector2(7, 1)
+	hull_caption.size = Vector2(meter_width - 9.0, 22)
+	shield_caption.size = Vector2(meter_width - 9.0, 22)
+	var controls_width := minf(size.x - 28.0, maxf(330.0, field.size.x))
+	var controls_x := (size.x - controls_width) * 0.5
+	var button_width := (controls_width - (15.0 if compact else 6.0)) / (4.0 if compact else 2.0)
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
-		button.position = Vector2(controls_x + i * (button_width + 5), field.end.y + 9) if compact else Vector2(controls_x + (i % 2) * (button_width + 6), field.end.y + 9 + int(i / 2) * 56)
-		button.size = Vector2(button_width, 54 if compact else 50)
-		button.custom_minimum_size.y = 54 if compact else 50
-		button.add_theme_font_size_override("font_size", _text_size(12))
-		button.get_child(0).visible = not compact # On narrow screens the badges overlap button text.
+		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 56.0)
+		button.size = Vector2(button_width, 62.0 if compact else 50.0)
+		button.custom_minimum_size.y = button.size.y
+		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.add_theme_font_size_override("font_size", 12 if compact else 15)
+		var badge: Control = button.get_child(0)
+		badge.visible = true
+		badge.size = Vector2(25, 25)
+		badge.position = Vector2((button_width - 25.0) * 0.5, 2.0) if compact else Vector2(5, 11)
+		var cooldown_bar: ProgressBar = cooldown_meters[i]
+		cooldown_bar.position = Vector2(5.0, button.size.y - 6.0)
+		cooldown_bar.size = Vector2(button_width - 10.0, 3.0)
 		button.add_theme_stylebox_override("normal", _style(CYAN if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
 		for state in ["normal", "hover", "pressed", "disabled"]:
 			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
-			compact_style.content_margin_left = 6
-			compact_style.content_margin_right = 6
-			compact_style.content_margin_top = 6
-			compact_style.content_margin_bottom = 6
+			compact_style.content_margin_left = 4.0 if compact else 35.0
+			compact_style.content_margin_right = 4.0
+			compact_style.content_margin_top = 23.0 if compact else 4.0
+			compact_style.content_margin_bottom = 7.0 if compact else 4.0
 			button.add_theme_stylebox_override(state, compact_style)
 	var top_height := 44.0 if compact else 36.0
-	build_button.position = Vector2(field.end.x - (202 if compact else 165), top_shift + (44 if compact else 45))
+	var toolbar_right := size.x - 14.0 if compact else field.end.x
+	build_button.position = Vector2(toolbar_right - (202.0 if compact else 165.0), safe_top)
 	build_button.size = Vector2(86 if compact else 74, top_height)
-	speed_button.position = Vector2(field.end.x - (114 if compact else 90), top_shift + (44 if compact else 45))
+	speed_button.position = Vector2(toolbar_right - (114.0 if compact else 90.0), safe_top)
 	speed_button.size = Vector2(66 if compact else 46, top_height)
 	for control in [build_button, speed_button]:
 		control.custom_minimum_size.y = top_height
 		control.add_theme_font_size_override("font_size", _text_size(11))
-	pause_button.position = Vector2(field.end.x - (46 if compact else 42), top_shift + (44 if compact else 45))
+	pause_button.position = Vector2(toolbar_right - (46.0 if compact else 42.0), safe_top)
 	pause_button.size = Vector2(46 if compact else 42, top_height)
 	pause_button.custom_minimum_size.y = top_height
 	pause_button.add_theme_font_size_override("font_size", _text_size(14))
@@ -1436,6 +1494,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		_focus(stage_clear_button)
 	if reset_clock:
 		sound.play("boss-explosion", -4.0)
+		_haptic(130)
 
 func _show_prototypes() -> void:
 	mode = "prototype"
@@ -1591,6 +1650,7 @@ func _start_flight() -> void:
 	_clear_overlay()
 	accumulator = 0.0
 	last_hull = sim.hull
+	last_boss_kills = sim.stage_clears
 	previous_warning = false
 	previous_ready.clear()
 	for id in sim.active_slots:
@@ -1650,6 +1710,7 @@ func _process(delta: float) -> void:
 			previous_ready[key] = ready
 		if sim.hull < last_hull:
 			sound.play("hit")
+			_haptic(80 if last_hull - sim.hull >= 15.0 else 35)
 		last_hull = sim.hull
 		save_clock += delta
 		if save_clock > 10:
@@ -1665,8 +1726,8 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp"] or (mode == "settings" and sheet_base == "paused")
-	for control in [hud, status, build_button, pause_button, speed_button]:
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial"] or (mode == "settings" and sheet_base == "paused")
+	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
@@ -1679,7 +1740,11 @@ func _short_ability_name(id: String) -> String:
 	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
 
 func _update_hud() -> void:
-	hud.text = "S%d  HULL %03d   SHIELD %02d   LV %02d" % [sim.stage, sim.hull, sim.shield, sim.level]
+	hud.text = "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
+	hull_meter.value = clampf(sim.hull / maxf(1.0, sim.max_hull) * 100.0, 0.0, 100.0)
+	shield_meter.value = clampf(sim.shield / maxf(1.0, sim.max_shield) * 100.0, 0.0, 100.0)
+	hull_caption.text = "HULL  %d/%d" % [ceili(sim.hull), ceili(sim.max_hull)]
+	shield_caption.text = "SHIELD  %d/%d" % [ceili(sim.shield), ceili(sim.max_shield)]
 	var seconds := int(sim.time - sim.stage_start)
 	status.text = "%s  %02d:%02d" % [sim.difficulty.to_upper(), seconds / 60, seconds % 60]
 	for i in range(Catalog.ACTIVE_SLOTS):
@@ -1693,6 +1758,8 @@ func _update_hud() -> void:
 		button.text = ("%s\n%s" % [title, status_text]) if _compact_ui() else ("%d  %s\n%s" % [i + 1, title, status_text])
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
+		var cooldown_bar: ProgressBar = cooldown_meters[i]
+		cooldown_bar.value = clampf(100.0 * (1.0 - cooldown / maxf(1.0, float(sim.content.abilities[id].cooldown))) if occupied else 0.0, 0.0, 100.0)
 		var badge: Control = button.get_child(0)
 		if badge.get("icon_id") != id:
 			badge.set("icon_id", id)
@@ -1714,7 +1781,8 @@ func _activate_slot(slot: int) -> void:
 
 func _activate(id: String) -> void:
 	if mode == "playing" and sim.activate(id):
-		sound.play(id if id in ["aegis", "nova", "barrage", "overdrive", "chrono", "mend"] else "nova")
+		_haptic(38)
+		sound.play_ability(id)
 		if not sim.cards.is_empty():
 			_show_cards()
 
