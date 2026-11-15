@@ -1465,7 +1465,8 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	headline.add_theme_constant_override("separation", 2)
 	headline.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(headline)
-	var eyebrow := Kit.caps(headline, "Stage %d of %d cleared" % [sim.stage, sim.stage_count()], Kit.AMBER, 15)
+	var progress_title := "Endless world %d cleared" % sim.stage if sim.endless_enabled else "Stage %d of %d cleared" % [sim.stage, sim.stage_count()]
+	var eyebrow := Kit.caps(headline, progress_title, Kit.AMBER, 15)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var title := Kit.label(headline, "%s destroyed" % sim.boss_name(), 32, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.7))
@@ -1493,12 +1494,20 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
 	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
 	if is_final:
-		Kit.label(content, "All four stages cleared. Your full report is next.", 16, Kit.TEXT, true)
+		Kit.label(content, "All four worlds cleared. Claim your win, or keep this build and take on harder worlds.", 16, Kit.TEXT, true)
+	elif sim.endless_enabled:
+		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
 		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
-	stage_clear_button = _ui_button(content, "Claim victory" if is_final else "Warp to " + str(sim.stage_spec().transition).capitalize(), _begin_warp, "primary", 58)
+	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
+	if is_final:
+		var endless_button := _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
+		endless_button.disabled = stage_clear_clock < 1.2
+	elif sim.endless_enabled:
+		var claim_button := _ui_button(content, "Claim victory with this build", _claim_endless, "secondary", 50)
+		claim_button.disabled = stage_clear_clock < 1.2
 	if not stage_clear_button.disabled:
 		_focus(stage_clear_button)
 	if reset_clock:
@@ -1766,6 +1775,9 @@ func _process(delta: float) -> void:
 		var warning: bool = not sim.charges.is_empty()
 		if warning and not previous_warning:
 			sound.play("warning")
+			if sim.boss_spawned:
+				banner_text = "BOSS BEAM · %s · USE YOUR DEFENSE" % sim.boss_attack_pattern.to_upper()
+				banner_clock = 2.8
 		previous_warning = warning
 		for key in previous_ready:
 			var ready: bool = sim.cooldowns[key] <= 0 and sim.upgrades[key] > 0
@@ -1804,7 +1816,7 @@ func _short_ability_name(id: String) -> String:
 	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
 
 func _update_hud() -> void:
-	hud.text = "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
+	hud.text = "W%d  ·  LV %02d" % [sim.stage, sim.level] if sim.endless_enabled else "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
 	hull_meter.value = clampf(sim.hull / maxf(1.0, sim.max_hull) * 100.0, 0.0, 100.0)
 	shield_meter.value = clampf(sim.shield / maxf(1.0, sim.max_shield) * 100.0, 0.0, 100.0)
 	hull_caption.text = "HULL  %d/%d" % [ceili(sim.hull), ceili(sim.max_hull)]
@@ -1823,7 +1835,7 @@ func _update_hud() -> void:
 		button.disabled = mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var cooldown_bar: ProgressBar = cooldown_meters[i]
-		cooldown_bar.value = clampf(100.0 * (1.0 - cooldown / maxf(1.0, float(sim.content.abilities[id].cooldown))) if occupied else 0.0, 0.0, 100.0)
+		cooldown_bar.value = clampf(100.0 * (1.0 - cooldown / maxf(1.0, float(sim.cooldown_totals.get(id, sim.content.abilities[id].cooldown)))) if occupied else 0.0, 0.0, 100.0)
 		var badge: Control = button.get_child(0)
 		if badge.get("icon_id") != id:
 			badge.set("icon_id", id)
@@ -1865,6 +1877,17 @@ func _toggle_pause() -> void:
 		_clear_overlay()
 		accumulator = 0.0
 
+func _continue_endless() -> void:
+	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.enable_endless():
+		return
+	_save_run()
+	_begin_warp()
+
+func _claim_endless() -> void:
+	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.claim_endless():
+		return
+	_finish()
+
 func _begin_warp() -> void:
 	if mode != "stage_clear" or stage_clear_clock < 1.2:
 		return
@@ -1883,7 +1906,10 @@ func _complete_warp() -> void:
 	if not sim.begin_intermission():
 		_show_stage_clear(false)
 		return
-	_show_prototypes()
+	if sim.intermission_step == "route":
+		_show_route_choice()
+	else:
+		_show_prototypes()
 
 func _choose_prototype(index: int) -> void:
 	if mode != "prototype" or not sim.choose_prototype(index):
@@ -1905,7 +1931,7 @@ func _finish_intermission() -> void:
 	_clear_overlay()
 	accumulator = 0.0
 	last_sector = _sector_name(sim.time)
-	banner_text = "STAGE %d / 4  ·  %s" % [sim.stage, sim.stage_name()]
+	banner_text = "WORLD %d  ·  %s" % [sim.stage, sim.stage_name()]
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
