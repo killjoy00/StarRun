@@ -25,7 +25,7 @@ static func refresh(host) -> void:
 		var title: String = _short_ability_name(sim, id) if occupied and (host._compact_ui() or button.size.x < 175.0) else (sim.content.abilities[id].name.to_upper() if occupied else "EMPTY")
 		if occupied and host._compact_ui() and button.size.x < 94.0:
 			title = title.left(7)
-		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and host._compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else ("OPEN" if host._compact_ui() else "DRAFT TO FILL"))
+		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and host._compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "OPEN")
 		# Icons and the two lines of text occupy separate bounds on every screen.
 		button.text = ""
 		var name_label: Label = button.get_node("AbilityName")
@@ -37,7 +37,7 @@ static func refresh(host) -> void:
 		button.disabled = host.mode != "playing" or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var cooldown_bar: ProgressBar = host.cooldown_meters[i]
-		cooldown_bar.visible = learned
+		cooldown_bar.visible = learned and cooldown > 0.0
 		cooldown_bar.value = clampf(100.0 * (1.0 - cooldown / maxf(1.0, float(sim.cooldown_totals.get(id, sim.content.abilities[id].cooldown)))) if occupied else 0.0, 0.0, 100.0)
 		var badge: Control = button.get_child(0)
 		badge.visible = occupied
