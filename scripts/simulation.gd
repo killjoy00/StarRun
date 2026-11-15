@@ -1322,6 +1322,21 @@ func activate(ability: String) -> bool:
 		_activate_fusion(ability, effect_strength)
 		return true
 	if ability == "aegis":
+		# A well-read telegraph earns a small resource rebate; blind cooldown
+		# casts still give normal short-lived immunity without the bonus.
+		var imminent := charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.7)
+		if not imminent:
+			var near_ship: Vector2 = ship_position(time + 0.30)
+			for bullet in bullets:
+				if (bullet.p + bullet.v * 0.30).distance_squared_to(near_ship) < 65.0 * 65.0:
+					imminent = true
+					break
+		if imminent:
+			shield = minf(max_shield, shield + 10.0 * effect_strength)
+			cooldowns[ability] *= 0.80
+			cooldown_totals[ability] = cooldowns[ability]
+			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
+			_log("Aegis precision counter - shields restored")
 		aegis_left = minf((1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength, maxf(0.0, cooldowns[ability] - 1.5))
 	elif ability == "nova":
 		beams_cancelled += charges.size()
