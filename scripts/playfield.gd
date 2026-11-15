@@ -65,7 +65,7 @@ func _draw() -> void:
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
 	var sector := _sector(sim.time)
-	var visual_stage := ((sim.stage - 1) % 4) + 1
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
 	if visual_stage == 1:
 		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
 		var scroll := visual_time * 105.0
@@ -159,7 +159,7 @@ func _sector(at: float) -> int:
 
 func _draw_stage_backdrop() -> void:
 	# Endless sectors reuse the authored visual ecologies rather than a flat backdrop.
-	var visual_stage := ((sim.stage - 1) % 4) + 1
+	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
 	var base := Color("041c32") if visual_stage == 2 else (Color("26110a") if visual_stage == 3 else Color("0d071b"))
 	var high := Color("064e64") if visual_stage == 2 else (Color("632512") if visual_stage == 3 else Color("261448"))
 	draw_rect(Rect2(0, 0, 540, 960), base)
