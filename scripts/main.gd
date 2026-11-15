@@ -1518,6 +1518,7 @@ func _big_stat(parent: Node, value: String, caption: String, color: Color) -> vo
 	Kit.caps(stack, caption, Kit.MUTED, 12)
 
 func _show_stage_clear(reset_clock: bool = true) -> void:
+	stage_clear_secondary = null # Never keep a freed Endless button across ceremonies.
 	if reset_clock:
 		stage_clear_clock = 0.0
 	mode = "stage_clear"
@@ -1654,7 +1655,7 @@ func _show_results() -> void:
 	mode = "results"
 	var view := _page(1.0, true, 540.0)
 	var body: VBoxContainer = view.body
-	var qualifier := "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else sim.difficulty.capitalize()
+	var qualifier: String = "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
 	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
 	var total_damage := 0.0
