@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
 	_test_support_actives()
+	_test_late_world_ability_counters()
 	_test_contextual_active_balance()
 	_test_endless_encounters_and_cooldown_captures()
 	var seeds := 24
@@ -1418,3 +1419,54 @@ func _test_contextual_active_balance() -> void:
 	overkill.hull = 40.0
 	overkill.enemies = [{"id":1, "kind":"drone", "hp":5.0, "max_hp":5.0, "p":Vector2(270,500), "xp":0}]
 	check(overkill.activate("siphon") and is_equal_approx(overkill.hull, 41.5), "Siphon heals only for five actual damage, not for its much larger nominal hit")
+
+
+func _test_late_world_ability_counters() -> void:
+	var kinds := ["chaff", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]
+	for kind in kinds:
+		var barrier := Sim.new(9311)
+		barrier.stage = 4
+		barrier.active_slots = ["barrier"]
+		barrier.upgrades.barrier = 1
+		barrier.shield = 8.0
+		check(barrier.activate("barrier"), "Chaff barrier can activate against " + kind)
+		barrier.bullets = [{"p":barrier.ship_position(), "v":Vector2.ZERO, "damage":12.0, "kind":kind, "source":"test"}]
+		barrier._update_bullets()
+		check(is_equal_approx(barrier.hull,barrier.max_hull) and is_equal_approx(barrier.shield,8.0) and barrier.bullets.is_empty(), "Barrier must counter small " + kind + " rounds without status bleed")
+	var explosive := Sim.new(9312)
+	explosive.active_slots = ["barrier"]
+	explosive.upgrades.barrier = 1
+	explosive.shield = 12.0
+	check(explosive.activate("barrier"), "Barrier can be raised against heavier ordnance")
+	explosive.bullets = [{"p":explosive.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":"ordnance","hp":12.0,"source":"missile_bomber"}]
+	explosive._update_bullets()
+	check(explosive.shield < 12.0, "Barrier still cannot block ordnance or replace Flak")
+	explosive._hit(10.0,"heavy","test")
+	check(explosive.shield == 0.0, "Heavy beams still penetrate the small-shot barrier")
+
+	var shielded := Sim.new(9313)
+	shielded.stage = 4
+	shielded.active_slots = ["deflector"]
+	shielded.upgrades.deflector = 1
+	shielded.shield = 2.0
+	for kind in kinds:
+		shielded.bullets.append({"p":shielded.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":kind,"source":"test"})
+	shielded.bullets.append({"p":shielded.ship_position(),"v":Vector2.ZERO,"damage":8.0,"kind":"ordnance","hp":12.0,"source":"missile_bomber"})
+	check(shielded.activate("deflector") and shielded.bullets.size() == 1 and shielded.bullets[0].kind == "ordnance", "Deflector absorbs every small status projectile, never the specialist ordnance")
+	check(shielded.shield > 2.0 and shielded.prevented > 0.0, "Deflector converts protected small shots into actual shielding")
+
+	var prism := Sim.new(9314)
+	prism.stage = 4
+	prism.active_slots = ["prism"]
+	prism.upgrades.prism = 1
+	for kind in kinds:
+		prism.bullets.append({"p":prism.ship_position(),"v":Vector2.ZERO,"damage":7.0,"kind":kind,"source":"test"})
+	prism.bullets.append({"p":prism.ship_position(),"v":Vector2.ZERO,"damage":7.0,"kind":"mine","hp":10.0,"fuse":5.0,"source":"minelayer"})
+	check(prism.activate("prism") and prism.shots.size() == kinds.size() and prism.bullets.size() == 1 and prism.bullets[0].kind == "mine", "Prism reflects all seven small-shot types while leaving mines to Flak")
+
+	var repaired := Sim.new(9315)
+	repaired.active_slots = ["mend"]
+	repaired.upgrades.mend = 1
+	repaired.heat_left = 4.0
+	repaired.corrosion_left = 3.0
+	check(repaired.activate("mend") and repaired.heat_left == 0.0 and repaired.corrosion_left == 0.0 and repaired.mend_left > 0.0, "Repair drones purge World 2 corrosion and World 3 overheating on a deliberate cast")
