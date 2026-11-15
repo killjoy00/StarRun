@@ -232,7 +232,7 @@ func _layout() -> void:
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
 	var field_top := safe_top + 84.0
-	var reserved := 82.0 if compact else 126.0
+	var reserved := 82.0 if compact else 196.0
 	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
@@ -260,8 +260,8 @@ func _layout() -> void:
 	var button_width := (controls_width - (15.0 if compact else 6.0)) / (4.0 if compact else 2.0)
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
-		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 56.0)
-		button.size = Vector2(button_width, 72.0 if compact else 50.0)
+		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 84.0)
+		button.size = Vector2(button_width, 72.0 if compact else 80.0)
 		button.custom_minimum_size.y = button.size.y
 		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
 		button.add_theme_font_size_override("font_size", 16 if compact else 15)
