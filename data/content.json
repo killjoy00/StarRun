@@ -297,7 +297,7 @@
       "id": "aegis",
       "name": "Aegis field",
       "tag": "ABILITY",
-      "description": "Block damage briefly. Reflect beams from rank 5.",
+      "description": "Block briefly; timed counters restore shield and recharge faster. Reflect beams at rank 5.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
