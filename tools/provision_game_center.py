@@ -11,6 +11,7 @@ import os
 import pathlib
 import sys
 import time
+from urllib.parse import urlparse
 
 import jwt
 import requests
@@ -105,6 +106,61 @@ def ensure_board(api, detail):
         print("Created Daily en-US localization")
     return found["id"]
 
+
+def ensure_badge_image(api, localization_id, achievement_id):
+    """Reserve, upload, and commit the localized Apple Game Center PNG."""
+    image_path = ROOT / "build/game-center-artwork" / (achievement_id + ".png")
+    if not image_path.is_file():
+        raise RuntimeError(f"Required Apple achievement artwork missing: {image_path}")
+    data = image_path.read_bytes()
+    related = f"/gameCenterAchievementLocalizations/{localization_id}/gameCenterAchievementImage"
+    response = api.session.get(BASE + related, timeout=45)
+    if response.status_code == 200:
+        existing = response.json().get("data")
+    elif response.status_code == 404:
+        existing = None
+    else:
+        raise RuntimeError(f"Read localized Game Center badge failed: HTTP {response.status_code}: {response.text[:500]}")
+    if existing:
+        state = existing.get("attributes",{}).get("assetDeliveryState",{})
+        status = state.get("state","unknown") if isinstance(state,dict) else str(state)
+        print(f"Achievement image already registered for {achievement_id}: {status}")
+        return
+    payload = {
+        "data":{
+            "type":"gameCenterAchievementImages",
+            "attributes":{"fileSize":len(data),"fileName":image_path.name},
+            "relationships":{"gameCenterAchievementLocalization":link("gameCenterAchievementLocalizations",localization_id)}
+        }
+    }
+    item = api.request("POST","/gameCenterAchievementImages",json=payload)["data"]
+    operations = item.get("attributes",{}).get("uploadOperations",[])
+    if not operations:
+        item = api.request("GET",f"/gameCenterAchievementImages/{item['id']}")["data"]
+        operations = item.get("attributes",{}).get("uploadOperations",[])
+    if not operations:
+        raise RuntimeError(f"Apple did not return upload operations for achievement badge {achievement_id}")
+    for operation in operations:
+        url = operation.get("url","")
+        parsed = urlparse(url)
+        # URLs are minted by Apple, but must never include a plain HTTP URL
+        # or an attacker-controlled inline credential before uploading bytes.
+        if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+            raise RuntimeError("Unsafe Apple asset upload URL")
+        offset = int(operation.get("offset",0))
+        length = int(operation.get("length",len(data)-offset))
+        if offset < 0 or length <= 0 or offset + length > len(data):
+            raise RuntimeError(f"Invalid asset chunk for badge {achievement_id}")
+        headers = {h["name"]:h["value"] for h in operation.get("requestHeaders",[])}
+        upload = requests.request(operation.get("method","PUT"),url,
+                                  data=data[offset:offset+length],headers=headers,timeout=75)
+        if upload.status_code >= 300:
+            raise RuntimeError(f"Apple image upload failed for {achievement_id}: HTTP {upload.status_code}: {upload.text[:500]}")
+    api.request("PATCH",f"/gameCenterAchievementImages/{item['id']}",json={
+        "data":{"type":"gameCenterAchievementImages","id":item["id"],"attributes":{"uploaded":True}}
+    })
+    print(f"Uploaded Apple-compliant 1024px RGB achievement image: {achievement_id}")
+
 def ensure_achievements(api, detail):
     configured = api.get_all(f"/gameCenterDetails/{detail}/gameCenterAchievements")
     lookup = {x["attributes"].get("vendorIdentifier"):x for x in configured}
@@ -124,14 +180,16 @@ def ensure_achievements(api, detail):
                 raise RuntimeError("Existing Apple achievement has mismatched permanent points: "+vendor)
             print("Apple achievement already exists:",vendor)
         loc = api.get_all(f"/gameCenterAchievements/{entry['id']}/localizations")
-        if not any(x["attributes"].get("locale")=="en-US" for x in loc):
+        localization = next((x for x in loc if x["attributes"].get("locale")=="en-US"),None)
+        if localization is None:
             body={"data":{"type":"gameCenterAchievementLocalizations",
                           "attributes":{"locale":"en-US","name":spec["name"],
                                         "beforeEarnedDescription":spec["description"],
                                         "afterEarnedDescription":"Completed: "+spec["description"]},
                           "relationships":{"gameCenterAchievement":link("gameCenterAchievements",entry["id"])}}}
-            api.request("POST","/gameCenterAchievementLocalizations",json=body)
+            localization = api.request("POST","/gameCenterAchievementLocalizations",json=body)["data"]
             print("  Added en-US achievement localization")
+        ensure_badge_image(api,localization["id"],spec["id"])
     return len(META["achievements"])
 
 def main():
@@ -146,7 +204,7 @@ def main():
     ensure_board(api,detail)
     count=ensure_achievements(api,detail)
     print(f"Configured {count} Apple achievement definitions, one recurring UTC Daily board.")
-    print("NEXT: upload 1024x1024 badge artwork; Apple review and physical-device Game Center testing are separate gates.")
+    print("NEXT: Apple metadata review/publication and physical-device Game Center testing remain separate gates.")
 
 if __name__ == "__main__":
     try:
