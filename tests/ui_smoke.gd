@@ -8,6 +8,13 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 		return values.get(path, {})
 	func delete_run() -> void:
 		values.erase(RUN)
+class NativeShareMock extends RefCounted:
+	var payload: Dictionary = {}
+	var response: int = OK
+	func share(data: Dictionary) -> int:
+		payload = data.duplicate(true)
+		return response
+
 var failures := 0
 var checks := 0
 func _initialize() -> void:
@@ -300,13 +307,29 @@ func _run() -> void:
 	check(scene.sim.won and scene.mode == "results" and scene.profile.daily_records.has(daily_id), "Settling the Daily saves the best result locally")
 	check(scene.profile.achievements.has("daily_first"), "Finishing a Daily earns its permanent achievement")
 	check(_contains_text(scene.reading_scroll, "DAILY CHALLENGE"), "Daily results show score, UTC identity and personal best")
-	check(_contains_text(scene.reading_scroll, "Copy & share"), "Daily results offer a one-tap share action")
-	scene._copy_daily_result()
-	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Copying the scorecard shows a confirmation toast")
-	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Copied scorecard uses immutable original daily UTC date")
+	check(_contains_text(scene.reading_scroll, "Copy Daily score"), "Non-iOS results explicitly offer clipboard fallback")
+	scene._share_daily_result()
+	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Desktop clipboard fallback shows a confirmation toast")
+	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Share payload preserves the saved Daily UTC date")
 	check(scene.result_awards.has("daily_first") and scene.toast_queue.size() > 0, "New achievements queue nonblocking unlock notifications")
 	scene._advance_toast(4.0)
-	check(scene.toast_panel.visible and scene.toast_title.text == "ACHIEVEMENT UNLOCKED", "Queued achievement notification appears after share toast dismisses")
+	check(scene.toast_panel.visible and scene.toast_title.text == "ACHIEVEMENT UNLOCKED", "Queued achievement notification appears after copy toast dismisses")
+	# Simulate the native iOS singleton in headless CI without needing an iPhone.
+	var native_share := NativeShareMock.new()
+	scene.daily_share_service = native_share
+	scene._share_daily_result()
+	var expected_share: String = scene.Progress.daily_share_text(scene.sim)
+	check(native_share.payload.get("content", "") == expected_share and native_share.payload.get("mime_type", "") == "text/plain", "Native share sheet receives complete scorecard as plain text")
+	check(native_share.payload.get("title", "") == "Star/Run Daily Challenge" and str(native_share.payload.get("subject", "")).contains(daily_id), "Native share sheet receives branded title and original UTC date")
+	check(scene.pending_share_text == expected_share, "Share sheet launch is asynchronous, not treated as completed sharing")
+	scene._on_native_share_canceled()
+	check(scene.pending_share_text.is_empty(), "Canceling native share clears pending text without publishing")
+	scene._share_daily_result()
+	scene._on_native_share_failed("Simulated native failure")
+	check(scene.pending_share_text.is_empty() and scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Failed native sharing falls back to a copyable scorecard")
+	native_share.response = ERR_CANT_OPEN
+	scene._share_daily_result()
+	check(scene.pending_share_text.is_empty() and scene.toast_detail.text.contains("copied"), "Immediate native share errors also fall back to clipboard")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame
