@@ -1,8 +1,10 @@
-# StarRun
+# Star/Run
+
+**Star/Run** is the in-game title for the StarRun repository. Version 0.9.0 adds local achievements, a shared-seed UTC Daily Challenge (device-local personal best, not an online leaderboard), and a redesigned title menu. See [Daily and achievements rules](docs/DAILY_ACHIEVEMENTS.md).
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
-## Gameplay: v0.8.1 expanded Hangar and rank-5 fusions
+## Gameplay: four-world roguelite plus 0.9.0 progression and daily missions
 
 - **Four active slots from 22 abilities.** Every ship starts with a signature ability. Each ability has a matching partner; upgrading both to rank 5 makes a stronger fused ability and frees a slot. Eleven fusions are available.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
