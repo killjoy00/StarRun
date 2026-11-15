@@ -1,12 +1,16 @@
-# Star/Run 0.9.1 — sharing, native achievements, leaderboard and branding
+# Star/Run 0.9.1–0.9.2 — sharing, native achievements, leaderboard and branding
 
 ## Player-facing features
 
-- **Share a Daily score:** Results has **Copy & share today's scorecard**. This copies a short, plain-text card containing the original UTC day, achieved score, Worlds cleared (or full victory), ship, pilot and #StarRun. It does not publish player information, reveal the full draft, or require an account. The user pastes the copied card into messaging/social apps. This is **copy-to-clipboard**, not an automatically opened native iOS share sheet.
+- **Share a Daily score (0.9.2 candidate):** On iPhone, Results has **Share Daily score**. One tap opens Apple's native activity sheet with a plain-text card containing the original UTC day, achieved score, Worlds cleared (or full victory), ship, pilot and #StarRun. The player selects Messages, Discord, or another installed destination, and can cancel without posting anything. The sheet does not publish player information or reveal the full draft. On Web/Windows/Linux, Results says **Copy Daily score** and uses the existing clipboard-and-toast fallback. A missing or failed native plugin also falls back to clipboard rather than dropping the scorecard. Real-device share-sheet validation remains required.
 - **Achievement unlock notifications:** The game queues short, nonblocking banners after a completed run, with a small success sound. Each new award appears in order; none interrupt combat. Awards remain saved in the local profile.
 - **App title:** The Godot project, web loading page/HTML title, app icon and generated iOS icon all use **Star/Run** with the amber slash motif. The bundle ID stays **com.rsm.starrun**; changing it would break continuity of the TestFlight app and saved progress.
 - **Online Daily rankings (iPhone):** The optional Game Center menu opens the native daily leaderboard when the iPhone player is authenticated and the matching leaderboard exists in App Store Connect. The same UTC seed, ship, pilot, Normal difficulty and zero Hangar rules apply. The best score from the *current* UTC day is submitted, and Apple's recurring board resets at 00:00 UTC. Older daily scores remain local rather than being mistakenly submitted into today's board. Achievements are reported at 100% when earned and confirmed by Apple, using matching identifiers.
 - **Offline and other platforms:** All local achievements, local best score, clipboard sharing and UI work without Game Center. This integration has no Steam/web/Windows leaderboard and does not claim cross-platform synchronization.
+
+## Native outgoing sharing (0.9.2 candidate)
+
+The iPhone export uses `tools/install-share.sh` to install **SharePlugin v5.2**, the native UIKit sharing plugin compatible with Godot 4.6. The installer selects the specific iOS release asset through GitHub's release API, validates its published SHA-256 and safe archive paths, and extracts only the native `ios/plugins` payload. `plugins/SharePlugin=true` activates it for iOS export; Web/Windows/Linux never download it. Godot calls the native `SharePlugin.share()` with `text/plain` when available; UIActivityViewController opens asynchronously and the game waits for actual player action. Canceling the sheet is not treated as success. An immediate error or `share_failed` callback copies the same saved-day card instead. This changes sharing only; no Game Center resource IDs, Daily scoring, or rewards change.
 
 ## Apple Game Center implementation
 

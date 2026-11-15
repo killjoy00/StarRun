@@ -85,6 +85,8 @@ var result_daily_score := -1
 var result_daily_best := -1
 var result_new_best := false
 var game_center := GameCenterBridge.new()
+var daily_share_service: Object = null
+var pending_share_text := ""
 var toast_layer: Control
 var toast_panel: PanelContainer
 var toast_title: Label
@@ -125,6 +127,12 @@ func _ready() -> void:
 	_layout()
 	_show_menu()
 	game_center.initialize(profile, _save_profile)
+	# The iOS-only outgoing share plugin exposes UIActivityViewController.
+	if OS.has_feature("ios") and Engine.has_singleton("SharePlugin"):
+		daily_share_service = Engine.get_singleton("SharePlugin")
+		daily_share_service.share_failed.connect(_on_native_share_failed)
+		daily_share_service.share_completed.connect(_on_native_share_completed)
+		daily_share_service.share_canceled.connect(_on_native_share_canceled)
 	get_tree().auto_accept_quit = false
 
 # Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
@@ -946,15 +954,45 @@ func _show_native_achievements() -> void:
 	if not game_center.show_achievements():
 		_queue_toast("Game Center", "Sign in to Game Center on your iPhone to view Apple achievements.")
 
-func _copy_daily_result() -> void:
+func _share_daily_result() -> void:
 	var text_value: String = Progress.daily_share_text(sim)
 	if text_value.is_empty():
 		return
+	# One tap opens the native iOS share sheet. Never claim sharing succeeded
+	# before the player chooses a destination; canceling requires no toast.
+	if daily_share_service != null and daily_share_service.has_method("share"):
+		pending_share_text = text_value
+		var result: Variant = daily_share_service.call("share", {
+			"title": "Star/Run Daily Challenge",
+			"subject": "Star/Run Daily %s UTC" % str(sim.daily_day),
+			"content": text_value,
+			"mime_type": "text/plain"
+		})
+		if result == OK:
+			return
+		pending_share_text = ""
+	# The web/desktop fallback also handles a missing or failed iOS plug-in.
+	_copy_daily_share_text(text_value)
+
+func _copy_daily_share_text(text_value: String) -> void:
 	DisplayServer.clipboard_set(text_value)
-	# Sharing is user-initiated: acknowledge it immediately, ahead of unlock toasts.
-	toast_queue.push_front({"title":"Ready to share","detail":"Daily scorecard copied. Paste it into any message or post."})
+	# Acknowledge copying ahead of any queued achievement celebrations.
+	toast_queue.push_front({"title": "Ready to share", "detail": "Daily scorecard copied. Paste it into any message or post."})
 	toast_clock = 0.0
 	_next_toast()
+
+func _on_native_share_completed(_activity_type: String) -> void:
+	pending_share_text = ""
+
+func _on_native_share_canceled() -> void:
+	pending_share_text = ""
+
+func _on_native_share_failed(_error_message: String) -> void:
+	if pending_share_text.is_empty():
+		return
+	var text_value: String = pending_share_text
+	pending_share_text = ""
+	_copy_daily_share_text(text_value)
 
 func _show_achievements() -> void:
 	mode = "achievements"
@@ -1768,7 +1806,7 @@ func _show_results() -> void:
 		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
 		_info_card(body, "DAILY CHALLENGE  ·  %s UTC" % sim.daily_day, "Score %d  ·  Best %d%s
 Same setup for everyone today. Unlimited retries; Cores only on the first finished attempt." % [score, best, "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
-		_ui_button(body, "Copy & share today's scorecard", _copy_daily_result, "secondary", 50)
+		_ui_button(body, "Share Daily score" if daily_share_service != null else "Copy Daily score", _share_daily_result, "secondary", 50)
 		if game_center.supports_game_center():
 			_ui_button(body, "Online leaderboard · Game Center", _show_game_center_leaderboard, "secondary", 48)
 	_ui_button(body, "Spend Cores in the Hangar", _show_hangar, "amber", 48)
