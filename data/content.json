@@ -545,6 +545,106 @@
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
+    },
+    {
+      "id": "boss_hunter",
+      "name": "Siege rounds",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons deal 5% more damage to bosses and their parts per rank.",
+      "max": 10,
+      "rank5": "Another 15% boss damage",
+      "rank10": "Another 25% boss damage",
+      "min_stage": 2
+    },
+    {
+      "id": "finisher",
+      "name": "Finisher rounds",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons deal 4% more damage per rank to enemies below 35% hull.",
+      "max": 10,
+      "rank5": "Another 15% finishing damage",
+      "rank10": "Another 25% finishing damage",
+      "min_stage": 2
+    },
+    {
+      "id": "opening_salvo",
+      "name": "First strike",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons hit undamaged enemies 4% harder per rank.",
+      "max": 10,
+      "rank5": "Another 15% first-hit damage",
+      "rank10": "Another 25% first-hit damage",
+      "min_stage": 2
+    },
+    {
+      "id": "ablative",
+      "name": "Blast plating",
+      "tag": "SYSTEM",
+      "description": "Take 3% less damage per rank from beams, missiles, mines and slag.",
+      "max": 10,
+      "rank5": "Another 5% blast protection",
+      "rank10": "Another 5% blast protection",
+      "min_stage": 2
+    },
+    {
+      "id": "insulation",
+      "name": "Insulation",
+      "tag": "SYSTEM",
+      "description": "Ion, heat, gravity, corrosion and cooldown disruption last 3% less per rank.",
+      "max": 10,
+      "rank5": "Another 10% shorter disruption",
+      "rank10": "Another 10% shorter disruption",
+      "min_stage": 2
+    },
+    {
+      "id": "shield_surge",
+      "name": "Shield reserve",
+      "tag": "SYSTEM",
+      "description": "Using an active restores 0.75% of max shield per rank.",
+      "max": 10,
+      "rank5": "Restore another 2.5% shield",
+      "rank10": "Restore another 5% shield",
+      "min_stage": 2
+    },
+    {
+      "id": "field_medic",
+      "name": "Combat repairs",
+      "tag": "SYSTEM",
+      "description": "Each kill repairs 0.1 hull per rank.",
+      "max": 10,
+      "rank5": "Repair another 0.25 hull per kill",
+      "rank10": "Repair another 0.5 hull per kill",
+      "min_stage": 2
+    },
+    {
+      "id": "last_stand",
+      "name": "Last stand",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons deal 3% more damage per rank below 40% hull.",
+      "max": 10,
+      "rank5": "Another 10% low-hull damage",
+      "rank10": "Another 20% low-hull damage",
+      "min_stage": 2
+    },
+    {
+      "id": "shield_focus",
+      "name": "Shield focus",
+      "tag": "SYSTEM",
+      "description": "Automatic weapons deal 2.5% more damage per rank above 75% shield.",
+      "max": 10,
+      "rank5": "Another 10% shielded damage",
+      "rank10": "Another 15% shielded damage",
+      "min_stage": 2
+    },
+    {
+      "id": "afterburn",
+      "name": "Follow-through",
+      "tag": "SYSTEM",
+      "description": "Using an active speeds up automatic weapons by 3% per rank for 4 seconds.",
+      "max": 10,
+      "rank5": "Another 10% firing speed",
+      "rank10": "Another 15% firing speed",
+      "min_stage": 2
     }
   ],
   "stage_count": 4,
@@ -569,12 +669,15 @@
       "subtitle": "The electric frontier",
       "boss": "boss2",
       "boss_name": "Storm Carrier",
-      "boss_hp": 10000,
-      "health_scale": 1.55,
-      "spawn_scale": 1.45,
+      "boss_hp": 24000,
+      "health_scale": 4.8,
+      "spawn_scale": 1.6,
       "description": "Ion suppression, corrosion, disruption and electrical formations.",
       "transition": "SOLAR FOUNDRY",
-      "reward_label": "Storm survived"
+      "reward_label": "Storm survived",
+      "damage_scale": 1.8,
+      "fire_scale": 1.15,
+      "module_scale": 2.0
     },
     {
       "id": "solar_foundry",
@@ -582,12 +685,15 @@
       "subtitle": "The burning machine",
       "boss": "boss3",
       "boss_name": "Crucible Engine",
-      "boss_hp": 15500,
-      "health_scale": 2.15,
-      "spawn_scale": 1.72,
+      "boss_hp": 80000,
+      "health_scale": 11.0,
+      "spawn_scale": 1.9,
       "description": "Heat weakens weapons, molten slag erupts and splitters multiply.",
       "transition": "VOID CITADEL",
-      "reward_label": "Foundry dismantled"
+      "reward_label": "Foundry dismantled",
+      "damage_scale": 2.8,
+      "fire_scale": 1.35,
+      "module_scale": 3.25
     },
     {
       "id": "void_citadel",
@@ -595,12 +701,15 @@
       "subtitle": "The last stronghold",
       "boss": "boss4",
       "boss_name": "Void Regent",
-      "boss_hp": 22000,
-      "health_scale": 2.95,
-      "spawn_scale": 1.9,
+      "boss_hp": 225000,
+      "health_scale": 22.0,
+      "spawn_scale": 2.2,
       "description": "Phasing raiders, gravity disruption and fortress beam volleys.",
       "transition": "",
-      "reward_label": "Citadel conquered"
+      "reward_label": "Citadel conquered",
+      "damage_scale": 4.2,
+      "fire_scale": 1.6,
+      "module_scale": 5.0
     }
   ],
   "prototypes": [

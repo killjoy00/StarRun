@@ -1,6 +1,6 @@
 # Native delivery and human playtest gates
 
-**Updated for StarRun v0.7.2 TestFlight beta.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Updated for StarRun v0.8.0 TestFlight candidate.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
@@ -12,7 +12,7 @@ No Vercel dependency is required. CI prevents nonfatal Godot parser errors from 
 
 ## Still required before claiming iPhone launch readiness
 
-1. **Physical iPhone UAT:** test small and current portrait aspect ratios, safe areas, four ability buttons, card wrapping, and menus. Verify four single-row ability controls, every draft option visible at once without scrolling, Build detail collapse/expand, and exact draft preservation on resize/resume.
+1. **Physical iPhone UAT:** test small and current portrait aspect ratios, safe areas, four ability buttons, card wrapping, and menus. Verify four single-row ability controls, short drafts visible at once and long drafts scrollable by holding any card, Build detail collapse/expand, and exact draft preservation on resize/resume.
 2. **Four-stage tactical walkthrough:** verify Ion Storm, Solar Foundry and Void Citadel have distinct palettes and silhouettes in motion; check destructible launch bays, cooling vents and shield pylons actually change boss behavior, and the phases are obvious without manual aiming. Verify boss explosions and explicit Warp/Claim, one-of-three Prototype offers, Safe/Redline/Bounty routes and correct saves/resumes during each decision.
 3. **Performance:** sustained normal gameplay and dense projectile stress (including ≥500 enemy bullets and 100 player shots, then a 2,000/500 engineering probe) at 1× and 3× speed. Record device, thermal condition, p50/p95 frame time and visual clarity. Compact projectile storage/render batching remain separate optimization options if the benchmark fails.
 4. **Audio / accessibility:** heavy attack cue remains audible; large explosions and warp do not obscure the next UI choice. Validate reduced glow and screen sensitivity, VoiceOver expectations, contrast, readable minimum 16-point phone text and ≥44-point touch controls.
@@ -47,3 +47,9 @@ This release includes the menu redesign from PR #12 (merged at `7cf7c42`) plus
 combat readability, immediate fusion/rank milestone cues and the permanent
 per-stage reroll correction. See [ART_AUDIO.md](ART_AUDIO.md#combat-readability--november-13-2026-central)
 for behavior and verification. **Build 1008 was signed and uploaded successfully on November 13, 2026 at 10:03 p.m. Central.** The upload log confirms `Upload succeeded` and `EXPORT SUCCEEDED`. Apple reported the package was processing; tester availability has not been independently confirmed. The release passed 584 simulation assertions, 209 layout checks, 85 rendered visual checks, all playable exports and the native iPhone compile.
+
+## v0.8.0 progression and iPhone input
+
+Includes the PR #12 menu redesign and PR #13 combat readability pass. This candidate raises world 2–4 pressure, adds ten passive tracks, removes consumed fusion-component offers, and upgrades fused skills directly. Combat HUD geometry uses the device safe-area insets and a separate toolbar row. Native scroll handling now receives drags starting on cards, icons, text and purchase buttons; dragging cancels the pending button action.
+
+`tests/touch_and_safe_area.gd` exercises actual viewport press/hold/drag/release events under Godot's touchscreen emulation, including both drag directions, no accidental purchase/selection, a subsequent normal tap, simulated 59-point cutout/34-point home inset, and HUD/toolbar separation. This is automated desktop emulation; physical iPhone acceptance remains the next device check. See [GAMEPLAY_V08.md](GAMEPLAY_V08.md) for measured balance results and upgrade details.

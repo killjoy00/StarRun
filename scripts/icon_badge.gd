@@ -28,12 +28,17 @@ func _draw() -> void:
 			for side in [-1, 1]:
 				draw_colored_polygon(PackedVector2Array([Vector2(side*5,-13),Vector2(side*13,0),Vector2(side*5,13),Vector2(side*1,0)]), Color(color,0.65))
 				draw_line(Vector2(side*4,-9),Vector2(side*10,0),Color.WHITE,1.7,true)
-		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard":
+		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard", "ablative", "insulation", "shield_surge", "shield_focus":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
 			points.append(points[0])
 			draw_polyline(points, color, 2.3, true)
 			draw_line(Vector2(-4,0), Vector2(-1,4), color, 2.3, true)
 			draw_line(Vector2(-1,4), Vector2(6,-4), color, 2.3, true)
+		"boss_hunter", "finisher", "opening_salvo":
+			draw_arc(Vector2.ZERO, 10, 0, TAU, 24, color, 2.0, true)
+			draw_line(Vector2(-14, 0), Vector2(14, 0), color, 1.5, true)
+			draw_line(Vector2(0, -14), Vector2(0, 14), color, 1.5, true)
+			draw_circle(Vector2.ZERO, 3, Color.WHITE)
 		"nova", "amplifier":
 			for i in range(8):
 				var a: float = i * TAU / 8.0
@@ -50,11 +55,11 @@ func _draw() -> void:
 				draw_colored_polygon(PackedVector2Array([Vector2(x-3,-8),Vector2(x,-14),Vector2(x+3,-8)]),color)
 		"arc", "arcwing", "chrono", "coolant":
 			draw_colored_polygon(PackedVector2Array([Vector2(2,-13),Vector2(-8,2),Vector2(-1,2),Vector2(-4,13),Vector2(10,-4),Vector2(2,-4)]),color)
-		"mend", "repair_bots", "repair", "hull", "armor", "bulwark", "haven", "engineer":
+		"mend", "repair_bots", "repair", "hull", "armor", "bulwark", "haven", "engineer", "field_medic", "last_stand":
 			draw_rect(Rect2(-3,-12,6,24),color)
 			draw_rect(Rect2(-12,-3,24,6),color)
 			draw_rect(Rect2(-2,-2,4,4),Color("182636"))
-		"overdrive", "interceptor", "rusher", "ace":
+		"overdrive", "interceptor", "rusher", "ace", "afterburn":
 			for x in [-8,0,8]:
 				draw_line(Vector2(x,11), Vector2(x+5,-11), color, 3.0, true)
 		"xp", "cores", "stipend", "bounty", "harvester", "scavenger":
