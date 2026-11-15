@@ -62,7 +62,7 @@ func _run() -> void:
 	# Avoid changing a real player's checkpoint when inspecting draft and result panels.
 	scene.sim.ended = true
 	check(scene.ability_buttons.size() == 4 and scene.sim.active_slots.size() == 1, "Four mobile active slots, one occupied by the ship signature")
-	for dimensions in [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
+	for dimensions in [Vector2i(360, 740), Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
 		root.size = dimensions
 		await process_frame
 		await process_frame
@@ -78,6 +78,12 @@ func _run() -> void:
 		check(scene.hull_meter.value == 100.0 and scene.shield_meter.value == 100.0, "Full hull and shield must fill both HUD bars")
 		check(scene.hull_caption.text.begins_with("HULL") and scene.shield_caption.text.begins_with("SHIELD"), "Meters must be labeled with current and max values")
 		check(scene.hull_meter.get_global_rect().end.x < scene.shield_meter.get_global_rect().position.x, "Hull and shield meters must have a visible gap")
+		for control in [scene.build_button, scene.speed_button, scene.pause_button]:
+			for meter in [scene.hull_meter, scene.shield_meter]:
+				check(not control.get_global_rect().intersects(meter.get_global_rect()), "Toolbar buttons must not cover hull/shield meters")
+		var base_style: StyleBoxFlat = scene.ability_buttons[0].get_theme_stylebox("normal")
+		var other_style: StyleBoxFlat = scene.ability_buttons[1].get_theme_stylebox("normal")
+		check(base_style.bg_color == other_style.bg_color and base_style.border_color == other_style.border_color, "First ability must not have a default highlight")
 		check(scene.ability_buttons[0].get_child(0).visible and scene.cooldown_meters[0].value == 100.0, "Ability insignia and ready-state cooldown bar must be visible")
 		if logical.x < 760:
 			check(scene.hud.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Combat heading must not overlap Build")
@@ -85,6 +91,13 @@ func _run() -> void:
 			check(scene.ability_buttons[0].position.y == scene.ability_buttons[3].position.y, "All four combat buttons should share one row on phones")
 			check(scene.ability_buttons[0].size.x >= 75.0, "Phone combat buttons need usable width")
 		for button in scene.ability_buttons.values():
+			var icon: Control = button.get_child(0)
+			var name_label: Label = button.get_node("AbilityName")
+			var ready_label: Label = button.get_node("AbilityStatus")
+			var progress: ProgressBar = scene.cooldown_meters[scene.ability_buttons.find_key(button)]
+			check(button.text.is_empty() and not name_label.get_global_rect().intersects(ready_label.get_global_rect()), "Ability name and READY/cooldown text occupy distinct rows")
+			check(not name_label.get_global_rect().intersects(icon.get_global_rect()) and not ready_label.get_global_rect().intersects(icon.get_global_rect()), "Ability icons never overlap their text")
+			check(not ready_label.get_global_rect().intersects(progress.get_global_rect()), "Ability status text stays above the cooldown progress")
 			var bounds: Rect2 = button.get_global_rect()
 			if bounds.end.y > logical.y or bounds.position.x < 0 or bounds.end.x > logical.x:
 				print("HUD_BUTTON_OOB logical=%s position=%s size=%s" % [str(logical), str(bounds.position), str(bounds.size)])
@@ -190,6 +203,17 @@ func _run() -> void:
 		check(scene.banish_mode and scene.mode == "cards", "Remove must enter an explicit pick-to-remove mode")
 		scene._toggle_banish()
 		check(not scene.banish_mode, "Cancel must leave remove mode without spending a removal")
+		for card in scene.sim.content.cards:
+			scene.sim.upgrades[str(card.id)] = int(card.max)
+		scene.sim._offer_cards(false)
+		scene._show_cards(false)
+		await process_frame
+		check(scene.sim.cards.size() == 2 and _contains_text(scene.reading_scroll, "Field repair") and _contains_text(scene.reading_scroll, "Salvage Cores"), "Full builds show repair and the Core reward together")
+		check(scene.reading_footer.get_child_count() == 0, "Full builds should not show useless reroll/removal tools")
+		scene.draft_guard = 0.0
+		var core_before: int = scene.sim.choice_cores
+		scene._choose(1)
+		check(scene.mode == "playing" and scene.sim.choice_cores == core_before + 5, "The maxed draft Core reward works through the actual UI action")
 		scene.sim.cards.clear()
 		scene._new_run()
 		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
@@ -248,6 +272,12 @@ func _run() -> void:
 	scene._show_menu()
 	scene._resume_run()
 	check(scene.mode == "prototype" and scene.sim.prototype_offers == preserved_hand, "Menu/resume must preserve the exact intermission Prototype hand")
+	check(_contains_text(scene.reading_footer, "Skip prototype") and _contains_text(scene.reading_footer, "10 Cores"), "Prototype draft must offer a visible Core alternative")
+	var before_skip: Dictionary = scene.sim.snapshot()
+	scene._skip_prototype()
+	check(scene.mode == "route" and scene.sim.prototypes.is_empty() and scene.sim.choice_cores == 10, "Skipping through the UI banks Cores and opens the route")
+	check(scene.sim.restore(before_skip), "UI smoke can restore the original prototype hand to test installing it")
+	scene._show_prototypes()
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
 	check(_contains_text(scene.reading_scroll, "Repair") and _contains_text(scene.reading_scroll, "More damage") and _contains_text(scene.reading_scroll, "Bounty run"), "Every strategic route must render after the prototype choice")
