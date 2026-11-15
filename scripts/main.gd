@@ -225,17 +225,24 @@ func _build_ui() -> void:
 	build_label = _label(root, "", 14, MUTED)
 	report_label = _label(root, "", 14, MUTED)
 	for slot in range(Catalog.ACTIVE_SLOTS):
-		ability_buttons[slot] = _button(root, "", _activate_slot.bind(slot), slot == 0)
+		ability_buttons[slot] = _button(root, "", _activate_slot.bind(slot))
 		ability_buttons[slot].focus_mode = Control.FOCUS_NONE
 		var badge := IconBadge.new()
 		badge.icon_id = ""
 		badge.position = Vector2(4, 4)
 		badge.size = Vector2(26, 26)
+		badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ability_buttons[slot].add_child(badge)
 		var cooldown := _meter(AMBER)
 		cooldown.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ability_buttons[slot].add_child(cooldown)
 		cooldown_meters[slot] = cooldown
+		var ability_name := _label(ability_buttons[slot], "", 16, Color.WHITE)
+		ability_name.name = "AbilityName"
+		ability_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ability_status := _label(ability_buttons[slot], "", 16, CYAN)
+		ability_status.name = "AbilityStatus"
+		ability_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ability_a = ability_buttons[0]
 	ability_b = ability_buttons[1]
 	pause_button = _button(root, "Ⅱ", _toggle_pause)
@@ -276,7 +283,7 @@ func _layout() -> void:
 	var inset := _insets()
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
-	var field_top := safe_top + 84.0
+	var field_top := safe_top + 92.0
 	var reserved := 102.0 if compact else 196.0
 	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
@@ -286,11 +293,15 @@ func _layout() -> void:
 	world.scale = Vector2.ONE * scale_factor
 	var chrome_x := 16.0 if compact else field.position.x
 	var chrome_width := size.x - 32.0 if compact else field.size.x
+	# Reserve horizontal space for the toolbar before placing heading and timer.
+	# Narrow headers abbreviate rather than painting over the Build control.
+	var toolbar_start := size.x - 14.0 - 196.0 if compact else field.end.x - 174.0
+	var top_label_width := maxf(70.0, minf(132.0 if compact else 200.0, toolbar_start - chrome_x - 10.0))
 	hud.position = Vector2(chrome_x, safe_top + 4.0)
-	hud.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 24)
+	hud.size = Vector2(top_label_width, 24)
 	status.position = Vector2(chrome_x, safe_top + 28.0)
-	status.size = Vector2(minf(132.0, chrome_width * 0.37) if compact else 200.0, 20)
-	var meter_y := safe_top + 50.0
+	status.size = Vector2(top_label_width, 20)
+	var meter_y := safe_top + 58.0
 	var meter_width := (chrome_width - 10.0) * 0.5
 	hull_meter.position = Vector2(chrome_x, meter_y)
 	shield_meter.position = Vector2(chrome_x + meter_width + 10.0, meter_y)
@@ -307,42 +318,49 @@ func _layout() -> void:
 		var button: Button = ability_buttons[i]
 		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 84.0)
 		button.size = Vector2(button_width, 80.0)
-		button.custom_minimum_size.y = button.size.y
-		button.alignment = HORIZONTAL_ALIGNMENT_CENTER
+		button.custom_minimum_size.y = 80.0
 		button.add_theme_font_size_override("font_size", 16 if compact else 15)
 		var badge: Control = button.get_child(0)
-		badge.visible = true
-		badge.size = Vector2(25, 25)
-		badge.position = Vector2((button_width - 25.0) * 0.5, 2.0) if compact else Vector2(5, 11)
+		badge.size = Vector2(24, 24)
+		badge.position = Vector2((button_width - 24.0) * 0.5, 5.0) if compact else Vector2(10, 16)
+		var name_label: Label = button.get_node("AbilityName")
+		var status_label: Label = button.get_node("AbilityStatus")
+		for label in [name_label, status_label]:
+			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if compact else HORIZONTAL_ALIGNMENT_LEFT
+		name_label.position = Vector2(3, 32) if compact else Vector2(44, 15)
+		name_label.size = Vector2(button_width - 6.0, 20) if compact else Vector2(button_width - 50.0, 22)
+		status_label.position = Vector2(3, 54) if compact else Vector2(44, 42)
+		status_label.size = Vector2(button_width - 6.0, 19) if compact else Vector2(button_width - 50.0, 20)
 		var cooldown_bar: ProgressBar = cooldown_meters[i]
-		cooldown_bar.position = Vector2(5.0, button.size.y - 6.0)
-		cooldown_bar.size = Vector2(button_width - 10.0, 3.0)
-		button.add_theme_stylebox_override("normal", _style(Color("103740") if i == 0 else Color("111e30"), CYAN if i == 0 else Color("354557")))
-		button.add_theme_color_override("font_color", Color.WHITE)
+		cooldown_bar.position = Vector2(7.0, button.size.y - 6.0)
+		cooldown_bar.size = Vector2(button_width - 14.0, 3.0)
+		# No selected/focused look on slot one; readiness lives in its status.
+		button.add_theme_stylebox_override("normal", _style(Color("102335"), Color("34495e")))
+		button.add_theme_stylebox_override("hover", _style(Color("183a46"), CYAN))
+		button.add_theme_stylebox_override("pressed", _style(Color("20505b"), CYAN))
+		button.add_theme_stylebox_override("disabled", _style(Color("0d1929"), Color("263749")))
 		for state in ["normal", "hover", "pressed", "disabled"]:
-			var compact_style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
-			compact_style.content_margin_left = 4.0 if compact else 35.0
-			compact_style.content_margin_right = 4.0
-			compact_style.content_margin_top = 25.0 if compact else 4.0
-			compact_style.content_margin_bottom = 7.0 if compact else 4.0
-			button.add_theme_stylebox_override(state, compact_style)
+			var style: StyleBoxFlat = button.get_theme_stylebox(state).duplicate()
+			style.set_content_margin_all(2.0)
+			button.add_theme_stylebox_override(state, style)
 	var top_height := 44.0 if compact else 36.0
 	var toolbar_right := size.x - 14.0 if compact else field.end.x
-	build_button.position = Vector2(toolbar_right - (202.0 if compact else 165.0), safe_top)
-	build_button.size = Vector2(86 if compact else 74, top_height)
-	speed_button.position = Vector2(toolbar_right - (114.0 if compact else 90.0), safe_top)
-	speed_button.size = Vector2(66 if compact else 46, top_height)
-	for control in [build_button, speed_button]:
+	var pause_width := 44.0 if compact else 42.0
+	var speed_width := 58.0 if compact else 46.0
+	var build_width := 78.0 if compact else 74.0
+	pause_button.position = Vector2(toolbar_right - pause_width, safe_top)
+	pause_button.size = Vector2(pause_width, top_height)
+	speed_button.position = Vector2(pause_button.position.x - 6.0 - speed_width, safe_top)
+	speed_button.size = Vector2(speed_width, top_height)
+	build_button.position = Vector2(speed_button.position.x - 6.0 - build_width, safe_top)
+	build_button.size = Vector2(build_width, top_height)
+	for control in [build_button, speed_button, pause_button]:
 		control.custom_minimum_size.y = top_height
-		control.add_theme_font_size_override("font_size", _text_size(11))
-	pause_button.position = Vector2(toolbar_right - (46.0 if compact else 42.0), safe_top)
-	pause_button.size = Vector2(46 if compact else 42, top_height)
-	pause_button.custom_minimum_size.y = top_height
-	pause_button.add_theme_font_size_override("font_size", _text_size(14))
-	for state in ["normal", "hover", "pressed", "disabled"]:
-		var compact_style: StyleBoxFlat = pause_button.get_theme_stylebox(state).duplicate()
-		compact_style.set_content_margin_all(6)
-		pause_button.add_theme_stylebox_override(state, compact_style)
+		control.add_theme_font_size_override("font_size", _text_size(12))
+		for state in ["normal", "hover", "pressed", "disabled"]:
+			var toolbar_style: StyleBoxFlat = control.get_theme_stylebox(state).duplicate()
+			toolbar_style.set_content_margin_all(4.0)
+			control.add_theme_stylebox_override(state, toolbar_style)
 	var wide := size.x > 950
 	build_label.visible = wide
 	report_label.visible = wide
