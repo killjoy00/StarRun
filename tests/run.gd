@@ -1356,4 +1356,11 @@ func _test_contextual_active_balance() -> void:
 	late_siphon.upgrades.siphon = 10
 	late_siphon.hull = 40.0
 	late_siphon.enemies = [{"id":1, "kind":"boss4", "hp":225000.0, "max_hp":225000.0, "p":Vector2(270,135), "xp":0}]
-	check(late_siphon.activate("siphon") and late_siphon.damage_dealt.siphon > actual * 3.0 and late_siphon.hull <= 65.01, "World 4 Siphon scales boss damage but cannot heal past the per-cast cap")
+	check(late_siphon.activate("siphon") and late_siphon.damage_dealt.siphon > actual * 3.0 and late_siphon.hull <= 40.0 + 25.0 * late_siphon.ability_power() * late_siphon._active_rank_scale("siphon") + 0.01, "World 4 Siphon scales boss damage but cannot heal past the per-cast cap")
+
+	var overkill := Sim.new(5305)
+	overkill.active_slots = ["siphon"]
+	overkill.upgrades.siphon = 1
+	overkill.hull = 40.0
+	overkill.enemies = [{"id":1, "kind":"drone", "hp":5.0, "max_hp":5.0, "p":Vector2(270,500), "xp":0}]
+	check(overkill.activate("siphon") and is_equal_approx(overkill.hull, 41.5), "Siphon heals only for five actual damage, not for its much larger nominal hit")
