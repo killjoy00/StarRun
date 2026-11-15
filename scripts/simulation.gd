@@ -10,6 +10,7 @@ var rng := RandomNumberGenerator.new()
 var seed_value := 1
 # A separate seeded course never consumes the combat/draft random stream.
 var course: Array[Dictionary] = []
+var course_pilot := RandomNumberGenerator.new() # Separate from combat RNG; reconstructed from seed on restore.
 var movement_version := 4
 var difficulty := "normal"
 var stage := 1
@@ -147,14 +148,19 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	skips_left = meta.skips
 
 func _build_course() -> void:
-	var pilot := RandomNumberGenerator.new()
-	pilot.seed = seed_value ^ 0x53746172
+	course_pilot.seed = seed_value ^ 0x53746172
 	course.clear()
 	course.append({"t": -6.0, "p": Vector2(270, 790)})
 	course.append({"t": 0.0, "p": Vector2(270, 790)})
-	var arrival := 0.0
-	var previous := Vector2(270, 790)
-	while arrival < 1200.0:
+	_extend_course(1200.0)
+
+func _extend_course(until_time: float) -> void:
+	# Generate only as required. The same seed and independent RNG reproduce
+	# the exact path after save/restore, without consuming draft/combat RNG.
+	var pilot := course_pilot
+	var arrival: float = float(course[-1].t)
+	var previous: Vector2 = course[-1].p
+	while arrival < until_time:
 		var movement: float = float(Catalog.ship(ship_id).movement) if movement_version >= 4 else 1.0
 		arrival += (pilot.randf_range(1.65, 2.8) / movement if movement_version >= 4 else (pilot.randf_range(2.2, 4.0) if movement_version >= 3 else pilot.randf_range(3.8, 7.5)))
 		var target: Vector2
@@ -177,7 +183,11 @@ func ship_position(at: float = -1.0) -> Vector2:
 	# Keep an old suspended flight's original trajectory; all new flights use the new pilot.
 	if movement_version == 1:
 		return Vector2(WIDTH * 0.5 + sin(at * TAU / 6.0) * WIDTH * 0.30, 790.0)
-	# Binary search avoids re-scanning the growing two-stage course for every projectile.
+	# World 4 and endless can pass the old 1200-second course boundary.
+	# Extend before the interpolation lookahead reaches the final segment.
+	if at >= float(course[course.size() - 2].t):
+		_extend_course(at + 45.0)
+	# Binary search avoids re-scanning the growing multi-world course for every projectile.
 	var lo := 1
 	var hi := course.size() - 2
 	while lo < hi:
@@ -353,7 +363,16 @@ func fused_into(id: String) -> String:
 	return ""
 
 func stage_damage_scale() -> float:
-	return float(stage_spec().get("damage_scale", 1.0))
+	var scale: float = float(stage_spec().get("damage_scale", 1.0))
+	# Each warp is followed by new status effects and stronger enemies. Ease
+	# players into those mechanics without handing out extra kills or XP.
+	# The encounter reaches its full authored damage well before the boss.
+	if stage in [2, 3, 4] and not boss_spawned:
+		var entry_factor := 0.75 if stage == 2 else (0.82 if stage == 3 else 0.65)
+		var full_at := 155.0 if stage == 2 else (170.0 if stage == 3 else 195.0)
+		var ramp: float = clampf((time - stage_start - 25.0) / (full_at - 25.0), 0.0, 1.0)
+		scale *= lerpf(entry_factor, 1.0, ramp)
+	return scale
 
 func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
