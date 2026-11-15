@@ -830,19 +830,18 @@ func _show_menu() -> void:
 	var pitch := Kit.caps(title_row, "BUILD  /  REACT  /  REPEAT", Kit.AMBER, 12)
 	pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(_wallet())
-	Kit.label(top, "Your ship flies and fires. You decide what it becomes, and when to use its abilities.", 15, Kit.MUTED, true)
 	# Live ship art is part of the title, not a separate splash screen.
 	var hero_frame := PanelContainer.new()
 	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
 	hero_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	hero_frame.custom_minimum_size = Vector2(0, 164)
+	hero_frame.custom_minimum_size = Vector2(0, 150)
 	hero_frame.clip_contents = true
 	body.add_child(hero_frame)
 	var hero := HangarBay.new()
 	hero.style = "flight"
 	hero.labels = false
 	hero.ship_id = profile.ship
-	hero.custom_minimum_size = Vector2(0, 142)
+	hero.custom_minimum_size = Vector2(0, 128)
 	hero_frame.add_child(hero)
 	var caption := MarginContainer.new()
 	for side in ["left", "right", "bottom"]:
@@ -888,13 +887,13 @@ func _show_menu() -> void:
 	daily_panel.add_theme_stylebox_override("panel", Kit.box(Color("101b28"), Color("516a73"), 14, 1, 12, 10))
 	body.add_child(daily_panel)
 	var daily_content := VBoxContainer.new()
-	daily_content.add_theme_constant_override("separation", 5)
+	daily_content.add_theme_constant_override("separation", 3)
 	daily_panel.add_child(daily_content)
 	Kit.caps(daily_content, "DAILY CHALLENGE   ·   %s UTC" % str(daily.day), Kit.AMBER, 13)
 	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
 	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
 	Kit.label(daily_content, "%s  ·  %s  ·  Normal" % [_name_part(str(daily_ship.name), 0),_name_part(str(daily_pilot.name), 0)], 16, Kit.TEXT, true)
-	Kit.label(daily_content, "Fixed seed. No Hangar bonuses. Replays improve your own best.", 14, Kit.MUTED, true)
+	Kit.label(daily_content, "Same seed for everyone · No Hangar bonuses", 14, Kit.MUTED, true)
 	var daily_text := "Fly today's challenge"
 	if int(record.get("best_score",-1)) >= 0:
 		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
@@ -916,9 +915,9 @@ func _show_menu() -> void:
 				segment.add_theme_color_override(state, Kit.MUTED)
 		segment.custom_minimum_size.y = 60
 		segment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
-	Kit.label(body, _difficulty_text(current), 15, Kit.MUTED, true)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -1401,10 +1400,13 @@ func _show_cards(play_sound: bool = true) -> void:
 	var view := _page(0.93, true, 520.0)
 	var top: VBoxContainer = view.top
 	var body: VBoxContainer = view.body
-	var title := "Remove an upgrade" if banish_mode else "Choose an upgrade"
+	var capped: bool = sim.cards.any(func(card): return str(card.id) == "core_cache")
+	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
 	_page_header(top, "Level %d  ·  Stage %d" % [sim.level, sim.stage], title)
 	if banish_mode:
 		Kit.label(top, "Tap one to take it out of this run's draft pool. %d removal%s left." % [sim.banishes_left, "" if sim.banishes_left == 1 else "s"], 16, Kit.DANGER, true)
+	elif capped:
+		Kit.label(top, "All upgrades installed. Repair your ship or bank Cores.", 16, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
 		for slot in sim.active_slots:
@@ -1414,7 +1416,7 @@ func _show_cards(play_sound: bool = true) -> void:
 		_draft_card(body, i)
 	if banish_mode:
 		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
-	else:
+	elif not capped:
 		if sim.rerolls_left > 0:
 			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand. Hangar rerolls refill each stage.")
 		if sim.skips_left > 0:
@@ -1458,7 +1460,7 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "%s  ·  rank %d to %d" % [type_text, current, next_rank]
 	if reaches_milestone and fusion.is_empty():
 		tag_text = "%s  ·  rank %d bonus" % [type_text, milestone]
-	var removable := banish_mode and id != "repair"
+	var removable := banish_mode and id not in ["repair", "core_cache"]
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
 	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
 	# Only a pick that actually fuses or crosses a breakpoint gets an accent edge.
@@ -1473,11 +1475,14 @@ func _draft_card(parent: Node, i: int) -> void:
 	row.add_theme_constant_override("separation", 12)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	view.content.add_child(row)
-	var badge := IconBadge.new()
-	badge.icon_id = fusion if not fusion.is_empty() else id
-	badge.custom_minimum_size = Vector2(40, 40)
-	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	row.add_child(badge)
+	if id == "core_cache":
+		row.add_child(Kit.core_icon(40))
+	else:
+		var badge := IconBadge.new()
+		badge.icon_id = fusion if not fusion.is_empty() else id
+		badge.custom_minimum_size = Vector2(40, 40)
+		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		row.add_child(badge)
 	var info := VBoxContainer.new()
 	info.add_theme_constant_override("separation", 3)
 	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1703,7 +1708,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
-		Kit.label(content, "Next: %s, %s. First you pick a prototype and a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
+		Kit.label(content, "Next: %s, %s. Choose a prototype or Cores, then a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
 	if is_final and sim.daily_day.is_empty():
@@ -1736,7 +1741,9 @@ func _show_prototypes() -> void:
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
 		_chip(head, str(spec.role).capitalize(), Kit.MUTED)
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
-	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
+	skip_button.tooltip_text = "Bank %d Cores for this flight's final payout and continue to route selection." % Simulation.PROTOTYPE_SKIP_CORES
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 
@@ -2053,7 +2060,7 @@ func _process(delta: float) -> void:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
-	speed_button.text = str(game_speed) + "×"
+	speed_button.text = _speed_label()
 	queue_redraw()
 	world.queue_redraw()
 
@@ -2124,6 +2131,13 @@ func _complete_warp() -> void:
 
 func _choose_prototype(index: int) -> void:
 	if mode != "prototype" or not sim.choose_prototype(index):
+		return
+	sound.play("card")
+	_save_run()
+	_show_route_choice()
+
+func _skip_prototype() -> void:
+	if mode != "prototype" or not sim.skip_prototype():
 		return
 	sound.play("card")
 	_save_run()
@@ -2264,12 +2278,15 @@ func _cycle_difficulty() -> void:
 	_save_profile()
 	_show_menu()
 
+func _speed_label() -> String:
+	return str(int(game_speed)) + "×" if is_equal_approx(game_speed, float(int(game_speed))) else str(game_speed) + "×"
+
 func _cycle_speed() -> void:
 	var index := speed_options.find(game_speed)
 	game_speed = float(speed_options[(index + 1) % speed_options.size()])
 	profile.speed = game_speed
 	_save_profile()
-	speed_button.text = str(game_speed) + "×"
+	speed_button.text = _speed_label()
 
 func _toggle_build_details() -> void:
 	build_show_all = not build_show_all
