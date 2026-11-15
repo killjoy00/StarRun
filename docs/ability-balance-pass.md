@@ -44,6 +44,8 @@ The bots always move and fire automatically. "Never" means **no manual active-ab
 ### Changes in this follow-up
 
 - **World 1 pressure:** preserve enemy **spawn rate/XP**, but after 110 seconds accelerate enemy gunfire (interval x0.80) and make the well-telegraphed heavy beams hit 20% harder. The World 1 boss's non-heavy gunfire accelerates only after its first 18 seconds (interval x0.80). The opening segment and heavy-beam warning length remain unchanged. These are simulation hypotheses, not guaranteed win-rate targets.
+
+- **Aegis precision:** casting in the final 0.7 seconds of a heavy-beam warning or just before a projectile hit restores 10 base shield and rebates 20% cooldown, in addition to regular blocking. A blind cast still prevents damage but gains no extra shield/recharge. This is intended to widen the ordinary timed-vs-cooldown advantage beyond the specialized Nova Guard fixture.
 - **Flak:** intercepting ordnance on an imminent collision path, or mines/slag just about to detonate nearby, restores up to 8 shield times effect strength. Casting early still clears ordnance but receives no shield reward.
 - **Jammer:** suppresses future fire as before; when used in the last 1.5 seconds of a telegraphed heavy charge, it *also* cancels that charge and reduces that cast's cooldown by 20%. Early casts do not interrupt an already charging beam.
 - **Rail Strike:** adds 0.8% of maximum boss HP, capped at 2,200 damage *before ability-power scaling*. The existing base strike remains and ordinary enemies receive no HP-based bonus.
@@ -63,3 +65,5 @@ First inspect whether no-cast World 1 clears and timed-over-cooldown differences
 
 
 **Iterative test result:** The *rejected first approach* increased spawn frequency and thereby fed the autopilot more kill XP: World 1 no-cast clears rose from 14/24 (previous baseline) to **16/24**, on-cooldown cleared 18/24, and timed cleared 19/24. The fixed Nova Guard Hard boss remained timing-dependent (24/24 vs 0/24), but the overall comparison got worse. That spawn change was reverted and replaced with projectile pressure and heavy-beam damage. Do not cite the 16/24 as the new final tuned outcome.
+
+**Projectile-pressure iteration:** On the 24-scripted-seed World 1 fixture, maintaining spawn XP while raising avoidable projectile pressure yielded 8/24 no-active clears, 18/24 on-cooldown clears and 19/24 reactive clears. This materially improves the need for active use but timing beats cooldown only marginally, so Aegis now also rewards a precise counter; new results must be measured before claiming any additional improvement. The dedicated fixed-loadout Nova Guard fixture remains 24/24 timed vs 5/24 on-cooldown.
