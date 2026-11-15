@@ -36,13 +36,19 @@ func _run() -> void:
 	_test_new_stage_threats()
 	_test_20_active_pool()
 	_test_fusions_and_milestones()
+	_test_long_runs()
 	var seeds := 12
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
 			seeds = int(arg.get_slice("=", 1))
 	var results: Dictionary = _balance(seeds)
 	check(results.timed.wins >= results.never.wins + mini(4, maxi(1, int(seeds / 2))), "Timed inputs must improve survival over no inputs")
-	check(results.timed.mean_hull > results.on_cooldown.mean_hull + 3 or results.timed.wins > results.on_cooldown.wins, "Timing must outperform cooldown spam on matched seeds")
+	# Combat and draft share RNG. Strategy changes draft outcomes, so full-run
+	# hull is diagnostic rather than an isolated test of input timing.
+	var timing: Dictionary = _fixed_build_timing(seeds)
+	check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
+	check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
+	print("FIXED_BUILD_TIMING ", JSON.stringify(timing))
 	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
@@ -358,6 +364,8 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 			var r: int = priorities.find(sim.cards[i].id)
 			if r < 0:
 				r = 90 # Unknown IDs must not accidentally outrank every existing card.
+			if not sim.fusion_spec(str(sim.cards[i].id)).is_empty():
+				r = 4 if sim.upgrades[sim.cards[i].id] < 5 else 14
 			if sim.cards[i].tag == "ABILITY" and sim.upgrades[sim.cards[i].id] == 0 and sim.active_slots.size() < Catalog.ACTIVE_SLOTS:
 				r = 0 if sim.cards[i].id in ["nova", "emp", "flak", "capacitor", "siphon"] else 2
 			if sim.hull < sim.max_hull * 0.35 and sim.cards[i].id in ["hull", "repair"]:
@@ -523,7 +531,10 @@ func _test_four_stage_campaign() -> void:
 		check(sim.enemies.size() == (1 if stage_number == 1 else 3) and sim.enemies[0].kind == boss_kinds[stage_number - 1], "Each stage must have a distinct boss with modules after Stage 1")
 		check(sim.enemies[0].max_hp > health, "Later bosses must require stronger builds")
 		health = sim.enemies[0].max_hp
-		sim._damage_enemy(sim.enemies[0], 1000000.0, "pulse")
+		# This tests transitions, not a fixed damage budget: remove the boss parts first.
+		for part in sim.enemies:
+			if part.kind == "boss_module": sim._damage_enemy(part, part.hp * 2.0, "pulse")
+		sim._damage_enemy(sim.enemies[0], sim.enemies[0].hp * 2.0, "pulse")
 		check(sim.stage_clears == stage_number and sim.stage_transition_queued and not sim.ended, "Each boss must freeze before the player acknowledges victory")
 		var paused: Dictionary = sim.snapshot()
 		sim.step()
@@ -731,7 +742,7 @@ func _test_fusions_and_milestones() -> void:
 	counter._add_enemy("station", Vector2(260, 120))
 	plain._add_enemy("station", Vector2(260, 120))
 	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
-	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull, "A well-timed fusion counter must earn real healing and a shorter cooldown")
+	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull and counter.aegis_left > plain.aegis_left, "A well-timed fusion counter must earn real healing and a shorter cooldown")
 	check(counter.kills > plain.kills, "A timed Nova Guard counter must hit much harder than firing it early")
 	var slots := Sim.new(1902)
 	for name in ["flak", "emp", "strike"]:
@@ -898,3 +909,151 @@ func _test_stage_rerolls_and_shield_breaks() -> void:
 	safeguard.shield = 2.0
 	safeguard._hit(3.0, "heavy", "test")
 	check(safeguard.shield > 0 and safeguard.effects.any(func(e): return e.kind == "shield-break"), "An immediately rebuilt shield still shows the actual break")
+
+func _test_long_runs() -> void:
+	var added := ["boss_hunter", "finisher", "opening_salvo", "ablative", "insulation", "shield_surge", "field_medic", "last_stand", "shield_focus", "afterburn"]
+	var sim := Sim.new(2751)
+	check(sim.content.cards.filter(func(c): return c.id in added and c.tag == "SYSTEM").size() == 10, "Ten new passives must exist")
+	for stage in [1, 2]:
+		sim.stage = stage
+		var seen := {}
+		for i in range(300):
+			sim._offer_cards(false)
+			for card in sim.cards: seen[card.id] = true
+		check(added.all(func(id): return seen.has(id) == (stage == 2)), "Late passives become draftable in world 2")
+		check(not sim.cards.any(func(c): return not sim.fusion_spec(c.id).is_empty()), "Unowned fusions cannot be offered directly")
+	for pair in sim.content.fusions:
+		var fused := Sim.new(2752)
+		for part in pair.parts:
+			if fused.upgrades[part] == 0: _install(fused, str(part))
+		var seen := {}
+		for i in range(100):
+			fused._offer_cards(false)
+			for card in fused.cards: seen[card.id] = true
+		check(not seen.has(pair.parts[0]) and not seen.has(pair.parts[1]) and seen.has(pair.id), "Only the fused upgrade may reappear: " + str(pair.id))
+		fused.cards = [fused.content.cards.filter(func(c): return c.id == pair.id)[0]]
+		var power: float = fused._active_rank_scale(pair.id)
+		var slots: Array = fused.active_slots.duplicate()
+		check(fused.choose_card(0) and fused.upgrades[pair.id] == 3 and fused._active_rank_scale(pair.id) > power and fused.active_slots == slots, "Upgrading a fusion strengthens it without consuming a slot")
+		# Migrate an already-open v0.7.2 draft, preserving its remaining draft tools.
+		fused.cards = [fused.content.cards.filter(func(c): return c.id == pair.parts[0])[0]]
+		fused.pending_levels = 2
+		fused.rerolls_left = 1
+		var old: Dictionary = fused.snapshot()
+		var restored := Sim.new()
+		check(restored.restore(old) and restored.pending_levels == 2 and restored.rerolls_left == 1 and not restored.cards.any(func(c): return c.id in pair.parts), "Old component offers migrate without charging a reroll or losing a level")
+		var again := Sim.new()
+		check(again.restore(restored.snapshot()) and again.snapshot() == restored.snapshot(), "Migrated draft remains stable after another restore")
+	for id in added:
+		var ranked := Sim.new(2753)
+		var card: Dictionary = ranked.content.cards.filter(func(c): return c.id == id)[0]
+		ranked.cards = [card]
+		check(ranked.choose_card(0) and ranked.upgrades[id] == 2 and ranked.active_slots == ["aegis"], "Passive picks never consume an active slot: " + id)
+	var target := {"id":99, "p":Vector2(270,200), "kind":"boss", "hp":1000.0, "max_hp":1000.0}
+	sim = Sim.new()
+	sim.upgrades.boss_hunter = 10
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 810.0), "Siege rounds increase live boss damage")
+	target = {"id":99, "p":Vector2(270,200), "kind":"drone", "hp":300.0, "max_hp":1000.0}
+	sim.upgrades.finisher = 10
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 120.0), "Finisher applies below 35% enemy hull")
+	target = {"id":99, "p":Vector2(270,200), "kind":"drone", "hp":1000.0, "max_hp":1000.0}
+	sim.upgrades.opening_salvo = 10
+	sim._damage_enemy(target, 100, "pulse")
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 720.0), "First strike applies only to the opening hit")
+	sim = Sim.new()
+	sim.upgrades.ablative = 10
+	sim._hit(10, "heavy", "test")
+	sim._hit(10, "ordnance", "test")
+	sim._hit(10, "hazard", "Molten slag")
+	sim._hit(10, "ion", "test")
+	check(is_equal_approx(sim.damage_taken.heavy, 6) and is_equal_approx(sim.damage_taken.ordnance, 6) and is_equal_approx(sim.damage_taken.hazard, 6) and is_equal_approx(sim.damage_taken.ion, 10), "Blast plating protects only explosive and beam damage")
+	sim = Sim.new()
+	sim.upgrades.insulation = 10
+	for kind in ["ion", "heat", "gravity", "corrosion"]: sim._hit(1, kind, "test")
+	sim.cooldowns.aegis = 8
+	sim._hit(1, "disrupt", "test")
+	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 2.5) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
+	sim = Sim.new()
+	sim.upgrades.shield_surge = 10
+	sim.shield = 0
+	sim.activate("aegis")
+	check(is_equal_approx(sim.shield, sim.max_shield * 0.15), "Shield reserve restores shield on a cast")
+	sim = Sim.new()
+	sim.upgrades.field_medic = 10
+	sim.hull -= 20
+	var before: float = sim.hull
+	sim._add_enemy("drone", Vector2(270,200))
+	sim._damage_enemy(sim.enemies[0], 1000, "pulse")
+	check(is_equal_approx(sim.hull, before + 1.75), "Combat repairs restore hull from an actual kill")
+	sim = Sim.new()
+	var base_power: float = sim.weapon_power()
+	sim.upgrades.last_stand = 10
+	check(is_equal_approx(sim.weapon_power(), base_power), "Last stand stays inactive at healthy hull")
+	sim.hull = sim.max_hull * 0.3
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 40% hull")
+	sim = Sim.new()
+	base_power = sim.weapon_power()
+	sim.upgrades.shield_focus = 10
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.5), "Shield focus boosts damage with high shields")
+	sim.shield = sim.max_shield * 0.5
+	check(is_equal_approx(sim.weapon_power(), base_power), "Shield focus stops when shields drop")
+	sim = Sim.new()
+	sim.upgrades.afterburn = 10
+	sim.pulse_timer = 1.0
+	sim.activate("aegis")
+	sim._update_weapons()
+	check(is_equal_approx(sim.pulse_timer, 1.0 - Sim.DT * 1.55), "Follow-through accelerates actual weapon timers")
+	var clone := Sim.new()
+	check(clone.restore(sim.snapshot()) and clone.aftercast_left == 4.0 and clone.upgrades.afterburn == 10, "New passives and cast timer survive resume")
+	for i in range(241): sim.step()
+	check(sim.aftercast_left == 0.0, "Follow-through expires after four simulation seconds")
+	for active in ["aegis", "nova_aegis"]:
+		sim = Sim.new()
+		if active == "nova_aegis": _install(sim, "nova")
+		for key in ["aegis", "nova", "nova_aegis", "coolant", "amplifier"]: sim.upgrades[key] = 10
+		sim.meta.ability_cooldown = 10
+		sim.meta.ability_power = 10
+		sim.cards.clear()
+		sim.activate(active)
+		check(sim.aegis_left <= sim.cooldowns[active] - 1.5 + 0.001, "Endgame cooldowns cannot create permanent invulnerability")
+	for stage in [2,3,4]:
+		sim = Sim.new()
+		sim.stage = stage
+		sim._hit(10, "ion", "test")
+		check(is_equal_approx(sim.damage_taken.ion, 10 * sim.stage_spec().damage_scale), "World damage scale reaches collision resolution")
+
+func _fixed_build_timing(seeds: int) -> Dictionary:
+	var results := {}
+	for strategy in ["on_cooldown", "timed"]:
+		var wins := 0
+		var hull := 0.0
+		var survival := 0.0
+		for seed in range(seeds):
+			var sim := Sim.new(61000 + (seed + 1) * 7919)
+			sim.upgrades.nova = 1
+			sim.active_slots.append("nova")
+			sim._try_fuse()
+			sim.upgrades.pulse = 3
+			sim.upgrades.seeker = 3
+			sim.upgrades.armor = 3
+			sim.upgrades.regen = 2
+			sim._spawn_boss()
+			for frame in range(60 * 120):
+				sim.cards.clear()
+				sim.pending_levels = 0
+				var counter: bool = sim.charges.any(func(c): return c.remaining < 0.55)
+				if not counter:
+					for b in sim.bullets:
+						if (b.p+b.v*0.30).distance_squared_to(sim.ship_position(sim.time+0.30)) < 65*65: counter = true; break
+				if strategy == "on_cooldown" or counter: sim.activate("nova_aegis")
+				sim.step()
+				sim.effects.clear()
+				if sim.ended or sim.stage_transition_queued: break
+			wins += int(sim.stage_transition_queued)
+			hull += sim.hull
+			survival += sim.time
+		results[strategy] = {"wins":wins,"mean_hull":snappedf(hull/seeds,0.1),"seconds":snappedf(survival/seeds,0.1)}
+	return results

@@ -30,6 +30,7 @@ var shield_offline := 0.0
 var aegis_left := 0.0
 var cooldowns := {"aegis": 0.0, "nova": 0.0, "barrage": 0.0, "overdrive": 0.0, "chrono": 0.0, "mend": 0.0}
 var upgrades := {"pulse": 1, "seeker": 1, "armor": 0, "regen": 0, "hull": 0, "coolant": 0, "aegis": 0, "nova": 0}
+var aftercast_left := 0.0
 var overdrive_left := 0.0
 var chrono_left := 0.0
 var emp_left := 0.0
@@ -99,6 +100,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 		content.abilities[str(fusion.id)] = {"name": str(fusion.name), "cooldown": float(fusion.cooldown)}
 		cooldowns[str(fusion.id)] = 0.0
 		upgrades[str(fusion.id)] = 0
+		content.cards.append({"id":str(fusion.id), "name":str(fusion.name), "tag":"ABILITY", "description":str(fusion.description), "max":10, "rank5":"20% stronger effect, 10% shorter cooldown", "rank10":"45% stronger effect, 20% shorter cooldown"})
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
@@ -207,10 +209,10 @@ func step() -> void:
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
-	for timer in ["emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
+	for timer in ["aftercast_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
-		var corrosion_damage := DT * 1.4
+		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
 		damage_taken.corrosion += corrosion_damage
 		if hull <= 0.0:
@@ -285,6 +287,21 @@ func fusion_spec(id: String) -> Dictionary:
 		if str(fusion.id) == id:
 			return fusion
 	return {}
+
+func fused_into(id: String) -> String:
+	for fusion in content.fusions:
+		if str(fusion.id) in active_slots and id in fusion.parts:
+			return str(fusion.id)
+	return ""
+
+func stage_damage_scale() -> float:
+	return float(stage_spec().get("damage_scale", 1.0))
+
+func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
+	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
+
+func status_duration_scale() -> float:
+	return 1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)
 
 func _source_active(id: String) -> bool:
 	if id in active_slots:
@@ -361,7 +378,10 @@ func _active_rank_scale(id: String) -> float:
 	for source in sources:
 		var rank: int = int(upgrades.get(str(source), 0))
 		total += 1.0 + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
-	return total / maxf(1.0, float(sources.size()))
+	var inherited := total / maxf(1.0, float(sources.size()))
+	if not spec.is_empty():
+		inherited *= 1.0 + maxf(0, int(upgrades[id]) - 1) * 0.04 + (0.20 if rank_at(id, 5) else 0.0) + (0.25 if rank_at(id, 10) else 0.0)
+	return inherited
 
 func _active_rank_cooldown(id: String) -> float:
 	var sources: Array = [id]
@@ -372,7 +392,10 @@ func _active_rank_cooldown(id: String) -> float:
 	for source in sources:
 		var rank: int = int(upgrades.get(str(source), 0))
 		total += 1.0 - (0.10 if rank >= 5 else 0.0) - (0.10 if rank >= 10 else 0.0)
-	return total / maxf(1.0, float(sources.size()))
+	var inherited := total / maxf(1.0, float(sources.size()))
+	if not spec.is_empty():
+		inherited *= 1.0 - (0.10 if rank_at(id, 5) else 0.0) - (0.10 if rank_at(id, 10) else 0.0)
+	return inherited
 
 func active_synergies() -> Array:
 	var found: Array = []
@@ -554,7 +577,7 @@ func _spawn_boss() -> void:
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale() * stage_risk
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0))
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
@@ -643,7 +666,7 @@ func _update_enemies() -> void:
 				_hit(17.0, "hazard", "Boulder collision")
 				enemy.hp = -1.0
 			continue
-		enemy.fire -= DT * pace
+		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
@@ -738,6 +761,8 @@ func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
 	if rank_at("autoloader", 5): rate += 0.15
 	if rank_at("autoloader", 10): rate += 0.25
+	if aftercast_left > 0.0:
+		rate *= 1.0 + passive_bonus("afterburn", 0.03, 0.10, 0.15)
 	if gravity_left > 0.0:
 		rate *= 0.72
 	pulse_timer -= DT * rate
@@ -804,6 +829,10 @@ func _update_weapons() -> void:
 
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	if hull < max_hull * 0.40:
+		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
+	if shield > max_shield * 0.75:
+		power *= 1.0 + passive_bonus("shield_focus", 0.025, 0.10, 0.15)
 	if synergy_active("fortress"):
 		power *= 0.82
 	if synergy_active("assault"):
@@ -892,7 +921,7 @@ func _update_bullets() -> void:
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
 			if not (barrier_left > 0.0 and bullet.kind == "chaff"):
-				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, bullet.source)
+				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, "Molten slag" if bullet.kind == "slag" else ("Proximity mine" if bullet.kind == "mine" else str(bullet.source)))
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
@@ -972,6 +1001,13 @@ func _update_shots() -> void:
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
+	if weapon in ["pulse", "seeker", "arc", "lance"]:
+		if str(enemy.kind).begins_with("boss"):
+			amount *= 1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)
+		if enemy.hp < enemy.max_hp * 0.35:
+			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
+		if is_equal_approx(float(enemy.hp), float(enemy.max_hp)):
+			amount *= 1.0 + passive_bonus("opening_salvo", 0.04, 0.15, 0.25)
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
 	if enemy.kind == "boss_module":
@@ -992,6 +1028,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp > 0:
 		return
 	kills += 1
+	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if salvage_left > 0.0:
@@ -1027,27 +1064,30 @@ func xp_needed() -> int:
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
 		return
+	amount *= stage_damage_scale()
 	if aegis_left > 0:
 		prevented += amount
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount * stage_risk
+	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
+		reduced *= 1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)
 	if kind == "ion":
-		shield_offline = maxf(shield_offline, 4.0)
+		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
-		heat_left = maxf(heat_left, 5.0)
+		heat_left = maxf(heat_left, 5.0 * status_duration_scale())
 	elif kind == "gravity":
-		gravity_left = maxf(gravity_left, 4.5)
+		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
 		# A fraction reaches the hull directly; the remainder hits shields.
 		hull = maxf(0.0, hull - reduced * 0.30 * hull_damage_multiplier())
 		reduced *= 0.70
 	elif kind == "corrosion":
-		corrosion_left = maxf(corrosion_left, 5.0)
+		corrosion_left = maxf(corrosion_left, 5.0 * status_duration_scale())
 	elif kind == "disrupt":
 		for id in active_slots:
 			if cooldowns[id] > 0.0:
-				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0)
+				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0 * status_duration_scale())
 	if kind == "chaff":
 		reduced = maxf(reduced * 0.25, reduced - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0) - (0.65 if rank_at("armor", 5) else 0.0) - (1.10 if rank_at("armor", 10) else 0.0) - (0.25 if passive_link_active("reinforced_plating") else 0.0))
 	var shield_damage := minf(shield, reduced)
@@ -1086,13 +1126,14 @@ func activate(ability: String) -> bool:
 	ability_uses += 1
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
 	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
-	shield = minf(max_shield, shield + meta.reserve_shield * 5)
+	aftercast_left = 4.0
+	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
 	_log(str(content.abilities[ability].name) + " used")
 	if not fusion_spec(ability).is_empty():
 		_activate_fusion(ability, effect_strength)
 		return true
 	if ability == "aegis":
-		aegis_left = (1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength
+		aegis_left = minf((1.8 + (upgrades.aegis - 1) * 0.25) * effect_strength, maxf(0.0, cooldowns[ability] - 1.5))
 	elif ability == "nova":
 		beams_cancelled += charges.size()
 		charges.clear()
@@ -1218,7 +1259,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 				hull = minf(max_hull, hull + 12.0 * strength)
 				cooldowns[id] *= 0.65
 				_log("Nova Guard countered incoming fire")
-			aegis_left = maxf(aegis_left, 3.8 * strength)
+			aegis_left = maxf(aegis_left, minf((3.8 if counter_window else 2.4) * strength, maxf(0.0, cooldowns[id] - 1.5)))
 			shield = minf(max_shield, shield + 28.0 * strength)
 			beams_cancelled += charges.size()
 			charges.clear()
@@ -1317,6 +1358,12 @@ func _activate_fusion(id: String, strength: float) -> void:
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	for card in content.cards:
+		if stage < int(card.get("min_stage", 1)):
+			continue
+		if not fused_into(str(card.id)).is_empty():
+			continue
+		if not fusion_spec(str(card.id)).is_empty() and str(card.id) not in active_slots:
+			continue
 		if upgrades[card.id] < int(card.max) and card.id not in banished:
 			if card.tag == "ABILITY" and upgrades[card.id] == 0 and not _can_learn_active(str(card.id)):
 				continue
@@ -1378,6 +1425,8 @@ func choose_card(index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	var id: String = cards[index].id
+	if not fused_into(id).is_empty():
+		return false
 	if id == "repair":
 		hull = minf(max_hull, hull + 30)
 	else:
@@ -1433,7 +1482,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "stage", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
-	for key in ["overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
@@ -1475,4 +1524,7 @@ func restore(state: Dictionary) -> bool:
 						shield = minf(max_shield, shield + bonus)
 	_build_course()
 	rng.state = state.rng
+	# Old drafts may contain the component of an already-fused active.
+	if cards.any(func(card): return not fused_into(str(card.id)).is_empty()):
+		_offer_cards(false)
 	return true

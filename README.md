@@ -2,7 +2,7 @@
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
-## Gameplay: v0.7 equipment and phone controls
+## Gameplay: v0.8 progression and phone controls
 
 - **Four active slots from 20 original abilities.** Every ship starts with a signature ability. Each ability has a matching partner; collecting the pair makes a stronger fused ability and frees a slot. Ten fusions are available.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
@@ -15,9 +15,11 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 - **Eight Prototypes.** Between stages, choose one permanent run-changing Prototype from three random, save-stable choices. Prototypes boost durability, damage, cooldowns, boss targeting or core income—but always with a cost.
 - **Choose your next route.** After the warp and Prototype draft, choose **Safe Passage** (big repair), **Redline Jump** (+25% next-stage automatic damage, limited repairs/shields), or **High-Risk Contract** (+30% enemy pressure, additional cores for beating the next boss). Decisions persist through checkpoints.
 - **Boss victories are earned moments.** Defeating a boss freezes combat for oversized explosions and shockwaves. Tap **Warp to next stage**, pick a Prototype and route, and receive an extra level-up before the next stage. After Stage 4, tap **Claim victory** for the full report.
-- **Phone-first menus.** Title, Hangar, Ships & pilots, drafts, intermissions and results share one layout system: header on top, actions pinned to the bottom within thumb reach, and safe-area margins for the notch and home indicator. Every draft option is visible at once and the whole card is the tap target. Permanent unlocks, Refund all and abandoning a saved flight take a second tap or a confirmation. The first flight opens with a four-step briefing.
+- **Phone-first menus.** Title, Hangar, Ships & pilots, drafts, intermissions and results share one layout system: header on top, actions pinned to the bottom within thumb reach, and safe-area margins for the notch and home indicator. The whole card is the tap target; holding and dragging it scrolls when content overflows. Combat HUD and controls also respect the notch and home indicator. Permanent unlocks, Refund all and abandoning a saved flight take a second tap or a confirmation. The first flight opens with a four-step briefing.
 - **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 20 seconds. Chaff, heavy telegraphs, ordnance, mines and stage-specific suppression require different responses.
-- **Real milestones at ranks 5 and 10.** Every one of the 35 upgrade tracks gets a breakpoint effect. Later picks add two ranks; crossing rank 5 or 10 triggers the effect immediately, even if the choice skipped that exact number.
+- **Real milestones at ranks 5 and 10.** All 45 original upgrade tracks and 10 fused tracks get breakpoint effects. Later picks add two ranks; crossing rank 5 or 10 triggers the effect immediately, even if the choice skipped that exact number.
+- **Ten more passives from world 2.** Siege rounds, Finisher rounds, First strike, Blast plating, Insulation, Shield reserve, Combat repairs, Last stand, Shield focus and Follow-through. Active, Passive and Auto weapon labels stay visible on every draft card. Consumed fusion components leave the pool; upgrade the combined ability directly.
+- **Later worlds scale with growing builds.** Worlds 2–4 have substantially higher health, damage and firing pressure, stronger boss modules and longer boss fights. Aegis effects leave a vulnerability window between casts.
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties.
 - **Readable threats.** Enemy rounds and beam warnings share a coral outline and render above friendly effects. A fractured shield ring and segmented shield bar make shield loss visible, including with reduced effects. Fusion and rank-5/10 picks get a thin accent border.
 - **Persistent Hangar.** Twenty-two refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Reroll uplinks grant one reroll per rank each stage. Equipment and selected difficulty are retained in saves.
@@ -49,6 +51,7 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 
 ## Files and remaining release gates
 
+- [Gameplay v0.8: world scaling, ten passives and iPhone input](docs/GAMEPLAY_V08.md)
 - [Gameplay v0.7: fusions, milestones and mobile acceptance](docs/GAMEPLAY_V07.md)
 - [Gameplay v0.6 and strategic UAT specification](docs/GAMEPLAY_V06.md) — boss phases, archetypes, Prototypes and routes
 - [Historical v0.5 milestone](docs/GAMEPLAY_V05.md) — four stages, boss ceremonies, readable Build and Results
@@ -61,4 +64,4 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 - `data/content.json` — enemies, abilities and upgrade cards
 - `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-**v0.7.1 redesigns every menu and between-stage screen for phones (see [native delivery gates](docs/NATIVE_DELIVERY.md#v071-menu-redesign-acceptance)); v0.7 added fused abilities and passive pairings. Real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.
+**v0.8 builds on the separate menu redesign, with stronger late worlds, ten passives, direct fusion upgrades, safe combat headers and held-card scrolling. Real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.

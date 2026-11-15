@@ -11,7 +11,7 @@
 
 ## Ability fusions
 
-StarRun still offers **20 original active abilities**. Each has one fixed partner. Learn both and they automatically become one stronger active on a single cooldown. The two source buttons are replaced by one fusion button; the freed slot can be used for another ability. The source tracks remain upgradable and are saved with the run. A full four-slot bar may still draft a matching fusion partner, since the fusion occurs in the same choice.
+StarRun still offers **20 original active abilities**. Each has one fixed partner. Learn both and they automatically become one stronger active on a single cooldown. The two source buttons are replaced by one fusion button; the freed slot can be used for another ability. Originally, source tracks remained upgradable. **Superseded by v0.8:** consumed components leave the draft pool; the fused ability has its own rank track. Existing source ranks remain saved and contribute their inherited bonuses. A full four-slot bar may still draft a matching fusion partner, since the fusion occurs in the same choice.
 
 | Original abilities | New active | What one cast does |
 |---|---|---|

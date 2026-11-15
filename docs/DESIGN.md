@@ -1,10 +1,10 @@
-> **Current development (v0.7):** see [GAMEPLAY_V07.md](GAMEPLAY_V07.md) for 10 active fusions that free slots, 8 passive equipment pairs, all-rank 5/10 milestones and paged phone upgrades. [GAMEPLAY_V06.md](GAMEPLAY_V06.md) covers boss phases, Prototypes and strategic routes. [GAMEPLAY_V05.md](GAMEPLAY_V05.md), [FIRST_PLAYABLE.md](FIRST_PLAYABLE.md) and [GAMEPLAY_V04.md](GAMEPLAY_V04.md) are historical snapshots; proposed features below are explicitly not all implemented.
+> **Current development (v0.8):** see [GAMEPLAY_V08.md](GAMEPLAY_V08.md) for late-world scaling, ten new passives, direct fusion upgrades and touch fixes. Earlier gameplay documents are historical snapshots. Proposed features below are not all implemented.
 
 # StarRun: Game Design Document
 
 Status: Active game design. Latest player feedback is tracked in the v0.7 specification. Working title is the repo name.
 
-[GAMEPLAY_V07.md](GAMEPLAY_V07.md) is the current source for fusion rules and touch usability. [GAMEPLAY_V06.md](GAMEPLAY_V06.md) remains the source for boss behaviors and stage transitions. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
+[GAMEPLAY_V08.md](GAMEPLAY_V08.md) is the current source for fusion rules, progression and touch usability. [GAMEPLAY_V06.md](GAMEPLAY_V06.md) remains the source for boss behaviors and stage transitions. [NATIVE_DELIVERY.md](NATIVE_DELIVERY.md) lists unpassed hardware and storefront gates.
 
 How to read this doc: every item is tagged by where it came from.
 

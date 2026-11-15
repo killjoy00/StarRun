@@ -187,15 +187,18 @@ func _layout() -> void:
 	old_size = size
 	root.size = size
 	overlay.size = size
-	var usable_height := maxf(240, size.y - (160 if _compact_ui() else 222))
+	var inset := _insets()
+	var top_shift := maxf(0.0, float(inset.top) - 14.0) + 8.0
+	var bottom_shift := maxf(0.0, float(inset.bottom) - 14.0)
+	var usable_height := maxf(240, size.y - (176 if _compact_ui() else 238) - top_shift - bottom_shift)
 	scale_factor = minf((size.x - 24) / 540.0, usable_height / 960.0)
-	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 75), Vector2(540, 960) * scale_factor)
+	field = Rect2(Vector2((size.x - 540 * scale_factor) / 2, 91 + top_shift), Vector2(540, 960) * scale_factor)
 	clip.position = field.position
 	clip.size = field.size
 	world.scale = Vector2.ONE * scale_factor
-	hud.position = Vector2(field.position.x, 16)
+	hud.position = Vector2(field.position.x, 16 + top_shift)
 	hud.size = Vector2(field.size.x, 24)
-	status.position = Vector2(field.position.x, 43)
+	status.position = Vector2(field.position.x, 57 + top_shift)
 	status.size = Vector2(field.size.x, 22)
 	var compact := _compact_ui()
 	var controls_width := minf(size.x - 28, maxf(330, field.size.x))
@@ -217,14 +220,14 @@ func _layout() -> void:
 			compact_style.content_margin_bottom = 6
 			button.add_theme_stylebox_override(state, compact_style)
 	var top_height := 44.0 if compact else 36.0
-	build_button.position = Vector2(field.end.x - (202 if compact else 165), 30 if compact else 31)
+	build_button.position = Vector2(field.end.x - (202 if compact else 165), top_shift + (44 if compact else 45))
 	build_button.size = Vector2(86 if compact else 74, top_height)
-	speed_button.position = Vector2(field.end.x - (114 if compact else 90), 30 if compact else 31)
+	speed_button.position = Vector2(field.end.x - (114 if compact else 90), top_shift + (44 if compact else 45))
 	speed_button.size = Vector2(66 if compact else 46, top_height)
 	for control in [build_button, speed_button]:
 		control.custom_minimum_size.y = top_height
 		control.add_theme_font_size_override("font_size", _text_size(11))
-	pause_button.position = Vector2(field.end.x - (46 if compact else 42), 30 if compact else 31)
+	pause_button.position = Vector2(field.end.x - (46 if compact else 42), top_shift + (44 if compact else 45))
 	pause_button.size = Vector2(46 if compact else 42, top_height)
 	pause_button.custom_minimum_size.y = top_height
 	pause_button.add_theme_font_size_override("font_size", _text_size(14))
@@ -410,6 +413,8 @@ func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dic
 		reading_scroll = ScrollContainer.new()
 		reading_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 		reading_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		reading_scroll.scroll_deadzone = 8
+		_enable_scroll_input.call_deferred(weakref(reading_scroll))
 		frame.add_child(reading_scroll)
 		reading_scroll.add_child(body)
 	else:
@@ -423,6 +428,20 @@ func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dic
 	bottom.add_child(reading_footer)
 	reading_panel = frame
 	return {"top": top, "body": body, "bottom": bottom, "footer": reading_footer, "frame": frame}
+
+## Let native touch dragging bubble through cards, icons and purchase buttons.
+## ScrollContainer cancels a held button when the gesture becomes a scroll.
+func _enable_scroll_input(scroll_ref: WeakRef) -> void:
+	var scroll: ScrollContainer = scroll_ref.get_ref()
+	if is_instance_valid(scroll):
+		for child in scroll.get_children():
+			_pass_scroll_input(child)
+
+func _pass_scroll_input(node: Node) -> void:
+	if node is Control and node.mouse_filter == Control.MOUSE_FILTER_STOP:
+		node.mouse_filter = Control.MOUSE_FILTER_PASS
+	for child in node.get_children():
+		_pass_scroll_input(child)
 
 func _page_header(top: VBoxContainer, eyebrow: String, title: String, back: Callable = Callable(), wallet: bool = false) -> void:
 	var row := HBoxContainer.new()
@@ -605,9 +624,10 @@ func _keep_scroll(scroll: ScrollContainer, value: int) -> void:
 	# Re-rendering a list after a tap should not throw the player back to the top.
 	if scroll == null or value <= 0:
 		return
-	get_tree().process_frame.connect(_apply_scroll.bind(scroll, value), CONNECT_ONE_SHOT)
+	get_tree().process_frame.connect(_apply_scroll.bind(weakref(scroll), value), CONNECT_ONE_SHOT)
 
-func _apply_scroll(scroll: ScrollContainer, value: int) -> void:
+func _apply_scroll(scroll_ref: WeakRef, value: int) -> void:
+	var scroll: ScrollContainer = scroll_ref.get_ref()
 	if is_instance_valid(scroll):
 		scroll.scroll_vertical = value
 
@@ -888,6 +908,8 @@ func _show_hangar() -> void:
 	hangar_scroll = ScrollContainer.new()
 	hangar_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	hangar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	hangar_scroll.scroll_deadzone = 8
+	_enable_scroll_input.call_deferred(weakref(hangar_scroll))
 	body.add_child(hangar_scroll)
 	var list := VBoxContainer.new()
 	list.add_theme_constant_override("separation", 8)
@@ -1144,20 +1166,21 @@ func _draft_card(parent: Node, i: int) -> void:
 	var is_new_ability := tag == "ABILITY" and current == 0
 	var fusion: String = sim.fusion_hint(id) if is_new_ability else ""
 	var accent := Kit.CYAN
+	var type_text := "Active" if tag == "ABILITY" else ("Auto weapon" if tag == "WEAPON" else "Passive")
 	var tag_text := ""
 	if not fusion.is_empty():
 		accent = Kit.VIOLET
-		tag_text = "Fusion  ·  frees a slot"
+		tag_text = "Active  ·  fusion"
 	elif is_new_ability:
-		tag_text = "New ability  ·  slot %d of 4" % (sim.active_slots.size() + 1)
+		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
 	elif tag == "RECOVERY":
 		accent = Color("7afcc0")
 		tag_text = "Recovery"
 	else:
 		accent = Kit.CYAN if tag == "ABILITY" else (Kit.AMBER if tag == "WEAPON" else Color("9fcbff"))
-		tag_text = "%s  ·  rank %d to %d" % [tag.capitalize(), current, next_rank]
+		tag_text = "%s  ·  rank %d to %d" % [type_text, current, next_rank]
 	if reaches_milestone:
-		tag_text = "Rank %d bonus  ·  %d to %d" % [milestone, current, next_rank]
+		tag_text = "%s  ·  rank %d bonus" % [type_text, milestone]
 	var removable := banish_mode and id != "repair"
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
 	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
@@ -1189,7 +1212,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
 	Kit.label(info, str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
-		Kit.label(info, "Fuses into %s." % fusion.get_slice(":", 0), 15, Kit.VIOLET, true)
+		Kit.label(info, "%s · frees a slot" % fusion.get_slice(":", 0), 15, Kit.VIOLET, true)
 	elif current < 10 and (reaches_milestone or (not _compact_ui() and tag in ["WEAPON", "SYSTEM", "ABILITY"])):
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
@@ -1289,7 +1312,7 @@ func _show_build() -> void:
 			var part_a: String = str(fused.parts[0])
 			var part_b: String = str(fused.parts[1])
 			Kit.label(text, str(fused.name), 17, Kit.VIOLET)
-			Kit.label(text, "Fused: %s rank %d + %s rank %d" % [sim.content.abilities[part_a].name, sim.upgrades[part_a], sim.content.abilities[part_b].name, sim.upgrades[part_b]], 15, Kit.MUTED, true)
+			Kit.label(text, "Rank %d of 10 · %s + %s" % [sim.upgrades[id], sim.content.abilities[part_a].name, sim.content.abilities[part_b].name], 15, Kit.MUTED, true)
 		else:
 			Kit.label(text, str(sim.content.abilities[id].name), 17, Color.WHITE)
 			Kit.label(text, "Rank %d of 10" % int(sim.upgrades[id]), 15, Kit.MUTED)
@@ -1312,9 +1335,9 @@ func _show_build() -> void:
 			_info_card(body, str(spec.name), "Gain: %s\nCost: %s" % [spec.benefit, spec.cost], Kit.CYAN)
 	if not sim.route_choice.is_empty():
 		Kit.label(body, "Current route: " + _route_name(sim.route_choice), 16, Kit.CYAN)
-	_ui_button(body, "Hide full equipment list" if build_show_all else "Show weapons, systems and Hangar ranks", _toggle_build_details, "ghost", 44)
+	_ui_button(body, "Hide full equipment list" if build_show_all else "Show weapons, passives and Hangar ranks", _toggle_build_details, "ghost", 44)
 	if build_show_all:
-		for group in [["WEAPON", "Automatic weapons"], ["SYSTEM", "Ship systems"]]:
+		for group in [["WEAPON", "Automatic weapons"], ["SYSTEM", "Passive upgrades"]]:
 			_section(body, str(group[1]))
 			for entry in sim.content.cards:
 				if entry.tag == group[0] and int(sim.upgrades.get(entry.id, 0)) > 0:
@@ -1672,7 +1695,7 @@ func _update_hud() -> void:
 	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
 		build_label.text += tag + "S\n"
 		for card in sim.content.cards:
-			if card.tag == tag and sim.upgrades[card.id] > 0:
+			if card.tag == tag and sim.upgrades[card.id] > 0 and sim.fused_into(str(card.id)).is_empty():
 				build_label.text += "%s  %d/%d\n" % [card.name, sim.upgrades[card.id], card.max]
 		build_label.text += "\n"
 	report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nCoral lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [_sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else "Boss at 04:00", sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
