@@ -1,6 +1,6 @@
 # Star/Run
 
-**Star/Run** is the in-game title for the StarRun repository. Version 0.9.0 adds local achievements, a shared-seed UTC Daily Challenge (device-local personal best, not an online leaderboard), and a redesigned title menu. See [Daily and achievements rules](docs/DAILY_ACHIEVEMENTS.md).
+**Star/Run** is the in-game title for the StarRun repository. Version **0.9.1** adds one-tap clipboard sharing for Daily scorecards, queued achievement unlock celebrations, unified icon/web/app branding, and an optional **iPhone Game Center** connection for online Daily scores and Apple achievements. Game Center requires Apple-side setup, badges, review and physical-device testing before it can be called live. See [sharing and Game Center requirements](docs/SHARING_GAME_CENTER.md) and [Daily and achievements rules](docs/DAILY_ACHIEVEMENTS.md).
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
