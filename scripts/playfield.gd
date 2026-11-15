@@ -65,7 +65,8 @@ func _draw() -> void:
 	var velocity: Vector2 = sim.ship_velocity()
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
 	var sector := _sector(sim.time)
-	if sim.stage == 1:
+	var visual_stage := ((sim.stage - 1) % 4) + 1
+	if visual_stage == 1:
 		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
 		var scroll := visual_time * 105.0
 		var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
@@ -141,7 +142,7 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
 
 func _visual_theme_id() -> String:
-	return ["debris", "storm", "forge", "void"][clampi(sim.stage - 1, 0, 3)]
+	return ["debris", "storm", "forge", "void"][(sim.stage - 1) % 4]
 
 func _sector(at: float) -> int:
 	if sim.stage > 1:
@@ -157,14 +158,14 @@ func _sector(at: float) -> int:
 	return 4
 
 func _draw_stage_backdrop() -> void:
-	# Each late-game stage has its own silhouette, contrast, and parallax,
-	# rather than recoloring the Debris Belt texture.
-	var base := Color("041c32") if sim.stage == 2 else (Color("26110a") if sim.stage == 3 else Color("0d071b"))
-	var high := Color("064e64") if sim.stage == 2 else (Color("632512") if sim.stage == 3 else Color("261448"))
+	# Endless sectors reuse the authored visual ecologies rather than a flat backdrop.
+	var visual_stage := ((sim.stage - 1) % 4) + 1
+	var base := Color("041c32") if visual_stage == 2 else (Color("26110a") if visual_stage == 3 else Color("0d071b"))
+	var high := Color("064e64") if visual_stage == 2 else (Color("632512") if visual_stage == 3 else Color("261448"))
 	draw_rect(Rect2(0, 0, 540, 960), base)
 	for band in range(24):
 		draw_rect(Rect2(0, band * 40, 540, 42), base.lerp(high, 0.15 + 0.55 * (1.0 - absf(11.5 - band) / 12.0)))
-	match sim.stage:
+	match visual_stage:
 		2:
 			# Jagged cyan plasma rivers, pale cloud masses, electric ribs.
 			for i in range(10):
