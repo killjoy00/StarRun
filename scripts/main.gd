@@ -11,6 +11,7 @@ const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
+const GameCenterBridge = preload("res://scripts/game_center_bridge.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -83,6 +84,13 @@ var result_awards: Array = []
 var result_daily_score := -1
 var result_daily_best := -1
 var result_new_best := false
+var game_center := GameCenterBridge.new()
+var toast_layer: Control
+var toast_panel: PanelContainer
+var toast_title: Label
+var toast_detail: Label
+var toast_queue: Array = []
+var toast_clock := 0.0
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -116,6 +124,7 @@ func _ready() -> void:
 	_build_ui()
 	_layout()
 	_show_menu()
+	game_center.initialize(profile, _save_profile)
 	get_tree().auto_accept_quit = false
 
 # Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
@@ -230,12 +239,32 @@ func _build_ui() -> void:
 	overlay = Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(overlay)
+	toast_layer = Control.new()
+	toast_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(toast_layer)
+	toast_panel = PanelContainer.new()
+	toast_panel.name = "AchievementToast"
+	toast_panel.visible = false
+	toast_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	toast_panel.add_theme_stylebox_override("panel", Kit.box(Color("16242b"), Kit.AMBER, 14, 2, 14, 9))
+	toast_layer.add_child(toast_panel)
+	var stack := VBoxContainer.new()
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_theme_constant_override("separation", 3)
+	toast_panel.add_child(stack)
+	toast_title = Kit.label(stack,"ACHIEVEMENT UNLOCKED",13,Kit.AMBER)
+	toast_title.add_theme_font_override("font",Kit.font(1,0.35))
+	toast_detail = Kit.label(stack,"",17,Kit.TEXT,true)
 
 func _layout() -> void:
 	var size := get_viewport_rect().size
 	old_size = size
 	root.size = size
 	overlay.size = size
+	if is_instance_valid(toast_layer):
+		toast_layer.size = size
+		toast_panel.position = Vector2(16.0, float(_insets().top) + 56.0)
+		toast_panel.size = Vector2(minf(410.0,size.x-32.0),0.0)
 	var inset := _insets()
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
