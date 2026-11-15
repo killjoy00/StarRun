@@ -1,5 +1,6 @@
 extends Control
 ## Lightweight vector insignia: readable on desktop and mobile without font emoji or extra textures.
+const FusionArt = preload("res://scripts/fusion_art.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const VIOLET := Color("b3a3ff")
@@ -17,17 +18,14 @@ func _draw() -> void:
 		color = AMBER
 	elif icon_id in ["arc", "arcwing", "chrono", "coolant", "tactician", "nyx"]:
 		color = VIOLET
-	elif icon_id in ["nova_aegis", "railstorm", "stasis_lock", "repair_matrix", "missile_grid", "scrap_converter", "prism_focus", "reflective_wall", "ghost_signal", "reactor_surge"]:
-		color = Color("c9a8ff")
 	draw_set_transform(center, 0.0, Vector2.ONE * s)
+	if FusionArt.PALETTES.has(icon_id):
+		FusionArt.badge(self, icon_id)
+		draw_set_transform(Vector2.ZERO)
+		return
 	draw_circle(Vector2.ZERO, 17.0, Color(color, 0.08))
 	draw_arc(Vector2.ZERO, 16.0, 0.0, TAU, 28, Color(color, 0.45), 1.3, true)
 	match icon_id:
-		"nova_aegis", "railstorm", "stasis_lock", "repair_matrix", "missile_grid", "scrap_converter", "prism_focus", "reflective_wall", "ghost_signal", "reactor_surge":
-			# A double strike marks abilities made from two separate skills.
-			for side in [-1, 1]:
-				draw_colored_polygon(PackedVector2Array([Vector2(side*5,-13),Vector2(side*13,0),Vector2(side*5,13),Vector2(side*1,0)]), Color(color,0.65))
-				draw_line(Vector2(side*4,-9),Vector2(side*10,0),Color.WHITE,1.7,true)
 		"aegis", "shield", "regen", "reserve_shield", "emergency", "shieldguard", "ablative", "insulation", "shield_surge", "shield_focus":
 			var points := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(9,7),Vector2(0,12),Vector2(-9,7),Vector2(-11,-7)])
 			points.append(points[0])

@@ -4,7 +4,7 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 
 ## Gameplay: v0.8 progression and phone controls
 
-- **Four active slots from 20 original abilities.** Every ship starts with a signature ability. Each ability has a matching partner; collecting the pair makes a stronger fused ability and frees a slot. Ten fusions are available.
+- **Four active slots from 20 original abilities.** Every ship starts with a signature ability. Each ability has a matching partner; upgrading both to rank 5 makes a stronger fused ability and frees a slot. Ten fusions are available.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
 - **Stage 1: Debris Belt.** Fly through changing scenery and enemy waves, then defeat the Harvester. A full Hangar can make this stage easy, by design.
 - **Stage 2: Ion Storm.** A fully different cobalt lightning environment, new electrical silhouettes, ion shield suppression, corrosion, ability disruption and the Storm Carrier.
@@ -51,6 +51,7 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 
 ## Files and remaining release gates
 
+- [Gameplay v0.8.1: rank-5 fusions and fusion artwork](docs/GAMEPLAY_V081.md)
 - [Gameplay v0.8: world scaling, ten passives and iPhone input](docs/GAMEPLAY_V08.md)
 - [Gameplay v0.7: fusions, milestones and mobile acceptance](docs/GAMEPLAY_V07.md)
 - [Gameplay v0.6 and strategic UAT specification](docs/GAMEPLAY_V06.md) — boss phases, archetypes, Prototypes and routes
@@ -64,4 +65,4 @@ Web requires WebGL2; Windows may show an unsigned application warning. Godot's 6
 - `data/content.json` — enemies, abilities and upgrade cards
 - `tests/run.gd`, `tests/ui_smoke.gd` — simulation and responsive UI regression checks
 
-**v0.8 builds on the separate menu redesign, with stronger late worlds, ten passives, direct fusion upgrades, safe combat headers and held-card scrolling. Real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.
+**v0.8.1 adds rank-5 fusion requirements and distinct fusion insignia and effects to v0.8’s stronger late worlds, ten passives, safe combat headers and held-card scrolling. Real-device UAT remains required.** Passing simulation, responsive UI and iOS compile does not establish human enjoyment, actual iPhone frame-time stability, ads or in-app purchase support. Signed TestFlight release status is checked separately.

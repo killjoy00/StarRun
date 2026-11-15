@@ -1,5 +1,6 @@
 extends Node2D
 ## Material ship art, parallax debris, banking and layered combat VFX.
+const FusionArt = preload("res://scripts/fusion_art.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const DANGER := Color("ff727b")
@@ -21,6 +22,9 @@ var feedback_sim: RefCounted
 var feedback_stage := 0
 var shield_break_clock := 0.0
 var last_shield_break_tick := -1
+var formation_clock := 0.0
+var formation: Dictionary = {}
+var seen_formations := {}
 
 func _process(delta: float) -> void:
 	if host == null or host.sim == null:
@@ -30,9 +34,19 @@ func _process(delta: float) -> void:
 		feedback_stage = host.sim.stage
 		shield_break_clock = 0.0
 		last_shield_break_tick = -1
+		formation_clock = 0.0
+		formation.clear()
+		seen_formations.clear()
 	if host.mode == "playing":
 		shield_break_clock = maxf(0.0, shield_break_clock - delta)
+		formation_clock = maxf(0.0, formation_clock - delta)
 	for effect in host.sim.effects:
+		if effect.kind == "fusion-formed":
+			var key := "%s:%s" % [effect.fusion,effect.born]
+			if not seen_formations.has(key):
+				seen_formations[key] = true
+				formation = effect.duplicate(true)
+				formation_clock = 1.2
 		if effect.kind == "shield-break" and int(effect.born) > last_shield_break_tick:
 			last_shield_break_tick = int(effect.born)
 			shield_break_clock = 0.75
@@ -75,18 +89,25 @@ func _draw() -> void:
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
 	for shot in sim.shots:
 		var color := CYAN if shot.weapon == "pulse" else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
+		if shot.has("fusion"):
+			color = FusionArt.PALETTES[str(shot.fusion)][0]
 		var direction: Vector2 = shot.v.normalized()
 		if not profile.reduced:
 			draw_line(shot.p - direction * 27, shot.p, Color(color, 0.12), 8, true)
 		draw_line(shot.p - direction * 17, shot.p, color, 3, true)
 		draw_line(shot.p - direction * 9, shot.p, Color.WHITE, 1.4, true)
+		if shot.has("fusion"):
+			var tail: Vector2 = shot.p - direction * 7
+			draw_polyline(PackedVector2Array([tail + direction.orthogonal()*3,shot.p + direction*3,tail - direction.orthogonal()*3]),color,1.4,true)
 	for enemy in sim.enemies:
 		_draw_enemy(enemy)
 	_draw_player(ship, velocity)
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed"]:
 			_draw_effect(effect)
+	if formation_clock > 0.0:
+		_draw_fusion_formed(formation, formation_clock/1.2, 1.0-formation_clock/1.2)
 	for effect in sim.effects:
 		if effect.kind == "beam":
 			_draw_effect(effect)
@@ -564,7 +585,11 @@ func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
 	var age := 1.0 - alpha
 	var p: Vector2 = effect.p
-	if effect.kind in ["arc", "lance"]:
+	if effect.kind == "fusion-cast":
+		_draw_fusion_cast(effect, alpha, age)
+	elif effect.kind == "fusion-formed":
+		_draw_fusion_formed(effect, alpha, age)
+	elif effect.kind in ["arc", "lance"]:
 		var end: Vector2 = effect.to
 		var color := Color("bba5ff") if effect.kind == "arc" else Color("ffdb96")
 		if effect.kind == "arc":
@@ -614,6 +639,127 @@ func _draw_effect(effect: Dictionary) -> void:
 			var distance := radius * (0.4 + fposmod(i * 0.173, 0.7))
 			var tail := p + direction * distance
 			draw_line(tail, tail + direction * (3 + alpha * 12), Color(1, 0.45 + (i % 3) * 0.15, 0.2, alpha), 1.5, true)
+
+func _draw_fusion_formed(effect: Dictionary, alpha: float, age: float) -> void:
+	var id: String = effect.fusion
+	var colors: Array = FusionArt.PALETTES[id]
+	var p: Vector2 = effect.p + Vector2(0, -100)
+	p.x = clampf(p.x, 115, 425)
+	var fade := minf(1.0, alpha * 3.0)
+	var converge := clampf(age / 0.4, 0.0, 1.0)
+	var offset := 55.0 * pow(1.0 - converge, 2)
+	for side in [-1,1]:
+		var node := p + Vector2(side * offset, 0)
+		FusionArt.outline(self,FusionArt.polygon(node,22 + converge*5),Color(colors[0 if side<0 else 1],fade*(1.0-converge)),2)
+	if not profile.reduced:
+		draw_arc(p,30 + age*38,0,TAU,48,Color(colors[0],alpha*0.28),2,true)
+	draw_set_transform(p,0,Vector2.ONE*(1.2 + minf(0.2,converge*0.2)))
+	FusionArt.badge(self,id,fade)
+	draw_set_transform(Vector2.ZERO)
+	draw_string(ThemeDB.fallback_font,p+Vector2(-110,48),str(sim.fusion_spec(id).name),HORIZONTAL_ALIGNMENT_CENTER,220,20,Color("edf5ff",fade))
+
+func _draw_fusion_cast(effect: Dictionary, alpha: float, age: float) -> void:
+	var id: String = effect.fusion
+	var colors: Array = FusionArt.PALETTES[id]
+	var a := Color(colors[0],alpha)
+	var b := Color(colors[1],alpha)
+	var white := Color("edf8ff",alpha*0.85)
+	var p: Vector2 = effect.p
+	if id in ["nova_aegis","repair_matrix","reflective_wall","ghost_signal"]:
+		p = sim.ship_position()
+	var spread := 1.0 - pow(1.0-age,3)
+	var count := 6 if profile.reduced else 12
+	match id:
+		"nova_aegis":
+			var r := 48.0 + spread * (210.0 if effect.get("counter",false) else 140.0)
+			FusionArt.outline(self,FusionArt.polygon(p,54),a,2.5)
+			for i in range(count):
+				var angle: float = i*TAU/count
+				draw_arc(p,r,angle,angle+TAU/count*0.7,10,a,3,true)
+				draw_line(p+Vector2.from_angle(angle)*r,p+Vector2.from_angle(angle)*(r+13),b,2,true)
+			if not profile.reduced: draw_arc(p,r*0.87,0,TAU,64,Color(a,alpha*0.22),7,true)
+		"railstorm":
+			var targets: Array = effect.get("targets",[])
+			for i in range(3):
+				var origin := p+Vector2((i-1)*18,-28)
+				var target: Vector2 = targets[i] if i < targets.size() else p+Vector2((i-1)*58,-350)
+				if not profile.reduced: draw_line(origin,target,Color(a,alpha*0.12),14,true)
+				draw_line(origin,target,a,3.2,true)
+				draw_line(origin,target,white,1.2,true)
+				var v := (target-origin).normalized()
+				var point := origin.lerp(target,minf(1.0,age*2.4))
+				draw_line(point-v*20,point,b,5,true)
+				draw_arc(target,6+spread*18,0,TAU,24,b,1.6,true)
+		"stasis_lock":
+			var r := 65.0+spread*110
+			for ring in [0.75,1.0]:
+				draw_arc(p,r*ring,0,TAU,64,Color(a,alpha*0.6),1.8,true)
+			for i in range(count):
+				var v := Vector2.from_angle(i*TAU/count)
+				draw_line(p+v*(r-9),p+v*r,b,2.5,true)
+			for x in [-1,1]:
+				for y in [-1,1]:
+					var corner := p+Vector2(x,y)*r*0.56
+					draw_polyline(PackedVector2Array([corner-Vector2(x*14,0),corner,corner-Vector2(0,y*14)]),white,2,true)
+		"repair_matrix":
+			var r := 48.0+sin(age*PI)*15
+			FusionArt.outline(self,FusionArt.polygon(p,44),Color(a,alpha*0.5),1.4)
+			for i in range(4):
+				var angle: float = PI/4+i*TAU/4+(0.0 if profile.reduced else age*0.35)
+				var node := p+Vector2.from_angle(angle)*r
+				draw_line(node,p,Color(a,alpha*0.5),1.5,true)
+				FusionArt.outline(self,FusionArt.polygon(node,9,4),b,1.5)
+				draw_rect(Rect2(node+Vector2(-1.5,-5),Vector2(3,10)),white)
+				draw_rect(Rect2(node+Vector2(-5,-1.5),Vector2(10,3)),white)
+		"missile_grid":
+			for side in [-1,1]:
+				FusionArt.outline(self,FusionArt.polygon(p+Vector2(side*35,-12),12),b,2)
+			for i in range(7):
+				var v := Vector2.from_angle(-PI/2+(i-3)*0.17)
+				var point := p+v*(35+spread*150)
+				draw_line(point-v*30,point,Color(a,alpha*0.65),2,true)
+				draw_polyline(PackedVector2Array([point-v*9+v.orthogonal()*4,point,point-v*9-v.orthogonal()*4]),white,2,true)
+		"scrap_converter":
+			for target in effect.get("targets",[]):
+				draw_line(p,target,Color(b,alpha*0.4),1.5,true)
+				for i in range(5):
+					var shard: Vector2 = target.lerp(p,fposmod(age*1.5+i*0.17,1.0))
+					draw_colored_polygon(FusionArt.polygon(shard,3+i%2,4),a if i%2==0 else b)
+			for i in range(3):
+				var angle: float = i*TAU/3 + (0 if profile.reduced else age)
+				draw_arc(p,85-spread*40,angle,angle+1.4,16,b,2.5,true)
+		"prism_focus":
+			var center := p+Vector2(0,-40)
+			var crystal := PackedVector2Array([center+Vector2(0,-38),center+Vector2(26,0),center+Vector2(0,32),center+Vector2(-26,0)])
+			if not profile.reduced: draw_colored_polygon(crystal,Color(a,alpha*0.12))
+			FusionArt.outline(self,crystal,b,2.2)
+			draw_line(crystal[0],crystal[2],white,1.7,true)
+			draw_line(crystal[1],crystal[3],a,1.5,true)
+			for i in [-1,0,1]:
+				var v := Vector2.from_angle(-PI/2+i*0.33)
+				draw_line(center+v*40,center+v*(90+spread*120),a if i==0 else b,2,true)
+		"reflective_wall":
+			for i in range(5):
+				var v := Vector2.from_angle(-PI/2+(i-2)*0.39)
+				var tile := FusionArt.polygon(p+v*62,16)
+				if not profile.reduced: draw_colored_polygon(tile,Color(a,alpha*0.1))
+				FusionArt.outline(self,tile,a,2)
+				draw_line(p+v*(85+spread*22),p+v*(98+spread*40),b,2,true)
+		"ghost_signal":
+			for side in [-1,1]:
+				var echo := p+Vector2(side*(30+spread*65),10)
+				var hull := PackedVector2Array([echo+Vector2(0,-25),echo+Vector2(12,8),echo+Vector2(26,22),echo+Vector2(0,14),echo+Vector2(-26,22),echo+Vector2(-12,8)])
+				FusionArt.outline(self,hull,Color(a,alpha*0.7),1.6)
+				for ring in [70.0,100.0]: draw_arc(p,ring+spread*30,(-0.55 if side==1 else PI-0.55),(0.55 if side==1 else PI+0.55),20,b,1.6,true)
+		"reactor_surge":
+			var r := 42.0+spread*105
+			FusionArt.outline(self,FusionArt.polygon(p,32+spread*12),b,2.4)
+			for i in range(count):
+				var v := Vector2.from_angle(i*TAU/count)
+				var side := v.orthogonal()
+				var bolt := PackedVector2Array([p+v*38,p+v*(r*0.65)+side*9,p+v*(r*0.78)-side*5,p+v*r])
+				draw_polyline(bolt,a,2,true)
+				draw_circle(p+v*r,2,white)
 
 func _asteroid(p: Vector2, radius: float, index: int, depth: float) -> void:
 	var vertices := PackedVector2Array()

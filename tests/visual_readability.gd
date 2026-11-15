@@ -117,6 +117,9 @@ func _run() -> void:
 		scene._layout()
 		scene.sim = Sim.new(2502, {"rerolls":1})
 		scene.sim.upgrades.pulse = 4
+		scene.sim.upgrades.aegis = 5
+		scene.sim.upgrades.nova = 3
+		scene.sim.active_slots.append("nova")
 		scene.sim.upgrades.chrono = 8
 		scene.sim.cards = []
 		for id in ["nova", "pulse", "chrono", "armor"]:
@@ -126,6 +129,19 @@ func _run() -> void:
 		var draft := await _frame(root)
 		draft.save_png(output.path_join("draft-%d.png" % dimensions.x))
 		check(scene.card_buttons[3].get_global_rect().end.y <= scene.reading_scroll.get_global_rect().end.y + 1, "Fusion and rank bonuses must fit together on a phone draft")
+		var labels := scene.overlay.find_children("*", "Label", true, false)
+		check(labels.any(func(label): return label.text == "Nova Guard"), "A qualifying pick shows the resulting fusion")
+		scene.banish_mode = true
+		scene._show_cards(false)
+		await process_frame
+		labels = scene.overlay.find_children("*", "Label", true, false)
+		check(labels.any(func(label): return label.text == scene.sim.cards[0].name) and not labels.any(func(label): return label.text == "Nova Guard"), "Banish shows the actual component being removed")
+		scene.banish_mode = false
+		scene.sim.upgrades.aegis = 3
+		scene._show_cards(false)
+		await process_frame
+		labels = scene.overlay.find_children("*", "Label", true, false)
+		check(not labels.any(func(label): return "fusion" in label.text.to_lower()), "No early fusion label appears before the other component is rank 5")
 		scene.profile.cores = 20
 		scene._hangar_tab("Tactics")
 		scene._process(0.0)

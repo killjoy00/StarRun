@@ -37,7 +37,8 @@ func _run() -> void:
 	_test_20_active_pool()
 	_test_fusions_and_milestones()
 	_test_long_runs()
-	var seeds := 12
+	_test_fusion_thresholds()
+	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
 			seeds = int(arg.get_slice("=", 1))
@@ -174,6 +175,11 @@ func _install(sim: RefCounted, id: String) -> void:
 			sim.cards = [card.duplicate(true)]
 			sim.choose_card(0)
 			return
+
+func _fuse_pair(sim: RefCounted, pair: Dictionary) -> void:
+	for part in pair.parts:
+		while int(sim.upgrades.get(str(part),0)) < Sim.FUSION_RANK:
+			_install(sim,str(part))
 
 func _test_new_abilities() -> void:
 	var sim := Sim.new(441)
@@ -470,7 +476,7 @@ func _test_20_active_pool() -> void:
 	check(sim.active_slots.size() == 4, "Three installed abilities fill all four slots")
 	sim.level = 8
 	sim._offer_cards()
-	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar may only offer new abilities that immediately fuse with an equipped one")
+	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
 
@@ -715,9 +721,7 @@ func _test_fusions_and_milestones() -> void:
 		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
 		var sim := Sim.new(1901)
-		for component in pair.parts:
-			if int(sim.upgrades.get(str(component), 0)) == 0:
-				_install(sim, str(component))
+		_fuse_pair(sim,pair)
 		check(str(pair.id) in sim.active_slots and sim._source_active(str(pair.parts[0])) and sim._source_active(str(pair.parts[1])), "Fusion must replace two active buttons: " + str(pair.id))
 		check(sim.active_slots.size() == (1 if "aegis" in pair.parts else 2), "Fusion must free one equipped slot, not add a fifth button")
 		check(not sim.activate(str(pair.parts[0])) and not sim.activate(str(pair.parts[1])), "Consumed components cannot cast separately: " + str(pair.id))
@@ -747,12 +751,12 @@ func _test_fusions_and_milestones() -> void:
 	var slots := Sim.new(1902)
 	for name in ["flak", "emp", "strike"]:
 		_install(slots, name)
-	check(slots.active_slots.size() == 4 and slots._can_learn_active("nova"), "A matching fusion partner should be draftable even when four slots are filled")
-	_install(slots, "nova")
-	check("nova_aegis" in slots.active_slots and slots.active_slots.size() == 4, "A full build must fuse immediately instead of exceeding four buttons")
+	check(slots.active_slots.size() == 4 and not slots._can_learn_active("nova"), "A rank-1 partner cannot bypass a full bar")
 	var free_slot := Sim.new(1903)
-	_install(free_slot, "nova")
-	check(free_slot.active_slots.size() == 1 and "nova_aegis" in free_slot.active_slots, "Pairing the signature ability must reopen the slot")
+	_install(free_slot,"nova")
+	check(free_slot.active_slots.size() == 2 and "nova_aegis" not in free_slot.active_slots, "Collecting two rank-1 actives does not fuse them")
+	_fuse_pair(free_slot,content.fusions[0])
+	check(free_slot.active_slots.size() == 1 and "nova_aegis" in free_slot.active_slots, "A rank-5 pair reopens one slot")
 	for link in content.passive_links:
 		var sim := Sim.new(1904)
 		for part in link.requires:
@@ -841,6 +845,8 @@ func _balance(seeds: int) -> Dictionary:
 		var max_charges := 0
 		var max_entities := 0
 		for seed_index in range(seeds):
+			# Rank-5 fusion sources add milestone power; Hard keeps this encounter
+			# challenging enough to distinguish counter timing from cooldown spam.
 			var sim := Sim.new(61000 + (seed_index + 1) * 7919)
 			for i in range(60 * 360):
 				_bot(sim, strategy)
@@ -924,8 +930,7 @@ func _test_long_runs() -> void:
 		check(not sim.cards.any(func(c): return not sim.fusion_spec(c.id).is_empty()), "Unowned fusions cannot be offered directly")
 	for pair in sim.content.fusions:
 		var fused := Sim.new(2752)
-		for part in pair.parts:
-			if fused.upgrades[part] == 0: _install(fused, str(part))
+		_fuse_pair(fused,pair)
 		var seen := {}
 		for i in range(100):
 			fused._offer_cards(false)
@@ -1012,7 +1017,7 @@ func _test_long_runs() -> void:
 	check(sim.aftercast_left == 0.0, "Follow-through expires after four simulation seconds")
 	for active in ["aegis", "nova_aegis"]:
 		sim = Sim.new()
-		if active == "nova_aegis": _install(sim, "nova")
+		if active == "nova_aegis": _fuse_pair(sim,sim.content.fusions[0])
 		for key in ["aegis", "nova", "nova_aegis", "coolant", "amplifier"]: sim.upgrades[key] = 10
 		sim.meta.ability_cooldown = 10
 		sim.meta.ability_power = 10
@@ -1032,10 +1037,11 @@ func _fixed_build_timing(seeds: int) -> Dictionary:
 		var hull := 0.0
 		var survival := 0.0
 		for seed in range(seeds):
-			var sim := Sim.new(61000 + (seed + 1) * 7919)
-			sim.upgrades.nova = 1
-			sim.active_slots.append("nova")
-			sim._try_fuse()
+			# Rank-5 fusion sources add milestone power; Hard keeps this encounter
+			# challenging enough to distinguish counter timing from cooldown spam.
+			var sim := Sim.new(61000 + (seed + 1) * 7919, {}, "vanguard", "rookie", "hard")
+			_fuse_pair(sim,sim.content.fusions[0])
+			sim.cards.clear()
 			sim.upgrades.pulse = 3
 			sim.upgrades.seeker = 3
 			sim.upgrades.armor = 3
@@ -1057,3 +1063,51 @@ func _fixed_build_timing(seeds: int) -> Dictionary:
 			survival += sim.time
 		results[strategy] = {"wins":wins,"mean_hull":snappedf(hull/seeds,0.1),"seconds":snappedf(survival/seeds,0.1)}
 	return results
+
+func _test_fusion_thresholds() -> void:
+	for pair in Sim.new().content.fusions:
+		var sim := Sim.new(2801)
+		sim.active_slots = [str(pair.parts[0]),str(pair.parts[1])]
+		var a: String = pair.parts[0]
+		var b: String = pair.parts[1]
+		for ranks in [[1,1],[4,4],[4,5],[5,4],[10,1],[1,10]]:
+			sim.upgrades[a] = ranks[0]
+			sim.upgrades[b] = ranks[1]
+			sim._try_fuse()
+			check(str(pair.id) not in sim.active_slots, "Both fusion components must reach 5: " + str(pair.id))
+		sim.upgrades[a] = 5
+		sim.upgrades[b] = 1
+		check(sim.fusion_hint(b).is_empty(), "A rank-1 partner must not be advertised as an immediate fusion")
+		sim.upgrades[b] = 3
+		check(not sim.fusion_hint(b).is_empty(), "The 3-to-5 pick previews the resulting fusion")
+		var copy := Sim.new()
+		check(copy.restore(sim.snapshot()) and copy.active_slots == sim.active_slots, "Resume keeps a pair separate until upgraded")
+		_install(copy,b)
+		check(str(pair.id) in copy.active_slots and copy.upgrades[a] == 5 and copy.upgrades[b] == 5, "A real rank-5 draft pick triggers fusion")
+		check(copy.effects.any(func(e): return e.kind == "fusion-formed" and e.fusion == pair.id), "Forming a fusion emits its own presentation event")
+		copy.cards.clear()
+		check(copy.activate(pair.id) and copy.effects.any(func(e): return e.kind == "fusion-cast" and e.fusion == pair.id), "Every fusion emits its distinct cast effect")
+		check(not copy.effects.any(func(e): return e.kind == "nova"), "Fusions no longer add the same generic Nova effect")
+		var old: Dictionary = copy.snapshot()
+		old.upgrades[a] = 1
+		old.upgrades[b] = 1
+		var legacy := Sim.new()
+		check(legacy.restore(old) and str(pair.id) in legacy.active_slots, "Already-earned fusions survive old saves without losing occupied slots")
+	var full := Sim.new(2802)
+	full.active_slots = ["aegis","nova","emp","flak"]
+	full.upgrades.aegis = 5
+	full.upgrades.nova = 4
+	full.upgrades.emp = 1
+	full.upgrades.flak = 1
+	_install(full,"nova")
+	check(full.upgrades.nova == 6 and full.active_slots.size() == 3 and "nova_aegis" in full.active_slots, "Crossing 5 from 4 also fuses on a full bar")
+
+	var old_bar := Sim.new(2803, {"rerolls":2})
+	old_bar.active_slots = ["aegis","emp","flak","mend"]
+	for id in old_bar.active_slots: old_bar.upgrades[id] = 1
+	old_bar.cards = [old_bar.content.cards.filter(func(c): return c.id == "nova")[0]]
+	var restored := Sim.new()
+	check(restored.restore(old_bar.snapshot()) and not restored.cards.any(func(c): return c.tag == "ABILITY" and restored.upgrades[c.id] == 0), "An old full-bar partner offer must become a valid hand")
+	check(restored.rerolls_left == old_bar.rerolls_left and restored.pending_levels == old_bar.pending_levels, "Migrating the full-bar hand costs no reroll or level")
+	var stable := Sim.new()
+	check(stable.restore(restored.snapshot()) and stable.snapshot() == restored.snapshot(), "The migrated full-bar hand stays fixed on subsequent resumes")

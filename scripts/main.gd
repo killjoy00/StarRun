@@ -821,7 +821,7 @@ func _show_briefing(launch_after: bool = false) -> void:
 	var steps := [
 		["Autopilot", "Your ship steers and shoots by itself. You never aim."],
 		["Abilities", "The four buttons under the playfield are yours. Tap one when it's ready, then it recharges."],
-		["Level up", "Pick one upgrade each level. Two matching abilities fuse into a stronger one and free a slot."],
+		["Level up", "Upgrade both matching abilities to rank 5 to fuse them and free a slot."],
 		["Four bosses", "Clear four stages. The cores you earn buy permanent upgrades in the Hangar."],
 	]
 	for i in range(steps.size()):
@@ -1164,7 +1164,8 @@ func _draft_card(parent: Node, i: int) -> void:
 	var milestone: int = 5 if current < 5 else 10
 	var reaches_milestone: bool = current < milestone and next_rank >= milestone and tag != "RECOVERY"
 	var is_new_ability := tag == "ABILITY" and current == 0
-	var fusion: String = sim.fusion_hint(id) if is_new_ability else ""
+	var fusion: String = sim.fusion_target(id) if tag == "ABILITY" and not banish_mode else ""
+	var fused: Dictionary = sim.fusion_spec(fusion)
 	var accent := Kit.CYAN
 	var type_text := "Active" if tag == "ABILITY" else ("Auto weapon" if tag == "WEAPON" else "Passive")
 	var tag_text := ""
@@ -1179,7 +1180,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	else:
 		accent = Kit.CYAN if tag == "ABILITY" else (Kit.AMBER if tag == "WEAPON" else Color("9fcbff"))
 		tag_text = "%s  ·  rank %d to %d" % [type_text, current, next_rank]
-	if reaches_milestone:
+	if reaches_milestone and fusion.is_empty():
 		tag_text = "%s  ·  rank %d bonus" % [type_text, milestone]
 	var removable := banish_mode and id != "repair"
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
@@ -1197,7 +1198,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	view.content.add_child(row)
 	var badge := IconBadge.new()
-	badge.icon_id = id
+	badge.icon_id = fusion if not fusion.is_empty() else id
 	badge.custom_minimum_size = Vector2(40, 40)
 	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	row.add_child(badge)
@@ -1207,12 +1208,12 @@ func _draft_card(parent: Node, i: int) -> void:
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(info)
 	Kit.caps(info, tag_text, accent, 13)
-	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + str(card.name)
+	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + (str(fused.name) if not fusion.is_empty() else str(card.name))
 	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
-	Kit.label(info, str(card.description), 16, Kit.TEXT, true)
+	Kit.label(info, str(fused.description) if not fusion.is_empty() else str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
-		Kit.label(info, "%s · frees a slot" % fusion.get_slice(":", 0), 15, Kit.VIOLET, true)
+		Kit.label(info, "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank], 15, Kit.VIOLET, true)
 	elif current < 10 and (reaches_milestone or (not _compact_ui() and tag in ["WEAPON", "SYSTEM", "ABILITY"])):
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
