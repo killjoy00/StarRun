@@ -284,7 +284,7 @@ func _layout() -> void:
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
 	var field_top := safe_top + 92.0
-	var reserved := 102.0 if compact else 196.0
+	var reserved := 128.0 if compact else 196.0
 	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
 	field = Rect2(Vector2((size.x - 540.0 * scale_factor) * 0.5, field_top), Vector2(540, 960) * scale_factor)
@@ -317,20 +317,23 @@ func _layout() -> void:
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = ability_buttons[i]
 		button.position = Vector2(controls_x + i * (button_width + 5.0), field.end.y + 9.0) if compact else Vector2(controls_x + (i % 2) * (button_width + 6.0), field.end.y + 9.0 + int(i / 2) * 84.0)
-		button.size = Vector2(button_width, 80.0)
-		button.custom_minimum_size.y = 80.0
+		button.size = Vector2(button_width, 102.0 if compact else 80.0)
+		button.custom_minimum_size.y = button.size.y
 		button.add_theme_font_size_override("font_size", 16 if compact else 15)
 		var badge: Control = button.get_child(0)
-		badge.size = Vector2(24, 24)
-		badge.position = Vector2((button_width - 24.0) * 0.5, 5.0) if compact else Vector2(10, 16)
+		# IconBadge starts with a 32pt minimum. Explicitly size it so it
+		# cannot expand back into the name row after the Control resolves.
+		badge.custom_minimum_size = Vector2(28, 28) if compact else Vector2(32, 32)
+		badge.size = badge.custom_minimum_size
+		badge.position = Vector2((button_width - badge.size.x) * 0.5, 5.0) if compact else Vector2(8, 16)
 		var name_label: Label = button.get_node("AbilityName")
 		var status_label: Label = button.get_node("AbilityStatus")
 		for label in [name_label, status_label]:
 			label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if compact else HORIZONTAL_ALIGNMENT_LEFT
-		name_label.position = Vector2(3, 32) if compact else Vector2(44, 15)
-		name_label.size = Vector2(button_width - 6.0, 20) if compact else Vector2(button_width - 50.0, 22)
-		status_label.position = Vector2(3, 54) if compact else Vector2(44, 42)
-		status_label.size = Vector2(button_width - 6.0, 19) if compact else Vector2(button_width - 50.0, 20)
+		name_label.position = Vector2(3, 41) if compact else Vector2(44, 13)
+		name_label.size = Vector2(button_width - 6.0, 24) if compact else Vector2(button_width - 50.0, 24)
+		status_label.position = Vector2(3, 70) if compact else Vector2(44, 43)
+		status_label.size = Vector2(button_width - 6.0, 24) if compact else Vector2(button_width - 50.0, 24)
 		var cooldown_bar: ProgressBar = cooldown_meters[i]
 		cooldown_bar.position = Vector2(7.0, button.size.y - 6.0)
 		cooldown_bar.size = Vector2(button_width - 14.0, 3.0)
