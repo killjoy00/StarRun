@@ -1470,3 +1470,23 @@ func _test_late_world_ability_counters() -> void:
 	repaired.heat_left = 4.0
 	repaired.corrosion_left = 3.0
 	check(repaired.activate("mend") and repaired.heat_left == 0.0 and repaired.corrosion_left == 0.0 and repaired.mend_left > 0.0, "Repair drones purge World 2 corrosion and World 3 overheating on a deliberate cast")
+
+	for kind in ["ion","corrosion","disrupt","heat","gravity","void"]:
+		var standard := Sim.new(9371)
+		standard.stage = 3
+		standard.time = 240.0
+		var haven := Sim.new(9371, {}, "haven")
+		haven.stage = 3
+		haven.time = 240.0
+		standard._hit(10.0, kind, "test")
+		haven._hit(10.0, kind, "test")
+		check(is_equal_approx(float(haven.damage_taken[kind]), float(standard.damage_taken[kind]) * 0.75), "Haven's specialist armor absorbs exactly 25% of " + kind + " status-round damage")
+	var standard_dot := Sim.new(9372)
+	standard_dot.stage = 2
+	standard_dot.corrosion_left = 1.0
+	var haven_dot := Sim.new(9372, {}, "haven")
+	haven_dot.stage = 2
+	haven_dot.corrosion_left = 1.0
+	standard_dot.step()
+	haven_dot.step()
+	check(is_equal_approx(float(haven_dot.damage_taken.corrosion),float(standard_dot.damage_taken.corrosion) * 0.75), "Haven's corrosion resistance also applies to ongoing hull damage, not just the original hit")
