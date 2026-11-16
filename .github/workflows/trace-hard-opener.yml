@@ -1,0 +1,35 @@
+name: Investigate exceptional Hard World 1 clear
+on:
+  push:
+    branches: ['codex/balance-ads-store-*']
+    paths: ['.github/workflows/trace-hard-opener.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  trace:
+    name: Trace real Arcwing Tactician Hard opening combat
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import simulation
+        run: godot --headless --path . --editor --import --quit
+      - name: Report all three seeded World 1 outcomes and loadouts
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds=3 --ship=arcwing --difficulty=hard \
+            --pilot=tactician --hangar=none --build=focused \
+            --strategy=timed --stage-limit=1 --trace \
+            2>&1 | tee /tmp/hard-arcwing-tactician.log
+          grep -q CAMPAIGN_TRACE /tmp/hard-arcwing-tactician.log
+      - name: Upload diagnostic trace
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hard-Arcwing-Tactician-opening-trace
+          path: /tmp/hard-arcwing-tactician.log
+          retention-days: 14
