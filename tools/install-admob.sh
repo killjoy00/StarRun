@@ -5,7 +5,7 @@ set -euo pipefail
 test_mode="${STARRUN_ADMOB_TEST_MODE:-0}"
 config=data/admob.json
 test -f "$config"
-readarray -t ids < <(python3 - "$config" "$test_mode" <<'PY'
+ids_output="$(python3 - "$config" "$test_mode" <<'PY'
 import json, re, sys
 c=json.load(open(sys.argv[1]))
 if sys.argv[2] == "1":
@@ -28,14 +28,15 @@ if app.startswith("ca-app-pub-3940256099942544") or banner.startswith("ca-app-pu
     raise SystemExit("Google sample IDs must not be present in an enabled production configuration")
 print(app); print(banner); print("live")
 PY
-)
-if [[ "${ids[2]:-}" == "disabled" ]]; then
+)"
+mode="$(printf '%s\n' "$ids_output" | sed -n '3p')"
+if [[ "$mode" == "disabled" ]]; then
   echo "AdMob disabled; exporting unchanged iOS app with no ad SDK."
   exit 0
 fi
-app_id="${ids[0]}"
-banner_id="${ids[1]}"
-echo "Preparing pinned Godot AdMob SDK for iOS (${ids[2]} configuration)."
+app_id="$(printf '%s\n' "$ids_output" | sed -n '1p')"
+banner_id="$(printf '%s\n' "$ids_output" | sed -n '2p')"
+echo "Preparing pinned Godot AdMob SDK for iOS ($mode configuration)."
 asset_version=v5.1.0
 base="https://github.com/poingstudios/godot-admob-plugin/releases/download/$asset_version"
 cache="${RUNNER_TEMP:-/tmp}/starrun-admob-$asset_version"
