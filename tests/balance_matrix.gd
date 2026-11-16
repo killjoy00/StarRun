@@ -90,7 +90,7 @@ func _run() -> void:
 							"routes":result.routes,"stages":result.stages,"final":result.final
 						}))
 					trials += 1
-					world1_clears += int(result.clears) >= 1
+					world1_clears += 1 if int(result.clears) >= 1 else 0
 					faults += int(result.get("fault", false))
 					timeouts += int(result.timeout)
 					casts += int(result.casts)
