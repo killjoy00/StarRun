@@ -342,7 +342,7 @@
       "id": "mend",
       "name": "Repair drones",
       "tag": "ABILITY",
-      "description": "Repair hull over time and purge corrosion and overheating.",
+      "description": "Repair hull; purge corrosion and heat, and reboot suppressed shields after World 1.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
@@ -432,7 +432,7 @@
       "id": "flak",
       "name": "Flak screen",
       "tag": "ABILITY",
-      "description": "Shoot down ordnance; close-call interceptions restore 8 shield.",
+      "description": "Shoot down ordnance; close calls restore 8 shield in World 1 or 12 in later worlds.",
       "max": 10,
       "rank5": "20% stronger effect, 10% shorter cooldown",
       "rank10": "45% stronger effect, 20% shorter cooldown"
