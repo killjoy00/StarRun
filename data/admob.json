@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "app_id": "",
+  "banner_unit_id": "",
+  "notes": "iOS banner is deliberately off until a real AdMob App ID, banner unit ID, consent configuration, and App Privacy disclosures are approved. Never ship Google test IDs as production ads."
+}
