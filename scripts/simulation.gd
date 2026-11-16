@@ -313,7 +313,9 @@ func opener_boss_enrage() -> float:
 	if stage != 1 or difficulty == "normal" or not boss_spawned:
 		return 1.0
 	var elapsed := maxf(0.0, time - boss_spawn_time - 20.0)
-	return 1.0 + minf(2.0, elapsed / (45.0 if difficulty == "hard" else 35.0))
+	# Long defensive stall builds should not indefinitely out-heal the
+	# advanced opening boss. Well-upgraded offense can beat this timer.
+	return 1.0 + minf(6.0, elapsed / (25.0 if difficulty == "hard" else 20.0))
 
 func stage_spec() -> Dictionary:
 	if stage <= int(content.stage_count):
@@ -861,7 +863,12 @@ func _update_enemies() -> void:
 			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
-			if jammer_left > 0.0 or emp_left > 0.0:
+			# Jammer and EMP still cancel boss beams, but the Harvester
+			# gradually adapts after a prolonged advanced-difficulty fight.
+			# It keeps firing its dodgeable projectile fans instead of
+			# allowing an infinite healing + jamming stalemate.
+			var boss_overload := kind == "boss" and stage == 1 and difficulty != "normal" and time - boss_spawn_time >= 75.0
+			if (jammer_left > 0.0 or emp_left > 0.0) and not boss_overload:
 				enemy.fire = 0.5
 				continue
 			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
