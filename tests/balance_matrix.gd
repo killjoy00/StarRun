@@ -129,7 +129,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			break
 		if sim.stage_transition_queued:
 			stage_reports.append(_stage_report(sim, "cleared"))
-			if sim.stage >= stage_limit:
+			if stage_limit < 4 and sim.stage >= stage_limit:
 				status = "stage_limit"
 				break
 			if sim.stage >= 4:
