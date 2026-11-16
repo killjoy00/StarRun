@@ -13,11 +13,11 @@
 
 1. Open [Google AdMob](https://admob.google.com/) and sign in or create a publisher account. Complete any account verification requested by Google.
 2. Go to **Apps** and choose **Add app**. Choose **iOS**, with the app name **Star/Run** and existing bundle ID **`com.rsm.starrun`**. If it's not yet publicly listed, use the **not listed in a supported app store** option if shown; you can link the existing App Store record later.
-3. Copy the **App ID**, which looks like `ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX`. This is *not* your Google account ID or the ad unit ID.
-4. Within that iOS app, choose **Ad units > Add ad unit > Banner**. Name it `StarRun iPhone Banner`, save it, then copy its **Ad unit ID**, which looks like `ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX`.
+3. **Done 2026-11-16:** Star/Run App ID was supplied and recorded in `data/admob.json`, still with live ads disabled. Its format is `ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX`. This is *not* your Google account ID or the ad unit ID.
+4. **Done 2026-11-16:** The Banner ad unit ID was supplied and recorded. Its format is `ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX`.
 5. Under **Privacy & messaging** in AdMob, configure and publish the required consent / privacy messages for the intended audience and jurisdictions (at minimum review EEA/UK and applicable US state privacy rules). If prompted about children or age classification, answer for the actual intended audience. Don't guess or switch off required notices to get ads displaying.
-6. **Send me only those two AdMob identifiers** (App ID with `~` and banner unit ID with `/`) and tell me whether the Privacy & messaging setup is published. They are public placement identifiers, not secret keys; **do not send passwords, private keys, or billing details**.
-7. I can then put those values in the reviewed iOS release configuration, rerun CI, and prepare a **new TestFlight-only** candidate. We should first verify a Google **test ad** appears on an iPhone before making live ad requests.
+6. **Still needed:** Confirm whether Google AdMob's **Privacy & messaging** consent messages are published. Do not share passwords, private keys, billing information, or Google account credentials.
+7. The IDs are already recorded. After consent/privacy requirements and iPhone SDK compilation are confirmed, I can enable live ads in a subsequent TestFlight-only candidate. We should first verify a Google **test ad** appears on an iPhone before making live ad requests.
 
 ### Ad review checklist
 
@@ -32,8 +32,8 @@
 ## Your steps: App Store listing
 
 1. Open [App Store Connect](https://appstoreconnect.apple.com/apps). Select the **existing StarRun app** with bundle ID `com.rsm.starrun`. Do **not** create another iPhone app record.
-2. In **App Information**, set the visible name to **Star/Run** when your current version is editable. Keep the bundle ID unchanged.
-3. Under an editable iOS app version (if none exists, start a new version when allowed), paste the subtitle, promotional copy, full description and keywords from [APP_STORE_LISTING.md](APP_STORE_LISTING.md).
+2. **Done:** Apple's API accepted the name **Star/Run** and subtitle. Both were verified by readback.
+3. **Done:** Apple's API saved the full description, keywords, promotional text and support URL to the **iOS 1.0 PREPARE_FOR_SUBMISSION** draft; [verification run](https://github.com/killjoy00/EZTrivia/actions/runs/43897202012).
 4. Select category **Games** and appropriate game genres, answer the current age-rating questionnaire based on stylized combat and actual ad creatives, and choose where the game will be available. The game currently targets **iPhone portrait**.
 5. Put a functioning, public **Support URL** in the required field. Publish a real **Privacy Policy URL** and enter it in App Privacy/Privacy Policy; the policy must cover the *actual ad-integrated binary* and the native Game Center/sharing features. Send me the two URLs when ready if you'd like me to check the content.
 6. Review **App Privacy** questions in App Store Connect after determining AdMob's SDK collection/tracking behavior. Include advertising and diagnostics data as applicable; never mark “data not collected” just because your own code does not directly read ad IDs.
