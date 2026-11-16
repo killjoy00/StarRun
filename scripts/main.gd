@@ -1144,7 +1144,7 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
-	if OS.get_name() == "iOS":
+	if OS.get_name() == "iOS" or OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
 		var has_ads_removed := bool(profile.get("remove_ads", false))
 		Kit.label(box, "AD-FREE", 16, Kit.CYAN)
 		if has_ads_removed:

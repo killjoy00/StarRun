@@ -95,6 +95,14 @@ func _prepare(scene, screen: String) -> void:
 			scene._show_results()
 		"settings":
 			scene.mode = "menu"
+			# Apple App Review evidence: native UI rendered at the exact
+			# 390x844 logical iPhone viewport, using a StoreKit product-available
+			# state. No tap performs a charge and no UI is composited afterward.
+			if OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
+				scene.remove_ads_store.store_ready = true
+				scene.remove_ads_store.product_available = true
+				scene.remove_ads_store.localized_price = ""
+				scene.remove_ads_store.message = "One purchase removes banner ads."
 			scene._show_settings()
 		"briefing":
 			scene.mode = "menu"
