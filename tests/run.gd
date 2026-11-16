@@ -664,7 +664,7 @@ func _test_four_stage_campaign() -> void:
 			check(sim.advance_stage(), "Claiming the final boss victory must complete the campaign")
 		if stage_number < 4:
 			check(sim.stage == stage_number + 1 and not sim.stage_transition_queued and not sim.won, "Next stage should be playable without resetting the build")
-			check(sim.pending_levels == stage_number, "Each cleared boss awards exactly one milestone upgrade")
+			check(sim.pending_levels == stage_number + (1 if stage_number == 3 else 0), "Each boss grants its usual level-up, and the Hunter warp grants one extra draft")
 		else:
 			check(sim.ended and sim.won and sim.stage_clears == 4, "Acknowledging final boss must finish all four stages")
 	check(not sim.advance_stage(), "Final stage can only be settled once")
