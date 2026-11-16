@@ -24,6 +24,7 @@ test -s "$template_dir/ios.zip"
 bash tools/install-gamecenter.sh
 bash tools/install-share.sh
 bash tools/install-admob.sh
+bash tools/install-iap.sh
 swift tools/generate-ios-icon.swift assets/ios-icon.png
 test -s assets/ios-icon.png
 mkdir -p build/ios
@@ -38,6 +39,9 @@ fi
 # Keep the Xcode project and payload together, and archive them for CI artifacts.
 test -d build/ios/StarRun.xcodeproj
 test -d build/ios/StarRun
+# Godot 4.6 may link SwiftGodot dynamic frameworks without embedding them.
+# Patch the generated Xcode project deterministically and verify both bundles.
+IOS_EXPORT_DIR=build/ios GODOT_IAP_ADDON_DIR=addons/godot-iap bash addons/godot-iap/scripts/fix_ios_embed.sh
 mkdir -p build/ios/xcode
 # Xcode references all generated XCFrameworks relative to the project root.
 # Moving only StarRun.xcodeproj and StarRun/ breaks MoltenVK and engine paths.

@@ -11,6 +11,8 @@ var wanted := false
 var shown := false
 var consent_ready := false
 var status_checked := false
+var entitlement_checked := false
+var ads_removed := false
 
 func setup(owner: Node, banner_id: String) -> void:
 	host = owner
@@ -21,6 +23,10 @@ func _ready() -> void:
 		return
 	if not Engine.has_singleton("PoingGodotAdMob"):
 		push_warning("AdMob native SDK not available. Banner stays hidden.")
+		return
+	# Do not query UMP or show any ad until StoreKit has checked ownership.
+	# This also prevents a reinstall from flashing ads to a paying customer.
+	if ads_removed or not entitlement_checked:
 		return
 	var request := ConsentRequestParameters.new()
 	# Apple/Google child-directed classification must be decided in the accounts.
@@ -53,7 +59,7 @@ func _consent_error(_error: FormError) -> void:
 	push_warning("Ad consent unavailable; banner disabled for this session.")
 
 func _check_consent() -> void:
-	if consent_ready or not status_checked:
+	if ads_removed or not entitlement_checked or consent_ready or not status_checked:
 		return
 	var info := UserMessagingPlatform.consent_information
 	var consent_status := info.get_consent_status()
@@ -64,7 +70,7 @@ func _check_consent() -> void:
 	_start_banner()
 
 func _start_banner() -> void:
-	if not consent_ready or ad_view != null:
+	if ads_removed or not entitlement_checked or not consent_ready or ad_view != null:
 		return
 	listener = AdListener.new()
 	listener.on_ad_loaded = _on_ad_loaded
@@ -97,8 +103,25 @@ func set_display_for_mode(screen: String) -> void:
 	wanted = next_wanted
 	_apply_visibility()
 
+func set_entitlement_checked(value: bool) -> void:
+	if not value or entitlement_checked:
+		return
+	entitlement_checked = true
+	if is_inside_tree() and not ads_removed:
+		_ready()
+
+func set_ads_removed(value: bool) -> void:
+	if not value or ads_removed:
+		return
+	ads_removed = true
+	loaded = false
+	_apply_visibility()
+	if ad_view != null:
+		ad_view.destroy()
+		ad_view = null
+
 func _apply_visibility() -> void:
-	var next_shown := loaded and wanted
+	var next_shown := loaded and wanted and not ads_removed and entitlement_checked
 	if next_shown == shown:
 		return
 	shown = next_shown

@@ -12,6 +12,7 @@ const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const GameCenterBridge = preload("res://scripts/game_center_bridge.gd")
+const RemoveAdsStore = preload("res://scripts/remove_ads_store.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const INK := Color("080e1c")
@@ -95,6 +96,7 @@ var toast_queue: Array = []
 var toast_clock := 0.0
 var native_ad_banner: Node = null
 var ad_banner_visible := false
+var remove_ads_store: Node = null
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -141,6 +143,10 @@ func _ready() -> void:
 	_layout()
 	_show_menu()
 	_initialize_native_banner()
+	remove_ads_store = RemoveAdsStore.new()
+	add_child(remove_ads_store)
+	remove_ads_store.changed.connect(_on_remove_ads_store_changed)
+	remove_ads_store.initialize(self, bool(profile.get("remove_ads", false)))
 	game_center.initialize(profile, _save_profile)
 	# The iOS-only outgoing share plugin exposes UIActivityViewController.
 	if OS.has_feature("ios") and Engine.has_singleton("SharePlugin"):
@@ -154,7 +160,7 @@ func _ready() -> void:
 # The iPhone ad SDK is installed only during ad-enabled native exports.
 # On all other platforms this controller does nothing.
 func _initialize_native_banner() -> void:
-	if OS.get_name() != "iOS":
+	if OS.get_name() != "iOS" or bool(profile.get("remove_ads", false)):
 		return
 	var cfg_path := "res://data/admob.json"
 	if not FileAccess.file_exists(cfg_path):
@@ -182,6 +188,30 @@ func _on_ad_banner_visibility(is_shown: bool) -> void:
 func _show_ad_privacy_options() -> void:
 	if is_instance_valid(native_ad_banner):
 		native_ad_banner.call("show_privacy_options")
+
+func _on_remove_ads_store_changed() -> void:
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("set_entitlement_checked", bool(remove_ads_store.checked))
+		native_ad_banner.call("set_ads_removed", bool(remove_ads_store.owned))
+	if mode == "settings":
+		_show_settings()
+
+func _on_remove_ads_entitled() -> bool:
+	# Only called after on-device StoreKit verified an owned non-consumable.
+	profile.remove_ads = true
+	_save_profile()
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("set_ads_removed", true)
+	_on_ad_banner_visibility(false)
+	return bool(profile.get("remove_ads", false))
+
+func _buy_remove_ads() -> void:
+	if is_instance_valid(remove_ads_store):
+		remove_ads_store.buy()
+
+func _restore_remove_ads() -> void:
+	if is_instance_valid(remove_ads_store):
+		remove_ads_store.restore()
 
 # Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
 # Protect gameplay labels and menu copy from the old 10-13px type on phones.
@@ -1114,6 +1144,20 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	if OS.get_name() == "iOS":
+		var has_ads_removed := bool(profile.get("remove_ads", false))
+		Kit.label(box, "AD-FREE", 16, Kit.CYAN)
+		if has_ads_removed:
+			Kit.label(box, "Banner ads removed for this Apple Account.", 16, Kit.MUTED, true)
+		else:
+			var price := str(remove_ads_store.localized_price) if is_instance_valid(remove_ads_store) else ""
+			var buy_label := "Remove ads" + (" - " + price if not price.is_empty() else "")
+			var purchase_button := _ui_button(box, buy_label, _buy_remove_ads, "secondary", 48)
+			purchase_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.ready) or bool(remove_ads_store.busy)
+		var restore_button := _ui_button(box, "Restore purchases", _restore_remove_ads, "ghost", 44)
+		restore_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.ready) or bool(remove_ads_store.busy)
+		if is_instance_valid(remove_ads_store):
+			Kit.label(box, str(remove_ads_store.message), 14, Kit.MUTED, true)
 	if is_instance_valid(native_ad_banner) and bool(native_ad_banner.call("privacy_options_required")):
 		_ui_button(box, "Ad privacy choices", _show_ad_privacy_options, "secondary", 44)
 	_focus(_ui_button(box, "Done", _close_sheet, "primary", 52))
