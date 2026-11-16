@@ -1153,9 +1153,9 @@ func _show_settings() -> void:
 			var price := str(remove_ads_store.localized_price) if is_instance_valid(remove_ads_store) else ""
 			var buy_label := "Remove ads" + (" - " + price if not price.is_empty() else "")
 			var purchase_button := _ui_button(box, buy_label, _buy_remove_ads, "secondary", 48)
-			purchase_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.ready) or bool(remove_ads_store.busy)
+			purchase_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.store_ready) or bool(remove_ads_store.busy)
 		var restore_button := _ui_button(box, "Restore purchases", _restore_remove_ads, "ghost", 44)
-		restore_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.ready) or bool(remove_ads_store.busy)
+		restore_button.disabled = not is_instance_valid(remove_ads_store) or not bool(remove_ads_store.store_ready) or bool(remove_ads_store.busy)
 		if is_instance_valid(remove_ads_store):
 			Kit.label(box, str(remove_ads_store.message), 14, Kit.MUTED, true)
 	if is_instance_valid(native_ad_banner) and bool(native_ad_banner.call("privacy_options_required")):

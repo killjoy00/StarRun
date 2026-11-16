@@ -6,7 +6,7 @@ signal changed
 const PRODUCT_ID := "com.rsm.starrun.remove_ads"
 var host: Node
 var owned := false
-var ready := false
+var store_ready := false
 var checked := false
 var busy := false
 var localized_price := ""
@@ -46,7 +46,7 @@ func _open_connection() -> void:
 		message = "Could not connect to the App Store. Try again later."
 		changed.emit()
 		return
-	ready = true
+	store_ready = true
 	# Transaction recovery is authoritative. Never infer ownership from a tap
 	# or a product listing. Confirm against Apple before finishing a purchase.
 	_flow = _iap.create_purchase_flow({
@@ -113,7 +113,7 @@ func buy() -> void:
 		message = "Ads are already removed."
 		changed.emit()
 		return
-	if not ready or busy:
+	if not store_ready or busy:
 		return
 	busy = true
 	message = "Opening Apple's secure purchase sheet..."
@@ -127,7 +127,7 @@ func buy() -> void:
 	await _iap.request_purchase(props)
 
 func restore() -> void:
-	if not ready or busy:
+	if not store_ready or busy:
 		return
 	busy = true
 	message = "Checking your Apple purchases..."
