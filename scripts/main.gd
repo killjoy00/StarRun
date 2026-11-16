@@ -93,6 +93,8 @@ var toast_title: Label
 var toast_detail: Label
 var toast_queue: Array = []
 var toast_clock := 0.0
+var native_ad_banner: Node = null
+var ad_banner_visible := false
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -126,6 +128,7 @@ func _ready() -> void:
 	_build_ui()
 	_layout()
 	_show_menu()
+	_initialize_native_banner()
 	game_center.initialize(profile, _save_profile)
 	# The iOS-only outgoing share plugin exposes UIActivityViewController.
 	if OS.has_feature("ios") and Engine.has_singleton("SharePlugin"):
@@ -134,6 +137,39 @@ func _ready() -> void:
 		daily_share_service.share_completed.connect(_on_native_share_completed)
 		daily_share_service.share_canceled.connect(_on_native_share_canceled)
 	get_tree().auto_accept_quit = false
+
+
+# The iPhone ad SDK is installed only during ad-enabled native exports.
+# On all other platforms this controller does nothing.
+func _initialize_native_banner() -> void:
+	if OS.get_name() != "iOS":
+		return
+	var cfg_path := "res://data/admob.json"
+	if not FileAccess.file_exists(cfg_path):
+		return
+	var cfg: Variant = JSON.parse_string(FileAccess.get_file_as_string(cfg_path))
+	if not cfg is Dictionary or not bool(cfg.get("enabled", false)):
+		return
+	var runtime_path := "res://scripts/admob_native_runtime.gd"
+	if not ResourceLoader.exists(runtime_path):
+		push_warning("AdMob enabled but no native runtime was exported.")
+		return
+	var native_script: Script = load(runtime_path)
+	if native_script == null:
+		return
+	native_ad_banner = native_script.new()
+	native_ad_banner.call("setup", self, str(cfg.get("banner_unit_id", "")))
+	add_child(native_ad_banner)
+
+func _on_ad_banner_visibility(is_shown: bool) -> void:
+	if ad_banner_visible == is_shown:
+		return
+	ad_banner_visible = is_shown
+	_layout()
+
+func _show_ad_privacy_options() -> void:
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("show_privacy_options")
 
 # Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
 # Protect gameplay labels and menu copy from the old 10-13px type on phones.
@@ -533,7 +569,8 @@ func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dic
 	var w := minf(width, screen.x - 32.0)
 	var frame := VBoxContainer.new()
 	frame.position = Vector2((screen.x - w) * 0.5, float(inset.top) + 4.0)
-	frame.size = Vector2(w, screen.y - float(inset.top) - float(inset.bottom) - 8.0)
+	var reserved_ad_height := 64.0 if ad_banner_visible and mode in ["menu", "results"] else 0.0
+	frame.size = Vector2(w, screen.y - float(inset.top) - float(inset.bottom) - 8.0 - reserved_ad_height)
 	frame.add_theme_constant_override("separation", 14)
 	overlay.add_child(frame)
 	var top := VBoxContainer.new()
@@ -1065,6 +1102,8 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	if is_instance_valid(native_ad_banner) and bool(native_ad_banner.call("privacy_options_required")):
+		_ui_button(box, "Ad privacy choices", _show_ad_privacy_options, "secondary", 44)
 	_focus(_ui_button(box, "Done", _close_sheet, "primary", 52))
 
 func _toggle_row(parent: Node, title: String, detail: String, on: bool, action: Callable) -> void:
@@ -1995,6 +2034,8 @@ func _start_flight() -> void:
 			_: _show_stage_clear()
 
 func _process(delta: float) -> void:
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("set_display_for_mode", mode)
 	_advance_toast(delta)
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
