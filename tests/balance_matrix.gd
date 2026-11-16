@@ -88,7 +88,7 @@ func _run() -> void:
 				var campaigns := 0
 				var timeouts := 0
 				var casts := 0
-					var hull := 0.0
+				var hull := 0.0
 				var route_shieldstorm := 0
 				var route_focus5 := 0
 				var route_focus10 := 0
