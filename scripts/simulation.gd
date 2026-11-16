@@ -706,7 +706,7 @@ func _spawn_boss() -> void:
 	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
 	# Hard/Insane are progression difficulties. World 1's boss asks for a
 	# stronger build; this costs players time and defense, not bonus XP.
-	var opener_boss_scale := 4.25 if difficulty == "hard" else (5.00 if difficulty == "insane" else 1.0)
+	var opener_boss_scale := 6.50 if difficulty == "hard" else (5.00 if difficulty == "insane" else 1.0)
 	if stage != 1:
 		opener_boss_scale = 1.0
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
