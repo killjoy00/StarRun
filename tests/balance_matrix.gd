@@ -88,12 +88,12 @@ func _run() -> void:
 				var campaigns := 0
 				var timeouts := 0
 				var casts := 0
-				var hull := 0.0
-			var route_shieldstorm := 0
-			var route_focus5 := 0
-			var route_focus10 := 0
-			var route_triggers := 0
-			var route_pristine_seconds := 0.0
+					var hull := 0.0
+				var route_shieldstorm := 0
+				var route_focus5 := 0
+				var route_focus10 := 0
+				var route_triggers := 0
+				var route_pristine_seconds := 0.0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
 					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit)
