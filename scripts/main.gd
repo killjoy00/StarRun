@@ -810,9 +810,9 @@ func _show_menu() -> void:
 	var top: VBoxContainer = view.top
 	var body: VBoxContainer = view.body
 	var bottom: VBoxContainer = view.bottom
-	# The title is a compact typographic mark, not another dashboard heading.
+	# Keep the title, wallet, and settings on one line.
 	var bar := HBoxContainer.new()
-	bar.add_theme_constant_override("separation", 8)
+	bar.add_theme_constant_override("separation", 6)
 	top.add_child(bar)
 	var wordmark := RichTextLabel.new()
 	wordmark.name = "StarRunWordmark"
@@ -822,88 +822,91 @@ func _show_menu() -> void:
 	wordmark.scroll_active = false
 	wordmark.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	wordmark.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	wordmark.custom_minimum_size.y = 58
+	wordmark.custom_minimum_size.y = 48
 	wordmark.add_theme_font_override("normal_font", Kit.font(-1, 0.8))
-	wordmark.add_theme_font_size_override("normal_font_size", 45 if not _compact_ui() else 41)
+	wordmark.add_theme_font_size_override("normal_font_size", 36 if _compact_ui() else 43)
 	bar.add_child(wordmark)
-	_icon_button(bar, "settings", _show_settings, "Sound and effects")
-	var title_row := HBoxContainer.new()
-	title_row.add_theme_constant_override("separation", 8)
-	top.add_child(title_row)
-	var pitch := Kit.caps(title_row, "BUILD  /  REACT  /  REPEAT", Kit.AMBER, 12)
-	pitch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_row.add_child(_wallet())
-	# Live ship art is part of the title, not a separate splash screen.
+	var wallet: Control = _wallet()
+	wallet.name = "TitleWallet"
+	bar.add_child(wallet)
+	var settings_button := _icon_button(bar, "settings", _show_settings, "Settings")
+	settings_button.name = "TitleSettings"
+
+	# The ship and pilot now have separate layout rows. Nothing sits on top
+	# of the ship illustration, including on a narrow phone.
 	var hero_frame := PanelContainer.new()
-	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 16, 1, 0, 0))
-	hero_frame.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	hero_frame.custom_minimum_size = Vector2(0, 150)
+	hero_frame.name = "LoadoutPanel"
+	hero_frame.add_theme_stylebox_override("panel", Kit.box(Color("060c17"), Kit.LINE, 12, 1, 0, 0))
 	hero_frame.clip_contents = true
 	body.add_child(hero_frame)
+	var preview_stack := VBoxContainer.new()
+	preview_stack.add_theme_constant_override("separation", 0)
+	hero_frame.add_child(preview_stack)
+	var ship_slot := Control.new()
+	ship_slot.name = "ShipArtSlot"
+	ship_slot.custom_minimum_size = Vector2(0, 110)
+	ship_slot.clip_contents = true
+	ship_slot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	preview_stack.add_child(ship_slot)
 	var hero := HangarBay.new()
+	hero.name = "SelectedShipArt"
 	hero.style = "flight"
 	hero.labels = false
 	hero.ship_id = profile.ship
-	hero.custom_minimum_size = Vector2(0, 128)
-	hero_frame.add_child(hero)
-	var caption := MarginContainer.new()
-	for side in ["left", "right", "bottom"]:
-		caption.add_theme_constant_override("margin_" + side, 14)
-	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hero_frame.add_child(caption)
-	var caption_row := HBoxContainer.new()
-	caption_row.size_flags_vertical = Control.SIZE_SHRINK_END
-	caption_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	caption.add_child(caption_row)
+	ship_slot.add_child(hero)
+	hero.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+
+	var loadout_strip := PanelContainer.new()
+	loadout_strip.name = "SelectedLoadoutStrip"
+	loadout_strip.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 0, 0, 12, 6))
+	preview_stack.add_child(loadout_strip)
+	var loadout_row := HBoxContainer.new()
+	loadout_row.add_theme_constant_override("separation", 10)
+	loadout_strip.add_child(loadout_row)
+	var portrait := PilotPortrait.new()
+	portrait.name = "SelectedPilotPortrait"
+	portrait.pilot_id = profile.pilot
+	portrait.custom_minimum_size = Vector2(38, 38)
+	portrait.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	loadout_row.add_child(portrait)
 	var names := VBoxContainer.new()
 	names.add_theme_constant_override("separation", 0)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	names.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var portrait := PilotPortrait.new()
-	portrait.pilot_id = profile.pilot
-	portrait.custom_minimum_size = Vector2(44,44)
-	portrait.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	caption_row.add_theme_constant_override("separation",10)
-	caption_row.add_child(portrait)
-	caption_row.add_child(names)
+	names.alignment = BoxContainer.ALIGNMENT_CENTER
+	loadout_row.add_child(names)
 	var ship: Dictionary = Catalog.ship(profile.ship)
 	var pilot: Dictionary = Catalog.pilot(profile.pilot)
-	var ship_name := Kit.label(names, _name_part(ship.name, 0), 22, Color.WHITE)
-	ship_name.add_theme_font_override("font", Kit.font(1, 0.5))
-	var role := _name_part(ship.name, 1)
-	Kit.label(names, ("%s  ·  " % role if not role.is_empty() else "") + "Pilot " + _name_part(pilot.name, 0), 15, Kit.MUTED, true)
-	var change := _chip(caption_row, "Change", Kit.CYAN)
-	Kit.glyph(change.get_child(0), "next", Kit.CYAN, 14)
-	var hit := Button.new()
-	for state in ["normal", "disabled"]:
-		hit.add_theme_stylebox_override(state, StyleBoxEmpty.new())
-	hit.add_theme_stylebox_override("hover", Kit.box(Color(1, 1, 1, 0.03), Color(Kit.CYAN, 0.6), 16, 1, 0, 0))
-	hit.add_theme_stylebox_override("pressed", Kit.box(Color(Kit.CYAN, 0.10), Kit.CYAN, 16, 2, 0, 0))
-	hit.add_theme_stylebox_override("focus", Kit.box(Color(0, 0, 0, 0), Kit.AMBER, 16, 2, 0, 0))
-	hit.tooltip_text = "Change ship or pilot"
-	hit.pressed.connect(_open_loadout.bind("menu"))
-	hero_frame.add_child(hit)
+	Kit.label(names, _name_part(ship.name, 0), 19, Kit.TEXT)
+	Kit.label(names, "Pilot · " + _name_part(pilot.name, 0), 14, Kit.MUTED)
+	var change_button := _ui_button(loadout_row, "Change", _open_loadout.bind("menu"), "ghost", 44)
+	change_button.name = "ChangeLoadout"
+	change_button.tooltip_text = "Choose ship or pilot"
+	change_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# The Daily is the same UTC challenge and starting ship for every player.
 	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
 	var record: Dictionary = profile.daily_records.get(daily.day, {})
 	var daily_panel := PanelContainer.new()
-	daily_panel.add_theme_stylebox_override("panel", Kit.box(Color("101b28"), Color("516a73"), 14, 1, 12, 10))
+	daily_panel.name = "DailyPanel"
+	daily_panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 12, 1, 12, 8))
 	body.add_child(daily_panel)
 	var daily_content := VBoxContainer.new()
-	daily_content.add_theme_constant_override("separation", 3)
+	daily_content.add_theme_constant_override("separation", 4)
 	daily_panel.add_child(daily_content)
-	Kit.caps(daily_content, "DAILY CHALLENGE   ·   %s UTC" % str(daily.day), Kit.AMBER, 13)
+	Kit.label(daily_content, "Daily · %s UTC" % str(daily.day), 18, Kit.TEXT)
 	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
 	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
-	Kit.label(daily_content, "%s  ·  %s  ·  Normal" % [_name_part(str(daily_ship.name), 0),_name_part(str(daily_pilot.name), 0)], 16, Kit.TEXT, true)
-	Kit.label(daily_content, "Same seed for everyone · No Hangar bonuses", 14, Kit.MUTED, true)
-	var daily_text := "Fly today's challenge"
-	if int(record.get("best_score",-1)) >= 0:
-		daily_text = "Replay daily  ·  Best %d" % int(record.best_score)
-	_ui_button(daily_content, daily_text, _launch_daily, "secondary", 48)
+	Kit.label(daily_content, "%s · %s · Normal, no Hangar" % [_name_part(str(daily_ship.name), 0), _name_part(str(daily_pilot.name), 0)], 14, Kit.MUTED, true)
+	var daily_text := "Play daily"
+	if int(record.get("best_score", -1)) >= 0:
+		daily_text = "Replay · Best %d" % int(record.best_score)
+	var daily_actions := HBoxContainer.new()
+	daily_actions.add_theme_constant_override("separation", 6)
+	daily_content.add_child(daily_actions)
+	_ui_button(daily_actions, daily_text, _launch_daily, "secondary", 44, true)
 	if game_center.supports_game_center():
-		_ui_button(daily_content, "Online daily leaderboard · Game Center", _show_game_center_leaderboard, "secondary", 48)
-	Kit.caps(body, "Difficulty · regular runs", Kit.MUTED, 13)
+		var leaderboard := _ui_button(daily_actions, "Leaderboard", _show_game_center_leaderboard, "ghost", 44, true)
+		leaderboard.tooltip_text = "Game Center daily leaderboard"
+	Kit.label(body, "Regular flight difficulty", 14, Kit.MUTED)
 	var segments := HBoxContainer.new()
 	segments.add_theme_constant_override("separation", 6)
 	body.add_child(segments)
@@ -911,12 +914,12 @@ func _show_menu() -> void:
 	for id in Catalog.DIFFICULTIES:
 		var chosen: bool = id == current
 		var segment := Button.new()
-		segment.text = "%s\n×%s" % [str(id).capitalize(), _multiplier_text(str(id))]
+		segment.text = str(id).capitalize()
 		Kit.style_button(segment, ("danger" if id == "insane" else "selected") if chosen else "secondary", 16, 10, 6.0)
 		if not chosen:
 			for state in ["font_color", "font_hover_color", "font_focus_color"]:
 				segment.add_theme_color_override(state, Kit.MUTED)
-		segment.custom_minimum_size.y = 60
+		segment.custom_minimum_size.y = 48
 		segment.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
@@ -926,20 +929,17 @@ func _show_menu() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 6)
 	bottom.add_child(row)
-	_ui_button(row, "Hangar", _show_hangar, "secondary", 48, true)
-	var awards_button := _ui_button(row, "Awards", _show_achievements, "secondary", 48, true)
+	_ui_button(row, "Hangar", _show_hangar, "ghost", 46, true)
+	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 46, true)
 	awards_button.tooltip_text = "Achievements and milestones"
-	_ui_button(row, "Guide", _show_briefing.bind(false), "secondary", 48, true)
+	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
 	var primary: Button
 	if saved.is_empty():
-		primary = _ui_button(reading_footer, "Launch regular flight", _launch, "primary", 60, true)
+		primary = _ui_button(reading_footer, "Launch flight", _launch, "primary", 60, true)
 	else:
-		_ui_button(bottom, "Start a new regular flight", _confirm_abandon.bind("menu"), "ghost", 44)
+		_ui_button(bottom, "Start new flight", _confirm_abandon.bind("menu"), "ghost", 44)
 		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
 		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
-	if not _touch_first() and not _compact_ui():
-		var keys := Kit.label(bottom, "1-4 abilities  ·  B build  ·  Tab speed  ·  Esc pause", 14, Kit.DIM, true)
-		keys.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_focus(primary)
 
 
