@@ -103,8 +103,35 @@ if native_entries < 20 or not (bin_root/"ads").is_dir():
 project=root/"project.godot"
 text=project.read_text()
 if '[editor_plugins]' in text:
-    raise SystemExit("Existing editor_plugins settings require manual reconciliation")
-text += '\n[editor_plugins]\n\nenabled=PackedStringArray("res://addons/admob/plugin.cfg")\n'
+    # Other iOS plugins may already contribute editor plugin entries.
+    import re
+    tail = text[text.index('[editor_plugins]'):]
+    match = re.search(r'(?m)^enabled=PackedStringArray\\(([^\\n]*)\\)
+text += '\n[admob]\n\ngeneral/ios/enabled=true\ngeneral/ios/app_id="%s"\n' % app_id
+project.write_text(text)
+
+native_source=root/"scripts/admob_native_runtime.gd.txt"
+if not native_source.is_file():
+    raise SystemExit("Missing reviewed native Star/Run banner runtime template")
+(root/"scripts/admob_native_runtime.gd").write_text(native_source.read_text())
+
+if test:
+    path=root/"data/admob.json"
+    config=json.loads(path.read_text())
+    config.update({"enabled":True,"app_id":app_id,"banner_unit_id":banner_id,"test_mode":True})
+    path.write_text(json.dumps(config,indent=2)+"\n")
+print("Native AdMob iOS v5.1.0 installed:", addon_entries, "addon files,",native_entries,"native files;",
+      "using",("Google test IDs" if test else "configured live IDs"),"with consent gate.")
+PY
+, tail)
+    if not match:
+        raise SystemExit("Cannot merge AdMob with existing editor_plugins")
+    current = match.group(1).strip()
+    if 'res://addons/admob/plugin.cfg' not in current:
+        value = (current + ', ' if current else '') + '"res://addons/admob/plugin.cfg"'
+        text = text.replace(match.group(0), 'enabled=PackedStringArray(' + value + ')', 1)
+else:
+    text += '\n[editor_plugins]\n\nenabled=PackedStringArray("res://addons/admob/plugin.cfg")\n'
 text += '\n[admob]\n\ngeneral/ios/enabled=true\ngeneral/ios/app_id="%s"\n' % app_id
 project.write_text(text)
 
