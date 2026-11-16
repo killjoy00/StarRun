@@ -1777,7 +1777,7 @@ func _show_route_choice() -> void:
 	var routes := [
 		{"id": "repair", "tag": "Defensive", "gain": "Repair 55% hull, refill shields, take 18% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Growth", "gain": "+35% kill XP, +%d base Cores if the next boss falls; repair 30%% hull." % (20 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
+		{"id": "bounty", "tag": "Growth", "gain": "+35%% kill XP, +%d base Cores if the next boss falls; repair 30%% hull." % (20 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
