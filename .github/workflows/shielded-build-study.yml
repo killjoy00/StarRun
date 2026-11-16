@@ -4,6 +4,7 @@ on:
     branches: ['codex/balance-ads-store-*']
     paths:
       - 'tests/balance_matrix.gd'
+      - 'tools/report_shielded_study.py'
       - '.github/workflows/shielded-build-study.yml'
       - 'scripts/simulation.gd'
       - 'data/content.json'
@@ -70,5 +71,31 @@ jobs:
         with:
           name: shielded-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.ship }}
           path: shielded-*.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  summarize:
+    name: Aggregate route/build and fusion results
+    needs: matched_builds
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect matched run logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shielded-*
+          path: matched-artifacts
+          merge-multiple: true
+      - name: Publish all results to Actions summary
+        run: python3 tools/report_shielded_study.py matched-artifacts
+      - name: Store consolidated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shielded-build-summary
+          path: |
+            shielded-build-summary.md
+            shielded-build-summary.json
           if-no-files-found: ignore
           retention-days: 30
