@@ -1,6 +1,6 @@
 # Star/Run — App Store listing draft (en-US)
 
-Status: **copy ready for review, not submitted to App Store Connect.** This is for the iPhone app already registered as `com.rsm.starrun`. Do not create a new app ID and do not publish the app without separate authorization.
+Status: **Saved and read back successfully in App Store Connect's existing iOS 1.0 draft on 2026-11-16.** This is for the iPhone app already registered as `com.rsm.starrun`. Do not create a new app ID and do not publish the app without separate authorization.
 
 ## Product page
 
@@ -71,11 +71,21 @@ The currently required Dynamic Island iPhone screenshot size includes **1179×25
 6. **App Privacy details:** follow Apple's questions for the **shipped binary**, including Google AdMob SDK data collection after that SDK is genuinely installed. Do not mark third-party ad tracking as absent without reviewing the vendor disclosure.
 7. **App Review notes:** four on-screen active slots, ship flies and fires automatically, no account needed for offline play; daily scores saved locally; Game Center optional. Provide test login only if Apple requests one and it truly exists.
 
+## Actual App Store Connect sync
+
+Apple accepted the name **Star/Run**, subtitle, promotional text, description, keywords and GitHub Issues support URL. The iOS 1.0 version remains **PREPARE_FOR_SUBMISSION** and no App Review submission occurred.
+
+- [Apple metadata apply workflow](https://github.com/killjoy00/EZTrivia/actions/runs/43896945124)
+- [Apple metadata readback verification](https://github.com/killjoy00/EZTrivia/actions/runs/43897202012)
+- Machine-readable source: [docs/app-store/en-US.json](app-store/en-US.json)
+
+No screenshots, age rating, App Privacy answers, price, or privacy policy URL have been populated by the workflow. The user's remaining account steps below cover only those fields.
+
 ## Owner steps (no local code or terminal)
 
 1. Sign in at https://appstoreconnect.apple.com/apps and open the existing **StarRun** app (`com.rsm.starrun`).
-2. Under **App Information**, set the localized **Name** to `Star/Run` if Apple permits editing its current state. Keep the bundle identifier unchanged.
-3. Open **App Store** and select the current editable iOS version (or create a new version when Apple allows). Paste the **subtitle, promotional text, description, and keywords** above into their respective fields.
+2. Verify **Star/Run** and **Tactical space auto-shooter** appear as the name and subtitle. Both were saved and read back through Apple's API.
+3. Open the current **iOS 1.0 draft** and confirm the description, promotional copy, keywords and support URL are there. They were populated automatically; do not paste them a second time.
 4. Enter **Support URL** and **Privacy Policy URL** only after those pages actually exist. Complete the copyright, age-rating, App Privacy, and pricing/availability forms accurately.
 5. Upload actual full-resolution iPhone screenshots in the recommended order. Do not use development screenshots with test ads as marketing images.
 6. **Save** the listing draft. Do not press **Submit for Review** or publish until ads and the release candidate are validated.
