@@ -69,6 +69,8 @@ var intermission_step := "" # "", "prototype", "route", "ready"
 var route_choice := ""
 var stage_power := 1.0
 var stage_risk := 1.0
+var stage_defense := 1.0 # Shielded passage reduces incoming damage.
+var stage_fire_rate := 1.0 # Redline accelerates automatic weapons.
 var bounty_earned := 0
 var safeguard_used := false
 var bonus_cores := 0
@@ -244,7 +246,7 @@ func step() -> void:
 	for timer in ["aftercast_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
-		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk
+		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk * stage_defense
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
@@ -271,7 +273,7 @@ func step() -> void:
 		if synergy_active("fortress"):
 			recharge *= 1.60
 		if _has_prototype("bastion_lattice"):
-			recharge *= 1.40
+			recharge *= 1.85
 		shield = minf(max_shield, shield + recharge)
 	for effect in effects:
 		effect.life -= DT
@@ -577,8 +579,9 @@ func choose_prototype(index: int) -> bool:
 		return false
 	prototypes.append(id)
 	if id == "mirror_cell":
-		max_shield *= 1.3
-		shield = minf(max_shield, shield + max_shield * 0.3)
+		var old_capacity: float = max_shield
+		max_shield *= 1.60
+		shield = minf(max_shield, shield + old_capacity * 0.60)
 	intermission_step = "route"
 	_log("Prototype installed: " + str(prototype_spec(id).name))
 	return true
@@ -744,11 +747,13 @@ func advance_stage() -> bool:
 	shots.clear()
 	charges.clear()
 	effects.clear()
-	stage_power = 1.25 if route_choice == "overclock" else 1.0
+	stage_power = 1.35 if route_choice == "overclock" else 1.0
 	stage_risk = 1.30 if route_choice == "bounty" else 1.0
+	stage_defense = 0.82 if route_choice == "repair" else 1.0
+	stage_fire_rate = 1.20 if route_choice == "overclock" else 1.0
 	var repair_fraction := 0.55 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.30)
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
-	shield = max_shield * (0.60 if route_choice == "overclock" else 1.0)
+	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
@@ -978,7 +983,7 @@ func _focus_reroll() -> void:
 		cards[-1] = available[rng.randi_range(0,available.size()-1)].duplicate(true)
 
 func _update_weapons() -> void:
-	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate)
+	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
 	if rank_at("autoloader", 5): rate += 0.15
 	if rank_at("autoloader", 10): rate += 0.25
 	if aftercast_left > 0.0:
@@ -1064,7 +1069,7 @@ func weapon_power() -> float:
 	for prototype in prototypes:
 		match str(prototype):
 			"bastion_lattice": power *= 0.88
-			"volatile_core": power *= 1.30
+			"volatile_core": power *= 1.55
 			"null_harmonics": power *= 0.88
 			"salvage_charter": power *= 0.85
 			"emergency_safeguard": power *= 0.90
@@ -1078,7 +1083,7 @@ func ability_power() -> float:
 	if synergy_active("assault"):
 		power *= 1.20
 	if _has_prototype("echo_coil"):
-		power *= 1.40
+		power *= 1.70
 	return power
 
 func hull_damage_multiplier() -> float:
@@ -1090,7 +1095,9 @@ func hull_damage_multiplier() -> float:
 	if synergy_active("assault"):
 		factor *= 1.28
 	if _has_prototype("volatile_core"):
-		factor *= 1.25
+		factor *= 1.30
+	if route_choice == "overclock" and stage >= 2:
+		factor *= 1.20
 	return factor
 
 func cooldown_multiplier() -> float:
@@ -1101,7 +1108,7 @@ func cooldown_multiplier() -> float:
 	if rank_at("coolant", 10): factor *= 0.90
 	if passive_link_active("quick_charge"): factor *= 0.88
 	if _has_prototype("null_harmonics"):
-		factor *= 0.78
+		factor *= 0.62
 	if _has_prototype("mirror_cell"):
 		factor *= 1.15
 	if _has_prototype("echo_coil"):
@@ -1236,7 +1243,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
 	if enemy.kind == "boss_module":
-		amount *= 1.70 if _has_prototype("breach_optics") else 1.0
+		amount *= 2.40 if _has_prototype("breach_optics") else 1.0
 	elif _has_prototype("breach_optics"):
 		amount *= 0.90
 	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
@@ -1265,7 +1272,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0))
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.35 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -1297,7 +1304,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		prevented += amount
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
-	var reduced := amount * stage_risk
+	var reduced := amount * stage_risk * stage_defense
 	# Haven's support chassis resists damaging status rounds, which dominate
 	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
 	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
@@ -1339,8 +1346,9 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
 			shield_offline = 0.0
-			shield = minf(max_shield, 30.0)
-			_log("Emergency Safeguard rebuilt 30 shield")
+			shield = minf(max_shield, max_shield * 0.80)
+			hull = minf(max_hull, hull + 15.0)
+			_log("Emergency Safeguard rebuilt 80% shields and repaired 15 hull")
 	if kind != "chaff" or hull_damage > 0.0:
 		_log("%s · %.1f %s damage%s" % [source, reduced, kind, " to hull" if hull_damage > 0 else " to shield"])
 	if hull <= 0:
@@ -1773,7 +1781,7 @@ func payout() -> int:
 	if synergy_active("salvager"):
 		base = int(round(base * 1.25))
 	if _has_prototype("salvage_charter"):
-		base = int(round(base * 1.35))
+		base = int(round(base * 1.75))
 	if endless_enabled:
 		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
 		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
@@ -1781,7 +1789,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
