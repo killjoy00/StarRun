@@ -1,0 +1,58 @@
+name: Warp route and prototype balance grid
+on:
+  push:
+    branches: ['codex/route-prototype-balance-*']
+    paths:
+      - 'scripts/simulation.gd'
+      - 'data/content.json'
+      - 'tests/balance_matrix.gd'
+      - 'tests/run.gd'
+      - '.github/workflows/route-balance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: route-balance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  route_grid:
+    name: '${{ matrix.difficulty }} / ${{ matrix.hangar }} Hangar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [normal, hard, insane]
+        hangar: [none, mid, max]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project and validate script
+        run: |
+          godot --headless --path . --editor --import --quit
+          godot --headless --path . --check-only --script tests/balance_matrix.gd
+      - name: Compare route policies with actual four-world combat
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in repair overclock bounty; do
+            echo "ROUTE_POLICY $route"
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --seeds=2 --ship=arcwing --difficulty=${{ matrix.difficulty }} \
+              --build=focused --hangar=${{ matrix.hangar }} --pilot=rookie \
+              --strategy=timed --route="$route" --trace \
+              2>&1 | tee "route-${{ matrix.difficulty }}-${{ matrix.hangar }}-$route.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "route-${{ matrix.difficulty }}-${{ matrix.hangar }}-$route.log"; then
+              echo "::error::The balance simulator failed"
+              exit 1
+            fi
+          done
+      - name: Upload per-world outcomes for all routes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: routes-${{ matrix.difficulty }}-${{ matrix.hangar }}
+          path: route-*.log
+          if-no-files-found: ignore
+          retention-days: 30

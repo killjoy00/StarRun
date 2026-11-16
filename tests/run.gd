@@ -33,6 +33,7 @@ func _run() -> void:
 	_test_boss_components_and_phases()
 	_test_synergy_tradeoffs()
 	_test_prototype_and_route_choices()
+	_test_route_prototype_balance_grid()
 	_test_new_stage_threats()
 	_test_active_pool()
 	_test_fusions_and_milestones()
@@ -778,7 +779,7 @@ func _test_prototype_and_route_choices() -> void:
 	check(sim.choose_prototype(0), "A valid Prototype must install")
 	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
 	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
-	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0), "Safe route must have no extra threat or damage")
+	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage without an attack bonus")
 	var risk := Sim.new(889)
 	risk.stage = 2
 	risk._spawn_boss()
@@ -803,12 +804,12 @@ func _test_prototype_and_route_choices() -> void:
 	clock._spawn_boss()
 	clock._damage_enemy(clock.enemies[0], 100000.0, "pulse")
 	check(clock.begin_intermission() and clock.choose_prototype(0) and clock.choose_route("overclock") and clock.advance_stage(), "Overclock route must be available")
-	check(is_equal_approx(clock.stage_power, 1.25) and is_equal_approx(clock.shield, clock.max_shield * 0.60), "Overclock must grant damage but start with reduced shields")
+	check(is_equal_approx(clock.stage_power, 1.35) and is_equal_approx(clock.stage_fire_rate, 1.20) and is_equal_approx(clock.shield, clock.max_shield * 0.50) and clock.hull_damage_multiplier() > 1.19, "Redline must attack harder and faster but start with low shields and more hull vulnerability")
 	var prototype := Sim.new(556)
 	prototype.prototypes = ["volatile_core", "null_harmonics", "salvage_charter", "breach_optics"]
 	check(prototype.weapon_power() > 0.0 and prototype.cooldown_multiplier() < 1.0 and prototype.payout() > Sim.new().payout(), "Prototype stack must affect combat, cooldown and rewards")
 	var legacy: Dictionary = Sim.new().snapshot()
-	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "bounty_earned", "safeguard_used", "boss_spawn_time", "choice_cores"]:
+	for key in ["prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "boss_spawn_time", "choice_cores"]:
 		legacy.erase(key)
 	check(Sim.new().restore(legacy), "An older v0.5 flight without strategic fields must remain resumable")
 	var safeguard := Sim.new(891)
@@ -817,6 +818,108 @@ func _test_prototype_and_route_choices() -> void:
 	safeguard._spawn_boss()
 	check(safeguard.safeguard_used, "Emergency Safeguard must not reset when the boss spawns during the same stage")
 
+
+
+# Mechanical grid: all four worlds, three difficulties and three Hangar levels.
+# Forced boss kills here only initialize warp scenarios; real campaign runs are
+# measured separately by balance_matrix.gd and never inject kills or equipment.
+func _test_route_prototype_balance_grid() -> void:
+	var cases := 0
+	for difficulty in Catalog.DIFFICULTIES:
+		for hangar_style in ["none", "mid", "max"]:
+			var hangar: Dictionary = Catalog.defaults()
+			for entry in Catalog.HANGAR:
+				var id: String = str(entry.id)
+				if hangar_style == "max":
+					hangar[id] = int(entry.max)
+				elif hangar_style == "mid" and id in ["hull", "shield", "damage", "regen", "repair", "fire_rate", "ability_cooldown", "boss_damage"]:
+					hangar[id] = mini(2, int(entry.max))
+			var previous_boss_hp := 0.0
+			for world in range(1, 5):
+				var benchmark := Sim.new(41023, hangar, "vanguard", "rookie", difficulty)
+				benchmark.stage = world
+				benchmark._spawn_boss()
+				var boss_hp: float = float(benchmark.enemies[0].max_hp)
+				check(boss_hp > previous_boss_hp, "Boss health must escalate from world to world for %s / %s" % [difficulty, hangar_style])
+				previous_boss_hp = boss_hp
+				if world == 1:
+					check(is_equal_approx(benchmark.stage_power, 1.0) and is_equal_approx(benchmark.stage_risk, 1.0) and is_equal_approx(benchmark.stage_defense, 1.0), "World 1 must have neutral route settings")
+					cases += 1
+					continue
+				for route in ["repair", "overclock", "bounty"]:
+					var sim := Sim.new(41023, hangar, "vanguard", "rookie", difficulty)
+					sim.stage = world - 1
+					sim._spawn_boss()
+					sim._damage_enemy(sim.enemies[0], 10000000.0, "pulse")
+					check(sim.stage_transition_queued and sim.begin_intermission(), "Warp setup must clear a real intermission checkpoint")
+					check(sim.choose_prototype(0) and sim.choose_route(route) and sim.advance_stage(), "Warp choices must advance to world %d on %s / %s / %s" % [world, difficulty, hangar_style, route])
+					check(sim.stage == world and sim.route_choice == route, "Selected route must persist into the intended world")
+					if route == "repair":
+						check(is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must uniquely mitigate incoming damage")
+					elif route == "overclock":
+						check(is_equal_approx(sim.stage_power, 1.35) and is_equal_approx(sim.stage_fire_rate, 1.20) and is_equal_approx(sim.stage_defense, 1.0), "Redline must uniquely favor attack output")
+					else:
+						check(is_equal_approx(sim.stage_risk, 1.30) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Hunter contract must increase pressure without an attack buff")
+					var saved: Dictionary = sim.snapshot()
+					var resumed := Sim.new(41024, hangar, "vanguard", "rookie", difficulty)
+					check(resumed.restore(saved) and is_equal_approx(resumed.stage_defense, sim.stage_defense) and is_equal_approx(resumed.stage_fire_rate, sim.stage_fire_rate), "Warp-specific mechanics must survive a checkpoint")
+					cases += 1
+	check(cases == 90, "Route grid must cover nine World 1 starting states and all 81 later-world route scenarios")
+
+	var base := Sim.new(556)
+	var volatile := Sim.new(556)
+	volatile.prototypes = ["volatile_core"]
+	check(volatile.weapon_power() >= base.weapon_power() * 1.54 and volatile.hull_damage_multiplier() >= 1.29, "Volatile Core should offer a large damage gain and a real hull drawback")
+	var null_field := Sim.new(556)
+	null_field.prototypes = ["null_harmonics"]
+	check(null_field.cooldown_multiplier() <= base.cooldown_multiplier() * 0.63, "Null Harmonics must dramatically accelerate abilities")
+	var echo := Sim.new(556)
+	echo.prototypes = ["echo_coil"]
+	check(echo.ability_power() >= base.ability_power() * 1.69, "Echo Coil must increase ability strength by about 70%")
+	var charter := Sim.new(556)
+	charter.prototypes = ["salvage_charter"]
+	check(charter.payout() > base.payout() * 1.6, "Salvage Charter must have a substantial Cores payout")
+	var bastion := Sim.new(556)
+	var plain := Sim.new(556)
+	bastion.prototypes = ["bastion_lattice"]
+	bastion.shield = 10.0
+	plain.shield = 10.0
+	bastion.step()
+	plain.step()
+	check(bastion.shield > plain.shield + 0.02, "Bastion Lattice must noticeably improve shield regeneration")
+	var mirror := Sim.new(556)
+	mirror.stage_transition_queued = true
+	mirror.stage_clears = 1
+	mirror.prototype_offers = ["mirror_cell"]
+	mirror.intermission_step = "prototype"
+	check(mirror.choose_prototype(0) and is_equal_approx(mirror.max_shield, base.max_shield * 1.60) and is_equal_approx(mirror.shield, mirror.max_shield), "Mirror Cell must immediately fill the full 60% new shield capacity")
+	var safeguard := Sim.new(556)
+	safeguard.prototypes = ["emergency_safeguard"]
+	safeguard.shield = 1.0
+	safeguard.hull = 40.0
+	safeguard._hit(10.0, "chaff", "Grid test")
+	check(safeguard.safeguard_used and safeguard.shield >= safeguard.max_shield * 0.79 and safeguard.hull > 40.0, "Safeguard must restore most shields and patch hull on the first shield break")
+	var breach := Sim.new(556)
+	breach.stage = 3
+	breach.prototypes = ["breach_optics"]
+	breach._spawn_boss()
+	var control := Sim.new(556)
+	control.stage = 3
+	control._spawn_boss()
+	check(breach.enemies.size() > 1 and control.enemies.size() > 1, "Breach test needs a targetable boss module")
+	if breach.enemies.size() > 1 and control.enemies.size() > 1:
+		breach._damage_enemy(breach.enemies[1], 100.0, "pulse")
+		control._damage_enemy(control.enemies[1], 100.0, "pulse")
+		check(float(breach.enemies[1].max_hp - breach.enemies[1].hp) >= 2.39 * float(control.enemies[1].max_hp - control.enemies[1].hp), "Breach Optics must do 140% extra module damage")
+
+	var xp_regular := Sim.new(556)
+	var xp_contract := Sim.new(556)
+	xp_contract.route_choice = "bounty"
+	xp_regular._add_enemy("drone", Vector2(220, 80))
+	xp_contract._add_enemy("drone", Vector2(220, 80))
+	xp_regular._damage_enemy(xp_regular.enemies[0], 10000.0, "pulse")
+	xp_contract._damage_enemy(xp_contract.enemies[0], 10000.0, "pulse")
+	check(xp_contract.xp > xp_regular.xp * 1.34, "Hunter contract must pay at least 35% extra XP on actual enemy kills")
 
 func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content

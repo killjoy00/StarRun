@@ -1,0 +1,49 @@
+name: Route difficulty sanity follow-up
+on:
+  push:
+    branches: ['codex/route-prototype-balance-*']
+    paths: ['.github/workflows/route-difficulty-followup.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: route-difficulty-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  difficulty_sanity:
+    name: 'Four new seeds / ${{ matrix.difficulty }} / moderate Hangar'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [hard, insane]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Replay the difficulty inversion on four additional matched seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in repair overclock bounty; do
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --seeds=4 --seed-offset=2 --ship=arcwing \
+              --difficulty=${{ matrix.difficulty }} --strategy=timed \
+              --build=focused --hangar=mid --pilot=rookie \
+              --route="$route" --trace \
+              2>&1 | tee "followup-${{ matrix.difficulty }}-$route.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "followup-${{ matrix.difficulty }}-$route.log"; then
+              echo "::error::Follow-up campaign simulator error"
+              exit 1
+            fi
+          done
+      - name: Save additional-seed evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-difficulty-${{ matrix.difficulty }}
+          path: followup-*.log
+          retention-days: 30
