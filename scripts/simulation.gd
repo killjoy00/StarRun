@@ -714,11 +714,15 @@ func _spawn_boss() -> void:
 	var spec := stage_spec()
 	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
 	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
-	# Hard/Insane are progression difficulties. World 1's boss asks for a
-	# stronger build; this costs players time and defense, not bonus XP.
-	var opener_boss_scale := 6.50 if difficulty == "hard" else (5.00 if difficulty == "insane" else 1.0)
-	if stage != 1:
-		opener_boss_scale = 1.0
+	# Progression difficulties need stronger boss fights without making
+	# World 1 tankier than World 2. The World 2 bridge maintains ascending
+	# boss HP; Worlds 3 and 4 naturally exceed that threshold.
+	var opener_boss_scale := 1.0
+	if difficulty in ["hard", "insane"]:
+		if stage == 1:
+			opener_boss_scale = 6.5 if difficulty == "hard" else 5.0
+		elif stage == 2:
+			opener_boss_scale = 2.5
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
@@ -905,7 +909,15 @@ func _update_enemies() -> void:
 				elif kind in ["interceptor", "rusher"]: count = 2
 				elif kind in ["arc_spire", "forge_turret"]: count = 9
 				elif kind == "gravity_sentinel": count = 7
-				elif kind.begins_with("boss"): count = 9 + stage * 2
+				elif kind.begins_with("boss"):
+					count = 9 + stage * 2
+					# World 1 boss adds real dodgable fire after the first
+					# telegraphs. No guaranteed hits or synthetic failure rule.
+					if stage == 1 and time - boss_spawn_time >= 15.0:
+						if difficulty == "hard":
+							count += 6
+						elif difficulty == "insane":
+							count += 8
 				if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
 					count += 6
 				var bullet_kind := "chaff"
