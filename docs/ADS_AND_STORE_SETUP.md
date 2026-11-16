@@ -37,7 +37,7 @@
 4. Select category **Games** and appropriate game genres, answer the current age-rating questionnaire based on stylized combat and actual ad creatives, and choose where the game will be available. The game currently targets **iPhone portrait**.
 5. Put a functioning, public **Support URL** in the required field. Publish a real **Privacy Policy URL** and enter it in App Privacy/Privacy Policy; the policy must cover the *actual ad-integrated binary* and the native Game Center/sharing features. Send me the two URLs when ready if you'd like me to check the content.
 6. Review **App Privacy** questions in App Store Connect after determining AdMob's SDK collection/tracking behavior. Include advertising and diagnostics data as applicable; never mark “data not collected” just because your own code does not directly read ad IDs.
-7. Upload actual full-resolution, Apple-compatible iPhone screenshots. Prefer gameplay, Build/upgrades, warp choices, ships, Hangar and Daily. Follow the suggested order in [APP_STORE_LISTING.md](APP_STORE_LISTING.md). Do not use a placeholder/ad test creative in public listing screenshots.
+7. **Done 2026-11-16:** Seven real Star/Run screenshots were automatically uploaded and verified COMPLETE on the iOS 1.0 draft. [Apple upload run](https://github.com/killjoy00/EZTrivia/actions/runs/43911365253). No placeholder or test ad screenshot was included.
 8. Verify copyright holder, content rights, export compliance, pricing and version details. **Save the draft only**. Do not select **Submit for Review** or schedule release without a separate go-ahead.
 
 ## What I can do without your accounts
