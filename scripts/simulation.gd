@@ -305,6 +305,16 @@ func step() -> void:
 func threat_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
 
+# Harvester pressure rises during a prolonged opening boss fight on the
+# progression difficulties. It is independent of Hangar state, does not
+# create extra enemies or XP, and leaves Normal untouched. Faster builds
+# can end the fight before the later volleys escalate.
+func opener_boss_enrage() -> float:
+	if stage != 1 or difficulty == "normal" or not boss_spawned:
+		return 1.0
+	var elapsed := maxf(0.0, time - boss_spawn_time - 20.0)
+	return 1.0 + minf(2.0, elapsed / (45.0 if difficulty == "hard" else 35.0))
+
 func stage_spec() -> Dictionary:
 	if stage <= int(content.stage_count):
 		return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
@@ -826,6 +836,8 @@ func _update_enemies() -> void:
 					damage *= 1.30
 				elif difficulty == "insane":
 					damage *= 1.50
+			if kind == "boss" and stage == 1:
+				damage *= opener_boss_enrage()
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -908,7 +920,7 @@ func _update_enemies() -> void:
 					bullet_kind = "gravity"
 				for i in range(count):
 					var angle: float = (i - (count - 1) / 2.0) * (0.19 if kind in ["arc_spire", "forge_turret"] else 0.15)
-					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale() * (opener_boss_enrage() if kind == "boss" else 1.0), "kind": bullet_kind, "source": kind})
 				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
 					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
 					for i in range(volley):
