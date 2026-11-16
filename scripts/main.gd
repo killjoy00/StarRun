@@ -1643,7 +1643,7 @@ func _show_build() -> void:
 	_focus(resume)
 
 func _route_name(id: String) -> String:
-	return str({"repair": "Repair", "overclock": "More damage", "bounty": "Bounty run"}.get(id, id.capitalize()))
+	return str({"repair": "Shielded passage", "overclock": "Redline assault", "bounty": "Hunter contract"}.get(id, id.capitalize()))
 
 # ---------------------------------------------------------------------------
 # Boss down, intermission and results
@@ -1775,9 +1775,9 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Safe", "gain": "Repair 55% of hull. Shields refilled.", "cost": "No extra rewards.", "accent": Kit.CYAN},
-		{"id": "overclock", "tag": "Aggressive", "gain": "Automatic weapons deal 25% more damage next stage.", "cost": "Repair only 10% of hull. Shields start at 60%.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Risky", "gain": "+%d base cores if you beat the next boss. Repair 30%% of hull." % (20 * (sim.stage + 1)), "cost": "Enemies get 30% more health, damage and spawns.", "accent": Kit.DANGER},
+		{"id": "repair", "tag": "Defensive", "gain": "Repair 55% hull, refill shields, take 18% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
+		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
+		{"id": "bounty", "tag": "Growth", "gain": "+35% kill XP, +%d base Cores if the next boss falls; repair 30%% hull." % (20 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
