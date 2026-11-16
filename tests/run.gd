@@ -53,7 +53,13 @@ func _run() -> void:
 	# Combat and draft share RNG. Strategy changes draft outcomes, so full-run
 	# hull is diagnostic rather than an isolated test of input timing.
 	var timing: Dictionary = _fixed_build_timing(seeds)
-	check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
+	# Hard is now a progression wall without Hangar upgrades. If both
+	# control policies correctly fail to beat World 1, distinguish their
+	# timing by legitimate survival time rather than requiring a win.
+	if timing.timed.wins == 0 and timing.on_cooldown.wins == 0:
+		check(timing.timed.seconds > timing.on_cooldown.seconds + 8.0, "Timed counters must extend survival when both Hard builds lose")
+	else:
+		check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
 	check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
 	print("FIXED_BUILD_TIMING ", JSON.stringify(timing))
 	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
