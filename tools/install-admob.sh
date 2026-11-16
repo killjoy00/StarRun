@@ -86,6 +86,21 @@ for parts, content in safe_files("poing-godot-admob-v5.1.0.zip"):
 if addon_entries < 30 or not (addon/"plugin.cfg").is_file():
     raise SystemExit("AdMob v5.1.0 editor addon missing after extraction")
 
+# Poing v5.1.0 assumes the new Godot SPM method is fully operational.
+# Godot 4.6.3 exposes it but does not link GoogleMobileAds/UMP for this
+# export. Force the plugin's documented local-Swift-package fallback and
+# patch the generated pbxproj synchronously (deferred calls are dropped by
+# headless CI at editor shutdown).
+exporter = addon/"internal/exporters/ios/export_plugin.gd"
+source = exporter.read_text()
+conditional = 'if has_method("add_apple_embedded_platform_spm_package"):'
+deferred = '_defer_pbxproj_patch.call_deferred(export_dir, path)'
+if source.count(conditional)!=1 or source.count(deferred)!=1:
+    raise SystemExit("Unexpected Poing v5.1.0 export plugin source; refusing unverified patch")
+source = source.replace(conditional, 'if Engine.get_version_info().minor >= 8 and has_method("add_apple_embedded_platform_spm_package"):')
+source = source.replace(deferred, '_patch_xcodeproj(export_dir, path)')
+exporter.write_text(source)
+
 bin_root=addon/"ios/bin"
 native_entries=0
 for parts, content in safe_files("ios-template-v4.6.3.zip"):
