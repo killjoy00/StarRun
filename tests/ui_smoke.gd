@@ -287,15 +287,15 @@ func _run() -> void:
 	scene._show_prototypes()
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
-	check(_contains_text(scene.reading_scroll, "Repair") and _contains_text(scene.reading_scroll, "More damage") and _contains_text(scene.reading_scroll, "Bounty run"), "Every strategic route must render after the prototype choice")
-	check(_contains_text(scene.reading_scroll, "No extra rewards") and _contains_text(scene.reading_scroll, "25%") and _contains_text(scene.reading_scroll, "30%"), "Every route must explain its actual benefit and cost in plain language")
+	check(_contains_text(scene.reading_scroll, "Shielded passage") and _contains_text(scene.reading_scroll, "Redline assault") and _contains_text(scene.reading_scroll, "Hunter contract"), "Every strategic route must render after the prototype choice")
+	check(_contains_text(scene.reading_scroll, "18%") and _contains_text(scene.reading_scroll, "35%") and _contains_text(scene.reading_scroll, "30%"), "Every route must explain its actual benefit and cost in plain language")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
 	scene._resume_run()
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
 	scene._choose_route("overclock")
-	check(scene.sim.stage == 2 and scene.mode == "cards" and is_equal_approx(scene.sim.stage_power, 1.25), "Selecting Overclock must start Stage 2 with reduced shields and its stronger weapons")
+	check(scene.sim.stage == 2 and scene.mode == "cards" and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with reduced shields and its stronger weapons")
 	scene.sim.cards.clear()
 	scene.mode = "playing"
 	scene._show_build()
