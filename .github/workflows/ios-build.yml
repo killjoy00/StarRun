@@ -25,6 +25,9 @@ jobs:
           path: ~/Library/Application Support/Godot/export_templates/4.6.3.stable/ios.zip
           key: starrun-godot-4.6.3-ios-template-v1
       - name: Export Godot iOS Xcode project
+        env:
+          # Test sample IDs on this research branch only; never on main or signed releases.
+          STARRUN_ADMOB_TEST_MODE: ${{ startsWith(github.ref, 'refs/heads/codex/balance-ads-store-') && '1' || '0' }}
         run: bash tools/ios-export.sh
       - name: Compile iPhoneOS app without signing
         run: |
