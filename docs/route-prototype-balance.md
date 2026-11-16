@@ -27,6 +27,10 @@ These route changes are checkpointed; bonuses reset at the next intermission. Hu
 
 Existing saves and daily choice rules are preserved. The game still offers three random prototypes or the option to bank +10 flat Cores.
 
+## Progression target for Hard and Insane
+
+The intended opening pressure is severe: **a player with no permanent Hangar upgrades should not be able to clear World 1 on Hard or Insane.** Normal remains a valid starting difficulty; Hangar investments make tougher settings increasingly accessible. This is tested as real combat, not an artificial victory veto. The expanded study checks six ships, six pilots, two upgrade/ability-use policies and three seeds each (432 no-Hangar attempts). **Any observed clear is a red test and requires investigation.** This is an empirical CI gate over a finite sample, not a mathematical claim that no player could ever survive. Separate four-world route research compares representative ships/pilots and none/mid/max Hangar levels using full combat.
+
 ## What the balance checks actually measure
 
 1. **Mechanical invariant grid** in `tests/run.gd`: 4 worlds × 3 difficulties × 3 Hangar settings, testing world threat escalation, all 81 later-world route combinations, stat effects, restore behavior and each prototype's distinctive benefit. Bosses are deliberately defeated only to initialize intermission mechanics in these *unit tests*. These are **not victories or player outcomes**.
