@@ -8,7 +8,7 @@ test -f "$config"
 ids_output="$(python3 - "$config" "$test_mode" <<'PY'
 import json, re, sys
 c=json.load(open(sys.argv[1]))
-if sys.argv[2] == "1":
+if sys.argv[2] == "1" or (c.get("enabled", False) and c.get("test_mode", False)):
     print("ca-app-pub-3940256099942544~1458002511")
     print("ca-app-pub-3940256099942544/2934735716")
     print("test")

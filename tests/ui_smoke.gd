@@ -59,6 +59,11 @@ func _run() -> void:
 	scene.sound.enabled = false
 	scene.sound.music_enabled = false
 	await process_frame
+	check(is_instance_valid(scene.remove_ads_store), "Remove Ads StoreKit adapter must initialize without loading native SDKs on desktop")
+	check(not scene.remove_ads_store.product_available and not scene.remove_ads_store.store_ready, "No fake or chargeable purchases may appear on a desktop build")
+	check(not scene.remove_ads_store._grant_verified({"productId": "wrong.product", "store": "apple"}, false), "A different product cannot grant an ad-free entitlement")
+	check(not scene.remove_ads_store._grant_verified({"productId": scene.remove_ads_store.PRODUCT_ID, "store": "fake"}, false), "Only actual Apple StoreKit transactions can grant Remove Ads")
+	check(not bool(scene.profile.get("remove_ads", false)), "Invalid purchases cannot modify a saved user's entitlements")
 	# Avoid changing a real player's checkpoint when inspecting draft and result panels.
 	scene.sim.ended = true
 	check(scene.ability_buttons.size() == 4 and scene.sim.active_slots.size() == 1, "Four mobile active slots, one occupied by the ship signature")
