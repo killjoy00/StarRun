@@ -19,7 +19,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal"}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal"}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -93,6 +93,8 @@ var toast_title: Label
 var toast_detail: Label
 var toast_queue: Array = []
 var toast_clock := 0.0
+var native_ad_banner: Node = null
+var ad_banner_visible := false
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
@@ -101,6 +103,18 @@ func _ready() -> void:
 	var hangar := Catalog.defaults()
 	hangar.merge(profile.hangar, true)
 	profile.hangar = hangar
+	# Migrate existing ranks at their historical prices. Later purchases append
+	# their exact paid cost, keeping Refund All fair after the price increase.
+	var receipt: Variant = profile.get("hangar_paid", {})
+	var paid: Dictionary = receipt if receipt is Dictionary else {}
+	for entry in Catalog.HANGAR:
+		var id: String = str(entry.id)
+		if not paid.has(id):
+			var historical := 0
+			for rank in range(int(hangar.get(id, 0))):
+				historical += Catalog.legacy_price(id, rank)
+			paid[id] = historical
+	profile.hangar_paid = paid
 	# Repair old profiles without charging for starter choices.
 	if not profile.get("ships_owned", []) is Array:
 		profile.ships_owned = ["vanguard"]
@@ -126,6 +140,7 @@ func _ready() -> void:
 	_build_ui()
 	_layout()
 	_show_menu()
+	_initialize_native_banner()
 	game_center.initialize(profile, _save_profile)
 	# The iOS-only outgoing share plugin exposes UIActivityViewController.
 	if OS.has_feature("ios") and Engine.has_singleton("SharePlugin"):
@@ -134,6 +149,39 @@ func _ready() -> void:
 		daily_share_service.share_completed.connect(_on_native_share_completed)
 		daily_share_service.share_canceled.connect(_on_native_share_canceled)
 	get_tree().auto_accept_quit = false
+
+
+# The iPhone ad SDK is installed only during ad-enabled native exports.
+# On all other platforms this controller does nothing.
+func _initialize_native_banner() -> void:
+	if OS.get_name() != "iOS":
+		return
+	var cfg_path := "res://data/admob.json"
+	if not FileAccess.file_exists(cfg_path):
+		return
+	var cfg: Variant = JSON.parse_string(FileAccess.get_file_as_string(cfg_path))
+	if not cfg is Dictionary or not bool(cfg.get("enabled", false)):
+		return
+	var runtime_path := "res://scripts/admob_native_runtime.gd"
+	if not ResourceLoader.exists(runtime_path):
+		push_warning("AdMob enabled but no native runtime was exported.")
+		return
+	var native_script: Script = load(runtime_path)
+	if native_script == null:
+		return
+	native_ad_banner = native_script.new()
+	native_ad_banner.call("setup", self, str(cfg.get("banner_unit_id", "")))
+	add_child(native_ad_banner)
+
+func _on_ad_banner_visibility(is_shown: bool) -> void:
+	if ad_banner_visible == is_shown:
+		return
+	ad_banner_visible = is_shown
+	_layout()
+
+func _show_ad_privacy_options() -> void:
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("show_privacy_options")
 
 # Native Retina screens are laid out in logical 390x844 canvas units, not pixels.
 # Protect gameplay labels and menu copy from the old 10-13px type on phones.
@@ -533,7 +581,8 @@ func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dic
 	var w := minf(width, screen.x - 32.0)
 	var frame := VBoxContainer.new()
 	frame.position = Vector2((screen.x - w) * 0.5, float(inset.top) + 4.0)
-	frame.size = Vector2(w, screen.y - float(inset.top) - float(inset.bottom) - 8.0)
+	var reserved_ad_height := 64.0 if ad_banner_visible and mode in ["menu", "results"] else 0.0
+	frame.size = Vector2(w, screen.y - float(inset.top) - float(inset.bottom) - 8.0 - reserved_ad_height)
 	frame.add_theme_constant_override("separation", 14)
 	overlay.add_child(frame)
 	var top := VBoxContainer.new()
@@ -786,7 +835,7 @@ func _name_part(full: String, part: int) -> String:
 func _difficulty_text(id: String) -> String:
 	match id:
 		"hard": return "Enemies get 25% more health and damage, and fire and arrive faster. Cores ×1.75."
-		"insane": return "Enemies get 60% more health and damage, and fire and arrive faster. Cores ×2.5."
+		"insane": return "2× Normal enemy health and damage. More enemy shots, not more spawns. Cores ×2.5."
 	return "Standard enemy strength. Cores ×1."
 
 func _multiplier_text(id: String) -> String:
@@ -1065,6 +1114,8 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	if is_instance_valid(native_ad_banner) and bool(native_ad_banner.call("privacy_options_required")):
+		_ui_button(box, "Ad privacy choices", _show_ad_privacy_options, "secondary", 44)
 	_focus(_ui_button(box, "Done", _close_sheet, "primary", 52))
 
 func _toggle_row(parent: Node, title: String, detail: String, on: bool, action: Callable) -> void:
@@ -1196,7 +1247,7 @@ func _show_hangar() -> void:
 	for entry in Catalog.HANGAR:
 		if entry.group == hangar_category:
 			_hangar_row(list, entry)
-	var refund_total := Catalog.refund(profile.hangar)
+	var refund_total := Catalog.refund(profile.hangar, profile.get("hangar_paid", {}))
 	if refund_total > 0:
 		var armed := confirm_key == "refund"
 		var refund := _ui_button(list, ("Tap again to refund %d cores" if armed else "Refund all upgrades  ·  %d cores") % refund_total, _refund_tap, "danger" if armed else "ghost", 44)
@@ -1775,9 +1826,9 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Defensive", "gain": "Repair 55% hull, refill shields, take 18% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
+		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 35% less damage; +15% weapon damage above half shields; abilities recharge 15% faster next world.", "cost": "Weapon bonus drops at half shields. No extra XP or bounty.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Growth", "gain": "+35%% kill XP, +%d base Cores if the next boss falls; repair 30%% hull." % (20 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
+		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade pick, +50%% kill XP, +%d boss Cores; repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
@@ -1995,6 +2046,8 @@ func _start_flight() -> void:
 			_: _show_stage_clear()
 
 func _process(delta: float) -> void:
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("set_display_for_mode", mode)
 	_advance_toast(delta)
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
@@ -2204,13 +2257,17 @@ func _purchase(id: String) -> void:
 	if profile.cores >= price and rank < int(entry.max):
 		profile.cores -= price
 		profile.hangar[id] = rank + 1
+		var paid: Dictionary = profile.get("hangar_paid", {})
+		paid[id] = int(paid.get(id, 0)) + price
+		profile.hangar_paid = paid
 		_save_profile()
 		sound.play("card")
 		_show_hangar()
 
 func _respec() -> void:
-	profile.cores += Catalog.refund(profile.hangar)
+	profile.cores += Catalog.refund(profile.hangar, profile.get("hangar_paid", {}))
 	profile.hangar = Catalog.defaults()
+	profile.hangar_paid = {}
 	_save_profile()
 	_show_hangar()
 

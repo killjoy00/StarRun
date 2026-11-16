@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_new_stage_threats()
 	_test_active_pool()
 	_test_fusions_and_milestones()
+	_test_shieldstorm_and_full_hull_focus()
 	_test_long_runs()
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
@@ -53,8 +54,17 @@ func _run() -> void:
 	# Combat and draft share RNG. Strategy changes draft outcomes, so full-run
 	# hull is diagnostic rather than an isolated test of input timing.
 	var timing: Dictionary = _fixed_build_timing(seeds)
-	check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
-	check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
+	# Hard is now a progression wall without Hangar upgrades. If both
+	# control policies correctly fail to beat World 1, distinguish their
+	# timing by legitimate survival time rather than requiring a win.
+	if timing.timed.wins == 0 and timing.on_cooldown.wins == 0:
+		check(timing.timed.seconds > timing.on_cooldown.seconds + 8.0, "Timed counters must extend survival when both Hard builds lose")
+	else:
+		check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
+	# In intentionally unwinnable unupgraded Hard starts, both policies
+	# finish at zero hull. Compare their actual survival times instead.
+	if timing.timed.wins > 0 or timing.on_cooldown.wins > 0:
+		check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
 	print("FIXED_BUILD_TIMING ", JSON.stringify(timing))
 	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
 	print("BALANCE ", JSON.stringify(results))
@@ -347,7 +357,10 @@ func _test_hangar_and_tactics() -> void:
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
 	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 68 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
-	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 30, "Existing purchases must retain their original full refund")
+	check(Catalog.legacy_refund({"hull":3, "damage":2, "regen":1}) == 30, "Historic Hangar costs are preserved")
+	check(Catalog.price("hull",0) == 6 and Catalog.price("lance_start",0) == 46, "Future Hangar ranks cost about 15% more")
+	check(Catalog.refund({"hull":3, "damage":2, "regen":1}, {"hull":15, "damage":10, "regen":5}) == 30, "Historical purchase receipts prevent inflated refunds")
+	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 36, "Newly bought ranks refund their full updated price")
 	var credits := 0
 	for entry in Catalog.HANGAR:
 		credits += Catalog.price(entry.id, 0)
@@ -579,6 +592,31 @@ func _test_stage_difficulty_and_pressure() -> void:
 	for sim in [normal, hard, insane]:
 		sim._add_enemy("drone", Vector2(240, 100))
 	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
+	check(is_equal_approx(insane.threat_scale(), 2.0) and is_equal_approx(hard.threat_scale(), 1.25), "Insane enemy HP and shot strength rise 25% over the previous 1.6 scale")
+	check(is_equal_approx(insane.enemy_cadence_scale(), 1.6) and is_equal_approx(hard.enemy_cadence_scale(), 1.25), "Extra Insane toughness must not increase spawns or XP-granting kills")
+	check(is_equal_approx(insane.enemy_fire_scale(), 2.0) and is_equal_approx(hard.enemy_fire_scale(), 1.25), "Insane regular shot frequency rises 25% while spawn density remains unchanged")
+	check(is_equal_approx(insane.boss_projectile_rate_multiplier(), 1.25) and is_equal_approx(hard.boss_projectile_rate_multiplier(), 1.0), "Insane boss projectile fans fire 25% faster without increasing boss spawn or beam cadence")
+	check(is_equal_approx(insane.enemies[0].max_hp / hard.enemies[0].max_hp, 1.6), "Insane regular enemies have 60% more HP than Hard for the same equipment")
+	for shooter in [hard, insane]:
+		shooter.enemies[0].fire = 0.0
+		shooter._update_enemies()
+	check(is_equal_approx(float(hard.enemies[0].fire) / float(insane.enemies[0].fire), 1.6), "Insane drone fires 60% more often than Hard at matched world and seed")
+	var hard_carrier := Sim.new(8090, {}, "vanguard", "rookie", "hard")
+	var insane_carrier := Sim.new(8090, {}, "vanguard", "rookie", "insane")
+	for pilot in [hard_carrier, insane_carrier]:
+		pilot.stage = 2
+		pilot._add_enemy("carrier", Vector2(250, 100))
+		pilot.enemies[0].fire = 0.0
+		pilot._update_enemies()
+	check(is_equal_approx(float(hard_carrier.enemies[0].fire) / float(insane_carrier.enemies[0].fire), 1.6 / 1.25), "Carrier minion launch rate stays at its old Insane cadence even as other enemies fire faster")
+	var hard_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "hard")
+	var insane_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "insane")
+	for pilot in [hard_boss_volley, insane_boss_volley]:
+		pilot._spawn_boss()
+		pilot.enemies[0].fire = 0.0
+		pilot._update_enemies()
+	check(is_equal_approx(float(hard_boss_volley.enemies[0].fire) / float(insane_boss_volley.enemies[0].fire), 1.25), "Insane boss fires projectile volleys 25% faster, without changing heavy beam scheduling")
+	check(is_equal_approx(hard_boss_volley.heavy_ready_at, insane_boss_volley.heavy_ready_at), "Insane additional projectiles preserve the existing heavy-beam warning interval")
 	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
 	check(normal.content.stage_count == 4 and normal.content.abilities.aegis.cooldown >= 14, "Four stages and slower Aegis must be configured")
 	var sim := Sim.new(777)
@@ -652,7 +690,7 @@ func _test_four_stage_campaign() -> void:
 			check(sim.advance_stage(), "Claiming the final boss victory must complete the campaign")
 		if stage_number < 4:
 			check(sim.stage == stage_number + 1 and not sim.stage_transition_queued and not sim.won, "Next stage should be playable without resetting the build")
-			check(sim.pending_levels == stage_number, "Each cleared boss awards exactly one milestone upgrade")
+			check(sim.pending_levels == stage_number + (1 if stage_number == 3 else 0), "Each boss grants its usual level-up, and the Hunter warp grants one extra draft")
 		else:
 			check(sim.ended and sim.won and sim.stage_clears == 4, "Acknowledging final boss must finish all four stages")
 	check(not sim.advance_stage(), "Final stage can only be settled once")
@@ -779,13 +817,13 @@ func _test_prototype_and_route_choices() -> void:
 	check(sim.choose_prototype(0), "A valid Prototype must install")
 	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
 	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
-	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage without an attack bonus")
+	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.65) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage by 35% and add a conditional weapon bonus")
 	var risk := Sim.new(889)
 	risk.stage = 2
 	risk._spawn_boss()
 	risk._damage_enemy(risk.enemies[0], 100000.0, "pulse")
 	check(risk.begin_intermission() and risk.choose_prototype(0) and risk.choose_route("bounty") and risk.advance_stage(), "Bounty route must advance after two choices")
-	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30), "Bounty route must multiply enemy pressure by 30%")
+	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30) and risk.pending_levels >= 2 and risk.hull >= risk.max_hull * 0.40, "Hunter route keeps risk while providing a bonus draft and repair")
 	var baseline := Sim.new(889)
 	baseline.stage = 3
 	risk._add_enemy("drone", Vector2(220, 80))
@@ -798,7 +836,7 @@ func _test_prototype_and_route_choices() -> void:
 	baseline_boss._spawn_boss()
 	check(risk.enemies[0].max_hp > baseline_boss.enemies[0].max_hp and risk.enemies[1].max_hp > baseline_boss.enemies[1].max_hp, "High-risk contracts must increase both boss core and module durability")
 	risk._damage_enemy(risk.enemies[0], 1000000.0, "pulse")
-	check(risk.bounty_earned == 60 and risk.bonus_cores >= 60, "Bounties must pay only when the risked next-stage boss is beaten")
+	check(risk.bounty_earned == 90 and risk.bonus_cores >= 90, "Bounties must pay only when the risked next-stage boss is beaten")
 	var clock := Sim.new(890)
 	clock.stage = 2
 	clock._spawn_boss()
@@ -855,7 +893,7 @@ func _test_route_prototype_balance_grid() -> void:
 					check(sim.choose_prototype(0) and sim.choose_route(route) and sim.advance_stage(), "Warp choices must advance to world %d on %s / %s / %s" % [world, difficulty, hangar_style, route])
 					check(sim.stage == world and sim.route_choice == route, "Selected route must persist into the intended world")
 					if route == "repair":
-						check(is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must uniquely mitigate incoming damage")
+						check(is_equal_approx(sim.stage_defense, 0.65) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must mitigate 35% damage while retaining normal fire rate")
 					elif route == "overclock":
 						check(is_equal_approx(sim.stage_power, 1.35) and is_equal_approx(sim.stage_fire_rate, 1.20) and is_equal_approx(sim.stage_defense, 1.0), "Redline must uniquely favor attack output")
 					else:
@@ -865,6 +903,72 @@ func _test_route_prototype_balance_grid() -> void:
 					check(resumed.restore(saved) and is_equal_approx(resumed.stage_defense, sim.stage_defense) and is_equal_approx(resumed.stage_fire_rate, sim.stage_fire_rate), "Warp-specific mechanics must survive a checkpoint")
 					cases += 1
 	check(cases == 90, "Route grid must cover nine World 1 starting states and all 81 later-world route scenarios")
+	var shielded_cooldowns := Sim.new(771)
+	shielded_cooldowns.route_choice = "repair"
+	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 1.0), "Shielded Passage must never affect World 1 ability timings")
+	shielded_cooldowns.stage = 2
+	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 0.85), "Shielded Passage cuts later-world ability cooldowns by 15%")
+	# Route-specific combat bonuses and enemy tuning need real equations,
+	# not a forced win/lose result or a free fusion in the draft pool.
+	var shielded_base := Sim.new(9341)
+	shielded_base.stage = 2
+	var shielded_attacker := Sim.new(9341)
+	shielded_attacker.stage = 2
+	shielded_attacker.route_choice = "repair"
+	shielded_attacker.stage_defense = 0.65
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power() * 1.15), "Shielded Passage boosts automatic weapon damage by 15% above half shields")
+	shielded_attacker.shield = shielded_attacker.max_shield * 0.50
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "Shielded Passage loses its weapon bonus at or below half shields")
+	shielded_attacker.shield = shielded_attacker.max_shield
+	shielded_attacker.stage = 1
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "Shielded Passage offers no World 1 offensive bonus")
+	shielded_attacker.stage = 5
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "The four-world Shielded Passage buff does not leak into endless")
+	shielded_attacker.stage = 2
+	shielded_attacker._hit(10.0, "heavy", "test")
+	shielded_base._hit(10.0, "heavy", "test")
+	check(is_equal_approx(float(shielded_attacker.damage_taken.heavy), float(shielded_base.damage_taken.heavy) * 0.65), "Shielded Passage reduces real enemy hit damage by 35%")
+	var redline_attacker := Sim.new(9341)
+	redline_attacker.stage = 2
+	redline_attacker.route_choice = "overclock"
+	redline_attacker.stage_power = 1.35
+	redline_attacker.stage_fire_rate = 1.20
+	check(is_equal_approx(redline_attacker.weapon_power(), shielded_base.weapon_power() * 1.35) and is_equal_approx(redline_attacker.stage_fire_rate, 1.20), "Redline's attack modifiers remain exactly unchanged")
+	var world_one_enemy := Sim.new(9342)
+	world_one_enemy._add_enemy("drone", Vector2(250, 100))
+	check(is_equal_approx(world_one_enemy.enemies[0].max_hp, float(world_one_enemy.content.enemies.drone.hp)) and is_equal_approx(world_one_enemy.enemy_damage_multiplier(), 1.0), "World 1 enemy health and damage are unchanged")
+	for late_stage in [2, 3, 4]:
+		var balanced := Sim.new(9342)
+		balanced.stage = late_stage
+		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
+		balanced._add_enemy("drone", Vector2(250, 100))
+		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction" % late_stage)
+		balanced._spawn_boss()
+		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply the 10%% health reduction" % late_stage)
+		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
+		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90
+		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss modules apply the 10%% health reduction" % late_stage)
+	var later_endless := Sim.new(9343)
+	later_endless.stage = 5
+	check(is_equal_approx(later_endless.enemy_health_multiplier(), 1.0) and is_equal_approx(later_endless.enemy_damage_multiplier(), 1.0), "Endless stages beyond the four-world campaign retain authored enemy stats")
+	var hard_opener := Sim.new(117, {}, "vanguard", "rookie", "hard")
+	var insane_opener := Sim.new(117, {}, "vanguard", "rookie", "insane")
+	hard_opener._spawn_boss()
+	insane_opener._spawn_boss()
+	check(insane_opener.enemies[0].max_hp > hard_opener.enemies[0].max_hp, "Insane Harvester HP exceeds Hard at identical Hangar")
+	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5) / (1.25 * 6.5)), "The Insane World 1 boss is stronger than Hard with the authored enrage factors")
+	var hard_shot := Sim.new(8080, {}, "vanguard", "rookie", "hard")
+	var insane_shot := Sim.new(8080, {}, "vanguard", "rookie", "insane")
+	for shooter in [hard_shot, insane_shot]:
+		shooter.stage = 2
+		shooter.heavy_ready_at = 0.0
+		shooter._add_enemy("void_lancer", Vector2(250, 150))
+		shooter._update_enemies()
+	check(hard_shot.charges.size() == 1 and insane_shot.charges.size() == 1, "Identical seeded lancer attacks produce heavy-beam charges on Hard and Insane")
+	if not hard_shot.charges.is_empty() and not insane_shot.charges.is_empty():
+		check(is_equal_approx(float(insane_shot.charges[0].damage) / float(hard_shot.charges[0].damage), 1.6), "Insane heavy-beam damage exceeds Hard by 60%")
 
 	var base := Sim.new(556)
 	var volatile := Sim.new(556)
@@ -919,11 +1023,63 @@ func _test_route_prototype_balance_grid() -> void:
 	xp_contract._add_enemy("drone", Vector2(220, 80))
 	xp_regular._damage_enemy(xp_regular.enemies[0], 10000.0, "pulse")
 	xp_contract._damage_enemy(xp_contract.enemies[0], 10000.0, "pulse")
-	check(xp_contract.xp > xp_regular.xp * 1.34, "Hunter contract must pay at least 35% extra XP on actual enemy kills")
+	check(xp_contract.xp > xp_regular.xp * 1.49, "Hunter contract must pay at least 50% extra XP on actual enemy kills")
+
+func _test_shieldstorm_and_full_hull_focus() -> void:
+	var defender := Sim.new(7701)
+	defender.stage = 2
+	defender.route_choice = "repair"
+	_fuse_pair(defender, defender.fusion_spec("shieldstorm"))
+	check(defender.active_slots == ["shieldstorm"] and defender._source_active("aegis") and defender._source_active("flak"), "Shieldstorm fuses rank-5 Aegis and Flak into one active")
+	defender.shield = 2.0
+	defender.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	defender.charges = [{"source":2, "x":270.0, "remaining":0.5, "duration":1.8, "damage":20.0}]
+	defender._hit(3.0, "heavy", "test")
+	check(defender.shieldstorm_pulse_used and defender.bullets.is_empty() and defender.charges.is_empty() and defender.beams_cancelled == 1 and defender.prevented >= 5.0, "Shieldstorm clears incoming shots and beams on the first actual late-world shield break")
+	check(defender.effects.any(func(e): return e.kind == "fusion-cast" and e.fusion == "shieldstorm"), "Automatic Shieldstorm shows its distinct fusion effect")
+	defender.shield = 2.0
+	defender.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	defender._hit(3.0, "heavy", "test")
+	check(defender.bullets.size() == 1, "Shieldstorm's automatic projectile purge triggers only once per world")
+	var checkpoint: Dictionary = defender.snapshot()
+	var reloaded := Sim.new(7702)
+	check(reloaded.restore(checkpoint) and reloaded.shieldstorm_pulse_used and reloaded.snapshot() == checkpoint, "Shieldstorm's automatic charge survives a checkpoint")
+	defender.stage_clears = 2
+	defender.stage_transition_queued = true
+	defender.intermission_step = "ready"
+	check(defender.advance_stage() and not defender.shieldstorm_pulse_used, "Shieldstorm's automatic purge recharges at the next warp")
+	var opening := Sim.new(7703)
+	_fuse_pair(opening, opening.fusion_spec("shieldstorm"))
+	opening.shield = 2.0
+	opening.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	opening._hit(3.0, "heavy", "test")
+	check(not opening.shieldstorm_pulse_used and opening.bullets.size() == 1, "Shieldstorm's passive does not ease the World 1 opening")
+	var unfused := Sim.new(7704)
+	unfused.stage = 2
+	unfused.shield = 2.0
+	unfused.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	unfused._hit(3.0, "heavy", "test")
+	check(unfused.bullets.size() == 1, "A shield break without the fusion does not erase bullets")
+	var cast := Sim.new(7705)
+	cast.stage = 2
+	_fuse_pair(cast, cast.fusion_spec("shieldstorm"))
+	cast.shield = 5.0
+	cast.shield_offline = 4.0
+	cast.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	cast.charges = [{"source":2, "x":270.0, "remaining":0.5, "duration":1.8, "damage":20.0}]
+	check(cast.activate("shieldstorm") and cast.bullets.is_empty() and cast.charges.is_empty() and cast.aegis_left > 0.0 and cast.shield > 5.0 and cast.shield_offline == 0.0, "Shieldstorm active cast clears the field, repairs shield suppression and grants Aegis")
+	var rank := Sim.new(7706)
+	var baseline: float = rank.weapon_power()
+	rank.upgrades.shield_focus = 10
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.5), "The new full-hull Shield Focus milestone does not affect World 1")
+	rank.stage = 2
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.95), "A rank-10 Shield Focus has 50% high-shield and 30% full-hull damage")
+	rank.hull -= 1.0
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.5), "The full-hull milestone is lost immediately when hull is chipped")
 
 func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
-	check(content.fusions.size() == 11 and content.passive_links.size() == 8, "Twenty-two base actives must have eleven fusions and eight passive links")
+	check(content.fusions.size() == 12 and content.passive_links.size() == 8, "Twenty-two base actives must include the optional Shieldstorm fusion and eight passive links")
 	for card in content.cards:
 		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
@@ -1045,7 +1201,7 @@ func _test_new_stage_threats() -> void:
 	var bleed := Sim.new(9081)
 	bleed.stage = 4
 	bleed._hit(10.0, "void", "test")
-	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * 0.20), "Citadel void must bypass 20% of shields, not the original 30%")
+	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * bleed.enemy_damage_multiplier() * 0.20), "Citadel void must bypass 20% of shielded damage with the late-world enemy attack modifier")
 	var early_lancer := Sim.new(9082)
 	early_lancer.stage = 4
 	early_lancer.time = 35.0
@@ -1192,7 +1348,12 @@ func _test_long_runs() -> void:
 	sim.upgrades.opening_salvo = 10
 	sim._damage_enemy(target, 100, "pulse")
 	sim._damage_enemy(target, 100, "pulse")
-	check(is_equal_approx(target.hp, 720.0), "First strike applies only to the opening hit")
+	check(is_equal_approx(target.hp, 640.0), "First strike now boosts all hits while the enemy remains above 75% health")
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 540.0), "First strike stops boosting damage after the target drops below 75% health")
+	target.hp = 750.0
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 650.0), "First strike does not apply right at the 75% threshold")
 	sim = Sim.new()
 	sim.upgrades.ablative = 10
 	sim._hit(10, "heavy", "test")
@@ -1206,6 +1367,22 @@ func _test_long_runs() -> void:
 	sim.cooldowns.aegis = 8
 	sim._hit(1, "disrupt", "test")
 	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 2.5) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
+	check(is_equal_approx(sim.status_damage_multiplier(), 0.85), "Rank-10 Insulation blocks 15% of status attack damage")
+	for kind in ["ion", "heat", "gravity", "corrosion", "disrupt", "void"]:
+		var control := Sim.new(5720)
+		var insulated := Sim.new(5720)
+		insulated.upgrades.insulation = 10
+		control._hit(10.0, kind, "test")
+		insulated._hit(10.0, kind, "test")
+		check(is_equal_approx(float(insulated.damage_taken.get(kind,0.0)), float(control.damage_taken.get(kind,0.0)) * 0.85), "Insulation blocks status hit damage from " + kind)
+	var regular_corrosion := Sim.new(5721)
+	var reduced_corrosion := Sim.new(5721)
+	regular_corrosion.corrosion_left = 1.0
+	reduced_corrosion.corrosion_left = 1.0
+	reduced_corrosion.upgrades.insulation = 10
+	regular_corrosion.step()
+	reduced_corrosion.step()
+	check(regular_corrosion.damage_taken.corrosion > 0.0 and is_equal_approx(float(reduced_corrosion.damage_taken.corrosion), float(regular_corrosion.damage_taken.corrosion) * 0.85), "Insulation also blocks ongoing corrosion damage, not just the initial hit")
 	sim = Sim.new()
 	sim.upgrades.shield_surge = 10
 	sim.shield = 0
@@ -1222,14 +1399,26 @@ func _test_long_runs() -> void:
 	var base_power: float = sim.weapon_power()
 	sim.upgrades.last_stand = 10
 	check(is_equal_approx(sim.weapon_power(), base_power), "Last stand stays inactive at healthy hull")
-	sim.hull = sim.max_hull * 0.3
-	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 40% hull")
+	sim.hull = sim.max_hull * 0.60
+	check(is_equal_approx(sim.weapon_power(), base_power), "Last stand stays inactive exactly at 60% hull")
+	sim.hull = sim.max_hull * 0.55
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 60% hull")
+	sim.hull = sim.max_hull * 0.30
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand retains its full low-hull bonus")
 	sim = Sim.new()
 	base_power = sim.weapon_power()
+	sim.stage = 2
 	sim.upgrades.shield_focus = 10
-	check(is_equal_approx(sim.weapon_power(), base_power * 1.5), "Shield focus boosts damage with high shields")
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.5 * 1.30), "Rank-10 Shield Focus rewards high shields and a full hull")
 	sim.shield = sim.max_shield * 0.5
-	check(is_equal_approx(sim.weapon_power(), base_power), "Shield focus stops when shields drop")
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.30), "Full-hull bonus continues after shields drop")
+	sim.hull -= 1.0
+	check(is_equal_approx(sim.weapon_power(), base_power), "Even a small hull hit ends the full-hull damage reward")
+	sim.shield = sim.max_shield
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.5), "High-shield damage stays after the hull is chipped")
+	sim.upgrades.shield_focus = 5
+	sim.hull = sim.max_hull
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.225 * 1.12), "Rank-5 Shield Focus earns a smaller full-hull bonus")
 	sim = Sim.new()
 	sim.upgrades.afterburn = 10
 	sim.pulse_timer = 1.0
@@ -1258,10 +1447,10 @@ func _test_long_runs() -> void:
 		check(early_scale < full_scale and early_scale > 1.0 and is_equal_approx(full_scale,float(sim.stage_spec().damage_scale)), "Later-world entry pressure ramps to the full authored damage before the boss")
 		sim.time = 0.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale), "World 2-4 early-ramp damage reaches actual collision resolution without extra XP")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale * 1.05), "World 2-4 early-ramp enemy damage is 5% higher without extra XP")
 		sim.time = 240.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale)), "Late-world damage reaches full pressure, including during the boss")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale) * 1.05), "Late-world enemy damage reaches 105% of authored pressure, including during the boss")
 
 func _fixed_build_timing(seeds: int) -> Dictionary:
 	var results := {}
@@ -1502,6 +1691,13 @@ func _test_contextual_active_balance() -> void:
 	far.shield = 10.0
 	far.bullets = [{"p":far.ship_position() + Vector2(0,-320), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
 	check(far.activate("flak") and far.bullets.is_empty() and is_equal_approx(far.shield,10.0), "Early Flak clears ordnance but earns no close-call shield")
+	var later_flak := Sim.new(5301)
+	later_flak.stage = 2
+	later_flak.active_slots = ["flak"]
+	later_flak.upgrades.flak = 1
+	later_flak.shield = 10.0
+	later_flak.bullets = [{"p":later_flak.ship_position() + Vector2(0,-60), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
+	check(later_flak.activate("flak") and later_flak.shield >= 22.0, "Well-timed Flak protects later worlds more without easing World 1")
 	var jam := Sim.new(5302)
 	jam.active_slots = ["jammer"]
 	jam.upgrades.jammer = 1
@@ -1605,6 +1801,12 @@ func _test_late_world_ability_counters() -> void:
 	repaired.heat_left = 4.0
 	repaired.corrosion_left = 3.0
 	check(repaired.activate("mend") and repaired.heat_left == 0.0 and repaired.corrosion_left == 0.0 and repaired.mend_left > 0.0, "Repair drones purge World 2 corrosion and World 3 overheating on a deliberate cast")
+	var ion_repair := Sim.new(9316)
+	ion_repair.stage = 2
+	ion_repair.active_slots = ["mend"]
+	ion_repair.upgrades.mend = 1
+	ion_repair.shield_offline = 4.0
+	check(ion_repair.activate("mend") and ion_repair.shield_offline == 0.0, "Repair drones reboot ion-disabled shields from World 2 onward")
 
 	for kind in ["ion","corrosion","disrupt","heat","gravity","void"]:
 		var standard := Sim.new(9371)

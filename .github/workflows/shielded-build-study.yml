@@ -1,0 +1,101 @@
+name: Shieldstorm versus Redline matched build study
+on:
+  push:
+    branches: ['codex/balance-ads-store-*']
+    paths:
+      - 'tests/balance_matrix.gd'
+      - 'tools/report_shielded_study.py'
+      - '.github/workflows/shielded-build-study.yml'
+      - 'scripts/simulation.gd'
+      - 'data/content.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shielded-build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  matched_builds:
+    name: '${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.ship }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {difficulty: normal, hangar: mid, ship: vanguard, pilot: rookie}
+          - {difficulty: hard, hangar: mid, ship: vanguard, pilot: rookie}
+          - {difficulty: hard, hangar: max, ship: vanguard, pilot: rookie}
+          - {difficulty: insane, hangar: max, ship: vanguard, pilot: rookie}
+          - {difficulty: normal, hangar: mid, ship: arcwing, pilot: engineer}
+          - {difficulty: hard, hangar: mid, ship: arcwing, pilot: engineer}
+          - {difficulty: hard, hangar: max, ship: arcwing, pilot: engineer}
+          - {difficulty: insane, hangar: max, ship: arcwing, pilot: engineer}
+          - {difficulty: normal, hangar: mid, ship: wraith, pilot: hunter}
+          - {difficulty: hard, hangar: mid, ship: wraith, pilot: hunter}
+          - {difficulty: hard, hangar: max, ship: wraith, pilot: hunter}
+          - {difficulty: insane, hangar: max, ship: wraith, pilot: hunter}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import and validate balance simulator
+        run: |
+          godot --headless --path . --editor --import --quit
+          godot --headless --path . --check-only --script tests/balance_matrix.gd
+      - name: Compare focused and shielded drafting across all three routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 4 genuinely played seeds x 2 build policies x 3 routes, same
+          # ship/pilot, difficulty and Hangar. No scripted card injection.
+          for build in focused shielded; do
+            for route in repair overclock bounty; do
+              output="shielded-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.ship }}-$build-$route.log"
+              godot --headless --path . --script tests/balance_matrix.gd -- \
+                --seeds=4 --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+                --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+                --build="$build" --strategy=timed --route="$route" --trace \
+                > "$output" 2>&1
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$output"; then
+                cat "$output"
+                echo "::error::Godot shielded build simulator failed"
+                exit 1
+              fi
+              grep -E 'BALANCE_MATRIX |BALANCE_MATRIX_SUMMARY |SHIELDED_TRIAL ' "$output" || true
+            done
+          done
+      - name: Preserve per-seed traces and build milestones
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shielded-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.ship }}
+          path: shielded-*.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  summarize:
+    name: Aggregate route/build and fusion results
+    needs: matched_builds
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect matched run logs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: shielded-*
+          path: matched-artifacts
+          merge-multiple: true
+      - name: Publish all results to Actions summary
+        run: python3 tools/report_shielded_study.py matched-artifacts
+      - name: Store consolidated report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shielded-build-summary
+          path: |
+            shielded-build-summary.md
+            shielded-build-summary.json
+          if-no-files-found: ignore
+          retention-days: 30

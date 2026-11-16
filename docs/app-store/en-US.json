@@ -1,0 +1,13 @@
+{
+  "bundleID": "com.rsm.starrun",
+  "locale": "en-US",
+  "appName": "Star/Run",
+  "subtitle": "Tactical space auto-shooter",
+  "version": "0.9.4",
+  "promotionalText": "Four worlds, six ships, and a new decision after every boss. Defend your ship, push your weapons, or take a harder fight for more rewards.",
+  "description": "Your ship flies and fires. You decide when to use its abilities and what to build next.\n\nStar/Run is a space auto-shooter with a four-world campaign. Your weapons fire automatically, but survival depends on the upgrades you choose, the abilities you save for the right moment, and how you handle each boss.\n\nWhat you can do\n\n- Pick from six ships and six pilots, each with different strengths.\n- Build around 22 active abilities, passive upgrades and combined abilities.\n- Fight through the Debris Belt, Ion Storm, Solar Foundry and Void Citadel. Each world has its own enemies and boss.\n- After a boss fight, choose your next route: repair and play safer, boost your weapons with less protection, or fight stronger enemies for extra rewards.\n- Try eight powerful Prototypes, each with a drawback, or skip them for Cores.\n- Spend earned Cores on permanent Hangar upgrades.\n- Play the Daily Challenge with the same starting setup as everyone else. Your best result is saved locally.\n- Choose Normal, Hard or Insane.\n- Keep going in Endless mode after completing the four-world campaign.\n\nStar/Run is about a series of small decisions that add up over the course of a run. A strong build helps; good timing still matters.",
+  "keywords": "roguelite,autoshooter,space,arcade,ship,bullet hell,upgrade,boss,builder,survival,action",
+  "supportUrl": "https://github.com/killjoy00/StarRun/issues",
+  "whatsNew": "Route choices now have clearer tradeoffs, and Prototypes have stronger effects. The title screen is simpler, with ship and pilot details separated from the artwork. We also made improvements to balance and layout.",
+  "notes": "App Store metadata only. Do not publish, submit for review, or change App Privacy, screenshot assets, pricing, or age rating."
+}

@@ -23,6 +23,7 @@ test -s "$template_dir/ios.zip"
 "$godot" --version
 bash tools/install-gamecenter.sh
 bash tools/install-share.sh
+bash tools/install-admob.sh
 swift tools/generate-ios-icon.swift assets/ios-icon.png
 test -s assets/ios-icon.png
 mkdir -p build/ios

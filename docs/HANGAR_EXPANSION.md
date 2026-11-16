@@ -82,3 +82,7 @@ cleared 5/24 with cooldown spam (8.7 mean hull) and 24/24 with timed counters
 (98.9 mean hull). The existing survival and controlled timing gates pass.
 
 Adding a rank-5-pair Storm Carrier to the world-4 fixtures shortened those boss fights to 52.4 seconds at half Hangar and 37.3 seconds at full Hangar. Both cleared; the full-Hangar fixture still received 650.7 damage during the world.
+
+## 2026-11-16 Hangar price adjustment
+
+The table above records original v0.8.1 introduction prices. Future purchases are about **15% more expensive**, rounded up to whole Cores (Hull plating 5 → 6; Lance mount 40 → 46). Existing ranks remain installed. On loading an older profile, the game records the historical prices of owned ranks, so Refund All returns the Cores actually paid. Newly purchased ranks refund their updated price. Ship and pilot unlocks do not change.

@@ -1,6 +1,8 @@
 # Native delivery and human playtest gates
 
-**Updated for StarRun v0.8.1 TestFlight build 1012.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
+**Latest beta:** Star/Run **0.9.4 (build 1019)** from [merged PR #27](https://github.com/killjoy00/StarRun/pull/27) passed [post-merge gameplay/desktop CI](https://github.com/killjoy00/StarRun/actions/runs/43805461958) and [unsigned iPhone CI](https://github.com/killjoy00/StarRun/actions/runs/43805462116); the [signed TestFlight upload](https://github.com/killjoy00/EZTrivia/actions/runs/43805524905) reported `Upload succeeded`. Apple processing, native Game Center approval and physical-device testing are still separate. The new banner and expanded balance study live on a separate candidate branch and **were not included in 0.9.4**. See [AdMob + store setup](ADS_AND_STORE_SETUP.md) and [listing copy](APP_STORE_LISTING.md).
+
+**Historical verification below covers earlier releases, including v0.8.1 build 1012.** Godot 4.6.3 is pinned. Changing engine versions or renderers requires repeating all exports, gameplay tests and on-device performance checks.
 
 ## Automation now working
 
@@ -20,7 +22,7 @@ No Vercel dependency is required. CI prevents nonfatal Godot parser errors from 
 2. **Four-stage tactical walkthrough:** verify Ion Storm, Solar Foundry and Void Citadel have distinct palettes and silhouettes in motion; check destructible launch bays, cooling vents and shield pylons actually change boss behavior, and the phases are obvious without manual aiming. Verify boss explosions and explicit Warp/Claim, one-of-three Prototype offers, Safe/Redline/Bounty routes and correct saves/resumes during each decision.
 3. **Performance:** sustained normal gameplay and dense projectile stress (including ≥500 enemy bullets and 100 player shots, then a 2,000/500 engineering probe) at 1× and 3× speed. Record device, thermal condition, p50/p95 frame time and visual clarity. Compact projectile storage/render batching remain separate optimization options if the benchmark fails.
 4. **Audio / accessibility:** heavy attack cue remains audible; large explosions and warp do not obscure the next UI choice. Validate reduced glow and screen sensitivity, VoiceOver expectations, contrast, readable minimum 16-point phone text and ≥44-point touch controls.
-5. **Ads integration:** test a maintained iOS plugin and Apple tracking consent/no fill/offline/failure paths without interrupting deterministic combat. No ad flow is claimed working.
+5. **Ads integration:** a separate candidate branch stages pinned Poing AdMob v5.1.0, consent-first banner placement on noncombat screens, and Google sample IDs for native compile checks. Real serving remains **disabled** until approved AdMob IDs, UMP messaging, public privacy policy, Apple App Privacy update and iPhone validation. See [ADS_AND_STORE_SETUP.md](ADS_AND_STORE_SETUP.md).
 6. **StoreKit:** test a real non-consumable purchase, refund and restore, pending/cancelled purchase, clean install and entitlement recovery. No purchase flow is claimed working.
 
 ## Steam still required

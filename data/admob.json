@@ -1,0 +1,6 @@
+{
+  "enabled": false,
+  "app_id": "ca-app-pub-1217971050094766~3224267311",
+  "banner_unit_id": "ca-app-pub-1217971050094766/2832230127",
+  "notes": "AdMob iOS IDs supplied by publisher on 2026-11-16. Keep enabled=false until UMP privacy messages, hosted privacy policy, Apple disclosures and real-device test are confirmed. Research-branch unsigned iOS CI uses Google sample IDs via STARRUN_ADMOB_TEST_MODE; never serve live ads in CI."
+}

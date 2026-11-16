@@ -1,0 +1,121 @@
+name: Expanded balance study
+on:
+  push:
+    branches: ['codex/balance-ads-store-*']
+    paths:
+      - 'scripts/simulation.gd'
+      - 'scripts/catalog.gd'
+      - 'data/content.json'
+      - 'tests/balance_matrix.gd'
+      - '.github/workflows/expanded-balance.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: expanded-balance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  world1_gate:
+    name: 'No-Hangar W1 / ${{ matrix.difficulty }} / ${{ matrix.ship }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        difficulty: [hard, insane]
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Check all six pilots with two credible upgrade / ability strategies
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pilot in rookie ace engineer hunter scavenger tactician; do
+            for plan in focused:timed baseline:on_cooldown; do
+              build=${plan%%:*}
+              strategy=${plan##*:}
+              output="world1-${{ matrix.difficulty }}-${{ matrix.ship }}-$pilot-$build.log"
+              godot --headless --path . --script tests/balance_matrix.gd -- \
+                --seeds=3 --ship=${{ matrix.ship }} --pilot="$pilot" \
+                --difficulty=${{ matrix.difficulty }} --hangar=none \
+                --build="$build" --strategy="$strategy" \
+                --stage-limit=1 --require-no-world1-clears \
+                2>&1 | tee "$output"
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$output"; then
+                echo "::error::Godot balance simulator failed"
+                exit 1
+              fi
+            done
+          done
+      - name: Preserve per-ship World 1 reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: no-hangar-world1-${{ matrix.difficulty }}-${{ matrix.ship }}
+          path: world1-*.log
+          if-no-files-found: ignore
+          retention-days: 30
+
+  route_comparison:
+    name: 'Four-world / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.ship }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {difficulty: normal, hangar: none, ship: vanguard, pilot: rookie}
+          - {difficulty: normal, hangar: mid, ship: vanguard, pilot: rookie}
+          - {difficulty: normal, hangar: max, ship: vanguard, pilot: rookie}
+          - {difficulty: hard, hangar: mid, ship: vanguard, pilot: rookie}
+          - {difficulty: hard, hangar: max, ship: vanguard, pilot: rookie}
+          - {difficulty: insane, hangar: mid, ship: vanguard, pilot: rookie}
+          - {difficulty: insane, hangar: max, ship: vanguard, pilot: rookie}
+          - {difficulty: normal, hangar: none, ship: arcwing, pilot: engineer}
+          - {difficulty: normal, hangar: mid, ship: arcwing, pilot: engineer}
+          - {difficulty: normal, hangar: max, ship: arcwing, pilot: engineer}
+          - {difficulty: hard, hangar: mid, ship: arcwing, pilot: engineer}
+          - {difficulty: hard, hangar: max, ship: arcwing, pilot: engineer}
+          - {difficulty: insane, hangar: mid, ship: arcwing, pilot: engineer}
+          - {difficulty: insane, hangar: max, ship: arcwing, pilot: engineer}
+          - {difficulty: normal, hangar: none, ship: wraith, pilot: hunter}
+          - {difficulty: normal, hangar: mid, ship: wraith, pilot: hunter}
+          - {difficulty: normal, hangar: max, ship: wraith, pilot: hunter}
+          - {difficulty: hard, hangar: mid, ship: wraith, pilot: hunter}
+          - {difficulty: hard, hangar: max, ship: wraith, pilot: hunter}
+          - {difficulty: insane, hangar: mid, ship: wraith, pilot: hunter}
+          - {difficulty: insane, hangar: max, ship: wraith, pilot: hunter}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Four-seed real combat comparison for every route
+        shell: bash
+        run: |
+          set -euo pipefail
+          for route in repair overclock bounty; do
+            output="comparison-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.ship }}-$route.log"
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --seeds=4 --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+              --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+              --build=focused --strategy=timed --route="$route" --trace \
+              2>&1 | tee "$output"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$output"; then
+              echo "::error::Godot balance simulator failed"
+              exit 1
+            fi
+          done
+      - name: Preserve stage-level traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: route-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.ship }}
+          path: comparison-*.log
+          if-no-files-found: ignore
+          retention-days: 30

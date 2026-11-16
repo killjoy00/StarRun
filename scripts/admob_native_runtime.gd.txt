@@ -1,0 +1,141 @@
+extends Node
+# Native-only source. tools/install-admob.sh materializes this .gd at iOS
+# export time after installing the pinned Poing AdMob/UMP addon.
+# No ads on non-iOS exports, and no banner before UMP permission checks.
+var host: Node
+var unit_id := ""
+var ad_view: AdView
+var listener: AdListener
+var loaded := false
+var wanted := false
+var shown := false
+var consent_ready := false
+var status_checked := false
+
+func setup(owner: Node, banner_id: String) -> void:
+	host = owner
+	unit_id = banner_id
+
+func _ready() -> void:
+	if OS.get_name() != "iOS" or unit_id.is_empty():
+		return
+	if not Engine.has_singleton("PoingGodotAdMob"):
+		push_warning("AdMob native SDK not available. Banner stays hidden.")
+		return
+	var request := ConsentRequestParameters.new()
+	# Apple/Google child-directed classification must be decided in the accounts.
+	# Do not send an ad request without a fresh consent status update.
+	UserMessagingPlatform.consent_information.update(request, _consent_success, _consent_error)
+
+func _consent_success() -> void:
+	status_checked = true
+	var info := UserMessagingPlatform.consent_information
+	if info.get_is_consent_form_available():
+		UserMessagingPlatform.load_consent_form(_form_loaded, _consent_error)
+	else:
+		_check_consent()
+
+func _form_loaded(form: ConsentForm) -> void:
+	var info := UserMessagingPlatform.consent_information
+	if info.get_consent_status() == info.ConsentStatus.REQUIRED:
+		form.show(_form_dismissed)
+	else:
+		_check_consent()
+
+func _form_dismissed(error: FormError) -> void:
+	if error != null:
+		push_warning("Ad consent form could not finish; no banner requested.")
+		return
+	_check_consent()
+
+func _consent_error(_error: FormError) -> void:
+	# No silent fallback to personalized or nonpersonalized ad requests.
+	push_warning("Ad consent unavailable; banner disabled for this session.")
+
+func _check_consent() -> void:
+	if consent_ready or not status_checked:
+		return
+	var info := UserMessagingPlatform.consent_information
+	var consent_status := info.get_consent_status()
+	if consent_status != info.ConsentStatus.OBTAINED and consent_status != info.ConsentStatus.NOT_REQUIRED:
+		return
+	consent_ready = true
+	MobileAds.initialize()
+	_start_banner()
+
+func _start_banner() -> void:
+	if not consent_ready or ad_view != null:
+		return
+	listener = AdListener.new()
+	listener.on_ad_loaded = _on_ad_loaded
+	listener.on_ad_failed_to_load = _on_ad_failed
+	listener.on_ad_closed = _on_ad_closed
+	ad_view = AdView.new(unit_id, AdSize.BANNER, AdPosition.BOTTOM)
+	ad_view.ad_listener = listener
+	ad_view.hide()
+	ad_view.load_ad(AdRequest.new())
+
+func _on_ad_loaded() -> void:
+	loaded = true
+	_apply_visibility()
+
+func _on_ad_failed(_error: LoadAdError) -> void:
+	loaded = false
+	_apply_visibility()
+	if ad_view != null:
+		ad_view.destroy()
+		ad_view = null
+
+func _on_ad_closed() -> void:
+	loaded = false
+	_apply_visibility()
+
+func set_display_for_mode(screen: String) -> void:
+	var next_wanted := screen in ["menu", "results"]
+	if next_wanted == wanted:
+		return
+	wanted = next_wanted
+	_apply_visibility()
+
+func _apply_visibility() -> void:
+	var next_shown := loaded and wanted
+	if next_shown == shown:
+		return
+	shown = next_shown
+	if ad_view != null:
+		if shown:
+			ad_view.show()
+		else:
+			ad_view.hide()
+	if is_instance_valid(host):
+		host.call("_on_ad_banner_visibility", shown)
+
+func privacy_options_required() -> bool:
+	if not status_checked:
+		return false
+	var info := UserMessagingPlatform.consent_information
+	return info.get_privacy_options_requirement_status() == info.PrivacyOptionsRequirementStatus.REQUIRED
+
+func show_privacy_options() -> void:
+	if status_checked:
+		UserMessagingPlatform.show_privacy_options_form(_privacy_options_dismissed)
+
+func _privacy_options_dismissed(error: FormError) -> void:
+	if error != null:
+		push_warning("Could not show ad privacy choices.")
+		return
+	# If consent was withdrawn, remove any native ad immediately. The next
+	# session can request a fresh consent update without showing stale ads.
+	var info := UserMessagingPlatform.consent_information
+	var consent_status := info.get_consent_status()
+	if consent_status != info.ConsentStatus.OBTAINED and consent_status != info.ConsentStatus.NOT_REQUIRED:
+		loaded = false
+		_apply_visibility()
+		if ad_view != null:
+			ad_view.destroy()
+			ad_view = null
+
+func _exit_tree() -> void:
+	if ad_view != null:
+		ad_view.destroy()
+		ad_view = null

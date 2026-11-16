@@ -73,6 +73,7 @@ var stage_defense := 1.0 # Shielded passage reduces incoming damage.
 var stage_fire_rate := 1.0 # Redline accelerates automatic weapons.
 var bounty_earned := 0
 var safeguard_used := false
+var shieldstorm_pulse_used := false # Resets on warp; retained across checkpoints.
 var bonus_cores := 0
 var choice_cores := 0 # Flat, banked rewards. Added after payout multipliers at settlement.
 var mend_left := 0.0
@@ -246,7 +247,8 @@ func step() -> void:
 	for timer in ["aftercast_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
-		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk * stage_defense
+		var corrosion_damage := DT * 1.4 * stage_damage_scale() * enemy_damage_multiplier() * stage_risk * stage_defense
+		corrosion_damage *= status_damage_multiplier()
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
@@ -285,7 +287,7 @@ func step() -> void:
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
 		# Do not raise late World 1 spawns: extra automatic kills give free XP.
-		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale() * stage_risk)
+		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -303,7 +305,36 @@ func step() -> void:
 		_offer_cards()
 
 func threat_scale() -> float:
+	# Insane combat threat is 25% greater than its former 1.6 value.
+	# Do not increase spawn count with it: extra kills grant extra XP.
+	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
+
+func enemy_cadence_scale() -> float:
+	# Preserve previous spawn frequency so tougher Insane enemies cannot be
+	# farmed for additional XP. Carrier launches keep this rate as well.
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
+
+func enemy_fire_scale() -> float:
+	# Insane fires 25% more ordinary projectiles than before (2.0 vs 1.6),
+	# without increasing the number of XP-bearing enemies.
+	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
+
+func boss_projectile_rate_multiplier() -> float:
+	# Increase the frequency of boss projectile fans on Insane, not the
+	# separately telegraphed heavy beams or timed minion launch cycles.
+	return 1.25 if difficulty == "insane" else 1.0
+
+# Harvester pressure rises during a prolonged opening boss fight on the
+# progression difficulties. It is independent of Hangar state, does not
+# create extra enemies or XP, and leaves Normal untouched. Faster builds
+# can end the fight before the later volleys escalate.
+func opener_boss_enrage() -> float:
+	if stage != 1 or difficulty == "normal" or not boss_spawned:
+		return 1.0
+	var elapsed := maxf(0.0, time - boss_spawn_time - 20.0)
+	# Long defensive stall builds should not indefinitely out-heal the
+	# advanced opening boss. Well-upgraded offense can beat this timer.
+	return 1.0 + minf(6.0, elapsed / (25.0 if difficulty == "hard" else 20.0))
 
 func stage_spec() -> Dictionary:
 	if stage <= int(content.stage_count):
@@ -383,8 +414,21 @@ func stage_damage_scale() -> float:
 		scale *= lerpf(entry_factor, 1.0, ramp)
 	return scale
 
+# Later worlds trade slightly less enemy durability for more dangerous hits.
+# World 1 and endless are untouched to protect the opening progression gate.
+func enemy_health_multiplier() -> float:
+	return 0.90 if stage in [2, 3, 4] else 1.0
+
+func enemy_damage_multiplier() -> float:
+	return 1.05 if stage in [2, 3, 4] else 1.0
+
 func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
+
+func status_damage_multiplier() -> float:
+	# Insulation now resists damaging status attacks as well as reducing
+	# their duration. Rank 5: 7% resisted; rank 10: 15% resisted.
+	return 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
 
 func status_duration_scale() -> float:
 	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
@@ -653,7 +697,7 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier()
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
@@ -704,12 +748,21 @@ func _spawn_boss() -> void:
 	var spec := stage_spec()
 	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
 	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
-	var hp := float(spec.boss_hp) * threat_scale() * stage_risk
+	# Progression difficulties need stronger boss fights without making
+	# World 1 tankier than World 2. The World 2 bridge maintains ascending
+	# boss HP; Worlds 3 and 4 naturally exceed that threshold.
+	var opener_boss_scale := 1.0
+	if difficulty in ["hard", "insane"]:
+		if stage == 1:
+			opener_boss_scale = 6.5 if difficulty == "hard" else 5.5
+		elif stage == 2:
+			opener_boss_scale = 2.5
+	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier()
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0))
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier()
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
@@ -749,16 +802,17 @@ func advance_stage() -> bool:
 	effects.clear()
 	stage_power = 1.35 if route_choice == "overclock" else 1.0
 	stage_risk = 1.30 if route_choice == "bounty" else 1.0
-	stage_defense = 0.82 if route_choice == "repair" else 1.0
+	stage_defense = 0.65 if route_choice == "repair" else 1.0
 	stage_fire_rate = 1.20 if route_choice == "overclock" else 1.0
-	var repair_fraction := 0.55 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.30)
+	var repair_fraction := 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40)
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
 	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
+	shieldstorm_pulse_used = false
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
-	pending_levels += 1
+	pending_levels += 1 + (1 if route_choice == "bounty" else 0)
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	return true
 
@@ -817,6 +871,12 @@ func _update_enemies() -> void:
 			# This changes damage, not XP or the visible charge warning.
 			if stage == 1 and time - stage_start >= 110.0:
 				damage *= 1.20
+				if difficulty == "hard":
+					damage *= 1.30
+				elif difficulty == "insane":
+					damage *= 1.50
+			if kind == "boss" and stage == 1:
+				damage *= opener_boss_enrage()
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -836,12 +896,30 @@ func _update_enemies() -> void:
 			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
-			if jammer_left > 0.0 or emp_left > 0.0:
+			# Jammer and EMP still cancel boss beams, but the Harvester
+			# gradually adapts after a prolonged advanced-difficulty fight.
+			# It keeps firing its dodgeable projectile fans instead of
+			# allowing an infinite healing + jamming stalemate.
+			var boss_overload := kind == "boss" and stage == 1 and difficulty != "normal" and time - boss_spawn_time >= 75.0
+			if (jammer_left > 0.0 or emp_left > 0.0) and not boss_overload:
 				enemy.fire = 0.5
 				continue
-			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
+			if kind.begins_with("boss"):
+				enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) / boss_projectile_rate_multiplier()
+			else:
+				# Carrier attacks also launch minions; do not accelerate their
+				# launch cycle and accidentally create more XP on Insane.
+				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
+				enemy.fire = float(content.enemies[kind].interval) / attack_scale
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
+			# Fire more often late in the opener on advanced difficulties.
+			# Extra enemy kills would grant XP and weaken this pressure curve.
+			if stage == 1 and time - stage_start >= 65.0 and not kind.begins_with("boss"):
+				if difficulty == "hard":
+					enemy.fire *= 0.65
+				elif difficulty == "insane":
+					enemy.fire *= 0.55
 			if stage == 1 and time - stage_start >= 110.0:
 				if kind == "boss":
 					if time - boss_spawn_time >= 18.0:
@@ -877,7 +955,15 @@ func _update_enemies() -> void:
 				elif kind in ["interceptor", "rusher"]: count = 2
 				elif kind in ["arc_spire", "forge_turret"]: count = 9
 				elif kind == "gravity_sentinel": count = 7
-				elif kind.begins_with("boss"): count = 9 + stage * 2
+				elif kind.begins_with("boss"):
+					count = 9 + stage * 2
+					# World 1 boss adds real dodgable fire after the first
+					# telegraphs. No guaranteed hits or synthetic failure rule.
+					if stage == 1 and time - boss_spawn_time >= 15.0:
+						if difficulty == "hard":
+							count += 6
+						elif difficulty == "insane":
+							count += 8
 				if kind == "boss4" and boss_phase_label() == "FINAL ONSLAUGHT":
 					count += 6
 				var bullet_kind := "chaff"
@@ -892,7 +978,7 @@ func _update_enemies() -> void:
 					bullet_kind = "gravity"
 				for i in range(count):
 					var angle: float = (i - (count - 1) / 2.0) * (0.19 if kind in ["arc_spire", "forge_turret"] else 0.15)
-					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale(), "kind": bullet_kind, "source": kind})
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale() * (opener_boss_enrage() if kind == "boss" else 1.0), "kind": bullet_kind, "source": kind})
 				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
 					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
 					for i in range(volley):
@@ -1054,10 +1140,18 @@ func _update_weapons() -> void:
 
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
-	if hull < max_hull * 0.40:
+	# Shielded Passage contributes immediate offense without needing a niche draft.
+	# It only rewards shields above half capacity during Worlds 2-4.
+	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
+		power *= 1.15
+	if hull < max_hull * 0.60:
 		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
 	if shield > max_shield * 0.75:
 		power *= 1.0 + passive_bonus("shield_focus", 0.025, 0.10, 0.15)
+	# Rank milestones make protecting a pristine hull an offensive decision.
+	# Shield Focus is a World 2+ draft; the opening progression is unchanged.
+	if stage >= 2 and hull >= max_hull - 0.01:
+		power *= 1.0 + (0.12 if rank_at("shield_focus", 5) else 0.0) + (0.18 if rank_at("shield_focus", 10) else 0.0)
 	if synergy_active("fortress"):
 		power *= 0.82
 	if synergy_active("assault"):
@@ -1102,6 +1196,10 @@ func hull_damage_multiplier() -> float:
 
 func cooldown_multiplier() -> float:
 	var factor := 1.0
+	# Shielded Passage protects the player through more timely active choices,
+	# not extra auto-weapon damage. World 1 is always unaffected.
+	if route_choice == "repair" and stage >= 2:
+		factor *= 0.85
 	if synergy_active("control"):
 		factor *= 0.82
 	if rank_at("coolant", 5): factor *= 0.95
@@ -1238,7 +1336,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
-		if is_equal_approx(float(enemy.hp), float(enemy.max_hp)):
+		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
 			amount *= 1.0 + passive_bonus("opening_salvo", 0.04, 0.15, 0.25)
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
@@ -1272,7 +1370,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.35 if route_choice == "bounty" else 1.0)
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -1284,7 +1382,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if hull > max_hull * 0.60:
 			bonus_cores += int(meta.clean_clear) * 3
 		if stage_risk > 1.0:
-			var reward: int = 20 * stage
+			var reward: int = 30 * stage
 			bonus_cores += reward
 			bounty_earned += reward
 			_log("Bounty contract complete - +%d base cores" % reward)
@@ -1299,7 +1397,7 @@ func xp_needed() -> int:
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
 		return
-	amount *= stage_damage_scale()
+	amount *= stage_damage_scale() * enemy_damage_multiplier()
 	if aegis_left > 0:
 		prevented += amount
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
@@ -1307,6 +1405,8 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	var reduced := amount * stage_risk * stage_defense
 	# Haven's support chassis resists damaging status rounds, which dominate
 	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
+	if kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		reduced *= status_damage_multiplier()
 	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
@@ -1343,6 +1443,18 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
+		# Shieldstorm is an earned Aegis + Flak fusion, not a free route effect.
+		# Once per world, its reactive pulse sweeps projectiles/charges (not enemies
+		# or XP) after an actual survivable shield break. World 1 is unchanged.
+		if stage >= 2 and "shieldstorm" in active_slots and not shieldstorm_pulse_used and hull > 0.0:
+			shieldstorm_pulse_used = true
+			for bullet in bullets:
+				prevented += float(bullet.get("damage", 0.0))
+			beams_cancelled += charges.size()
+			bullets.clear()
+			charges.clear()
+			effects.append({"kind":"fusion-cast", "fusion":"shieldstorm", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick, "targets":[]})
+			_log("Shieldstorm automatically swept incoming fire on shield break")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
 			shield_offline = 0.0
@@ -1424,6 +1536,10 @@ func activate(ability: String) -> bool:
 			corrosion_left = 0.0
 			heat_left = 0.0
 			_log("Repair drones purged corrosion and overheating")
+		# Later-world Mend can also reboot suppressed shields.
+		if stage >= 2 and shield_offline > 0.0:
+			shield_offline = 0.0
+			_log("Repair drones restarted suppressed shields")
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -1437,7 +1553,7 @@ func activate(ability: String) -> bool:
 		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
 		prevented += stopped * 12.0
 		if stopped > 0 and close_call:
-			shield = minf(max_shield, shield + 8.0 * effect_strength)
+			shield = minf(max_shield, shield + (12.0 if stage >= 2 else 8.0) * effect_strength)
 			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
 			_log("Flak close-call intercept - shield restored")
 		for enemy in enemies:
@@ -1571,6 +1687,17 @@ func _activate_fusion(id: String, strength: float) -> void:
 			var blast: float = (235.0 if counter_window else 70.0) * strength
 			for enemy in enemies:
 				_damage_enemy(enemy, blast, "nova")
+		"shieldstorm":
+			# A protective alternative to Nova Guard: no free kills or blast XP.
+			for bullet in bullets:
+				prevented += float(bullet.get("damage", 0.0))
+			beams_cancelled += charges.size()
+			bullets.clear()
+			charges.clear()
+			shield_offline = 0.0
+			shield = minf(max_shield, shield + 45.0 * strength)
+			aegis_left = maxf(aegis_left, minf(3.3 * strength, maxf(0.0, cooldowns[id] - 1.5)))
+			_log("Shieldstorm cleared incoming fire and reinforced shielding")
 		"railstorm":
 			overdrive_left = maxf(overdrive_left, 7.0 * strength)
 			for n in range(3):
@@ -1789,7 +1916,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
