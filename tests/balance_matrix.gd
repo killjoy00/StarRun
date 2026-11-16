@@ -4,6 +4,10 @@ extends SceneTree
 # The same seeds are used across strategies, but combat RNG can shift draft offers.
 const Sim = preload("res://scripts/simulation.gd")
 const Catalog = preload("res://scripts/catalog.gd")
+
+# Targeted Shieldstorm check (2026-11-16): the shielded build only reorders
+# naturally offered cards, never injects an ability, fusion, reward or enemy.
+# Compare it under every route and against focused on identical start seeds.
 const STRATEGIES := ["never", "on_cooldown", "timed"]
 const MAX_STAGE_SECONDS := 540.0
 
@@ -51,7 +55,7 @@ func _run() -> void:
 			trace = true
 		elif arg == "--require-win":
 			require_win = true
-	if build_style not in ["baseline", "focused"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
+	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
 		return
@@ -64,6 +68,11 @@ func _run() -> void:
 	var faults := 0
 	var campaign_wins := 0
 	var world1_clears := 0
+	var shieldstorm_runs := 0
+	var focus5_runs := 0
+	var focus10_runs := 0
+	var shieldstorm_trigger_worlds := 0
+	var pristine_focus_seconds := 0.0
 	for ship in Catalog.SHIPS:
 		var ship_id: String = str(ship.id)
 		if not only_ship.is_empty() and only_ship != ship_id:
@@ -80,6 +89,11 @@ func _run() -> void:
 				var timeouts := 0
 				var casts := 0
 				var hull := 0.0
+			var route_shieldstorm := 0
+			var route_focus5 := 0
+			var route_focus10 := 0
+			var route_triggers := 0
+			var route_pristine_seconds := 0.0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
 					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit)
@@ -89,9 +103,21 @@ func _run() -> void:
 							"build":build_style,"hangar":hangar_style,"route":route_policy,
 							"routes":result.routes,"stages":result.stages,"final":result.final
 						}))
+					if build_style == "shielded":
+						print("SHIELDED_TRIAL ", JSON.stringify({"seed":seed,"ship":ship_id,"pilot":pilot_id,"difficulty":difficulty,"hangar":hangar_style,"route":route_policy,"won":result.won,"world_clears":result.clears,"shieldstorm":result.shieldstorm,"focus5":result.focus5,"focus10":result.focus10,"shieldstorm_trigger_worlds":result.shieldstorm_trigger_worlds,"pristine_focus_seconds":result.pristine_focus_seconds,"final_level":result.final.level}))
 					trials += 1
 					world1_clears += 1 if int(result.clears) >= 1 else 0
 					faults += int(result.get("fault", false))
+					shieldstorm_runs += int(result.shieldstorm)
+					focus5_runs += int(result.focus5)
+					focus10_runs += int(result.focus10)
+					shieldstorm_trigger_worlds += int(result.shieldstorm_trigger_worlds)
+					pristine_focus_seconds += float(result.pristine_focus_seconds)
+					route_shieldstorm += int(result.shieldstorm)
+					route_focus5 += int(result.focus5)
+					route_focus10 += int(result.focus10)
+					route_triggers += int(result.shieldstorm_trigger_worlds)
+					route_pristine_seconds += float(result.pristine_focus_seconds)
 					timeouts += int(result.timeout)
 					casts += int(result.casts)
 					hull += float(result.hull)
@@ -104,10 +130,13 @@ func _run() -> void:
 					"ship":ship_id, "difficulty":difficulty, "policy":strategy, "build":build_style, "hangar":hangar_style, "route":route_policy, "pilot":pilot_id,
 					"seeds":seeds, "world_clears":clears, "campaign_wins":campaigns,
 					"timeouts":timeouts, "casts":casts,
-					"mean_final_hull":snappedf(hull / seeds, 0.1)
+					"mean_final_hull":snappedf(hull / seeds, 0.1),
+					"shieldstorm_runs":route_shieldstorm,"focus5_runs":route_focus5,"focus10_runs":route_focus10,"shieldstorm_trigger_worlds":route_triggers,
+					"pristine_focus_seconds":snappedf(route_pristine_seconds,0.1)
 				}))
 	print("BALANCE_MATRIX_SUMMARY ", JSON.stringify({
 		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "world1_clears":world1_clears, "stage_limit":stage_limit, "campaign_wins":campaign_wins, "build":build_style, "hangar":hangar_style, "route":route_policy,
+		"shieldstorm_runs":shieldstorm_runs,"focus5_runs":focus5_runs,"focus10_runs":focus10_runs,"shieldstorm_trigger_worlds":shieldstorm_trigger_worlds,"pristine_focus_seconds":snappedf(pristine_focus_seconds,0.1),
 		"method":"scripted autopilot and auto-weapons, automated upgrades, active policy only"
 	}))
 	if require_win and campaign_wins == 0:
@@ -123,6 +152,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	var stage_reports: Array = []
 	var routes: Array = []
 	var status := "dead"
+	var pristine_focus_seconds := 0.0
 	for _frame in range(4 * 60 * 600):
 		if sim.ended:
 			status = "won" if sim.won else "dead"
@@ -157,6 +187,9 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			_pick_upgrade(sim, build_style)
 			continue
 		_cast(sim, strategy)
+		# Measure actual uptime, not just whether the rank was purchased.
+		if sim.stage >= 2 and sim.rank_at("shield_focus", 5) and sim.hull >= sim.max_hull - 0.01:
+			pristine_focus_seconds += Sim.DT
 		sim.step()
 		if sim.time - sim.stage_start > MAX_STAGE_SECONDS:
 			timed_out = true
@@ -168,12 +201,19 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		"clears":int(sim.stage_clears), "won":bool(sim.won),
 		"hull":float(sim.hull), "casts":int(sim.ability_uses),
 		"timeout":timed_out, "fault":fault, "stages":stage_reports, "routes":routes,
+		"shieldstorm":int(sim.upgrades.get("shieldstorm",0)) > 0,
+		"focus5":sim.rank_at("shield_focus",5), "focus10":sim.rank_at("shield_focus",10),
+		"shieldstorm_trigger_worlds":stage_reports.filter(func(report): return bool(report.shieldstorm_triggered)).size(),
+		"pristine_focus_seconds":snappedf(pristine_focus_seconds,0.1),
 		"final":{"level":sim.level,"kills":sim.kills,"status":status, "build":build_style}
 	}
 
 func _pick_upgrade(sim: RefCounted, build_style: String = "baseline") -> void:
 	if build_style == "focused":
 		_pick_focused(sim)
+		return
+	if build_style == "shielded":
+		_pick_shielded(sim)
 		return
 	var priorities := ["seeker", "pulse", "arc", "lance", "regen", "hull",
 		"armor", "munitions", "autoloader", "coolant", "shield", "targeting",
@@ -228,8 +268,8 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 	for active_id in sim.active_slots:
 		var ability: String = str(active_id)
 		var use_now := false
-		if ability in ["aegis", "nova_aegis"]:
-			use_now = urgent or near_hit
+		if ability in ["aegis", "nova_aegis", "shieldstorm"]:
+			use_now = urgent or near_hit or (ability == "shieldstorm" and vulnerable and sim.bullets.size() >= 6)
 		elif ability == "flak":
 			use_now = close_ordnance or (ordnance_count >= 3 and sim.bullets.size() >= 14)
 		elif ability == "jammer":
@@ -275,11 +315,16 @@ func _hangar(style: String) -> Dictionary:
 	return result
 
 func _choose_prototype(sim: RefCounted, build_style: String) -> int:
-	if build_style != "focused":
+	if build_style not in ["focused", "shielded"]:
 		return 0
+	if build_style == "shielded":
+		return _prototype_by_order(sim, ["mirror_cell","bastion_lattice","emergency_safeguard","null_harmonics","breach_optics","echo_coil","volatile_core","salvage_charter"])
 	var preferred := ["mirror_cell","emergency_safeguard","volatile_core","echo_coil","breach_optics","bastion_lattice","null_harmonics","salvage_charter"]
 	if sim.hull >= sim.max_hull * 0.75:
 		preferred = ["volatile_core","mirror_cell","emergency_safeguard","echo_coil","breach_optics","bastion_lattice","null_harmonics","salvage_charter"]
+	return _prototype_by_order(sim, preferred)
+
+func _prototype_by_order(sim: RefCounted, preferred: Array) -> int:
 	var best := 0
 	var rank := 999
 	for idx in range(sim.prototype_offers.size()):
@@ -289,6 +334,64 @@ func _choose_prototype(sim: RefCounted, build_style: String) -> int:
 			rank = priority
 			best = idx
 	return best
+
+func _pick_shielded(sim: RefCounted) -> void:
+	# A realistic defensive build: purchase only cards in the actual hand.
+	# Secure enough automatic DPS for the opener, then invest in Aegis + Flak
+	# and Shield Focus. Avoid accidentally fusing Nova/Aegis or Barrage/Flak
+	# before the intended components both reach rank 5.
+	var formed: bool = int(sim.upgrades.get("shieldstorm", 0)) > 0
+	var order := ["seeker","pulse","arc","lance"]
+	if sim.ship_id == "arcwing":
+		order = ["arc","pulse","seeker","lance"]
+	elif sim.ship_id in ["kestrel","bulwark"]:
+		order = ["pulse","seeker","arc","lance"]
+	elif sim.ship_id == "haven":
+		order = ["seeker","lance","pulse","arc"]
+	var best := 0
+	var best_priority := 999
+	for index in range(sim.cards.size()):
+		var card: Dictionary = sim.cards[index]
+		var id: String = str(card.id)
+		var rank: int = int(sim.upgrades.get(id, 0))
+		var priority := 85
+		if id == "repair":
+			priority = 0 if sim.hull < sim.max_hull * 0.35 else (28 if sim.stage >= 2 and sim.hull < sim.max_hull * 0.75 else 95)
+		elif id == "shield_focus":
+			priority = 3 if rank < 5 else (6 if rank < 10 else 95)
+		elif not formed and id in ["aegis", "flak"] and rank < 5:
+			# Claim the second component before filling the four-slot bar.
+			priority = 6 if rank == 0 else 5
+			if not sim.fusion_target(id).is_empty():
+				priority = 1
+		elif id in order:
+			var position: int = order.find(id)
+			priority = 4 + position * 2 if rank < 5 else (16 + position * 3 if rank < 10 else 90)
+		elif id in ["munitions","autoloader"]:
+			priority = 11 if rank < 5 else 25
+		elif id in ["shield","regen","repair_bots","hull"]:
+			priority = (11 if sim.hull < sim.max_hull * 0.7 else 18) if rank < 5 else 29
+		elif id in ["boss_hunter","finisher"]:
+			priority = 18 if rank < 5 else 34
+		elif id in ["harvester","targeting"]:
+			priority = 20 if sim.stage == 1 and rank < 5 else 40
+		elif id in ["armor","coolant","amplifier","ablative","shield_surge","insulation","afterburn"]:
+			priority = 30
+		elif card.tag == "ABILITY":
+			# Nova+Aegis and Barrage+Flak are competing fusions; preserve
+			# the starting active's effectiveness without prematurely fusing.
+			if not formed and id in ["nova", "barrage"] and rank >= 3:
+				priority = 98
+			elif rank > 0:
+				priority = 39 if rank < 5 else 55
+			elif sim.active_slots.size() < 3 and id in ["mend","capacitor","deflector"]:
+				priority = 45
+			else:
+				priority = 98
+		if priority < best_priority:
+			best_priority = priority
+			best = index
+	sim.choose_card(best)
 
 func _pick_focused(sim: RefCounted) -> void:
 	var best := 0
@@ -346,7 +449,7 @@ func _stage_report(sim: RefCounted, status: String) -> Dictionary:
 		if enemy.kind == "boss_module" and enemy.hp > 0.0:
 			modules_alive += 1
 	var levels := {}
-	for id in ["pulse","seeker","arc","lance","aegis","nova","mend","flak","siphon","emp","overdrive","capacitor","munitions","autoloader","boss_hunter","shield","hull","regen","repair_bots"]:
+	for id in ["pulse","seeker","arc","lance","aegis","nova","mend","flak","siphon","emp","overdrive","capacitor","munitions","autoloader","boss_hunter","shield_focus","shieldstorm","shield","hull","regen","repair_bots"]:
 		if int(sim.upgrades.get(id,0)) > 0:
 			levels[id] = int(sim.upgrades.get(id,0))
 	var tail_events: Array = []
@@ -356,6 +459,8 @@ func _stage_report(sim: RefCounted, status: String) -> Dictionary:
 		"stage":int(sim.stage), "status":status, "elapsed":snappedf(float(sim.time-sim.stage_start),0.1),
 		"hull":snappedf(float(sim.hull),0.1),"max_hull":snappedf(float(sim.max_hull),0.1),
 		"shield":snappedf(float(sim.shield),0.1),"level":int(sim.level),
+		"shieldstorm_triggered":bool(sim.shieldstorm_pulse_used),
+		"shield_focus_rank":int(sim.upgrades.get("shield_focus",0)),
 		"kills":int(sim.kills), "boss_spawned":bool(sim.boss_spawned),
 		"boss_hp_remaining":snappedf(boss_hp,0.1),"modules_alive":modules_alive,
 		"prototypes":sim.prototypes.duplicate(), "route":sim.route_choice, "upgrades":levels,
