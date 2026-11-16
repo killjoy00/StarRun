@@ -1826,7 +1826,7 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 25% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
+		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 25% less damage; abilities recharge 15% faster next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
 		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade pick, +50%% kill XP, +%d boss Cores; repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
 	]

@@ -1149,6 +1149,10 @@ func hull_damage_multiplier() -> float:
 
 func cooldown_multiplier() -> float:
 	var factor := 1.0
+	# Shielded Passage protects the player through more timely active choices,
+	# not extra auto-weapon damage. World 1 is always unaffected.
+	if route_choice == "repair" and stage >= 2:
+		factor *= 0.85
 	if synergy_active("control"):
 		factor *= 0.82
 	if rank_at("coolant", 5): factor *= 0.95

@@ -6,7 +6,7 @@ The intermission should offer three genuinely different plans for the **next wor
 
 | Route | What changes for that world | Risk or opportunity cost |
 | --- | --- | --- |
-| Shielded passage (`repair`) | +70% max-hull repair; full starting shields; **25% less incoming damage** from all attack/status-damage sources | No attack, XP or Core bonus |
+| Shielded passage (`repair`) | +70% max-hull repair; full starting shields; **25% less incoming damage**, plus **15% shorter active-ability cooldowns** in the next world | No attack, XP or Core bonus |
 | Redline assault (`overclock`) | **+35% automatic weapon damage**, **+20% automatic fire rate** | +10% max-hull repair; start on 50% shields; **20% more hull damage received** |
 | Hunter contract (`bounty`) | **One bonus upgrade pick** on warp; **+50% kill XP**; +30 × next-world number base Cores if next boss dies; +40% max-hull repair | **30% more** enemy health, enemy attack damage and spawn pressure |
 
@@ -52,3 +52,7 @@ Do not tune an entire difficulty based solely on a 2-seed difference. Investigat
 Redline (+35% damage / +20% fire rate) and its existing risks are **unchanged**. Shielded Passage has a larger defensive and warp-repair payoff. Hunter Contract grants an extra actual draft pick each warp, more kill XP, higher boss Core rewards and more repair while retaining its 30% enemy threat cost. World 2+ defensive actives also improve: Mend clears shield suppression and precisely timed Flak returns 12 shield instead of 8. Normal World 1 and unupgraded Hard/Insane World 1 abilities stay unchanged.
 
 The Insane Harvester HP factor increases from 5.0 to 5.5 so its HP exceeds Hard at matched equipment. Hangar's future purchase prices rise about 15%; existing ranks keep their exact historical refund value through a migrated purchase-receipt ledger. These adjustments need expanded and regular CI validation before merging.
+
+### Shielded Passage follow-up
+
+The first post-buff 21-cell route comparison produced 32/84 Shielded, 46/84 Redline and 43/84 Hunter full-campaign victories (previous study: 31/84, 44/84 and 34/84). Hunter moved much closer while Shielded barely changed. Rather than reduce Redline damage, a second challenger gives Shielded **15% shorter active cooldowns from World 2 onward**, aiming to improve tactical Aegis/Mend/Flak value. This second challenger requires its own new balance study before claiming improvement.

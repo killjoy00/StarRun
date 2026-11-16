@@ -877,6 +877,11 @@ func _test_route_prototype_balance_grid() -> void:
 					check(resumed.restore(saved) and is_equal_approx(resumed.stage_defense, sim.stage_defense) and is_equal_approx(resumed.stage_fire_rate, sim.stage_fire_rate), "Warp-specific mechanics must survive a checkpoint")
 					cases += 1
 	check(cases == 90, "Route grid must cover nine World 1 starting states and all 81 later-world route scenarios")
+	var shielded_cooldowns := Sim.new(771)
+	shielded_cooldowns.route_choice = "repair"
+	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 1.0), "Shielded Passage must never affect World 1 ability timings")
+	shielded_cooldowns.stage = 2
+	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 0.85), "Shielded Passage cuts later-world ability cooldowns by 15%")
 	var hard_opener := Sim.new(117, {}, "vanguard", "rookie", "hard")
 	var insane_opener := Sim.new(117, {}, "vanguard", "rookie", "insane")
 	hard_opener._spawn_boss()
