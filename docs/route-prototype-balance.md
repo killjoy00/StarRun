@@ -56,3 +56,10 @@ The Insane Harvester HP factor increases from 5.0 to 5.5 so its HP exceeds Hard 
 ### Shielded Passage follow-up
 
 The first post-buff 21-cell route comparison produced 32/84 Shielded, 46/84 Redline and 43/84 Hunter full-campaign victories (previous study: 31/84, 44/84 and 34/84). Hunter moved much closer while Shielded barely changed. Rather than reduce Redline damage, a second challenger gives Shielded **15% shorter active cooldowns from World 2 onward**, aiming to improve tactical Aegis/Mend/Flak value. This second challenger requires its own new balance study before claiming improvement.
+
+### Shieldstorm defensive fusion and Shield Focus milestones (2026-11-16)
+
+- **Shieldstorm** is a new optional active fusion: Aegis rank 5 + Flak rank 5. It competes with Nova Guard/Missile Grid for its components rather than adding a fifth active slot. On cast it clears hostile bullets and heavy-beam charges, restores shields and grants brief Aegis; it deals no free damage and awards no XP.
+- Once fused, the **first survivable shield break per world from World 2 onward** automatically sweeps hostile bullets and charging beams. It refreshes at warp, survives checkpoints, and does not prevent the hit that broke the shield. World 1 has no automatic rescue.
+- **Shield Focus** keeps its existing high-shield damage. Rank 5 now grants **+12% weapon damage at full hull**; rank 10 adds another **+18%** at full hull. One hull hit disables this bonus until repaired, making Shielded Passage's large warp repair and reduced incoming damage useful for offense without changing Redline's stats.
+- These are earned build options, not unconditional Shielded Passage multipliers. Repeat matched balance tests with a shield-oriented drafting policy as well as the baseline focused policy to measure whether players can reasonably assemble them.

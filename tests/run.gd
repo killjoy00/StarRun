@@ -37,6 +37,7 @@ func _run() -> void:
 	_test_new_stage_threats()
 	_test_active_pool()
 	_test_fusions_and_milestones()
+	_test_shieldstorm_and_full_hull_focus()
 	_test_long_runs()
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
@@ -943,9 +944,61 @@ func _test_route_prototype_balance_grid() -> void:
 	xp_contract._damage_enemy(xp_contract.enemies[0], 10000.0, "pulse")
 	check(xp_contract.xp > xp_regular.xp * 1.49, "Hunter contract must pay at least 50% extra XP on actual enemy kills")
 
+func _test_shieldstorm_and_full_hull_focus() -> void:
+	var defender := Sim.new(7701)
+	defender.stage = 2
+	defender.route_choice = "repair"
+	_fuse_pair(defender, defender.fusion_spec("shieldstorm"))
+	check(defender.active_slots == ["shieldstorm"] and defender._source_active("aegis") and defender._source_active("flak"), "Shieldstorm fuses rank-5 Aegis and Flak into one active")
+	defender.shield = 2.0
+	defender.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	defender.charges = [{"source":2, "x":270.0, "remaining":0.5, "duration":1.8, "damage":20.0}]
+	defender._hit(3.0, "heavy", "test")
+	check(defender.shieldstorm_pulse_used and defender.bullets.is_empty() and defender.charges.is_empty() and defender.beams_cancelled == 1 and defender.prevented >= 5.0, "Shieldstorm clears incoming shots and beams on the first actual late-world shield break")
+	check(defender.effects.any(func(e): return e.kind == "fusion-cast" and e.fusion == "shieldstorm"), "Automatic Shieldstorm shows its distinct fusion effect")
+	defender.shield = 2.0
+	defender.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	defender._hit(3.0, "heavy", "test")
+	check(defender.bullets.size() == 1, "Shieldstorm's automatic projectile purge triggers only once per world")
+	var checkpoint: Dictionary = defender.snapshot()
+	var reloaded := Sim.new(7702)
+	check(reloaded.restore(checkpoint) and reloaded.shieldstorm_pulse_used and reloaded.snapshot() == checkpoint, "Shieldstorm's automatic charge survives a checkpoint")
+	defender.stage_clears = 2
+	defender.stage_transition_queued = true
+	defender.intermission_step = "ready"
+	check(defender.advance_stage() and not defender.shieldstorm_pulse_used, "Shieldstorm's automatic purge recharges at the next warp")
+	var opening := Sim.new(7703)
+	_fuse_pair(opening, opening.fusion_spec("shieldstorm"))
+	opening.shield = 2.0
+	opening.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	opening._hit(3.0, "heavy", "test")
+	check(not opening.shieldstorm_pulse_used and opening.bullets.size() == 1, "Shieldstorm's passive does not ease the World 1 opening")
+	var unfused := Sim.new(7704)
+	unfused.stage = 2
+	unfused.shield = 2.0
+	unfused.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	unfused._hit(3.0, "heavy", "test")
+	check(unfused.bullets.size() == 1, "A shield break without the fusion does not erase bullets")
+	var cast := Sim.new(7705)
+	cast.stage = 2
+	_fuse_pair(cast, cast.fusion_spec("shieldstorm"))
+	cast.shield = 5.0
+	cast.shield_offline = 4.0
+	cast.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
+	cast.charges = [{"source":2, "x":270.0, "remaining":0.5, "duration":1.8, "damage":20.0}]
+	check(cast.activate("shieldstorm") and cast.bullets.is_empty() and cast.charges.is_empty() and cast.aegis_left > 0.0 and cast.shield > 5.0 and cast.shield_offline == 0.0, "Shieldstorm active cast clears the field, repairs shield suppression and grants Aegis")
+	var rank := Sim.new(7706)
+	var baseline: float = rank.weapon_power()
+	rank.upgrades.shield_focus = 10
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.5), "The new full-hull Shield Focus milestone does not affect World 1")
+	rank.stage = 2
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.95), "A rank-10 Shield Focus has 50% high-shield and 30% full-hull damage")
+	rank.hull -= 1.0
+	check(is_equal_approx(rank.weapon_power(), baseline * 1.5), "The full-hull milestone is lost immediately when hull is chipped")
+
 func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
-	check(content.fusions.size() == 11 and content.passive_links.size() == 8, "Twenty-two base actives must have eleven fusions and eight passive links")
+	check(content.fusions.size() == 12 and content.passive_links.size() == 8, "Twenty-two base actives must include the optional Shieldstorm fusion and eight passive links")
 	for card in content.cards:
 		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
@@ -1248,10 +1301,18 @@ func _test_long_runs() -> void:
 	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 40% hull")
 	sim = Sim.new()
 	base_power = sim.weapon_power()
+	sim.stage = 2
 	sim.upgrades.shield_focus = 10
-	check(is_equal_approx(sim.weapon_power(), base_power * 1.5), "Shield focus boosts damage with high shields")
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.5 * 1.30), "Rank-10 Shield Focus rewards high shields and a full hull")
 	sim.shield = sim.max_shield * 0.5
-	check(is_equal_approx(sim.weapon_power(), base_power), "Shield focus stops when shields drop")
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.30), "Full-hull bonus continues after shields drop")
+	sim.hull -= 1.0
+	check(is_equal_approx(sim.weapon_power(), base_power), "Even a small hull hit ends the full-hull damage reward")
+	sim.shield = sim.max_shield
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.5), "High-shield damage stays after the hull is chipped")
+	sim.upgrades.shield_focus = 5
+	sim.hull = sim.max_hull
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.225 * 1.12), "Rank-5 Shield Focus earns a smaller full-hull bonus")
 	sim = Sim.new()
 	sim.upgrades.afterburn = 10
 	sim.pulse_timer = 1.0

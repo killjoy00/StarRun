@@ -640,8 +640,8 @@
       "tag": "SYSTEM",
       "description": "Automatic weapons deal 2.5% more damage per rank above 75% shield.",
       "max": 10,
-      "rank5": "Another 10% shielded damage",
-      "rank10": "Another 15% shielded damage",
+      "rank5": "Another 10% high-shield damage; +12% weapon damage at full hull",
+      "rank10": "Another 15% high-shield damage; +18% weapon damage at full hull",
       "min_stage": 2
     },
     {
@@ -814,6 +814,16 @@
       ],
       "cooldown": 22,
       "description": "Clear shots and block briefly. Counter a hit for a longer block, stronger blast and repairs."
+    },
+    {
+      "id": "shieldstorm",
+      "name": "Shieldstorm",
+      "parts": [
+        "aegis",
+        "flak"
+      ],
+      "cooldown": 26,
+      "description": "Sweep hostile shots and heavy charges, restore shields and gain brief Aegis. After World 1, the first shield break each world also clears incoming fire."
     },
     {
       "id": "railstorm",

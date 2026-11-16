@@ -73,6 +73,7 @@ var stage_defense := 1.0 # Shielded passage reduces incoming damage.
 var stage_fire_rate := 1.0 # Redline accelerates automatic weapons.
 var bounty_earned := 0
 var safeguard_used := false
+var shieldstorm_pulse_used := false # Resets on warp; retained across checkpoints.
 var bonus_cores := 0
 var choice_cores := 0 # Flat, banked rewards. Added after payout multipliers at settlement.
 var mend_left := 0.0
@@ -776,6 +777,7 @@ func advance_stage() -> bool:
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
 	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
+	shieldstorm_pulse_used = false
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
@@ -1105,6 +1107,10 @@ func weapon_power() -> float:
 		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
 	if shield > max_shield * 0.75:
 		power *= 1.0 + passive_bonus("shield_focus", 0.025, 0.10, 0.15)
+	# Rank milestones make protecting a pristine hull an offensive decision.
+	# Shield Focus is a World 2+ draft; the opening progression is unchanged.
+	if stage >= 2 and hull >= max_hull - 0.01:
+		power *= 1.0 + (0.12 if rank_at("shield_focus", 5) else 0.0) + (0.18 if rank_at("shield_focus", 10) else 0.0)
 	if synergy_active("fortress"):
 		power *= 0.82
 	if synergy_active("assault"):
@@ -1394,6 +1400,18 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
+		# Shieldstorm is an earned Aegis + Flak fusion, not a free route effect.
+		# Once per world, its reactive pulse sweeps projectiles/charges (not enemies
+		# or XP) after an actual survivable shield break. World 1 is unchanged.
+		if stage >= 2 and "shieldstorm" in active_slots and not shieldstorm_pulse_used and hull > 0.0:
+			shieldstorm_pulse_used = true
+			for bullet in bullets:
+				prevented += float(bullet.get("damage", 0.0))
+			beams_cancelled += charges.size()
+			bullets.clear()
+			charges.clear()
+			effects.append({"kind":"fusion-cast", "fusion":"shieldstorm", "p":ship_position(), "life":0.9, "max_life":0.9, "born":tick, "targets":[]})
+			_log("Shieldstorm automatically swept incoming fire on shield break")
 		if _has_prototype("emergency_safeguard") and not safeguard_used:
 			safeguard_used = true
 			shield_offline = 0.0
@@ -1626,6 +1644,17 @@ func _activate_fusion(id: String, strength: float) -> void:
 			var blast: float = (235.0 if counter_window else 70.0) * strength
 			for enemy in enemies:
 				_damage_enemy(enemy, blast, "nova")
+		"shieldstorm":
+			# A protective alternative to Nova Guard: no free kills or blast XP.
+			for bullet in bullets:
+				prevented += float(bullet.get("damage", 0.0))
+			beams_cancelled += charges.size()
+			bullets.clear()
+			charges.clear()
+			shield_offline = 0.0
+			shield = minf(max_shield, shield + 45.0 * strength)
+			aegis_left = maxf(aegis_left, minf(3.3 * strength, maxf(0.0, cooldowns[id] - 1.5)))
+			_log("Shieldstorm cleared incoming fire and reinforced shielding")
 		"railstorm":
 			overdrive_left = maxf(overdrive_left, 7.0 * strength)
 			for n in range(3):
@@ -1844,7 +1873,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
