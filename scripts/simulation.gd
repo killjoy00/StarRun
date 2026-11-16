@@ -704,12 +704,17 @@ func _spawn_boss() -> void:
 	var spec := stage_spec()
 	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
 	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
-	var hp := float(spec.boss_hp) * threat_scale() * stage_risk
+	# Hard/Insane are progression difficulties. World 1's boss asks for a
+	# stronger build; this costs players time and defense, not bonus XP.
+	var opener_boss_scale := 1.50 if difficulty == "hard" else (1.60 if difficulty == "insane" else 1.0)
+	if stage != 1:
+		opener_boss_scale = 1.0
+	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0))
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
@@ -817,6 +822,10 @@ func _update_enemies() -> void:
 			# This changes damage, not XP or the visible charge warning.
 			if stage == 1 and time - stage_start >= 110.0:
 				damage *= 1.20
+				if difficulty == "hard":
+					damage *= 1.15
+				elif difficulty == "insane":
+					damage *= 1.30
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -842,6 +851,13 @@ func _update_enemies() -> void:
 			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
+			# Fire more often late in the opener on advanced difficulties.
+			# Extra enemy kills would grant XP and weaken this pressure curve.
+			if stage == 1 and time - stage_start >= 65.0 and not kind.begins_with("boss"):
+				if difficulty == "hard":
+					enemy.fire *= 0.78
+				elif difficulty == "insane":
+					enemy.fire *= 0.68
 			if stage == 1 and time - stage_start >= 110.0:
 				if kind == "boss":
 					if time - boss_spawn_time >= 18.0:
