@@ -14,8 +14,6 @@ if sys.argv[2] == "1":
     print("test")
     raise SystemExit
 if not c.get("enabled",False):
-    print("")
-    print("")
     print("disabled")
     raise SystemExit
 app=c.get("app_id","")
@@ -29,10 +27,14 @@ if app.startswith("ca-app-pub-3940256099942544") or banner.startswith("ca-app-pu
 print(app); print(banner); print("live")
 PY
 )"
-mode="$(printf '%s\n' "$ids_output" | sed -n '3p')"
-if [[ "$mode" == "disabled" ]]; then
+if [[ "$ids_output" == "disabled" ]]; then
   echo "AdMob disabled; exporting unchanged iOS app with no ad SDK."
   exit 0
+fi
+mode="$(printf '%s\n' "$ids_output" | sed -n '3p')"
+if [[ "$mode" != "test" && "$mode" != "live" ]]; then
+  echo "Unexpected AdMob config mode" >&2
+  exit 1
 fi
 app_id="$(printf '%s\n' "$ids_output" | sed -n '1p')"
 banner_id="$(printf '%s\n' "$ids_output" | sed -n '2p')"
