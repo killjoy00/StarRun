@@ -310,7 +310,7 @@ func _run() -> void:
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
 	check(_contains_text(scene.reading_scroll, "Shielded passage") and _contains_text(scene.reading_scroll, "Redline assault") and _contains_text(scene.reading_scroll, "Hunter contract"), "Every strategic route must render after the prototype choice")
-	check(_contains_text(scene.reading_scroll, "25%") and _contains_text(scene.reading_scroll, "35%") and _contains_text(scene.reading_scroll, "50%") and _contains_text(scene.reading_scroll, "One extra upgrade pick"), "Every route must explain the updated benefits and tradeoffs in plain language")
+	check(_contains_text(scene.reading_scroll, "70%") and _contains_text(scene.reading_scroll, "35% less damage") and _contains_text(scene.reading_scroll, "+15% weapon damage") and _contains_text(scene.reading_scroll, "half shields") and _contains_text(scene.reading_scroll, "One extra upgrade pick"), "Each route must explain its current benefit, shield threshold, and tradeoff in plain language")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
