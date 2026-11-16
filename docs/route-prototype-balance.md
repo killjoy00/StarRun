@@ -6,7 +6,7 @@ The intermission should offer three genuinely different plans for the **next wor
 
 | Route | What changes for that world | Risk or opportunity cost |
 | --- | --- | --- |
-| Shielded passage (`repair`) | +70% max-hull repair; full starting shields; **25% less incoming damage**, plus **15% shorter active-ability cooldowns** in the next world | No attack, XP or Core bonus |
+| Shielded passage (`repair`) | +70% max-hull repair; full starting shields; **35% less incoming damage**; **+15% automatic weapon damage while shields are above 50%**, plus **15% shorter active-ability cooldowns** | Weapon bonus is lost at half shields; no XP or Core bonus |
 | Redline assault (`overclock`) | **+35% automatic weapon damage**, **+20% automatic fire rate** | +10% max-hull repair; start on 50% shields; **20% more hull damage received** |
 | Hunter contract (`bounty`) | **One bonus upgrade pick** on warp; **+50% kill XP**; +30 × next-world number base Cores if next boss dies; +40% max-hull repair | **30% more** enemy health, enemy attack damage and spawn pressure |
 
@@ -63,3 +63,11 @@ The first post-buff 21-cell route comparison produced 32/84 Shielded, 46/84 Redl
 - Once fused, the **first survivable shield break per world from World 2 onward** automatically sweeps hostile bullets and charging beams. It refreshes at warp, survives checkpoints, and does not prevent the hit that broke the shield. World 1 has no automatic rescue.
 - **Shield Focus** keeps its existing high-shield damage. Rank 5 now grants **+12% weapon damage at full hull**; rank 10 adds another **+18%** at full hull. One hull hit disables this bonus until repaired, making Shielded Passage's large warp repair and reduced incoming damage useful for offense without changing Redline's stats.
 - These are earned build options, not unconditional Shielded Passage multipliers. Repeat matched balance tests with a shield-oriented drafting policy as well as the baseline focused policy to measure whether players can reasonably assemble them.
+
+### Route offense and late-world enemy adjustment (2026-11-16)
+
+Following a complete matched 288-campaign study (Shielded 24/48 vs Redline 35/48 using conventional focused drafting; Shieldstorm-first builds underperformed on all routes), Shielded Passage gains a **direct**, draft-independent buff in Worlds 2–4: its damage reduction rises from 25% to **35%** and it receives **+15% automatic weapon damage while current shields exceed 50% of maximum**. At exactly 50% the weapon bonus turns off; repairing shields restores it. The pre-existing 70% warp repair, full shields, and 15% faster ability cooldowns remain. This offensive bonus is not added to Redline or Hunter.
+
+Across all three routes, **Worlds 2–4** enemy regular health, boss core health and boss-module health are multiplied by **0.90**. Incoming attack and corrosion damage are multiplied by **1.05**; encounter frequency, movement, telegraphs, XP and Cores are unchanged. This makes survival more meaningful without increasing enemy time-to-kill. **World 1 and Endless World 5+** retain authored values. The change is deliberately not described as a tested balance improvement until real-combat CI comparisons finish.
+
+The targeted Shieldstorm/Redline study, expanded route study, replay/checkpoint tests, and playable build must be rerun on the amended commit. Existing completed studies represent **pre-change baselines**, not post-change results.

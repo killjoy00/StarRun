@@ -792,7 +792,7 @@ func _test_prototype_and_route_choices() -> void:
 	check(sim.choose_prototype(0), "A valid Prototype must install")
 	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
 	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
-	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.75) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage without an attack bonus")
+	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.65) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage by 35% and add a conditional weapon bonus")
 	var risk := Sim.new(889)
 	risk.stage = 2
 	risk._spawn_boss()
@@ -868,7 +868,7 @@ func _test_route_prototype_balance_grid() -> void:
 					check(sim.choose_prototype(0) and sim.choose_route(route) and sim.advance_stage(), "Warp choices must advance to world %d on %s / %s / %s" % [world, difficulty, hangar_style, route])
 					check(sim.stage == world and sim.route_choice == route, "Selected route must persist into the intended world")
 					if route == "repair":
-						check(is_equal_approx(sim.stage_defense, 0.75) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must uniquely mitigate incoming damage")
+						check(is_equal_approx(sim.stage_defense, 0.65) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must mitigate 35% damage while retaining normal fire rate")
 					elif route == "overclock":
 						check(is_equal_approx(sim.stage_power, 1.35) and is_equal_approx(sim.stage_fire_rate, 1.20) and is_equal_approx(sim.stage_defense, 1.0), "Redline must uniquely favor attack output")
 					else:
@@ -883,6 +883,51 @@ func _test_route_prototype_balance_grid() -> void:
 	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 1.0), "Shielded Passage must never affect World 1 ability timings")
 	shielded_cooldowns.stage = 2
 	check(is_equal_approx(shielded_cooldowns.cooldown_multiplier(), 0.85), "Shielded Passage cuts later-world ability cooldowns by 15%")
+	# Route-specific combat bonuses and enemy tuning need real equations,
+	# not a forced win/lose result or a free fusion in the draft pool.
+	var shielded_base := Sim.new(9341)
+	shielded_base.stage = 2
+	var shielded_attacker := Sim.new(9341)
+	shielded_attacker.stage = 2
+	shielded_attacker.route_choice = "repair"
+	shielded_attacker.stage_defense = 0.65
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power() * 1.15), "Shielded Passage boosts automatic weapon damage by 15% above half shields")
+	shielded_attacker.shield = shielded_attacker.max_shield * 0.50
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "Shielded Passage loses its weapon bonus at or below half shields")
+	shielded_attacker.shield = shielded_attacker.max_shield
+	shielded_attacker.stage = 1
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "Shielded Passage offers no World 1 offensive bonus")
+	shielded_attacker.stage = 5
+	check(is_equal_approx(shielded_attacker.weapon_power(), shielded_base.weapon_power()), "The four-world Shielded Passage buff does not leak into endless")
+	shielded_attacker.stage = 2
+	shielded_attacker._hit(10.0, "heavy", "test")
+	shielded_base._hit(10.0, "heavy", "test")
+	check(is_equal_approx(float(shielded_attacker.damage_taken.heavy), float(shielded_base.damage_taken.heavy) * 0.65), "Shielded Passage reduces real enemy hit damage by 35%")
+	var redline_attacker := Sim.new(9341)
+	redline_attacker.stage = 2
+	redline_attacker.route_choice = "overclock"
+	redline_attacker.stage_power = 1.35
+	redline_attacker.stage_fire_rate = 1.20
+	check(is_equal_approx(redline_attacker.weapon_power(), shielded_base.weapon_power() * 1.35) and is_equal_approx(redline_attacker.stage_fire_rate, 1.20), "Redline's attack modifiers remain exactly unchanged")
+	var world_one_enemy := Sim.new(9342)
+	world_one_enemy._add_enemy("drone", Vector2(250, 100))
+	check(is_equal_approx(world_one_enemy.enemies[0].max_hp, float(world_one_enemy.content.enemies.drone.hp)) and is_equal_approx(world_one_enemy.enemy_damage_multiplier(), 1.0), "World 1 enemy health and damage are unchanged")
+	for late_stage in [2, 3, 4]:
+		var balanced := Sim.new(9342)
+		balanced.stage = late_stage
+		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
+		balanced._add_enemy("drone", Vector2(250, 100))
+		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction" % late_stage)
+		balanced._spawn_boss()
+		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply the 10%% health reduction" % late_stage)
+		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
+		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90
+		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss modules apply the 10%% health reduction" % late_stage)
+	var later_endless := Sim.new(9343)
+	later_endless.stage = 5
+	check(is_equal_approx(later_endless.enemy_health_multiplier(), 1.0) and is_equal_approx(later_endless.enemy_damage_multiplier(), 1.0), "Endless stages beyond the four-world campaign retain authored enemy stats")
 	var hard_opener := Sim.new(117, {}, "vanguard", "rookie", "hard")
 	var insane_opener := Sim.new(117, {}, "vanguard", "rookie", "insane")
 	hard_opener._spawn_boss()
@@ -1120,7 +1165,7 @@ func _test_new_stage_threats() -> void:
 	var bleed := Sim.new(9081)
 	bleed.stage = 4
 	bleed._hit(10.0, "void", "test")
-	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * 0.20), "Citadel void must bypass 20% of shields, not the original 30%")
+	check(is_equal_approx(bleed.hull, bleed.max_hull - 10.0 * bleed.stage_damage_scale() * bleed.enemy_damage_multiplier() * 0.20), "Citadel void must bypass 20% of shielded damage with the late-world enemy attack modifier")
 	var early_lancer := Sim.new(9082)
 	early_lancer.stage = 4
 	early_lancer.time = 35.0
@@ -1341,10 +1386,10 @@ func _test_long_runs() -> void:
 		check(early_scale < full_scale and early_scale > 1.0 and is_equal_approx(full_scale,float(sim.stage_spec().damage_scale)), "Later-world entry pressure ramps to the full authored damage before the boss")
 		sim.time = 0.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale), "World 2-4 early-ramp damage reaches actual collision resolution without extra XP")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * early_scale * 1.05), "World 2-4 early-ramp enemy damage is 5% higher without extra XP")
 		sim.time = 240.0
 		sim._hit(10, "ion", "test")
-		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale)), "Late-world damage reaches full pressure, including during the boss")
+		check(is_equal_approx(sim.damage_taken.ion,10.0 * (early_scale + full_scale) * 1.05), "Late-world enemy damage reaches 105% of authored pressure, including during the boss")
 
 func _fixed_build_timing(seeds: int) -> Dictionary:
 	var results := {}

@@ -247,7 +247,7 @@ func step() -> void:
 	for timer in ["aftercast_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
-		var corrosion_damage := DT * 1.4 * stage_damage_scale() * stage_risk * stage_defense
+		var corrosion_damage := DT * 1.4 * stage_damage_scale() * enemy_damage_multiplier() * stage_risk * stage_defense
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
@@ -395,6 +395,14 @@ func stage_damage_scale() -> float:
 		var ramp: float = clampf((time - stage_start - 25.0) / (full_at - 25.0), 0.0, 1.0)
 		scale *= lerpf(entry_factor, 1.0, ramp)
 	return scale
+
+# Later worlds trade slightly less enemy durability for more dangerous hits.
+# World 1 and endless are untouched to protect the opening progression gate.
+func enemy_health_multiplier() -> float:
+	return 0.90 if stage in [2, 3, 4] else 1.0
+
+func enemy_damage_multiplier() -> float:
+	return 1.05 if stage in [2, 3, 4] else 1.0
 
 func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
@@ -666,7 +674,7 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier()
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
@@ -726,12 +734,12 @@ func _spawn_boss() -> void:
 			opener_boss_scale = 6.5 if difficulty == "hard" else 5.5
 		elif stage == 2:
 			opener_boss_scale = 2.5
-	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
+	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier()
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier()
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
@@ -771,7 +779,7 @@ func advance_stage() -> bool:
 	effects.clear()
 	stage_power = 1.35 if route_choice == "overclock" else 1.0
 	stage_risk = 1.30 if route_choice == "bounty" else 1.0
-	stage_defense = 0.75 if route_choice == "repair" else 1.0
+	stage_defense = 0.65 if route_choice == "repair" else 1.0
 	stage_fire_rate = 1.20 if route_choice == "overclock" else 1.0
 	var repair_fraction := 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40)
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
@@ -1103,6 +1111,10 @@ func _update_weapons() -> void:
 
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	# Shielded Passage contributes immediate offense without needing a niche draft.
+	# It only rewards shields above half capacity during Worlds 2-4.
+	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
+		power *= 1.15
 	if hull < max_hull * 0.40:
 		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
 	if shield > max_shield * 0.75:
@@ -1356,7 +1368,7 @@ func xp_needed() -> int:
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
 		return
-	amount *= stage_damage_scale()
+	amount *= stage_damage_scale() * enemy_damage_multiplier()
 	if aegis_left > 0:
 		prevented += amount
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
