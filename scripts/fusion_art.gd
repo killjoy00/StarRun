@@ -2,6 +2,7 @@ extends RefCounted
 ## Shared vector insignia. Drawn in the caller's transform, on a 36-point canvas.
 const PALETTES := {
 	"nova_aegis":[Color("7cece7"),Color("f1d69b")],
+	"shieldstorm":[Color("87caff"),Color("f2da9c")],
 	"railstorm":[Color("f2c078"),Color("c5e9ff")],
 	"stasis_lock":[Color("bca4f2"),Color("89dfef")],
 	"repair_matrix":[Color("87deb7"),Color("c5efff")],
@@ -45,6 +46,15 @@ static func badge(item: CanvasItem, id: String, alpha: float = 1.0) -> void:
 			outline(item,polygon(Vector2(0,5),5,4),b,1.7)
 			item.draw_circle(Vector2(0,5),2,white)
 			item.draw_arc(Vector2.ZERO,12,PI*1.15,PI*1.85,16,b,1.5,true)
+		"shieldstorm":
+			# Shield + outward-moving flak dots, legible even at 36px.
+			var plate := PackedVector2Array([Vector2(0,-12),Vector2(11,-7),Vector2(10,4),Vector2(0,12),Vector2(-10,4),Vector2(-11,-7)])
+			item.draw_colored_polygon(plate,Color(a,alpha*0.16))
+			outline(item,plate,a,1.8)
+			item.draw_line(Vector2(0,-9),Vector2(0,8),white,1.1,true)
+			for offset in [Vector2(-14,-9),Vector2(14,-9),Vector2(-14,7),Vector2(14,7)]:
+				item.draw_circle(offset,1.8,b)
+			item.draw_arc(Vector2.ZERO,8,PI*0.15,PI*0.85,12,b,1.5,true)
 		"nova_aegis":
 			var shield := PackedVector2Array([Vector2(-10,-8),Vector2(0,-12),Vector2(10,-8),Vector2(8,5),Vector2(0,12),Vector2(-8,5)])
 			item.draw_colored_polygon(shield, Color(a, alpha * 0.13))

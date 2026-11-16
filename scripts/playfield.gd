@@ -670,7 +670,7 @@ func _draw_fusion_cast(effect: Dictionary, alpha: float, age: float) -> void:
 	var b := Color(colors[1],alpha)
 	var white := Color("edf8ff",alpha*0.85)
 	var p: Vector2 = effect.p
-	if id in ["nova_aegis","repair_matrix","reflective_wall","ghost_signal"]:
+	if id in ["nova_aegis","shieldstorm","repair_matrix","reflective_wall","ghost_signal"]:
 		p = sim.ship_position()
 	var spread := 1.0 - pow(1.0-age,3)
 	var count := 6 if profile.reduced else 12
@@ -681,6 +681,15 @@ func _draw_fusion_cast(effect: Dictionary, alpha: float, age: float) -> void:
 				draw_line(p,node,Color(a,alpha*0.5),1.6,true)
 				FusionArt.outline(self,FusionArt.polygon(node,18+age*16,4),b,1.8)
 			FusionArt.outline(self,FusionArt.polygon(p+Vector2(0,-45),22,4),a,2)
+		"shieldstorm":
+			# A thin expanding defensive pulse; hostile projectile cores stay visible.
+			var r := 45.0 + spread * 140.0
+			FusionArt.outline(self,FusionArt.polygon(p,43),Color(a,alpha*0.8),2.1)
+			for i in range(8):
+				var angle := i * TAU / 8.0
+				draw_arc(p,r,angle+0.06,angle+0.59,12,Color(a,alpha*0.67),2.6,true)
+				var v := Vector2.from_angle(angle)
+				draw_line(p+v*(r+1),p+v*(r+11),Color(b,alpha*0.78),1.8,true)
 		"nova_aegis":
 			var r := 48.0 + spread * (210.0 if effect.get("counter",false) else 140.0)
 			FusionArt.outline(self,FusionArt.polygon(p,54),a,2.5)
