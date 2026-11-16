@@ -60,7 +60,10 @@ func _run() -> void:
 		check(timing.timed.seconds > timing.on_cooldown.seconds + 8.0, "Timed counters must extend survival when both Hard builds lose")
 	else:
 		check(timing.timed.wins >= timing.on_cooldown.wins + mini(4, maxi(1, int(seeds / 2))), "Timed counters must improve wins with identical equipment")
-	check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
+	# In intentionally unwinnable unupgraded Hard starts, both policies
+	# finish at zero hull. Compare their actual survival times instead.
+	if timing.timed.wins > 0 or timing.on_cooldown.wins > 0:
+		check(timing.timed.mean_hull > timing.on_cooldown.mean_hull + 3, "Timed counters must preserve more hull with identical equipment")
 	print("FIXED_BUILD_TIMING ", JSON.stringify(timing))
 	check(results.timed.wins > 0, "Base ship must be able to clear Stage 1 without Hangar upgrades")
 	print("BALANCE ", JSON.stringify(results))
