@@ -53,65 +53,71 @@ download_verified() {
 download_verified poing-godot-admob-v5.1.0.zip 8c53ff52719edf6a81cc7d32a9cdaad2d9e11693c85faca25008a1c19355726f
 download_verified ios-template-v4.6.3.zip 1943a989353a2a3c609adc7cba47a939e3f6b619f805becd9b5e49eb0d4cc7df
 python3 - "$cache" "$app_id" "$banner_id" "$test_mode" <<'PY'
-import configparser, json, pathlib, re, sys, zipfile
-cache=pathlib.Path(sys.argv[1]); app_id=sys.argv[2]; banner_id=sys.argv[3]; test=sys.argv[4]=="1"
+import json, pathlib, sys, zipfile
+cache=pathlib.Path(sys.argv[1])
+app_id=sys.argv[2]
+banner_id=sys.argv[3]
+test=sys.argv[4]=="1"
 root=pathlib.Path(".")
-def unpack(archive, target, prefix=None):
+addon=root/"addons/admob"
+
+def safe_files(archive):
     with zipfile.ZipFile(cache/archive) as z:
-        contents=[n for n in z.namelist() if not n.endswith("/")]
-        print(archive, "entries:", len(contents), "sample:", contents[:8])
-        for info in z.infolist():
-            parts=pathlib.PurePosixPath(info.filename).parts
-            if not parts or info.is_dir() or ".." in parts or info.filename.startswith("/") or "\\" in info.filename:
-                if ".." in parts or info.filename.startswith("/") or "\\" in info.filename:
-                    raise SystemExit("Unsafe AdMob SDK zip entry: " + info.filename)
+        names=[name for name in z.namelist() if not name.endswith("/")]
+        print(archive, "files:", len(names), "first:", names[:4])
+        for entry in z.infolist():
+            parts=pathlib.PurePosixPath(entry.filename).parts
+            if (not parts or entry.is_dir()):
                 continue
-            rel=pathlib.Path(*parts)
-            if prefix and rel.parts[0]==prefix:
-                rel=pathlib.Path(*rel.parts[1:])
-            if not rel.parts: continue
-            destination=target/rel
-            destination.parent.mkdir(parents=True,exist_ok=True)
-            destination.write_bytes(z.read(info))
-unpack("poing-godot-admob-v5.1.0.zip",root)
-unpack("ios-template-v4.6.3.zip",root/"ios/plugins")
-gdips=list((root/"ios/plugins").rglob("*.gdip"))
-if not gdips:
-    raise SystemExit("Poing iOS template did not contain a .gdip (check release asset layout)")
-print("AdMob GDIP:",[str(x) for x in gdips])
-admob=[p for p in gdips if "admob" in p.name.lower() and "ads" in p.name.lower()]
-if not admob:
-    raise SystemExit("No AdMob ads .gdip found")
-gdip=admob[0]
-text=gdip.read_text()
-sample=re.findall(r"ca-app-pub-[0-9]{16}~[0-9]{10}",text)
-if not sample:
-    raise SystemExit("AdMob .gdip missing Google AdMob App ID slot; refusing to export unconfigured SDK")
-text=re.sub(r"ca-app-pub-[0-9]{16}~[0-9]{10}",app_id,text)
-gdip.write_text(text)
-config=configparser.ConfigParser(interpolation=None)
-config.read_string(text)
-plugin_name=config.get("config","name",fallback="")
-if not plugin_name:
-    raise SystemExit("AdMob .gdip missing plugin name")
-preset=root/"export_presets.cfg"
-source=preset.read_text()
-if "[preset.3.options]" not in source:
-    raise SystemExit("Missing iOS export preset")
-key="plugins/"+plugin_name+"="
-if key in source:
-    source=re.sub(r"(?m)^"+re.escape(key)+r".*$",key+"true",source)
-else:
-    source=source.rstrip()+"\n"+key+"true\n"
-preset.write_text(source)
+            if ".." in parts or entry.filename.startswith("/") or "\\" in entry.filename:
+                raise SystemExit("Unsafe AdMob archive path")
+            yield parts, z.read(entry)
+
+addon_entries=0
+for parts, content in safe_files("poing-godot-admob-v5.1.0.zip"):
+    if "addons" not in parts:
+        continue
+    idx=parts.index("addons")
+    rel=pathlib.Path(*parts[idx:])
+    dest=root/rel
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    dest.write_bytes(content)
+    addon_entries+=1
+if addon_entries < 30 or not (addon/"plugin.cfg").is_file():
+    raise SystemExit("AdMob v5.1.0 editor addon missing after extraction")
+
+bin_root=addon/"ios/bin"
+native_entries=0
+for parts, content in safe_files("ios-template-v4.6.3.zip"):
+    # v5.1 native archive has ads/, core/, ump/ plus optional mediation.
+    # It is NOT a legacy res://ios/plugins/*.gdip archive.
+    rel=pathlib.Path(*parts)
+    dest=bin_root/rel
+    dest.parent.mkdir(parents=True,exist_ok=True)
+    dest.write_bytes(content)
+    native_entries+=1
+if native_entries < 20 or not (bin_root/"ads").is_dir():
+    raise SystemExit("AdMob iOS native ads library missing after extraction")
+(bin_root/"package.gd").write_text('const VERSION := "v5.1.0"\n')
+
+project=root/"project.godot"
+text=project.read_text()
+if '[editor_plugins]' in text:
+    raise SystemExit("Existing editor_plugins settings require manual reconciliation")
+text += '\n[editor_plugins]\n\nenabled=PackedStringArray("res://addons/admob/plugin.cfg")\n'
+text += '\n[admob]\n\ngeneral/ios/enabled=true\ngeneral/ios/app_id="%s"\n' % app_id
+project.write_text(text)
+
+native_source=root/"scripts/admob_native_runtime.gd.txt"
+if not native_source.is_file():
+    raise SystemExit("Missing reviewed native Star/Run banner runtime template")
+(root/"scripts/admob_native_runtime.gd").write_text(native_source.read_text())
+
 if test:
     path=root/"data/admob.json"
-    c=json.loads(path.read_text())
-    c.update({"enabled":True,"app_id":app_id,"banner_unit_id":banner_id,"test_mode":True})
-    path.write_text(json.dumps(c,indent=2)+"\n")
-native_source = root / "scripts/admob_native_runtime.gd.txt"
-if not native_source.is_file():
-    raise SystemExit("Missing reviewed native Star/Run ads runtime template")
-(root / "scripts/admob_native_runtime.gd").write_text(native_source.read_text())
-print("Enabled signed iOS export plugin",plugin_name,"with",("test" if test else "live"),"configuration")
+    config=json.loads(path.read_text())
+    config.update({"enabled":True,"app_id":app_id,"banner_unit_id":banner_id,"test_mode":True})
+    path.write_text(json.dumps(config,indent=2)+"\n")
+print("Native AdMob iOS v5.1.0 installed:", addon_entries, "addon files,",native_entries,"native files;",
+      "using",("Google test IDs" if test else "configured live IDs"),"with consent gate.")
 PY
