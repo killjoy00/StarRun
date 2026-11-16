@@ -59,7 +59,11 @@ Use **real game captures**, not art that suggests controls/features that the gam
 7. **A new Daily each day.** The Daily Challenge on the title screen
 8. **Keep flying after the win.** Endless option after World 4 (only if visually clear)
 
-The currently required Dynamic Island iPhone screenshot size includes **1179×2556 or 1206×2622 px** (also other supported sizes). Apple allows 1–10 screenshots and scales compatible larger screenshots when appropriate; confirm the exact accepted sizes in App Store Connect.
+**Completed 2026-11-16:** Seven real Godot game-UI screenshots from the already-uploaded Star/Run 0.9.4 source were captured, converted to Apple's accepted **1290 × 2796** iPhone large-display size, uploaded to the existing iOS 1.0 en-US draft, and **all seven were confirmed COMPLETE by Apple**.
+
+- [Apple screenshot upload and validation — success](https://github.com/killjoy00/EZTrivia/actions/runs/43911365253)
+- Source screenshot artifact available in that workflow's Artifacts section.
+- Apple screenshot set: `APP_IPHONE_67`. No simulator-only UI, advertising test creatives or invented gameplay elements were added.
 
 ## Fields requiring account access
 
@@ -79,7 +83,7 @@ Apple accepted the name **Star/Run**, subtitle, promotional text, description, k
 - [Apple metadata readback verification](https://github.com/killjoy00/EZTrivia/actions/runs/43897202012)
 - Machine-readable source: [docs/app-store/en-US.json](app-store/en-US.json)
 
-No screenshots, age rating, App Privacy answers, price, or privacy policy URL have been populated by the workflow. The user's remaining account steps below cover only those fields.
+**Screenshots are populated** and confirmed COMPLETE. Age rating, App Privacy answers, price, and privacy policy URL remain separate account declarations. The user's remaining account steps below cover only those fields.
 
 ## Owner steps (no local code or terminal)
 
@@ -87,7 +91,7 @@ No screenshots, age rating, App Privacy answers, price, or privacy policy URL ha
 2. Verify **Star/Run** and **Tactical space auto-shooter** appear as the name and subtitle. Both were saved and read back through Apple's API.
 3. Open the current **iOS 1.0 draft** and confirm the description, promotional copy, keywords and support URL are there. They were populated automatically; do not paste them a second time.
 4. Enter **Support URL** and **Privacy Policy URL** only after those pages actually exist. Complete the copyright, age-rating, App Privacy, and pricing/availability forms accurately.
-5. Upload actual full-resolution iPhone screenshots in the recommended order. Do not use development screenshots with test ads as marketing images.
+5. **Done:** The seven screenshot uploads are confirmed COMPLETE in Apple. You may review their order in App Store Connect. No test ads appear.
 6. **Save** the listing draft. Do not press **Submit for Review** or publish until ads and the release candidate are validated.
 
 Sources: Apple's [App information](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information), [product page guidance](https://developer.apple.com/app-store/product-page/), and [screenshot specifications](https://developer.apple.com/help/app-store-connect/reference/app-information/screenshot-specifications/).
