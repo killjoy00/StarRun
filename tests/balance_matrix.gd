@@ -22,6 +22,8 @@ func _run() -> void:
 	var trace := false
 	var require_win := false
 	var seed_offset := 0
+	var stage_limit := 4
+	var require_no_world1_clears := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
 			seeds = maxi(1, int(arg.get_slice("=", 1)))
@@ -41,18 +43,27 @@ func _run() -> void:
 			pilot_id = arg.get_slice("=", 1)
 		elif arg.begins_with("--seed-offset="):
 			seed_offset = maxi(0, int(arg.get_slice("=", 1)))
+		elif arg.begins_with("--stage-limit="):
+			stage_limit = int(arg.get_slice("=", 1))
+		elif arg == "--require-no-world1-clears":
+			require_no_world1_clears = true
 		elif arg == "--trace":
 			trace = true
 		elif arg == "--require-win":
 			require_win = true
-	if build_style not in ["baseline", "focused"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
+	if build_style not in ["baseline", "focused"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
 		push_error("Invalid balance diagnostic build, hangar or pilot")
+		quit(2)
+		return
+	if require_no_world1_clears and (stage_limit != 1 or hangar_style != "none" or only_difficulty not in ["hard", "insane"]):
+		push_error("No-Hangar World 1 gate applies only to Hard/Insane with stage-limit=1")
 		quit(2)
 		return
 	var cells := 0
 	var trials := 0
 	var faults := 0
 	var campaign_wins := 0
+	var world1_clears := 0
 	for ship in Catalog.SHIPS:
 		var ship_id: String = str(ship.id)
 		if not only_ship.is_empty() and only_ship != ship_id:
@@ -71,7 +82,7 @@ func _run() -> void:
 				var hull := 0.0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
-					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy)
+					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit)
 					if trace:
 						print("CAMPAIGN_TRACE ", JSON.stringify({
 							"seed":seed,"ship":ship_id,"difficulty":difficulty,"strategy":strategy,
@@ -79,6 +90,7 @@ func _run() -> void:
 							"routes":result.routes,"stages":result.stages,"final":result.final
 						}))
 					trials += 1
+					world1_clears += int(result.clears) >= 1
 					faults += int(result.get("fault", false))
 					timeouts += int(result.timeout)
 					casts += int(result.casts)
@@ -95,14 +107,16 @@ func _run() -> void:
 					"mean_final_hull":snappedf(hull / seeds, 0.1)
 				}))
 	print("BALANCE_MATRIX_SUMMARY ", JSON.stringify({
-		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "campaign_wins":campaign_wins, "build":build_style, "hangar":hangar_style, "route":route_policy,
+		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "world1_clears":world1_clears, "stage_limit":stage_limit, "campaign_wins":campaign_wins, "build":build_style, "hangar":hangar_style, "route":route_policy,
 		"method":"scripted autopilot and auto-weapons, automated upgrades, active policy only"
 	}))
 	if require_win and campaign_wins == 0:
 		push_error("Expected at least one genuine four-world victory using real combat, cards and bosses")
-	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) else 0)
+	if require_no_world1_clears and world1_clears > 0:
+		push_error("%d of %d unupgraded Hard/Insane attempts cleared World 1 (ship %s, pilot %s). Investigate and rebalance before merging." % [world1_clears, trials, only_ship, pilot_id])
+	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) else 0)
 
-func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive") -> Dictionary:
+func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4) -> Dictionary:
 	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty)
 	var timed_out := false
 	var fault := false
@@ -115,6 +129,9 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			break
 		if sim.stage_transition_queued:
 			stage_reports.append(_stage_report(sim, "cleared"))
+			if sim.stage >= stage_limit:
+				status = "stage_limit"
+				break
 			if sim.stage >= 4:
 				if not sim.advance_stage():
 					fault = true
