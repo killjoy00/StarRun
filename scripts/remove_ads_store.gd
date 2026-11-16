@@ -10,6 +10,7 @@ var store_ready := false
 var checked := false
 var busy := false
 var localized_price := ""
+var product_available := false
 var message := "Connecting to the App Store..."
 var _iap: Node
 var _flow: Object
@@ -66,6 +67,7 @@ func _fetch_product() -> void:
 	for product in products:
 		if str(product.id) == PRODUCT_ID:
 			localized_price = str(product.display_price)
+			product_available = not localized_price.is_empty()
 			break
 	changed.emit()
 
@@ -73,7 +75,7 @@ func _recover_entitlement() -> void:
 	var recovered: Variant = await _flow.recover_purchases(true)
 	if recovered is Array:
 		checked = true
-		message = "Ads removed" if owned else "One purchase removes banner ads."
+		message = "Ads removed" if owned else ("One purchase removes banner ads." if product_available else "Remove Ads is not available in the App Store yet.")
 	else:
 		message = "Unable to verify purchases. Ads remain hidden until the store responds."
 	changed.emit()
@@ -113,7 +115,7 @@ func buy() -> void:
 		message = "Ads are already removed."
 		changed.emit()
 		return
-	if not store_ready or busy:
+	if not store_ready or not product_available or busy:
 		return
 	busy = true
 	message = "Opening Apple's secure purchase sheet..."
