@@ -14,14 +14,21 @@
 - Live ad serving MUST remain disabled until consent messages and Apple disclosures are approved, a physical iPhone confirms the consent form/banner placement, and the test-mode flag is turned off in a separately reviewed commit.
 - No public App Store submission or TestFlight release is authorized by this PR.
 
-## Required App Store Connect owner actions (mobile browser)
-1. Open App Store Connect -> Apps -> Star/Run -> Monetization -> In-App Purchases -> +. Create a **Non-Consumable** with Reference Name **Remove Ads** and Product ID **com.rsm.starrun.remove_ads**. Product IDs cannot be reused or renamed; copy exactly.
-2. Add English (U.S.) localization: Display Name **Remove Ads**; Description **Permanently removes banner ads from Star/Run.** Set an agreed price in **Pricing**; do not guess which pricing tier the user wants. Save. The first IAP may need to accompany the first app-version submission.
-3. Add the App Review screenshot showing the Remove Ads button in iPhone Settings after a signed test build is captured, and other review metadata Apple requires. Leave the IAP unsubmitted until the matching signed binary is validated. In App Review note that a purchase is optional and Restore Purchases is under Settings.
-4. In **Business -> Agreements, Tax, and Banking**, accept the Paid Apps Agreement and finish tax/banking validation; Apple must mark it active for purchases to work.
-5. Under Apps -> Star/Run -> App Privacy, enter the real hosted policy URL https://github.com/killjoy00/StarRun/blob/main/PRIVACY.md and make disclosures that match the *actual shipped* Google Mobile Ads SDK. Google lists device IDs, IP-derived coarse location, advertising data, product interaction and diagnostic/performance data depending on setup. Tracking/ATT answers must reflect actual SDK behavior and consent configuration, not a generic "we collect nothing."
-6. Complete App Information age rating (stylized sci-fi violence), Games/Action category, copyright and content rights, export-compliance declarations and Free pricing/territories; fill App Review contact details.
-7. Don't submit the public App Store version until the signed release-candidate build, live banner controls and a sandbox purchase+restore on an iPhone are verified.
+## Completed App Store Connect Remove Ads product setup (2026-11-16)
+- Existing Star/Run App Store Connect app: `com.rsm.starrun`. No second app created.
+- StoreKit non-consumable: `com.rsm.starrun.remove_ads`, Apple IAP ID `6835610167`.
+- **Apple-verified one-time US price: $1.99**. Existing price schedule was preserved.
+- English (U.S.) localization: **Remove Ads** — "Permanently removes banner ads from Star/Run."
+- Review screenshot: **1290 × 2796 PNG** captured from the running Godot Settings UI, uploaded through the Apple asset API and processed **COMPLETE**. See EZTrivia run `43957359340` and asset ID `8f2b3cf7-cd3b-4194-8b6b-4459876a85bd`.
+- App Review instructions explain how to purchase and restore.
+- Apple product state: **READY_TO_SUBMIT**; IAP version: **PREPARE_FOR_SUBMISSION**. Product was **not submitted** for review.
+- Existing region availability preserved, with new territories enabled. App Store Connect setup validation run: `43958431840`.
+
+## Remaining actions for the Apple account owner
+1. Verify **Business → Agreements, Tax, and Banking** has an **Active Paid Apps Agreement**, complete tax/bank forms where Apple requests. These legal and financial decisions belong to the account holder.
+2. Complete the app's **App Privacy**, age rating, export compliance, copyright and App Review contact questions. Disclosures must match the *actual* Google ad SDK and tracking/consent behavior in the final signed build.
+3. Install the next signed TestFlight beta and perform a sandbox **$1.99 Remove Ads purchase**, **Restore Purchases**, cancel/pending tests and clean reinstall on an iPhone. Verify no banner requests occur for owned/pending/unverified entitlements.
+4. When the final production binary, consent, and purchase tests pass, submit the initial non-consumable with the matching app version for Apple's review. Do not submit a public App Store release until launch approval.
 
 ## Required AdMob publisher actions (mobile browser)
 1. Go to AdMob -> **Privacy & messaging** for the existing Star/Run iOS app, review and **publish** appropriate EEA/UK consent messages and applicable US state privacy choices; accurately set the application's age/audience treatment. The Google publisher App ID and banner ID have already been configured in repo, so don't create another AdMob app.
