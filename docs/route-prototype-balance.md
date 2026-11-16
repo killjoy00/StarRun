@@ -71,3 +71,10 @@ Following a complete matched 288-campaign study (Shielded 24/48 vs Redline 35/48
 Across all three routes, **Worlds 2–4** enemy regular health, boss core health and boss-module health are multiplied by **0.90**. Incoming attack and corrosion damage are multiplied by **1.05**; encounter frequency, movement, telegraphs, XP and Cores are unchanged. This makes survival more meaningful without increasing enemy time-to-kill. **World 1 and Endless World 5+** retain authored values. The change is deliberately not described as a tested balance improvement until real-combat CI comparisons finish.
 
 The targeted Shieldstorm/Redline study, expanded route study, replay/checkpoint tests, and playable build must be rerun on the amended commit. Existing completed studies represent **pre-change baselines**, not post-change results.
+
+
+### Insane challenge adjustment (2026-11-16)
+
+Insane previously shared a 1.60 multiplier between health, enemy damage and **spawn density**. At maximum Hangar, four matched World 1 seeds produced roughly 26% more Insane kills than Hard; more kills mean more XP and upgrades, sometimes letting Insane builds outgrow Hard builds despite more damage taken.
+
+Insane now scales enemy HP and shot/beam damage by **2.0x Normal** (25% more than the previous Insane 1.6x). Spawn frequency and ordinary enemy firing intervals retain the previous **1.6x**; those are separate from combat strength so the additional challenge does not award more kills/XP or extra projectiles. Hard is unchanged at 1.25x. Boss enrage, enemy-drop XP, reward multipliers, Shielded Passage, and World 2-4 enemy adjustments remain intact. This is designed to correct the Insane progression advantage; verify with actual matched campaigns, not difficulty labels alone.

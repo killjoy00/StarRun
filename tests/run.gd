@@ -592,6 +592,9 @@ func _test_stage_difficulty_and_pressure() -> void:
 	for sim in [normal, hard, insane]:
 		sim._add_enemy("drone", Vector2(240, 100))
 	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
+	check(is_equal_approx(insane.threat_scale(), 2.0) and is_equal_approx(hard.threat_scale(), 1.25), "Insane enemy HP and shot strength rise 25% over the previous 1.6 scale")
+	check(is_equal_approx(insane.enemy_cadence_scale(), 1.6) and is_equal_approx(hard.enemy_cadence_scale(), 1.25), "Extra Insane toughness must not increase spawns or XP-granting kills")
+	check(is_equal_approx(insane.enemies[0].max_hp / hard.enemies[0].max_hp, 1.6), "Insane regular enemies have 60% more HP than Hard for the same equipment")
 	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
 	check(normal.content.stage_count == 4 and normal.content.abilities.aegis.cooldown >= 14, "Four stages and slower Aegis must be configured")
 	var sim := Sim.new(777)
@@ -933,6 +936,17 @@ func _test_route_prototype_balance_grid() -> void:
 	hard_opener._spawn_boss()
 	insane_opener._spawn_boss()
 	check(insane_opener.enemies[0].max_hp > hard_opener.enemies[0].max_hp, "Insane Harvester HP exceeds Hard at identical Hangar")
+	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5) / (1.25 * 6.5)), "The Insane World 1 boss is stronger than Hard with the authored enrage factors")
+	var hard_shot := Sim.new(8080, {}, "vanguard", "rookie", "hard")
+	var insane_shot := Sim.new(8080, {}, "vanguard", "rookie", "insane")
+	for shooter in [hard_shot, insane_shot]:
+		shooter.stage = 2
+		shooter.heavy_ready_at = 0.0
+		shooter._add_enemy("void_lancer", Vector2(250, 150))
+		shooter._update_enemies()
+	check(hard_shot.charges.size() == 1 and insane_shot.charges.size() == 1, "Identical seeded lancer attacks produce heavy-beam charges on Hard and Insane")
+	if not hard_shot.charges.is_empty() and not insane_shot.charges.is_empty():
+		check(is_equal_approx(float(insane_shot.charges[0].damage) / float(hard_shot.charges[0].damage), 1.6), "Insane heavy-beam damage exceeds Hard by 60%")
 
 	var base := Sim.new(556)
 	var volatile := Sim.new(556)

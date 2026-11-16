@@ -286,7 +286,7 @@ func step() -> void:
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
 		# Do not raise late World 1 spawns: extra automatic kills give free XP.
-		next_spawn = time + pace / (float(stage_spec().spawn_scale) * threat_scale() * stage_risk)
+		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -304,6 +304,13 @@ func step() -> void:
 		_offer_cards()
 
 func threat_scale() -> float:
+	# Insane combat threat is 25% greater than its former 1.6 value.
+	# Do not increase spawn count with it: extra kills grant extra XP.
+	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
+
+func enemy_cadence_scale() -> float:
+	# Keep the existing enemy arrival and regular fire cadence, especially
+	# on Insane, while making each enemy tougher and more damaging.
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
 
 # Harvester pressure rises during a prolonged opening boss fight on the
@@ -881,7 +888,7 @@ func _update_enemies() -> void:
 			if (jammer_left > 0.0 or emp_left > 0.0) and not boss_overload:
 				enemy.fire = 0.5
 				continue
-			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / threat_scale()
+			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / enemy_cadence_scale()
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
