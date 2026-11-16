@@ -706,7 +706,7 @@ func _spawn_boss() -> void:
 	_log("BOSS WARNING - %s attack sequence" % boss_attack_pattern.to_upper())
 	# Hard/Insane are progression difficulties. World 1's boss asks for a
 	# stronger build; this costs players time and defense, not bonus XP.
-	var opener_boss_scale := 1.50 if difficulty == "hard" else (1.60 if difficulty == "insane" else 1.0)
+	var opener_boss_scale := 2.40 if difficulty == "hard" else (2.80 if difficulty == "insane" else 1.0)
 	if stage != 1:
 		opener_boss_scale = 1.0
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
@@ -823,9 +823,9 @@ func _update_enemies() -> void:
 			if stage == 1 and time - stage_start >= 110.0:
 				damage *= 1.20
 				if difficulty == "hard":
-					damage *= 1.15
-				elif difficulty == "insane":
 					damage *= 1.30
+				elif difficulty == "insane":
+					damage *= 1.50
 			var beam_count := 2 if kind == "boss4" and _alive_modules("pylon") > 0 else 1
 			for beam in range(beam_count):
 				var pattern_shift := 0.0
@@ -855,9 +855,9 @@ func _update_enemies() -> void:
 			# Extra enemy kills would grant XP and weaken this pressure curve.
 			if stage == 1 and time - stage_start >= 65.0 and not kind.begins_with("boss"):
 				if difficulty == "hard":
-					enemy.fire *= 0.78
+					enemy.fire *= 0.65
 				elif difficulty == "insane":
-					enemy.fire *= 0.68
+					enemy.fire *= 0.55
 			if stage == 1 and time - stage_start >= 110.0:
 				if kind == "boss":
 					if time - boss_spawn_time >= 18.0:
