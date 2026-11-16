@@ -109,5 +109,9 @@ if test:
     c=json.loads(path.read_text())
     c.update({"enabled":True,"app_id":app_id,"banner_unit_id":banner_id,"test_mode":True})
     path.write_text(json.dumps(c,indent=2)+"\n")
+native_source = root / "scripts/admob_native_runtime.gd.txt"
+if not native_source.is_file():
+    raise SystemExit("Missing reviewed native Star/Run ads runtime template")
+(root / "scripts/admob_native_runtime.gd").write_text(native_source.read_text())
 print("Enabled signed iOS export plugin",plugin_name,"with",("test" if test else "live"),"configuration")
 PY
