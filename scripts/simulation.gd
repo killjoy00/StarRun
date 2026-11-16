@@ -248,6 +248,7 @@ func step() -> void:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4 * stage_damage_scale() * enemy_damage_multiplier() * stage_risk * stage_defense
+		corrosion_damage *= status_damage_multiplier()
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
 		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
@@ -309,9 +310,19 @@ func threat_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
 
 func enemy_cadence_scale() -> float:
-	# Keep the existing enemy arrival and regular fire cadence, especially
-	# on Insane, while making each enemy tougher and more damaging.
+	# Preserve previous spawn frequency so tougher Insane enemies cannot be
+	# farmed for additional XP. Carrier launches keep this rate as well.
 	return {"normal": 1.0, "hard": 1.25, "insane": 1.6}[difficulty]
+
+func enemy_fire_scale() -> float:
+	# Insane fires 25% more ordinary projectiles than before (2.0 vs 1.6),
+	# without increasing the number of XP-bearing enemies.
+	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
+
+func boss_projectile_rate_multiplier() -> float:
+	# Increase the frequency of boss projectile fans on Insane, not the
+	# separately telegraphed heavy beams or timed minion launch cycles.
+	return 1.25 if difficulty == "insane" else 1.0
 
 # Harvester pressure rises during a prolonged opening boss fight on the
 # progression difficulties. It is independent of Hangar state, does not
@@ -413,6 +424,11 @@ func enemy_damage_multiplier() -> float:
 
 func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -> float:
 	return int(upgrades.get(id, 0)) * per_rank + (at_five if rank_at(id, 5) else 0.0) + (at_ten if rank_at(id, 10) else 0.0)
+
+func status_damage_multiplier() -> float:
+	# Insulation now resists damaging status attacks as well as reducing
+	# their duration. Rank 5: 7% resisted; rank 10: 15% resisted.
+	return 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
 
 func status_duration_scale() -> float:
 	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
@@ -888,7 +904,13 @@ func _update_enemies() -> void:
 			if (jammer_left > 0.0 or emp_left > 0.0) and not boss_overload:
 				enemy.fire = 0.5
 				continue
-			enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) if kind.begins_with("boss") else float(content.enemies[kind].interval) / enemy_cadence_scale()
+			if kind.begins_with("boss"):
+				enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) / boss_projectile_rate_multiplier()
+			else:
+				# Carrier attacks also launch minions; do not accelerate their
+				# launch cycle and accidentally create more XP on Insane.
+				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
+				enemy.fire = float(content.enemies[kind].interval) / attack_scale
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
@@ -1122,7 +1144,7 @@ func weapon_power() -> float:
 	# It only rewards shields above half capacity during Worlds 2-4.
 	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
 		power *= 1.15
-	if hull < max_hull * 0.40:
+	if hull < max_hull * 0.60:
 		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
 	if shield > max_shield * 0.75:
 		power *= 1.0 + passive_bonus("shield_focus", 0.025, 0.10, 0.15)
@@ -1314,7 +1336,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
-		if is_equal_approx(float(enemy.hp), float(enemy.max_hp)):
+		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
 			amount *= 1.0 + passive_bonus("opening_salvo", 0.04, 0.15, 0.25)
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
@@ -1383,6 +1405,8 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	var reduced := amount * stage_risk * stage_defense
 	# Haven's support chassis resists damaging status rounds, which dominate
 	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
+	if kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
+		reduced *= status_damage_multiplier()
 	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):

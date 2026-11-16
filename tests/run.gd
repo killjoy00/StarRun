@@ -594,7 +594,29 @@ func _test_stage_difficulty_and_pressure() -> void:
 	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
 	check(is_equal_approx(insane.threat_scale(), 2.0) and is_equal_approx(hard.threat_scale(), 1.25), "Insane enemy HP and shot strength rise 25% over the previous 1.6 scale")
 	check(is_equal_approx(insane.enemy_cadence_scale(), 1.6) and is_equal_approx(hard.enemy_cadence_scale(), 1.25), "Extra Insane toughness must not increase spawns or XP-granting kills")
+	check(is_equal_approx(insane.enemy_fire_scale(), 2.0) and is_equal_approx(hard.enemy_fire_scale(), 1.25), "Insane regular shot frequency rises 25% while spawn density remains unchanged")
+	check(is_equal_approx(insane.boss_projectile_rate_multiplier(), 1.25) and is_equal_approx(hard.boss_projectile_rate_multiplier(), 1.0), "Insane boss projectile fans fire 25% faster without increasing boss spawn or beam cadence")
 	check(is_equal_approx(insane.enemies[0].max_hp / hard.enemies[0].max_hp, 1.6), "Insane regular enemies have 60% more HP than Hard for the same equipment")
+	for shooter in [hard, insane]:
+		shooter.enemies[0].fire = 0.0
+		shooter._update_enemies()
+	check(is_equal_approx(float(hard.enemies[0].fire) / float(insane.enemies[0].fire), 1.6), "Insane drone fires 60% more often than Hard at matched world and seed")
+	var hard_carrier := Sim.new(8090, {}, "vanguard", "rookie", "hard")
+	var insane_carrier := Sim.new(8090, {}, "vanguard", "rookie", "insane")
+	for pilot in [hard_carrier, insane_carrier]:
+		pilot.stage = 2
+		pilot._add_enemy("carrier", Vector2(250, 100))
+		pilot.enemies[0].fire = 0.0
+		pilot._update_enemies()
+	check(is_equal_approx(float(hard_carrier.enemies[0].fire) / float(insane_carrier.enemies[0].fire), 1.6 / 1.25), "Carrier minion launch rate stays at its old Insane cadence even as other enemies fire faster")
+	var hard_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "hard")
+	var insane_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "insane")
+	for pilot in [hard_boss_volley, insane_boss_volley]:
+		pilot._spawn_boss()
+		pilot.enemies[0].fire = 0.0
+		pilot._update_enemies()
+	check(is_equal_approx(float(hard_boss_volley.enemies[0].fire) / float(insane_boss_volley.enemies[0].fire), 1.25), "Insane boss fires projectile volleys 25% faster, without changing heavy beam scheduling")
+	check(is_equal_approx(hard_boss_volley.heavy_ready_at, insane_boss_volley.heavy_ready_at), "Insane additional projectiles preserve the existing heavy-beam warning interval")
 	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
 	check(normal.content.stage_count == 4 and normal.content.abilities.aegis.cooldown >= 14, "Four stages and slower Aegis must be configured")
 	var sim := Sim.new(777)
@@ -1326,7 +1348,12 @@ func _test_long_runs() -> void:
 	sim.upgrades.opening_salvo = 10
 	sim._damage_enemy(target, 100, "pulse")
 	sim._damage_enemy(target, 100, "pulse")
-	check(is_equal_approx(target.hp, 720.0), "First strike applies only to the opening hit")
+	check(is_equal_approx(target.hp, 640.0), "First strike now boosts all hits while the enemy remains above 75% health")
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 540.0), "First strike stops boosting damage after the target drops below 75% health")
+	target.hp = 750.0
+	sim._damage_enemy(target, 100, "pulse")
+	check(is_equal_approx(target.hp, 650.0), "First strike does not apply right at the 75% threshold")
 	sim = Sim.new()
 	sim.upgrades.ablative = 10
 	sim._hit(10, "heavy", "test")
@@ -1340,6 +1367,22 @@ func _test_long_runs() -> void:
 	sim.cooldowns.aegis = 8
 	sim._hit(1, "disrupt", "test")
 	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 2.5) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
+	check(is_equal_approx(sim.status_damage_multiplier(), 0.85), "Rank-10 Insulation blocks 15% of status attack damage")
+	for kind in ["ion", "heat", "gravity", "corrosion", "disrupt", "void"]:
+		var control := Sim.new(5720)
+		var insulated := Sim.new(5720)
+		insulated.upgrades.insulation = 10
+		control._hit(10.0, kind, "test")
+		insulated._hit(10.0, kind, "test")
+		check(is_equal_approx(float(insulated.damage_taken.get(kind,0.0)), float(control.damage_taken.get(kind,0.0)) * 0.85), "Insulation blocks status hit damage from " + kind)
+	var regular_corrosion := Sim.new(5721)
+	var reduced_corrosion := Sim.new(5721)
+	regular_corrosion.corrosion_left = 1.0
+	reduced_corrosion.corrosion_left = 1.0
+	reduced_corrosion.upgrades.insulation = 10
+	regular_corrosion.step()
+	reduced_corrosion.step()
+	check(regular_corrosion.damage_taken.corrosion > 0.0 and is_equal_approx(float(reduced_corrosion.damage_taken.corrosion), float(regular_corrosion.damage_taken.corrosion) * 0.85), "Insulation also blocks ongoing corrosion damage, not just the initial hit")
 	sim = Sim.new()
 	sim.upgrades.shield_surge = 10
 	sim.shield = 0
@@ -1356,8 +1399,12 @@ func _test_long_runs() -> void:
 	var base_power: float = sim.weapon_power()
 	sim.upgrades.last_stand = 10
 	check(is_equal_approx(sim.weapon_power(), base_power), "Last stand stays inactive at healthy hull")
-	sim.hull = sim.max_hull * 0.3
-	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 40% hull")
+	sim.hull = sim.max_hull * 0.60
+	check(is_equal_approx(sim.weapon_power(), base_power), "Last stand stays inactive exactly at 60% hull")
+	sim.hull = sim.max_hull * 0.55
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand boosts damage below 60% hull")
+	sim.hull = sim.max_hull * 0.30
+	check(is_equal_approx(sim.weapon_power(), base_power * 1.6), "Last stand retains its full low-hull bonus")
 	sim = Sim.new()
 	base_power = sim.weapon_power()
 	sim.stage = 2

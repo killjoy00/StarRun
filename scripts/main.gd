@@ -835,7 +835,7 @@ func _name_part(full: String, part: int) -> String:
 func _difficulty_text(id: String) -> String:
 	match id:
 		"hard": return "Enemies get 25% more health and damage, and fire and arrive faster. Cores ×1.75."
-		"insane": return "Enemies have twice the Normal health and attack damage, with faster attacks and spawns. Cores ×2.5."
+		"insane": return "2× Normal enemy health and damage. More enemy shots, not more spawns. Cores ×2.5."
 	return "Standard enemy strength. Cores ×1."
 
 func _multiplier_text(id: String) -> String:

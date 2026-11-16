@@ -578,10 +578,10 @@
       "id": "opening_salvo",
       "name": "First strike",
       "tag": "SYSTEM",
-      "description": "Automatic weapons hit undamaged enemies 4% harder per rank.",
+      "description": "Automatic weapons hit enemies above 75% health 4% harder per rank.",
       "max": 10,
-      "rank5": "Another 15% first-hit damage",
-      "rank10": "Another 25% first-hit damage",
+      "rank5": "Another 15% high-health damage",
+      "rank10": "Another 25% high-health damage",
       "min_stage": 2
     },
     {
@@ -598,10 +598,10 @@
       "id": "insulation",
       "name": "Insulation",
       "tag": "SYSTEM",
-      "description": "Ion, heat, gravity, corrosion and cooldown disruption last 3% less per rank.",
+      "description": "Status effects last 3% less per rank. Also resist ion, heat, gravity, corrosion, disrupt and void damage.",
       "max": 10,
-      "rank5": "Another 10% shorter disruption",
-      "rank10": "Another 10% shorter disruption",
+      "rank5": "Another 10% shorter statuses; 3% more status damage protection",
+      "rank10": "Another 10% shorter statuses; 4% more status damage protection",
       "min_stage": 2
     },
     {
@@ -628,7 +628,7 @@
       "id": "last_stand",
       "name": "Last stand",
       "tag": "SYSTEM",
-      "description": "Automatic weapons deal 3% more damage per rank below 40% hull.",
+      "description": "Automatic weapons deal 3% more damage per rank below 60% hull.",
       "max": 10,
       "rank5": "Another 10% low-hull damage",
       "rank10": "Another 20% low-hull damage",
