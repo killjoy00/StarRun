@@ -743,64 +743,64 @@
       "id": "bastion_lattice",
       "name": "Bastion Lattice",
       "role": "FORTRESS",
-      "description": "Shield regeneration +40%. Automatic weapon damage -12%.",
-      "benefit": "+40% shield regen",
+      "description": "Shield regeneration +85%. Automatic weapon damage -12%.",
+      "benefit": "+85% shield regen",
       "cost": "-12% weapon damage"
     },
     {
       "id": "volatile_core",
       "name": "Volatile Core",
       "role": "ASSAULT",
-      "description": "Automatic weapon damage +30%. Hull damage taken +25%.",
-      "benefit": "+30% weapon damage",
-      "cost": "+25% incoming hull damage"
+      "description": "Automatic weapon damage +55%. Hull damage taken +30%.",
+      "benefit": "+55% weapon damage",
+      "cost": "+30% incoming hull damage"
     },
     {
       "id": "null_harmonics",
       "name": "Null Harmonics",
       "role": "CONTROL",
-      "description": "Ability cooldowns -22%. Automatic weapon damage -12%.",
-      "benefit": "-22% ability cooldown",
+      "description": "Ability cooldowns -38%. Automatic weapon damage -12%.",
+      "benefit": "-38% ability cooldown",
       "cost": "-12% weapon damage"
     },
     {
       "id": "salvage_charter",
       "name": "Salvage Charter",
       "role": "SALVAGE",
-      "description": "Earn +35% cores from the run. Automatic weapon damage -15%.",
-      "benefit": "+35% total cores",
+      "description": "Earn +75% base run Cores. Automatic weapon damage -15%.",
+      "benefit": "+75% base run Cores",
       "cost": "-15% weapon damage"
     },
     {
       "id": "breach_optics",
       "name": "Breach Optics",
       "role": "BOSS HUNTER",
-      "description": "Deal +70% damage to boss components. Deal -10% damage to other targets.",
-      "benefit": "+70% damage to boss modules",
+      "description": "Deal +140% damage to boss components. Deal -10% damage to other targets.",
+      "benefit": "+140% damage to boss modules",
       "cost": "-10% other damage"
     },
     {
       "id": "mirror_cell",
       "name": "Mirror Cell",
       "role": "FORTRESS",
-      "description": "Shield maximum +30% immediately. Ability cooldowns +15%.",
-      "benefit": "+30% shield capacity",
+      "description": "Shield maximum +60% and fill the new capacity. Ability cooldowns +15%.",
+      "benefit": "+60% shield capacity",
       "cost": "+15% ability cooldown"
     },
     {
       "id": "echo_coil",
       "name": "Echo Coil",
       "role": "ASSAULT",
-      "description": "Active ability damage +40%. Ability cooldowns +18%.",
-      "benefit": "+40% active damage",
+      "description": "Active ability power +70%, including healing and duration. Ability cooldowns +18%.",
+      "benefit": "+70% ability power",
       "cost": "+18% cooldown"
     },
     {
       "id": "emergency_safeguard",
       "name": "Emergency Safeguard",
       "role": "DEFENSE",
-      "description": "First shield break each stage instantly restores 30 shield. Weapon damage -10%.",
-      "benefit": "30 shield on first break per stage",
+      "description": "First shield break each stage restores 80% shields and repairs 15 hull. Weapon damage -10%.",
+      "benefit": "80% shield + 15 hull on first break",
       "cost": "-10% weapon damage"
     }
   ],
