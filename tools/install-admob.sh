@@ -103,10 +103,20 @@ if native_entries < 20 or not (bin_root/"ads").is_dir():
 project=root/"project.godot"
 text=project.read_text()
 if '[editor_plugins]' in text:
-    # Other iOS plugins may already contribute editor plugin entries.
-    import re
-    tail = text[text.index('[editor_plugins]'):]
-    match = re.search(r'(?m)^enabled=PackedStringArray\\(([^\\n]*)\\)
+    # Retain the existing editor plugins (Game Center/Share).
+    tag = 'res://addons/admob/plugin.cfg'
+    root_index = text.index('[editor_plugins]')
+    before, section = text[:root_index], text[root_index:]
+    marker = 'enabled=PackedStringArray('
+    opening = section.index(marker) + len(marker)
+    closing = section.index(')', opening)
+    current = section[opening:closing].strip()
+    if tag not in current:
+        updated = current + (', ' if current else '') + '"' + tag + '"'
+        section = section[:opening] + updated + section[closing:]
+    text = before + section
+else:
+    text += '\n[editor_plugins]\n\nenabled=PackedStringArray("res://addons/admob/plugin.cfg")\n'
 text += '\n[admob]\n\ngeneral/ios/enabled=true\ngeneral/ios/app_id="%s"\n' % app_id
 project.write_text(text)
 
