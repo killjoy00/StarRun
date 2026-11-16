@@ -356,7 +356,10 @@ func _test_hangar_and_tactics() -> void:
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
 	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 68 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
-	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 30, "Existing purchases must retain their original full refund")
+	check(Catalog.legacy_refund({"hull":3, "damage":2, "regen":1}) == 30, "Historic Hangar costs are preserved")
+	check(Catalog.price("hull",0) == 6 and Catalog.price("lance_start",0) == 46, "Future Hangar ranks cost about 15% more")
+	check(Catalog.refund({"hull":3, "damage":2, "regen":1}, {"hull":15, "damage":10, "regen":5}) == 30, "Historical purchase receipts prevent inflated refunds")
+	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 36, "Newly bought ranks refund their full updated price")
 	var credits := 0
 	for entry in Catalog.HANGAR:
 		credits += Catalog.price(entry.id, 0)
@@ -788,13 +791,13 @@ func _test_prototype_and_route_choices() -> void:
 	check(sim.choose_prototype(0), "A valid Prototype must install")
 	check(not sim.choose_prototype(0) and not sim.advance_stage(), "Prototype choice is exactly once per stage")
 	check(sim.choose_route("repair") and sim.advance_stage(), "A safe repair route must advance to Stage 2")
-	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage without an attack bonus")
+	check(is_equal_approx(sim.stage_risk, 1.0) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_defense, 0.75) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded route must reduce incoming damage without an attack bonus")
 	var risk := Sim.new(889)
 	risk.stage = 2
 	risk._spawn_boss()
 	risk._damage_enemy(risk.enemies[0], 100000.0, "pulse")
 	check(risk.begin_intermission() and risk.choose_prototype(0) and risk.choose_route("bounty") and risk.advance_stage(), "Bounty route must advance after two choices")
-	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30), "Bounty route must multiply enemy pressure by 30%")
+	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30) and risk.pending_levels >= 2 and risk.hull >= risk.max_hull * 0.40, "Hunter route keeps risk while providing a bonus draft and repair")
 	var baseline := Sim.new(889)
 	baseline.stage = 3
 	risk._add_enemy("drone", Vector2(220, 80))
@@ -807,7 +810,7 @@ func _test_prototype_and_route_choices() -> void:
 	baseline_boss._spawn_boss()
 	check(risk.enemies[0].max_hp > baseline_boss.enemies[0].max_hp and risk.enemies[1].max_hp > baseline_boss.enemies[1].max_hp, "High-risk contracts must increase both boss core and module durability")
 	risk._damage_enemy(risk.enemies[0], 1000000.0, "pulse")
-	check(risk.bounty_earned == 60 and risk.bonus_cores >= 60, "Bounties must pay only when the risked next-stage boss is beaten")
+	check(risk.bounty_earned == 90 and risk.bonus_cores >= 90, "Bounties must pay only when the risked next-stage boss is beaten")
 	var clock := Sim.new(890)
 	clock.stage = 2
 	clock._spawn_boss()
@@ -864,7 +867,7 @@ func _test_route_prototype_balance_grid() -> void:
 					check(sim.choose_prototype(0) and sim.choose_route(route) and sim.advance_stage(), "Warp choices must advance to world %d on %s / %s / %s" % [world, difficulty, hangar_style, route])
 					check(sim.stage == world and sim.route_choice == route, "Selected route must persist into the intended world")
 					if route == "repair":
-						check(is_equal_approx(sim.stage_defense, 0.82) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must uniquely mitigate incoming damage")
+						check(is_equal_approx(sim.stage_defense, 0.75) and is_equal_approx(sim.stage_power, 1.0) and is_equal_approx(sim.stage_fire_rate, 1.0), "Shielded passage must uniquely mitigate incoming damage")
 					elif route == "overclock":
 						check(is_equal_approx(sim.stage_power, 1.35) and is_equal_approx(sim.stage_fire_rate, 1.20) and is_equal_approx(sim.stage_defense, 1.0), "Redline must uniquely favor attack output")
 					else:
@@ -874,6 +877,11 @@ func _test_route_prototype_balance_grid() -> void:
 					check(resumed.restore(saved) and is_equal_approx(resumed.stage_defense, sim.stage_defense) and is_equal_approx(resumed.stage_fire_rate, sim.stage_fire_rate), "Warp-specific mechanics must survive a checkpoint")
 					cases += 1
 	check(cases == 90, "Route grid must cover nine World 1 starting states and all 81 later-world route scenarios")
+	var hard_opener := Sim.new(117, {}, "vanguard", "rookie", "hard")
+	var insane_opener := Sim.new(117, {}, "vanguard", "rookie", "insane")
+	hard_opener._spawn_boss()
+	insane_opener._spawn_boss()
+	check(insane_opener.enemies[0].max_hp > hard_opener.enemies[0].max_hp, "Insane Harvester HP exceeds Hard at identical Hangar")
 
 	var base := Sim.new(556)
 	var volatile := Sim.new(556)
@@ -928,7 +936,7 @@ func _test_route_prototype_balance_grid() -> void:
 	xp_contract._add_enemy("drone", Vector2(220, 80))
 	xp_regular._damage_enemy(xp_regular.enemies[0], 10000.0, "pulse")
 	xp_contract._damage_enemy(xp_contract.enemies[0], 10000.0, "pulse")
-	check(xp_contract.xp > xp_regular.xp * 1.34, "Hunter contract must pay at least 35% extra XP on actual enemy kills")
+	check(xp_contract.xp > xp_regular.xp * 1.49, "Hunter contract must pay at least 50% extra XP on actual enemy kills")
 
 func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
@@ -1511,6 +1519,13 @@ func _test_contextual_active_balance() -> void:
 	far.shield = 10.0
 	far.bullets = [{"p":far.ship_position() + Vector2(0,-320), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
 	check(far.activate("flak") and far.bullets.is_empty() and is_equal_approx(far.shield,10.0), "Early Flak clears ordnance but earns no close-call shield")
+	var later_flak := Sim.new(5301)
+	later_flak.stage = 2
+	later_flak.active_slots = ["flak"]
+	later_flak.upgrades.flak = 1
+	later_flak.shield = 10.0
+	later_flak.bullets = [{"p":later_flak.ship_position() + Vector2(0,-60), "v":Vector2(0,120), "kind":"ordnance", "damage":12.0, "source":"test"}]
+	check(later_flak.activate("flak") and later_flak.shield >= 22.0, "Well-timed Flak protects later worlds more without easing World 1")
 	var jam := Sim.new(5302)
 	jam.active_slots = ["jammer"]
 	jam.upgrades.jammer = 1
@@ -1614,6 +1629,12 @@ func _test_late_world_ability_counters() -> void:
 	repaired.heat_left = 4.0
 	repaired.corrosion_left = 3.0
 	check(repaired.activate("mend") and repaired.heat_left == 0.0 and repaired.corrosion_left == 0.0 and repaired.mend_left > 0.0, "Repair drones purge World 2 corrosion and World 3 overheating on a deliberate cast")
+	var ion_repair := Sim.new(9316)
+	ion_repair.stage = 2
+	ion_repair.active_slots = ["mend"]
+	ion_repair.upgrades.mend = 1
+	ion_repair.shield_offline = 4.0
+	check(ion_repair.activate("mend") and ion_repair.shield_offline == 0.0, "Repair drones reboot ion-disabled shields from World 2 onward")
 
 	for kind in ["ion","corrosion","disrupt","heat","gravity","void"]:
 		var standard := Sim.new(9371)

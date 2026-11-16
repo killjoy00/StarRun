@@ -19,7 +19,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal"}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal"}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -103,6 +103,18 @@ func _ready() -> void:
 	var hangar := Catalog.defaults()
 	hangar.merge(profile.hangar, true)
 	profile.hangar = hangar
+	# Migrate existing ranks at their historical prices. Later purchases append
+	# their exact paid cost, keeping Refund All fair after the price increase.
+	var receipt: Variant = profile.get("hangar_paid", {})
+	var paid: Dictionary = receipt if receipt is Dictionary else {}
+	for entry in Catalog.HANGAR:
+		var id: String = str(entry.id)
+		if not paid.has(id):
+			var historical := 0
+			for rank in range(int(hangar.get(id, 0))):
+				historical += Catalog.legacy_price(id, rank)
+			paid[id] = historical
+	profile.hangar_paid = paid
 	# Repair old profiles without charging for starter choices.
 	if not profile.get("ships_owned", []) is Array:
 		profile.ships_owned = ["vanguard"]
@@ -1235,7 +1247,7 @@ func _show_hangar() -> void:
 	for entry in Catalog.HANGAR:
 		if entry.group == hangar_category:
 			_hangar_row(list, entry)
-	var refund_total := Catalog.refund(profile.hangar)
+	var refund_total := Catalog.refund(profile.hangar, profile.get("hangar_paid", {}))
 	if refund_total > 0:
 		var armed := confirm_key == "refund"
 		var refund := _ui_button(list, ("Tap again to refund %d cores" if armed else "Refund all upgrades  ·  %d cores") % refund_total, _refund_tap, "danger" if armed else "ghost", 44)
@@ -1814,9 +1826,9 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Defensive", "gain": "Repair 55% hull, refill shields, take 18% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
+		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 25% less damage next world.", "cost": "No extra weapon damage, XP or bounty.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Growth", "gain": "+35%% kill XP, +%d base Cores if the next boss falls; repair 30%% hull." % (20 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
+		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade pick, +50%% kill XP, +%d boss Cores; repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
@@ -2245,13 +2257,17 @@ func _purchase(id: String) -> void:
 	if profile.cores >= price and rank < int(entry.max):
 		profile.cores -= price
 		profile.hangar[id] = rank + 1
+		var paid: Dictionary = profile.get("hangar_paid", {})
+		paid[id] = int(paid.get(id, 0)) + price
+		profile.hangar_paid = paid
 		_save_profile()
 		sound.play("card")
 		_show_hangar()
 
 func _respec() -> void:
-	profile.cores += Catalog.refund(profile.hangar)
+	profile.cores += Catalog.refund(profile.hangar, profile.get("hangar_paid", {}))
 	profile.hangar = Catalog.defaults()
+	profile.hangar_paid = {}
 	_save_profile()
 	_show_hangar()
 

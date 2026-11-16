@@ -77,15 +77,31 @@ static func entry(id: String) -> Dictionary:
 			return item
 	return {}
 
-static func price(id: String, rank: int) -> int:
+# Future ranks cost more; historical purchases keep their actual receipts.
+static func legacy_price(id: String, rank: int) -> int:
 	var item := entry(id)
 	return int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
 
-static func refund(hangar: Dictionary) -> int:
+static func price(id: String, rank: int) -> int:
+	var base := legacy_price(id, rank)
+	return ceili(float(base) * 1.15) if base > 0 else 0
+
+static func legacy_refund(hangar: Dictionary) -> int:
 	var total := 0
 	for item in HANGAR:
 		for rank in range(int(hangar.get(item.id, 0))):
-			total += price(item.id, rank)
+			total += legacy_price(item.id, rank)
+	return total
+
+static func refund(hangar: Dictionary, paid: Dictionary = {}) -> int:
+	var total := 0
+	for item in HANGAR:
+		var id: String = str(item.id)
+		if paid.has(id):
+			total += int(paid[id])
+		else:
+			for rank in range(int(hangar.get(id, 0))):
+				total += price(id, rank)
 	return total
 
 static func pilot(id: String) -> Dictionary:

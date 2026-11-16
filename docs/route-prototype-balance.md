@@ -6,11 +6,11 @@ The intermission should offer three genuinely different plans for the **next wor
 
 | Route | What changes for that world | Risk or opportunity cost |
 | --- | --- | --- |
-| Shielded passage (`repair`) | +55% max-hull repair; full starting shields; **18% less incoming damage** from all attack/status-damage sources | No attack, XP or Core bonus |
+| Shielded passage (`repair`) | +70% max-hull repair; full starting shields; **25% less incoming damage** from all attack/status-damage sources | No attack, XP or Core bonus |
 | Redline assault (`overclock`) | **+35% automatic weapon damage**, **+20% automatic fire rate** | +10% max-hull repair; start on 50% shields; **20% more hull damage received** |
-| Hunter contract (`bounty`) | **+35% kill XP**; +20 × next-world number base Cores if next boss dies; +30% max-hull repair | **30% more** enemy health, enemy attack damage and spawn pressure |
+| Hunter contract (`bounty`) | **One bonus upgrade pick** on warp; **+50% kill XP**; +30 × next-world number base Cores if next boss dies; +40% max-hull repair | **30% more** enemy health, enemy attack damage and spawn pressure |
 
-These route changes are checkpointed; bonuses reset at the next intermission. Hunter XP applies to actual defeated enemies, not automatically to every time step. The boss contract is awarded only once, on defeating the next boss. World 1 always uses neutral route effects.
+These route changes are checkpointed; bonuses reset at the next intermission. Hunter's bonus draft is actually offered at the next world start; its XP applies to real enemy kills, not automatically to every time step. The boss contract is awarded only once, on defeating the next boss. World 1 always uses neutral route effects.
 
 ### Prototype changes
 
@@ -46,3 +46,9 @@ The intended opening pressure is severe: **a player with no permanent Hangar upg
 - Two deterministic seeds are **screening, not statistical win-rate estimates**. The bot's draft policy, shield timing and RNG are not equivalent to human players. Treat any 0/2 or 2/2 cell as a follow-up signal, never a human success-rate estimate.
 
 Do not tune an entire difficulty based solely on a 2-seed difference. Investigate any observed unexpected result with the existing 3-seed `campaign-research.yml` fixtures or more matched seeds first. No automatic promotion to TestFlight is part of this balance experiment.
+
+## 2026-11-16 buff-first balance changes
+
+Redline (+35% damage / +20% fire rate) and its existing risks are **unchanged**. Shielded Passage has a larger defensive and warp-repair payoff. Hunter Contract grants an extra actual draft pick each warp, more kill XP, higher boss Core rewards and more repair while retaining its 30% enemy threat cost. World 2+ defensive actives also improve: Mend clears shield suppression and precisely timed Flak returns 12 shield instead of 8. Normal World 1 and unupgraded Hard/Insane World 1 abilities stay unchanged.
+
+The Insane Harvester HP factor increases from 5.0 to 5.5 so its HP exceeds Hard at matched equipment. Hangar's future purchase prices rise about 15%; existing ranks keep their exact historical refund value through a migrated purchase-receipt ledger. These adjustments need expanded and regular CI validation before merging.

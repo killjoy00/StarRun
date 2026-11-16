@@ -722,7 +722,7 @@ func _spawn_boss() -> void:
 	var opener_boss_scale := 1.0
 	if difficulty in ["hard", "insane"]:
 		if stage == 1:
-			opener_boss_scale = 6.5 if difficulty == "hard" else 5.0
+			opener_boss_scale = 6.5 if difficulty == "hard" else 5.5
 		elif stage == 2:
 			opener_boss_scale = 2.5
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale
@@ -770,16 +770,16 @@ func advance_stage() -> bool:
 	effects.clear()
 	stage_power = 1.35 if route_choice == "overclock" else 1.0
 	stage_risk = 1.30 if route_choice == "bounty" else 1.0
-	stage_defense = 0.82 if route_choice == "repair" else 1.0
+	stage_defense = 0.75 if route_choice == "repair" else 1.0
 	stage_fire_rate = 1.20 if route_choice == "overclock" else 1.0
-	var repair_fraction := 0.55 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.30)
+	var repair_fraction := 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40)
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
 	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
-	pending_levels += 1
+	pending_levels += 1 + (1 if route_choice == "bounty" else 0)
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	return true
 
@@ -1319,7 +1319,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var before := charges.size()
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.35 if route_choice == "bounty" else 1.0)
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -1331,7 +1331,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if hull > max_hull * 0.60:
 			bonus_cores += int(meta.clean_clear) * 3
 		if stage_risk > 1.0:
-			var reward: int = 20 * stage
+			var reward: int = 30 * stage
 			bonus_cores += reward
 			bounty_earned += reward
 			_log("Bounty contract complete - +%d base cores" % reward)
@@ -1471,6 +1471,10 @@ func activate(ability: String) -> bool:
 			corrosion_left = 0.0
 			heat_left = 0.0
 			_log("Repair drones purged corrosion and overheating")
+		# Later-world Mend can also reboot suppressed shields.
+		if stage >= 2 and shield_offline > 0.0:
+			shield_offline = 0.0
+			_log("Repair drones restarted suppressed shields")
 		if upgrades.mend >= 5:
 			shield = minf(max_shield, shield + 15)
 	elif ability == "flak":
@@ -1484,7 +1488,7 @@ func activate(ability: String) -> bool:
 		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
 		prevented += stopped * 12.0
 		if stopped > 0 and close_call:
-			shield = minf(max_shield, shield + 8.0 * effect_strength)
+			shield = minf(max_shield, shield + (12.0 if stage >= 2 else 8.0) * effect_strength)
 			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
 			_log("Flak close-call intercept - shield restored")
 		for enemy in enemies:
