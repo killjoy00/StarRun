@@ -35,6 +35,13 @@ var artifact_id := "standard"
 var mutations: Array = []
 var sentry_left := 0.0
 var sentry_timer := 0.0
+# Combat skill identities. Rookie/Vale deliberately remains the generic pilot.
+var ace_chain := 0
+var ace_chain_left := 0.0
+var hunter_target_id := -1
+var hunter_mark_left := 0.0
+var hunter_mark_cooldown := 0.0
+var tactician_counter_used := false
 var next_hazard := 20.0
 var tick := 0
 var time := 0.0
@@ -142,7 +149,9 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	artifact_id = selected_artifact if not Catalog.artifact(selected_artifact).is_empty() and str(Catalog.artifact(selected_artifact).id) == selected_artifact else "standard"
 	seed_value = run_seed
 	rng.seed = run_seed
-	next_encounter_at = 55.0 + float(run_seed % 23)
+	# Normal World 1 needs an actual encounter inside the first fifteen seconds.
+	# Advanced modes retain their deliberately different progression gates.
+	next_encounter_at = (12.0 + float(run_seed % 5)) if difficulty == "normal" else (55.0 + float(run_seed % 23))
 	_build_course()
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
@@ -261,6 +270,11 @@ func step() -> void:
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
+	ace_chain_left = maxf(0.0, ace_chain_left - DT)
+	if ace_chain_left <= 0.0:
+		ace_chain = 0
+	hunter_mark_left = maxf(0.0, hunter_mark_left - DT)
+	hunter_mark_cooldown = maxf(0.0, hunter_mark_cooldown - DT)
 	for timer in ["aftercast_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left"]:
 		set(timer, maxf(0.0, float(get(timer)) - DT))
 	if corrosion_left > 0.0:
@@ -305,14 +319,17 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		# Do not raise late World 1 spawns: extra automatic kills give free XP.
+		# A busier first impression is not a free XP fountain: Normal W1
+		# spawn cadence rises while its per-enemy XP drops proportionally.
+		if stage == 1 and difficulty == "normal":
+			pace *= 0.78
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
 	if time >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
-		next_encounter_at = time + 66.0 + float((seed_value + encounter_index * 11) % 23)
+		next_encounter_at = time + (35.0 + float((seed_value + encounter_index * 11) % 9) if stage == 1 and difficulty == "normal" else 66.0 + float((seed_value + encounter_index * 11) % 23))
 	_update_enemies()
 	_update_charges()
 	_update_support()
@@ -379,6 +396,10 @@ func shooter_health_pressure(kind: String) -> float:
 	return {"normal":1.15, "hard":1.20, "insane":1.25}[difficulty]
 
 func shooter_first_fire_window(kind: String) -> Vector2:
+	# W1 previously contained many 17-HP targets erased before their first
+	# volley. Shorten the initial tell only in Normal's early encounter ecology.
+	if stage == 1 and difficulty == "normal":
+		return Vector2(0.60, 1.20) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(0.85, 1.35)
 	# A surviving shooter should get a chance to reveal its projectile
 	# pattern before the auto-weapons erase it. A shorter *first* timer
 	# does not accelerate the ongoing fire interval or increase XP.
@@ -844,7 +865,7 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.78)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
@@ -861,6 +882,9 @@ func _elite_leader_active(wing: Dictionary) -> bool:
 
 func _spawn_encounter() -> void:
 	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
+		return
+	if stage == 1 and difficulty == "normal":
+		_spawn_world1_strike_wing()
 		return
 	var ecology := ((stage - 1) % int(content.stage_count)) + 1
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
@@ -890,6 +914,32 @@ func _spawn_encounter() -> void:
 		_log("ELITE FORMATION - destroy the marked leader to disrupt escorts")
 	else:
 		encounter_queue = formation.duplicate()
+
+func _spawn_world1_strike_wing() -> void:
+	# Three enemies ARRIVE TOGETHER instead of in widely separated singles.
+	# Advance the next ordinary spawn by three slots: no three extra XP-bearing
+	# kills on top of the regular wave schedule, no change to Hard/Insane.
+	var elapsed: float = time - stage_start
+	var pattern: int = (seed_value + encounter_index * 5) % 3
+	var formation: Array = ["gunship", "drone", "interceptor"]
+	if elapsed >= 48.0:
+		match pattern:
+			0: formation = ["shieldguard", "interceptor", "gunship"]
+			1: formation = ["missile_bomber", "drone", "rusher"]
+			2: formation = ["sniper", "gunship", "interceptor"]
+	encounter_index += 1
+	for index in range(3):
+		_add_enemy(str(formation[index]), Vector2(100.0 + index * 165.0, 38.0 - index * 16.0))
+		var member: Dictionary = enemies[-1]
+		member["strike_wing"] = true
+		# Only the grouped attackers gain a modest window to reveal their
+		# patterns before automatic fire clears the formation.
+		member.max_hp *= 1.20
+		member.hp = member.max_hp
+		member.fire = 0.72 + index * 0.16
+	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.78
+	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+	_log("STRIKE WING - coordinated enemy attack")
 
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
@@ -957,6 +1007,12 @@ func advance_stage() -> bool:
 		upgrades.lance = before[2]
 		_log("ARSENAL SHIFT - automatic weapon ranks rotated")
 	stage_casts.clear()
+	tactician_counter_used = false
+	ace_chain = 0
+	ace_chain_left = 0.0
+	hunter_target_id = -1
+	hunter_mark_left = 0.0
+	hunter_mark_cooldown = 0.0
 	banishes_left += int(meta.banish_relay)
 	escort_left = 0.0
 	escort_timer = 0.0
@@ -1222,6 +1278,27 @@ func _deploy_ion_mines(count: int, damage: float, radius: float) -> void:
 func _update_support() -> void:
 	if artifact_id == "drone_armada" and escort_left <= 0.0:
 		_launch_escorts(3, 9999.0, 10.0)
+	# Hunter selects a REAL high-priority enemy. The same mark drives
+	# auto-targeting, damage, and visible ring cues; no manual aiming.
+	if pilot_id == "hunter":
+		if hunter_mark_left <= 0.0:
+			hunter_target_id = -1
+		if hunter_target_id >= 0 and not enemies.any(func(e): return int(e.id) == hunter_target_id and float(e.hp) > 0.0):
+			hunter_target_id = -1
+			hunter_mark_left = 0.0
+		if hunter_target_id < 0 and hunter_mark_cooldown <= 0.0:
+			var priority: Dictionary = {}
+			for candidate in enemies:
+				if float(candidate.hp) <= 0.0 or candidate.p.y < -5.0 or candidate.kind == "boulder":
+					continue
+				if candidate.kind in ["sniper","missile_bomber","shieldguard","carrier","ion_frigate","storm_weaver","slag_bomber","void_lancer","boss_module","boss","boss2","boss3","boss4"] or str(candidate.get("elite_role","")) == "leader":
+					priority = candidate
+					break
+			if not priority.is_empty():
+				hunter_target_id = int(priority.id)
+				hunter_mark_left = 14.0
+				hunter_mark_cooldown = 18.0
+				_log("HUNTER LOCK - priority threat designated")
 	if sentry_left > 0.0:
 		sentry_left = maxf(0.0, sentry_left - DT)
 		sentry_timer -= DT
@@ -1436,6 +1513,8 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 			var d: float = origin.distance_squared_to(enemy.p)
 			if enemy.kind == "boss_module":
 				d *= 0.22
+			elif pilot_id == "hunter" and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
+				d *= 0.14
 			elif str(enemy.get("elite_role", "")) == "leader":
 				# The player controls abilities, not aim. Give a readable
 				# elite counterplay objective a moderate auto-target bias.
@@ -1579,6 +1658,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
 			amount *= 1.0 + passive_bonus("opening_salvo", 0.04, 0.15, 0.25)
+	if pilot_id == "hunter" and hunter_mark_left > 0.0 and int(enemy.id) == hunter_target_id and weapon in ["pulse", "seeker", "arc", "lance"]:
+		amount *= 1.15
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
 	if enemy.kind == "boss_module":
@@ -1601,6 +1682,32 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp > 0:
 		return
 	kills += 1
+	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
+	# from the destruction point. The shots cannot trigger the combo again.
+	if pilot_id == "ace" and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
+		ace_chain = ace_chain + 1 if ace_chain_left > 0.0 else 1
+		ace_chain_left = 6.0
+		if ace_chain >= 3:
+			ace_chain = 0
+			ace_chain_left = 0.0
+			var strikes := 0
+			for nearby in enemies:
+				if strikes >= 2:
+					break
+				if float(nearby.hp) > 0.0 and int(nearby.id) != int(enemy.id) and enemy.p.distance_squared_to(nearby.p) <= 370.0 * 370.0:
+					effects.append({"kind":"lance", "p":enemy.p, "to":nearby.p, "life":0.45, "max_life":0.45, "born":tick})
+					_damage_enemy(nearby, 14.0 * weapon_power(), "precision")
+					strikes += 1
+			if strikes > 0:
+				_log("PRECISION CROSSFIRE - Ace volley")
+	# Hunter's hunted target pays off with an immediate shield recovery and
+	# frees the lock for the next threat; the next mark is not instantaneous.
+	if pilot_id == "hunter" and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
+		shield = minf(max_shield, shield + 10.0)
+		hunter_target_id = -1
+		hunter_mark_left = 0.0
+		hunter_mark_cooldown = minf(hunter_mark_cooldown, 2.5)
+		_log("HUNT COMPLETE - shields restored")
 	# The Salvager turns collected wreckage into a physical shockwave every
 	# twelve real kills. Chained wreckage damage does not trigger itself.
 	if weapon == "arc" and _has_mutation("arc_reactor"):
@@ -1794,6 +1901,32 @@ func activate(ability: String) -> bool:
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
 	_log(str(content.abilities[ability].name) + " used")
+	# The Tactician gets one earned counterbattery per world. An ability used
+	# on an empty screen earns nothing: time it into real incoming danger.
+	if pilot_id == "tactician" and not tactician_counter_used:
+		var imminent: bool = charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.8)
+		for bullet in bullets:
+			if (bullet.p + bullet.v * 0.35).distance_squared_to(ship_position(time + 0.35)) < 110.0 * 110.0:
+				imminent = true
+				break
+		if imminent:
+			tactician_counter_used = true
+			var kept: Array = []
+			var suppressed := 0
+			for bullet in bullets:
+				if suppressed < 3 and bullet.p.distance_squared_to(ship_position()) <= 155.0 * 155.0:
+					prevented += float(bullet.get("damage", 0.0))
+					suppressed += 1
+				else:
+					kept.append(bullet)
+			bullets = kept
+			for slot in active_slots:
+				if cooldowns.has(slot) and float(cooldowns[slot]) > 0.0:
+					cooldowns[slot] *= 0.82
+					if slot == ability:
+						cooldown_totals[slot] = cooldowns[slot]
+			effects.append({"kind":"ion-burst", "p":ship_position(), "radius":150.0, "life":0.6, "max_life":0.6, "born":tick})
+			_log("TACTICAL COUNTERBATTERY - %d threats suppressed" % suppressed)
 	if not fusion_spec(ability).is_empty():
 		_activate_fusion(ability, effect_strength)
 		return true
@@ -2264,7 +2397,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

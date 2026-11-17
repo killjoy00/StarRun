@@ -53,6 +53,7 @@ func _run() -> void:
 	_test_elite_squad_counterplay()
 	_test_ship_pilot_identity_tuning()
 	_test_roguelike_variation()
+	_test_world1_density_and_pilot_identities()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -224,6 +225,64 @@ func _test_ship_pilot_identity_tuning() -> void:
 	var resumed := Sim.new(88236)
 	check(resumed.restore(engineer.snapshot()) and resumed.snapshot() == engineer.snapshot(), "Engineer shield-powered combat does not need a new save schema")
 
+
+func _test_world1_density_and_pilot_identities() -> void:
+	# First impressions: simultaneous visible threats rather than a late
+	# stream of isolated targets that autopilot clears before they shoot.
+	var normal := Sim.new(8150, {}, "vanguard", "rookie", "normal")
+	var hard := Sim.new(8150, {}, "vanguard", "rookie", "hard")
+	var old_hard_schedule: float = 55.0 + float(8150 % 23)
+	check(normal.next_encounter_at <= 17.0 and is_equal_approx(hard.next_encounter_at, old_hard_schedule), "World 1 Normal opens with a real wing inside 17 seconds without changing Hard's gate")
+	normal.time = normal.next_encounter_at
+	normal._spawn_encounter()
+	check(normal.enemies.size() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
+	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
+	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 does not grant free XP for every extra enemy")
+	check(normal.next_spawn > normal.time + 3.0, "Strike wing spends future spawn slots instead of stacking extra kills")
+	hard.time = hard.next_encounter_at
+	hard._spawn_encounter()
+	check(hard.enemies.is_empty() and hard.encounter_queue.size() == 3, "Hard/Insane retain their original staggered formations")
+	var generic := Sim.new(4210, {}, "vanguard", "rookie")
+	check(generic.ace_chain == 0 and generic.hunter_target_id == -1 and not generic.tactician_counter_used, "Vale is the no-frills pilot")
+	var ace := Sim.new(4211, {}, "wraith", "ace")
+	ace.stage = 2
+	for j in range(4):
+		ace._add_enemy("drone", Vector2(200.0 + j * 19.0, 330))
+	for i in range(3):
+		ace._damage_enemy(ace.enemies[i], 1000.0, "seeker")
+	check(ace.events.any(func(e): return "PRECISION CROSSFIRE" in str(e.message)), "Ace chains three fast automatic-weapon kills even without Pulse")
+	check(ace.enemies[3].hp < ace.enemies[3].max_hp, "Ace's precision volley deals real damage to a nearby threat")
+	var interrupted := Sim.new(4212, {}, "vanguard", "ace")
+	interrupted.ace_chain = 2
+	interrupted.ace_chain_left = 0.0
+	interrupted.step()
+	check(interrupted.ace_chain == 0, "Ace's kill streak expires without rapid consecutive kills")
+	var hunter := Sim.new(4213, {}, "vanguard", "hunter")
+	hunter._add_enemy("gunship", Vector2(250, 180))
+	hunter._update_support()
+	check(hunter.hunter_target_id == hunter.enemies[0].id, "Hunter designates actual visible threats")
+	var enemy: Dictionary = hunter.enemies[0]
+	var first: float = enemy.hp
+	hunter._damage_enemy(enemy, 12.0, "pulse")
+	check(enemy.hp <= first - 13.0, "Hunter automatically deals extra damage to the marked target")
+	hunter.shield = 0.0
+	hunter._damage_enemy(enemy, 1000.0, "seeker")
+	check(hunter.shield >= 10.0 and hunter.hunter_target_id == -1, "Hunter's target elimination restores shields and releases the mark")
+	var nyx := Sim.new(4214, {}, "vanguard", "tactician")
+	check(nyx.activate("aegis") and not nyx.tactician_counter_used, "Tactician cannot earn its one-time counterbattery by blind casting")
+	var counter := Sim.new(4215, {}, "vanguard", "tactician")
+	counter.charges.append({"source":777,"x":250.0,"remaining":0.5,"duration":1.8,"damage":23.0})
+	check(counter.activate("aegis") and counter.tactician_counter_used and counter.events.any(func(e): return "TACTICAL COUNTERBATTERY" in str(e.message)), "A timed ability against a real warning triggers the one-world counterbattery")
+	var saved: Dictionary = counter.snapshot()
+	var restore := Sim.new()
+	check(restore.restore(saved) and restore.snapshot() == saved, "New pilot states survive exact checkpoint restore")
+	counter.stage_transition_queued = true
+	counter.stage_clears = 1
+	check(counter.begin_intermission() and counter.skip_prototype() and counter.choose_route("repair") and counter.advance_stage() and not counter.tactician_counter_used, "Tactician gets a fresh counterbattery only after a successful warp")
+	var old := generic.snapshot()
+	for key in ["ace_chain","ace_chain_left","hunter_target_id","hunter_mark_left","hunter_mark_cooldown","tactician_counter_used"]:
+		old.erase(key)
+	check(Sim.new().restore(old), "Historical 1.3 saves remain compatible with new optional pilot fields")
 
 func _test_roguelike_variation() -> void:
 	var standard := Sim.new(444)

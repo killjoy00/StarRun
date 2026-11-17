@@ -21,11 +21,11 @@ const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "
 # These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
 const PILOTS := [
 	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"Balanced training. No special bonus.", "trait":"STANDARD ISSUE"},
-	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage and stronger forward tracking.", "trait":"PRECISION"},
+	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage, stronger tracking, and a precision crossfire volley after three rapid weapon kills.", "trait":"PRECISION"},
 	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield, regeneration and shield-based weapon power. A temporary sentry activates when your shield breaks.", "trait":"FIELD REPAIR"},
-	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% seeker damage and faster lock-on.", "trait":"MISSILE EXPERT"},
+	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% Seeker damage, faster lock-on, and a marked priority target that your auto-weapons pursue.", "trait":"MISSILE EXPERT"},
 	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP, +15% Cores, and a damaging scrap shockwave every 12 defeated enemies.", "trait":"COLLECTOR"},
-	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one extra reroll per flight.", "trait":"BATTLE PLAN"}
+	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter cooldowns, one extra reroll, and a once-per-world counterbattery when an ability is timed against incoming fire.", "trait":"BATTLE PLAN"}
 ]
 const SHIPS := [
 	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
