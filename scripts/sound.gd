@@ -15,6 +15,7 @@ var sounds: Dictionary = {}
 var cruise: AudioStreamPlayer
 var boss: AudioStreamPlayer
 var engine: AudioStreamPlayer
+var archive: AudioStreamPlayer
 var previous_time := -1.0
 var previous_pulse := 0.0
 var previous_seeker := 0.0
@@ -37,9 +38,44 @@ func _ready() -> void:
 			sounds[id] = _synthesize_cue(id, false)
 		if not sounds.has("ready-" + id):
 			sounds["ready-" + id] = _synthesize_cue(id, true)
+	sounds["archive-signal"] = _archive_tone([330.0, 440.0, 660.0], 0.92)
+	sounds["archive-boss"] = _archive_tone([164.8, 174.6, 110.0], 0.69)
+	sounds["archive-release"] = _archive_tone([220.0, 329.6, 440.0, 659.3], 1.45)
+	archive = AudioStreamPlayer.new()
+	archive.stream = _archive_tone([55.0, 82.4, 110.0, 164.8], 8.0, true)
+	archive.volume_db = -80.0
+	add_child(archive)
+	if DisplayServer.get_name() != "headless":
+		archive.play()
 	cruise = _loop("score-cruise")
 	boss = _loop("score-boss")
 	engine = _loop("engine")
+
+func _archive_tone(notes: Array, length: float, loop: bool = false) -> AudioStreamWAV:
+	const RATE := 24000
+	var pcm := PackedByteArray()
+	pcm.resize(roundi(length * RATE) * 2)
+	for i in range(pcm.size() / 2):
+		var t := float(i) / RATE
+		var mix := 0.0
+		for n in range(notes.size()):
+			var age := t - n * length * 0.14
+			var f: float = notes[n]
+			if loop:
+				var swell := 0.25 + 0.18 * cos(TAU * (t / length + n * 0.23))
+				mix += swell * (sin(TAU * roundf(f * length) * t / length) + 0.22 * sin(TAU * roundf(f * 2 * length) * t / length))
+			elif age > 0.0:
+				var envelope := minf(1.0, age * 75.0) * exp(-age * 5.0) * minf(1.0, (length - t) * 24.0)
+				mix += envelope * (sin(TAU * f * age) + 0.19 * sin(TAU * f * 3.0 * age))
+		pcm.encode_s16(i * 2, clampi(roundi(mix * 9000), -32767, 32767))
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = RATE
+	stream.data = pcm
+	if loop:
+		stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+		stream.loop_end = pcm.size() / 2
+	return stream
 
 func _loop(id: String) -> AudioStreamPlayer:
 	var player := AudioStreamPlayer.new()
@@ -123,8 +159,10 @@ func update(sim: RefCounted, mode: String, delta: float) -> void:
 	var ducked: bool = not sim.charges.is_empty()
 	var music_gain := (-23.0 if ducked else -17.0) if flying else -28.0
 	var fade := 1.0 - exp(-delta * 3.5)
-	cruise.volume_db = lerpf(cruise.volume_db, music_gain if music_enabled and not intense else -80.0, fade)
-	boss.volume_db = lerpf(boss.volume_db, music_gain if music_enabled and intense else -80.0, fade)
+	var in_archive: bool = sim.secret_entered and mode not in ["menu", "hangar", "loadout", "achievements", "briefing"]
+	archive.volume_db = lerpf(archive.volume_db, music_gain - (1 if intense else 4) if music_enabled and in_archive else -80.0, fade)
+	cruise.volume_db = lerpf(cruise.volume_db, music_gain if music_enabled and not intense and not in_archive else -80.0, fade)
+	boss.volume_db = lerpf(boss.volume_db, music_gain if music_enabled and intense and not in_archive else -80.0, fade)
 	engine.volume_db = lerpf(engine.volume_db, -28.0 if flying and enabled else -80.0, fade)
 	engine.pitch_scale = 0.95 + minf(sim.ship_velocity().length() / 150.0, 0.35)
 	explosion_timer = maxf(0, explosion_timer - delta)
@@ -159,7 +197,7 @@ func update(sim: RefCounted, mode: String, delta: float) -> void:
 	last_mode = mode
 
 func _exit_tree() -> void:
-	for player in players + [cruise, boss, engine]:
+	for player in players + [cruise, boss, engine, archive]:
 		if is_instance_valid(player):
 			player.stop()
 			player.stream = null

@@ -20,7 +20,9 @@ const SCREENS := [
 	"ships", "pilots", "combat-1", "combat-4",
 	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
-	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear"
+	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
+	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
+	"archive-boss-intro", "archive-boss-lock", "archive-ending"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
@@ -193,4 +195,46 @@ func _prepare(scene, screen: String) -> void:
 			scene.sim.stage = 5
 			scene.sim.stage_clears = 5
 			scene.sim.stage_transition_queued = true
+			scene._show_stage_clear(false)
+
+		"archive-signal":
+			scene.sim.stage = 2
+			scene.sim.signal_status = "offer"
+			scene.sim.signal_until = 195.0
+			scene.mode = "playing"
+			scene._show_signal()
+		"archive-reveal", "archive-arrival", "archive-patrol", "archive-boss-intro", "archive-boss-lock", "archive-ending":
+			scene.sim.stage = 4
+			scene.sim.stage_clears = 4
+			scene.sim.signal_count = 2
+			scene.sim.stage_transition_queued = true
+			scene._show_stage_clear(false)
+			if screen == "archive-reveal":
+				return
+			scene._enter_archive()
+			if screen == "archive-arrival":
+				return
+			scene._resume_archive()
+			if screen == "archive-patrol":
+				scene.sim.time = 28.0
+				scene.sim._spawn_archive_patrol()
+				for enemy in scene.sim.enemies:
+					enemy.p.y += 350.0
+				scene.sim.archive_attack = "lock"
+				scene.sim.archive_attack_x = 190.0
+				scene.sim.archive_attack_until = 29.4
+				return
+			scene.sim._spawn_boss()
+			scene._show_archive_intro(false)
+			if screen == "archive-boss-intro":
+				return
+			scene._resume_archive()
+			if screen == "archive-boss-lock":
+				scene.sim.time = scene.sim.archive_next_attack
+				scene.sim.archive_phase = 2
+				scene.sim._update_archive_attack()
+				return
+			scene.sim.archive_phase = 2
+			scene.sim.archive_phase_released = true
+			scene.sim._damage_enemy(scene.sim._boss_core(), 9999999.0, "nova")
 			scene._show_stage_clear(false)

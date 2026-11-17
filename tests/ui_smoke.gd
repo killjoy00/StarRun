@@ -450,6 +450,50 @@ func _run() -> void:
 	check(scene.world.beam_cancel_feedback.is_empty(), "Beam cancellation cue must expire after 0.85 real seconds")
 	scene._show_beam_tutorial()
 	check(_contains_text(scene.overlay, "destroy that enemy to cancel the beam"), "First beam tutorial must explain destroying its charging enemy")
+	for dimensions in [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
+		root.size = dimensions
+		await process_frame
+		scene.set_process(false)
+		scene.sim = Sim.new(60121 + dimensions.x)
+		scene.sim.stage = 3
+		scene.sim.signal_status = "offer"
+		scene.sim.signal_until = 195.0
+		scene.mode = "playing"
+		scene._layout()
+		scene._update_hud()
+		check(scene.signal_button.visible and scene.signal_button.size.y >= 44.0, "Transmission has a visible touch target")
+		scene.signal_button.pressed.emit()
+		check(scene.mode == "archive_signal" and _contains_text(scene.overlay, "Intercept courier") and _contains_text(scene.overlay, "Tune receiver"), "Receiver panel offers both explicit objectives")
+		scene._choose_signal("cast")
+		check(scene.mode == "playing" and scene.sim.signal_status == "cast", "Choosing a receiver tactic resumes combat")
+		scene.sim.stage = 4
+		scene.sim.stage_clears = 4
+		scene.sim.stage_transition_queued = true
+		scene.sim.signal_count = 2
+		scene._show_stage_clear(false)
+		await process_frame
+		check(scene.mode == "archive_reveal" and scene.sim.stage == 4, "Reveal leaves the flight at the Citadel until a choice is made")
+		check(_contains_text(scene.overlay, "Finish campaign") and _contains_text(scene.overlay, "Play Endless") and _contains_text(scene.overlay, "Enter the Silent Archive"), "All three routes have explicit button labels")
+		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Archive reveal actions fit the safe height")
+		scene._enter_archive()
+		check(scene.mode == "archive_intro" and scene.sim.secret_intro_pending, "Explicit entry opens a paused Archive arrival")
+		scene._resume_run()
+		check(scene.mode == "archive_intro" and scene.sim.stage == 5, "Resume restores the Archive arrival")
+		scene._resume_archive()
+		scene.sim._spawn_boss()
+		scene._show_archive_intro(false)
+		check(_contains_text(scene.overlay, "Last Custodian") and _contains_text(scene.overlay, "Any ready active"), "Boss intro explains the counter")
+		scene._resume_archive()
+		scene.sim.archive_phase = 2
+		scene.sim.archive_phase_released = true
+		scene.sim._damage_enemy(scene.sim._boss_core(), 9999999.0, "nova")
+		scene._show_stage_clear(false)
+		scene._resume_run()
+		check(scene.mode == "archive_ending" and _contains_text(scene.overlay, "You leave the gate open"), "Epilogue preserves its state on resume")
+		scene._finish_archive()
+		check(scene.mode == "results" and scene.profile.achievements.has("open_frequency"), "Debrief awards the permanent record")
+		check(scene.services.read_save(scene.Services.RUN).is_empty(), "Settled Archive run cannot be resumed again")
+
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame

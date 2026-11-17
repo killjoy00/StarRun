@@ -79,7 +79,7 @@ jobs:
           if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|Error calling from signal" /tmp/starrun-touch.log; then
             exit 1
           fi
-      - name: Capture 21 UI screens at three viewport sizes
+      - name: Capture UI screens at three viewport sizes
         run: |
           set -o pipefail
           xvfb-run -a godot --path . --audio-driver Dummy --script tests/screenshot_harness.gd 2>&1 | tee /tmp/starrun-screenshots.log
@@ -170,12 +170,21 @@ jobs:
             echo "::error::Godot reported an error during full four-world gameplay"
             exit 1
           fi
+      - name: Clear the Silent Archive through real combat
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/archive_campaign.gd -- \
+            --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win \
+            2>&1 | tee /tmp/starrun-complete-archive.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-archive.log; then
+            exit 1
+          fi
       - name: Preserve reproducible full-campaign evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: StarRun-four-world-victory
-          path: /tmp/starrun-complete-campaign.log
+          name: StarRun-campaign-victories
+          path: /tmp/starrun-complete-*.log
           if-no-files-found: ignore
           retention-days: 30
   exports:

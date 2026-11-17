@@ -1,5 +1,7 @@
 extends Node2D
 ## Material ship art, parallax debris, banking and layered combat VFX.
+const HiddenSector = preload("res://scripts/hidden_sector.gd")
+const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const FusionArt = preload("res://scripts/fusion_art.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
@@ -103,7 +105,9 @@ func _draw() -> void:
 	var drift := Vector2((270 - ship.x) * 0.13, sin(visual_time * 0.035) * 22)
 	var sector := _sector(sim.time)
 	var visual_stage: int = ((int(sim.stage) - 1) % 4) + 1
-	if visual_stage == 1:
+	if sim.secret_entered:
+		_draw_archive_backdrop()
+	elif visual_stage == 1:
 		draw_rect(Rect2(0, 0, 540, 960), Color("050913"))
 		var scroll := visual_time * 105.0
 		var tints := [Color("9db7c9"), Color("6caeb4"), Color("9a82be"), Color("7669a4"), Color("d3a66e")]
@@ -115,14 +119,15 @@ func _draw() -> void:
 		draw_set_transform(Vector2.ZERO)
 	else:
 		_draw_stage_backdrop()
-	_draw_environment(sector, drift)
+	if not sim.secret_entered:
+		_draw_environment(sector, drift)
 	# Three depths of moving starlight sell forward flight without steering the player.
 	for i in range(90):
 		var depth := 0.35 + (i % 4) * 0.24
 		var p := Vector2(fposmod(i * 137.51 + drift.x * depth, 540), fposmod(i * 97.13 + visual_time * (85 + depth * 180), 960))
 		var color := Color(0.82, 0.86, 1.0, 0.16 + depth * 0.25) if sector != 4 else Color(1.0, 0.76, 0.45, 0.16 + depth * 0.25)
 		draw_line(p, p + Vector2(-velocity.x * 0.025, 5.0 + depth * 11), color, 1)
-	for i in range(9 if visual_stage == 1 else (3 if visual_stage == 2 else 0)):
+	for i in range(0 if sim.secret_entered else (9 if visual_stage == 1 else (3 if visual_stage == 2 else 0))):
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
@@ -156,6 +161,8 @@ func _draw() -> void:
 		if effect.kind == "beam":
 			_draw_effect(effect)
 	_draw_threats()
+	if not sim.archive_attack.is_empty():
+		_draw_archive_threat()
 	_draw_beam_cancel_feedback()
 	_draw_elite_break_feedback()
 	_draw_shield_feedback(ship)
@@ -197,6 +204,56 @@ func _sector(at: float) -> int:
 	if elapsed < 240.0:
 		return 3
 	return 4
+
+func _draw_archive_backdrop() -> void:
+	draw_rect(Rect2(0, 0, 540, 960), Color("071719"))
+	for side in [-1, 1]:
+		var x: float = 270.0 + side * 213.0
+		draw_rect(Rect2(x - 37.0, 0, 74.0, 960), Color("142b2d"))
+		draw_line(Vector2(x - side * 30.0, 0), Vector2(x - side * 30.0, 960), Color(HiddenSector.COLOR, 0.27), 2)
+		for i in range(13):
+			var y := fposmod(i * 96.0 + visual_time * 65.0, 1040.0) - 40.0
+			ArchiveIllustration.shape(self, PackedVector2Array([Vector2(-19,-24), Vector2(19,-24), Vector2(28,0), Vector2(19,24), Vector2(-19,24), Vector2(-28,0)]), Vector2(x,y), Color("1c3736"), Color(HiddenSector.MINT, 0.27))
+	for i in range(7):
+		var y := fposmod(i * 168.0 + visual_time * 58.0, 1180.0) - 100.0
+		var center := Vector2(270, y)
+		for side in [-1, 1]:
+			var a: float = PI * 0.5 if side == -1 else -PI * 0.5
+			draw_arc(center, 135.0, a + 0.23, a + PI - 0.23, 32, Color(HiddenSector.COLOR, 0.17), 2.0, true)
+		draw_line(Vector2(265, y), Vector2(275, y), Color(HiddenSector.MINT, 0.33), 2.0, true)
+
+func _draw_archive_threat() -> void:
+	var x: float = sim.archive_attack_x
+	var attack: String = sim.archive_attack
+	var phase: float = clampf((sim.archive_attack_until - sim.time) / 3.5, 0.0, 1.0)
+	if attack != "lattice":
+		draw_rect(Rect2(x - 38.0, 97.0, 76.0, 803.0), Color(DANGER, 0.14 + 0.13 * (1.0 - phase)))
+		for side in [-1, 1]:
+			var edge: float = x + side * 38.0
+			for y in range(100, 900, 27):
+				draw_line(Vector2(edge, y), Vector2(edge, y + 16), DANGER, 2, true)
+	if attack != "lock":
+		var core: Dictionary = sim._boss_core()
+		if not core.is_empty():
+			for side in [-1, 1]:
+				var source: Vector2 = core.p + Vector2(side * 115.0, 18.0)
+				draw_arc(source, 13 + 17 * phase, 0, TAU, 24, DANGER, 3.0, true)
+				draw_line(source, Vector2(x, 730), Color(DANGER, 0.50), 2, true)
+
+func _draw_archive_enemy(enemy: Dictionary) -> void:
+	var p: Vector2 = enemy.p
+	var kind: String = enemy.kind
+	var accent := HiddenSector.COLOR if kind == "archive_courier" else HiddenSector.MINT
+	var radius := 35.0 if kind != "archive_shard" else 21.0
+	var shape := PackedVector2Array([Vector2(0,-radius), Vector2(radius * 0.8, radius * 0.17), Vector2(radius * 0.48, radius * 0.67), Vector2(0, radius), Vector2(-radius * 0.48, radius * 0.67), Vector2(-radius * 0.8, radius * 0.17)])
+	ArchiveIllustration.shape(self, shape, p, Color("294a44"), accent)
+	draw_circle(p, 4.0, accent)
+	if kind == "archive_courier":
+		draw_arc(p, radius + 7, 0, TAU, 32, accent, 2.5, true)
+	elif kind == "archive_relay":
+		for escort in sim.enemies:
+			if int(escort.get("archive_relay", -1)) == int(enemy.id):
+				draw_line(p, escort.p, Color(accent, 0.44), 2.0, true)
 
 func _draw_stage_backdrop() -> void:
 	# Endless sectors reuse the authored visual ecologies rather than a flat backdrop.
@@ -365,7 +422,13 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		_draw_boss_module(enemy)
 		return
 	var boss := kind.begins_with("boss")
-	if kind == "boulder":
+	if kind == HiddenSector.BOSS:
+		draw_set_transform(p)
+		ArchiveIllustration.custodian(self, visual_time if not profile.reduced else 0.0, sim.time < sim.archive_exposed_until)
+		draw_set_transform(Vector2.ZERO)
+	elif HiddenSector.ENEMIES.has(kind):
+		_draw_archive_enemy(enemy)
+	elif kind == "boulder":
 		_asteroid(p, 36, int(enemy.id), 1.0)
 	elif kind == "station":
 		# Old gray box with a yellow dot was placeholder art. Keep the station's
