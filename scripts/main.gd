@@ -13,6 +13,7 @@ const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
 const RivalPortrait = preload("res://scripts/rival_portrait.gd")
+const MerchantShip = preload("res://scripts/merchant_ship.gd")
 const GameCenterBridge = preload("res://scripts/game_center_bridge.gd")
 const RemoveAdsStore = preload("res://scripts/remove_ads_store.gd")
 const CYAN := Color("66f5df")
@@ -506,6 +507,14 @@ func _layout() -> void:
 		_show_stage_clear(false)
 	elif mode == "prototype":
 		_show_prototypes()
+	elif mode == "merchant_signal":
+		_show_merchant_signal()
+	elif mode == "merchant_shop":
+		_show_merchant_shop()
+	elif mode == "merchant_confirm":
+		_show_merchant_confirm()
+	elif mode == "merchant_receipt":
+		_show_merchant_receipt()
 	elif mode == "route":
 		_show_route_choice()
 	elif mode == "beam_tutorial":
@@ -1958,6 +1967,139 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 		sound.play("boss-explosion", -4.0)
 		_haptic(130)
 
+func _merchant_identity(parent: Node) -> void:
+	var plate := PanelContainer.new()
+	plate.add_theme_stylebox_override("panel", Kit.box(Color("1d211f"), Kit.AMBER, 14, 2, 12, 12))
+	parent.add_child(plate)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	plate.add_child(row)
+	var ship_picture := MerchantShip.new()
+	ship_picture.name = "MerchantHailPortrait"
+	ship_picture.custom_minimum_size = Vector2(112,122)
+	row.add_child(ship_picture)
+	var words := VBoxContainer.new()
+	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	words.add_theme_constant_override("separation", 5)
+	row.add_child(words)
+	Kit.caps(words, "?  UNREGISTERED FREIGHTER", Kit.AMBER, 13)
+	Kit.label(words, "The Quartermaster", 22, Kit.TEXT, true)
+	Kit.label(words, "No questions. No returns.", 16, Kit.MUTED, true)
+
+func _show_merchant_signal() -> void:
+	if sim.merchant_state != "signal":
+		return
+	mode = "merchant_signal"
+	_save_run()
+	var view := _page(0.97, true, 510.0)
+	_page_header(view.top, "!  INCOMING HAIL  ·  WORLD %d" % sim.stage, "A private offer")
+	_merchant_identity(view.body)
+	Kit.label(view.body, "A freighter has slipped out of formation. They will trade unusual hardware, but every deal has a price. Your flight is paused while you decide.", 16, Kit.TEXT, true)
+	Kit.label(view.body, "Hail them, or ignore the signal. No steering or combat time required.", 15, Kit.MUTED, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	_focus(_ui_button(reading_footer, "Open the channel", _merchant_hail, "primary", 58, true))
+	_ui_button(reading_footer, "Ignore signal", _merchant_leave, "secondary", 58, true)
+	sound.play("warning")
+
+func _merchant_hail() -> void:
+	if mode != "merchant_signal" or not sim.merchant_hail():
+		return
+	_save_run()
+	sound.play("card")
+	_show_merchant_shop()
+
+func _show_merchant_shop() -> void:
+	if sim.merchant_state != "shop":
+		return
+	mode = "merchant_shop"
+	_save_run()
+	var view := _page(0.95, true, 540.0)
+	_page_header(view.top, "UNREGISTERED MARKET  ·  ONE DEAL", "Quartermaster")
+	Kit.label(view.top, "One trade per visit. Every cost applies for this flight only. You can leave without buying.", 16, Kit.MUTED, true)
+	_merchant_identity(view.body)
+	for offer in sim.merchant_offers:
+		var id: String = str(offer.id)
+		var card := _tap_card(view.body, _merchant_preview.bind(id), Kit.AMBER)
+		card_buttons.append(card.button)
+		Kit.caps(card.content, str(offer.tag), Kit.AMBER, 13)
+		Kit.label(card.content, str(offer.name), 20, Kit.TEXT, true)
+		_gain_cost(card.content, str(offer.gain), str(offer.cost))
+		if not sim.merchant_can_afford(id):
+			card.button.disabled = true
+			card.panel.modulate = Color(1,1,1,0.48)
+			Kit.label(card.content, "Unavailable with your current resources or build.", 14, Kit.MUTED, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	_ui_button(reading_footer, "Leave without a deal", _merchant_leave, "secondary", 55, true)
+	if not card_buttons.is_empty():
+		_focus(card_buttons[0])
+
+func _merchant_preview(id: String) -> void:
+	if mode != "merchant_shop" or not sim.merchant_preview(id):
+		return
+	_save_run()
+	_show_merchant_confirm()
+
+func _show_merchant_confirm() -> void:
+	if sim.merchant_state != "confirm":
+		return
+	mode = "merchant_confirm"
+	_save_run()
+	var view := _page(0.96, true, 510.0)
+	_page_header(view.top, "FINAL OFFER  ·  NO REFUNDS", "Confirm this trade")
+	_merchant_identity(view.body)
+	var offer: Dictionary = sim.merchant_offer_spec(sim.merchant_selected)
+	if not offer.is_empty():
+		Kit.label(view.body, str(offer.name), 22, Kit.AMBER, true)
+		_gain_cost(view.body, str(offer.gain), str(offer.cost))
+	Kit.label(view.body, "This changes the rest of this flight. Nothing is paid or changed until you confirm.", 16, Kit.MUTED, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	var accept := _ui_button(reading_footer, "Accept irreversible trade", _merchant_accept, "primary", 55, true)
+	accept.disabled = not sim.merchant_can_afford(sim.merchant_selected)
+	_focus(accept)
+	_ui_button(reading_footer, "Back to offers", _merchant_back, "secondary", 55, true)
+
+func _merchant_back() -> void:
+	if mode != "merchant_confirm" or not sim.merchant_back():
+		return
+	_save_run()
+	_show_merchant_shop()
+
+func _merchant_accept() -> void:
+	if mode != "merchant_confirm" or not sim.merchant_accept():
+		return
+	_save_run()
+	sound.play("card")
+	_show_merchant_receipt()
+
+func _show_merchant_receipt() -> void:
+	mode = "merchant_receipt"
+	_save_run()
+	var view := _page(0.97, true, 490.0)
+	_page_header(view.top, "TRANSACTION COMPLETE", "Deal made")
+	_merchant_identity(view.body)
+	Kit.label(view.body, "The modification is installed. Your sacrifice lasts for this flight. The freighter is already gone.", 17, Kit.TEXT, true)
+	Kit.label(view.body, "Recorded trade: " + (str(sim.merchant_trade_log[-1]) if not sim.merchant_trade_log.is_empty() else "Unknown"), 14, Kit.MUTED, true)
+	_focus(_ui_button(reading_footer, "Back to the flight", _merchant_resume, "primary", 58, true))
+
+func _merchant_leave() -> void:
+	if mode not in ["merchant_signal","merchant_shop","merchant_confirm"] or not sim.merchant_leave():
+		return
+	_merchant_resume()
+
+func _merchant_resume() -> void:
+	if mode not in ["merchant_signal","merchant_shop","merchant_confirm","merchant_receipt"]:
+		return
+	if not sim.merchant_state.is_empty():
+		sim.merchant_leave()
+	mode = "playing"
+	_clear_overlay()
+	accumulator = 0.0
+	_save_run()
+	if not sim.cards.is_empty():
+		_show_cards()
+	elif sim.rival_intro_pending:
+		_show_rival_intro()
+
 func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
@@ -2112,6 +2254,8 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 		build_lines.append("Artifact: " + str(Catalog.artifact(sim.artifact_id).name))
 	for id in sim.mutations:
 		build_lines.append("Mutation: " + str(Catalog.mutation(str(id)).name))
+	if sim.merchant_trade_count > 0:
+		build_lines.append("Merchant: " + ", ".join(PackedStringArray(sim.merchant_trade_log)))
 	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
 	if sim.bounty_earned > 0:
 		_info_card(body, "Bounty contracts", "%d base cores from bounty runs." % sim.bounty_earned, Kit.AMBER)
@@ -2176,6 +2320,7 @@ func _new_run() -> void:
 	result_rival_news.clear()
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")), str(profile.get("artifact", "standard")))
+	sim.enable_merchant()
 	var returning: Dictionary = RivalCaptains.for_launch(profile, sim)
 	if not returning.is_empty():
 		sim.configure_rival(returning)
@@ -2271,6 +2416,12 @@ func _start_flight() -> void:
 		_show_rival_retired()
 	elif sim.rival_intro_pending:
 		_show_rival_intro()
+	elif sim.merchant_state == "signal":
+		_show_merchant_signal()
+	elif sim.merchant_state == "shop":
+		_show_merchant_shop()
+	elif sim.merchant_state == "confirm":
+		_show_merchant_confirm()
 	elif sim.stage_transition_queued:
 		match sim.intermission_step:
 			"prototype": _show_prototypes()
@@ -2315,6 +2466,8 @@ func _process(delta: float) -> void:
 				_show_rival_retired()
 			elif sim.rival_intro_pending:
 				_show_rival_intro()
+			elif sim.merchant_state == "signal":
+				_show_merchant_signal()
 			elif sim.stage_transition_queued:
 				_show_stage_clear()
 			elif not sim.cards.is_empty():
@@ -2356,7 +2509,7 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "rival_intro", "rival_retired"] or (mode == "settings" and sheet_base == "paused")
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
 	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
