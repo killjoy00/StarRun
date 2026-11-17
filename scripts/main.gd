@@ -89,6 +89,7 @@ var result_daily_best := -1
 var result_new_best := false
 var result_rival_news: Dictionary = {}
 var rival_stinger_clock := 0.0
+var opening_last_phase := ""
 var game_center := GameCenterBridge.new()
 var daily_share_service: Object = null
 var pending_share_text := ""
@@ -2142,6 +2143,30 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 	_ui_button(reading_footer, "Title", _show_menu, "secondary", 56, true)
 	_focus(again)
 
+func _opening_first30_beat() -> void:
+	var phase: String = sim.world1_opening_phase()
+	if phase == opening_last_phase:
+		return
+	opening_last_phase = phase
+	match phase:
+		"scouts":
+			banner_text = "SCOUT CONTACTS  ·  WEAPONS ONLINE"
+			banner_clock = 3.5
+		"warning":
+			banner_text = "!  HOSTILE FORMATION INBOUND"
+			banner_clock = 4.0
+			sound.play("warning")
+		"formation":
+			banner_text = "STRIKE WING  ·  THREE-SHIP ATTACK"
+			banner_clock = 3.5
+			sound.play("warning")
+		"recovery":
+			banner_text = "OPENING BREACH  ·  WATCH FOR REINFORCEMENTS"
+			banner_clock = 2.6
+		"counterattack":
+			banner_text = "COUNTERATTACK  ·  HOLD THE LINE"
+			banner_clock = 3.5
+
 func _new_run() -> void:
 	banish_mode = false
 	profile.runs += 1
@@ -2228,6 +2253,7 @@ func _resume_beam_tutorial() -> void:
 
 func _start_flight() -> void:
 	mode = "playing"
+	opening_last_phase = ""
 	_clear_overlay()
 	accumulator = 0.0
 	last_hull = sim.hull
@@ -2282,6 +2308,7 @@ func _process(delta: float) -> void:
 		while accumulator >= Simulation.DT and mode == "playing":
 			sim.step()
 			accumulator -= Simulation.DT
+			_opening_first30_beat()
 			if sim.ended:
 				_finish()
 			elif sim.rival_retire_pending:
