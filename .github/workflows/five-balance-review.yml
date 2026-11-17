@@ -1,0 +1,105 @@
+name: Five-part StarRun balance comparison
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: starrun-five-balance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    if: startsWith(github.head_ref, 'codex/starrun-five-part-')
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.route }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: engineer, build: focused, route: repair, seeds: 3, offset: 1}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: engineer, build: focused, route: overclock, seeds: 3, offset: 1}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: engineer, build: focused, route: bounty, seeds: 3, offset: 1}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: repair, seeds: 3, offset: 3}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: overclock, seeds: 3, offset: 3}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: bounty, seeds: 3, offset: 3}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: repair, seeds: 3, offset: 5}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: overclock, seeds: 3, offset: 5}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: bounty, seeds: 3, offset: 5}
+          - {ship: kestrel, difficulty: hard, hangar: mid, pilot: rookie, build: focused, route: adaptive, seeds: 5, offset: 10}
+          - {ship: haven, difficulty: insane, hangar: mid, pilot: engineer, build: focused, route: adaptive, seeds: 5, offset: 10}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: engineer, build: shielded, route: repair, seeds: 5, offset: 15}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Compare 1.1 baseline and challenger in real combat
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/StarRun-11-baseline"
+          git worktree add --detach "$BASELINE" 1509dcad9092cf9a2d4660886bfecb121662df64
+          # Identical measurement definitions on both runs. Combat and
+          # upgrade mechanics stay pinned to their respective versions.
+          cp "$GITHUB_WORKSPACE/tests/balance_matrix.gd" "$BASELINE/tests/balance_matrix.gd"
+          mkdir -p review
+          for version in baseline challenger; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$version" == baseline ]]; then root="$BASELINE"; fi
+            godot --headless --path "$root" --editor --import --quit
+            log="$GITHUB_WORKSPACE/review/$version.log"
+            godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+              --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+              --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+              --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+              --build=${{ matrix.build }} --strategy=timed \
+              --route=${{ matrix.route }} --trace \
+              2>&1 | tee "$log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then
+              echo "::error::Godot balance simulation failed for $version"
+              exit 1
+            fi
+          done
+          python3 tools/compare_five_balance.py review/baseline.log review/challenger.log review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve matched seeds and outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: five-balance-${{ matrix.ship }}-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.route }}-${{ matrix.build }}
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  no_hangar_gate:
+    if: startsWith(github.head_ref, 'codex/starrun-five-part-')
+    name: No-Hangar World 1 / ${{ matrix.ship }} / ${{ matrix.difficulty }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: kestrel, difficulty: hard}
+          - {ship: haven, difficulty: insane}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Verify no artificial wins on progression difficulties
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds=4 --seed-offset=30 --ship=${{ matrix.ship }} \
+            --difficulty=${{ matrix.difficulty }} --hangar=none \
+            --stage-limit=1 --strategy=timed \
+            --require-no-world1-clears 2>&1 | tee no-hangar-gate.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' no-hangar-gate.log; then
+            exit 1
+          fi
