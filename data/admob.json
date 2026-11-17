@@ -1,7 +1,7 @@
 {
-  "enabled": true,
+  "enabled": false,
   "app_id": "ca-app-pub-1217971050094766~3224267311",
   "banner_unit_id": "ca-app-pub-1217971050094766/2832230127",
-  "notes": "TestFlight/CI candidate uses Google official TEST IDs only. Real publisher identifiers are retained but live ad serving remains disabled until AdMob Privacy & messaging, Apple App Privacy and real-device consent/banner tests pass. Before production: set test_mode=false and validate all launch gates.",
-  "test_mode": true
+  "notes": "Initial App Store release: no ad SDK requests or sample ads. Remove Ads purchase remains configured at Apple but is not offered until an ad-supported app version is ready. After AdMob approval and physical iPhone QA, re-enable via a separately reviewed update; first IAP must be submitted with that updated app version.",
+  "test_mode": false
 }

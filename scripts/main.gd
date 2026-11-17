@@ -146,7 +146,10 @@ func _ready() -> void:
 	remove_ads_store = RemoveAdsStore.new()
 	add_child(remove_ads_store)
 	remove_ads_store.changed.connect(_on_remove_ads_store_changed)
-	remove_ads_store.initialize(self, bool(profile.get("remove_ads", false)))
+	# Do not offer a purchase that has no benefit in the ad-free first release.
+	# The 0.9.6 TestFlight sandbox build remains pinned to the earlier source.
+	if _ad_monetization_enabled():
+		remove_ads_store.initialize(self, bool(profile.get("remove_ads", false)))
 	game_center.initialize(profile, _save_profile)
 	# The iOS-only outgoing share plugin exposes UIActivityViewController.
 	if OS.has_feature("ios") and Engine.has_singleton("SharePlugin"):
@@ -159,6 +162,14 @@ func _ready() -> void:
 
 # The iPhone ad SDK is installed only during ad-enabled native exports.
 # On all other platforms this controller does nothing.
+func _ad_monetization_enabled() -> bool:
+	var path := "res://data/admob.json"
+	if not FileAccess.file_exists(path):
+		return false
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	return parsed is Dictionary and bool(parsed.get("enabled", false))
+
+
 func _initialize_native_banner() -> void:
 	if OS.get_name() != "iOS" or bool(profile.get("remove_ads", false)):
 		return
@@ -1144,7 +1155,7 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
-	if OS.get_name() == "iOS" or OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
+	if (OS.get_name() == "iOS" and _ad_monetization_enabled()) or OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
 		var has_ads_removed := bool(profile.get("remove_ads", false))
 		Kit.label(box, "AD-FREE", 16, Kit.CYAN)
 		if has_ads_removed:
