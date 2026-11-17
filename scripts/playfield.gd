@@ -30,6 +30,10 @@ var last_shield_break_tick := -1
 var formation_clock := 0.0
 var formation: Dictionary = {}
 var seen_formations := {}
+# Charge cancellation cues use real screen time; sim time can run at 3x.
+var beam_cancel_feedback: Array = []
+var seen_beam_cancel_ids := {}
+var seen_beam_cancel_order: Array = []
 
 func _process(delta: float) -> void:
 	if host == null or host.sim == null:
@@ -42,10 +46,24 @@ func _process(delta: float) -> void:
 		formation_clock = 0.0
 		formation.clear()
 		seen_formations.clear()
+		beam_cancel_feedback.clear()
+		seen_beam_cancel_ids.clear()
+		seen_beam_cancel_order.clear()
 	if host.mode == "playing":
 		shield_break_clock = maxf(0.0, shield_break_clock - delta)
 		formation_clock = maxf(0.0, formation_clock - delta)
+		for feedback in beam_cancel_feedback:
+			feedback.remaining = float(feedback.remaining) - delta
+		beam_cancel_feedback = beam_cancel_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
 	for effect in host.sim.effects:
+		if effect.kind == "beam-canceled":
+			var cue_id := "%d:%d:%d" % [int(effect.born), int(effect.source), roundi(float(effect.x))]
+			if not seen_beam_cancel_ids.has(cue_id):
+				seen_beam_cancel_ids[cue_id] = true
+				seen_beam_cancel_order.append(cue_id)
+				if seen_beam_cancel_order.size() > 128:
+					seen_beam_cancel_ids.erase(seen_beam_cancel_order.pop_front())
+				beam_cancel_feedback.append({"p":effect.p, "x":float(effect.x), "remaining":0.85, "duration":0.85})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -111,7 +129,7 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled"]:
 			_draw_effect(effect)
 	if formation_clock > 0.0:
 		_draw_fusion_formed(formation, formation_clock/1.2, 1.0-formation_clock/1.2)
@@ -119,6 +137,7 @@ func _draw() -> void:
 		if effect.kind == "beam":
 			_draw_effect(effect)
 	_draw_threats()
+	_draw_beam_cancel_feedback()
 	_draw_shield_feedback(ship)
 	for bullet in sim.bullets:
 		_draw_projectile(bullet)
@@ -536,6 +555,7 @@ func _draw_projectile(bullet: Dictionary) -> void:
 		draw_circle(p, 1.1, Color("fff0d6"))
 
 func _draw_threats() -> void:
+	var marked_sources := {}
 	for charge in sim.charges:
 		var progress: float = clampf(1.0 - charge.remaining / charge.duration, 0, 1)
 		# The 66px lane matches the existing 33px collision half-width exactly.
@@ -550,6 +570,46 @@ func _draw_threats() -> void:
 		var label_x: float = clampf(charge.x - 48, 6, 428)
 		draw_rect(Rect2(label_x - 5, 658, 109, 28), THREAT_INK)
 		draw_string(ThemeDB.fallback_font, Vector2(label_x, 679), "BEAM %.1fs" % charge.remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, DANGER)
+		# The warning lane is only half the story: mark the enemy powering it.
+		# Never mark the same boss twice when it charges two lanes at once.
+		if marked_sources.has(int(charge.source)):
+			continue
+		for enemy in sim.enemies:
+			if int(enemy.id) != int(charge.source) or float(enemy.hp) <= 0.0:
+				continue
+			marked_sources[int(charge.source)] = true
+			var source: Vector2 = enemy.p
+			if source.y < 0.0 or source.y > 810.0:
+				break
+			var boss: bool = str(enemy.kind).begins_with("boss") and str(enemy.kind) != "boss_module"
+			var radius: float = 105.0 if boss else 40.0
+			draw_arc(source, radius, 0, TAU, 48, Color(DANGER, 0.78), 3.0, true)
+			var tag_y: float = clampf(source.y + radius + 26.0, 30.0, 886.0)
+			var tag_x: float = clampf(source.x - 43.0, 6.0, 445.0)
+			draw_rect(Rect2(tag_x - 4, tag_y - 20, 102, 26), THREAT_INK)
+			draw_string(ThemeDB.fallback_font, Vector2(tag_x, tag_y), "CHARGING", HORIZONTAL_ALIGNMENT_LEFT, 94, 16, DANGER)
+			break
+
+func _draw_beam_cancel_feedback() -> void:
+	# An interruption is visibly different from a red beam actually firing.
+	# This animation is tracked in real time, not accelerated simulation time.
+	for feedback in beam_cancel_feedback:
+		var alpha: float = clampf(float(feedback.remaining) / float(feedback.duration), 0.0, 1.0)
+		var x: float = float(feedback.x)
+		draw_rect(Rect2(x - 33, 0, 66, 900), Color(CYAN, alpha * 0.09))
+		for y in range(65, 870, 100):
+			draw_line(Vector2(x - 25, y), Vector2(x + 25, y + 28), Color(CYAN, alpha * 0.65), 2.5, true)
+		var label_x: float = clampf(x - 75, 6, 373)
+		draw_rect(Rect2(label_x - 5, 654, 162, 34), Color(THREAT_INK, alpha * 0.92))
+		draw_string(ThemeDB.fallback_font, Vector2(label_x, 678), "BEAM CANCELED", HORIZONTAL_ALIGNMENT_LEFT, 156, 17, Color(CYAN, alpha))
+		var source: Vector2 = feedback.p
+		if source.y >= 0.0 and source.y < 810.0:
+			var radius: float = 35.0 + (1.0 - alpha) * 32.0
+			draw_arc(source, radius, 0, TAU, 40, Color(CYAN, alpha * 0.85), 3.0, true)
+			var tag_x: float = clampf(source.x - 55.0, 6, 414)
+			var tag_y: float = clampf(source.y + 72.0, 32, 882)
+			draw_rect(Rect2(tag_x - 4, tag_y - 20, 126, 26), Color(THREAT_INK, alpha * 0.90))
+			draw_string(ThemeDB.fallback_font, Vector2(tag_x, tag_y), "SOURCE DOWN", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color(CYAN, alpha))
 
 func _draw_shield_feedback(ship: Vector2) -> void:
 	# Presentation uses real time so the break remains visible even at 3x speed.
