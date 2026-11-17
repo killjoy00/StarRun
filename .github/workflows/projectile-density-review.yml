@@ -1,7 +1,7 @@
 name: Projectile density — pre-1.1 versus 1.1 versus 1.2
+# The 12-seed pre-1.1 / 1.1 / 1.2 study finished on PR #38, run #44103290731.
+# Keep a manual rerun but avoid this cost on every unrelated gameplay PR.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
