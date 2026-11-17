@@ -25,17 +25,17 @@ const SHIPS := [
 
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
 const HANGAR := [
-	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":6, "cost":5, "step":0},
-	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":6, "cost":5, "step":2},
+	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":7, "cost":5, "step":0},
+	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":7, "cost":5, "step":2},
 	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Reduce every chaff hit by another 0.12.", "max":4, "cost":6, "step":2},
-	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"+0.25 shield/s per rank; from rank 2, +0.30 per rank.", "max":5, "cost":5, "step":0},
+	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"+0.25 shield/s per rank; from rank 2, +0.30 per rank.", "max":6, "cost":5, "step":0},
 	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Repair 0.15 hull/s per rank; from rank 2, +0.20 per rank.", "max":4, "cost":8, "step":3},
 	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"All automatic weapons deal 8% more damage.", "max":5, "cost":5, "step":0},
 	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"All automatic weapons fire 5% faster.", "max":5, "cost":7, "step":2},
 	{"id":"guidance", "name":"Guidance array", "group":"Weapons", "description":"Widen pulse targeting and increase its gentle steering.", "max":4, "cost":6, "step":2},
 	{"id":"pulse_start", "name":"Pulse precharge", "group":"Weapons", "description":"Start each new flight with level 2 Pulse Cannon.", "max":1, "cost":15, "step":0},
 	{"id":"seeker_start", "name":"Loaded pods", "group":"Weapons", "description":"Start each new flight with level 2 Seeker Pods.", "max":1, "cost":15, "step":0},
-	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Every ability recharges 3% faster per rank.", "max":5, "cost":7, "step":3},
+	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Every ability recharges 3% faster per rank.", "max":6, "cost":7, "step":3},
 	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"+6% ability damage, healing and duration.", "max":5, "cost":7, "step":3},
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Recover 5 shield whenever you activate an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per flight, gain 1.5 seconds of Aegis at low hull. +0.5s at rank 2.", "max":2, "cost":12, "step":8},
@@ -53,7 +53,7 @@ const HANGAR := [
 	{"id":"warp_repairs","name":"Docking crew","group":"Hull","description":"Repair an extra 4% of maximum hull between worlds per rank.","max":3,"cost":14,"step":7},
 	{"id":"arc_start","name":"Charged coil","group":"Weapons","description":"Start each flight with one extra Arc Coil rank.","max":1,"cost":35,"step":0},
 	{"id":"lance_start","name":"Lance mount","group":"Weapons","description":"Start each flight with a rank-1 Lance.","max":1,"cost":40,"step":0},
-	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Automatic weapons deal 3% more damage to bosses and their parts per rank.","max":5,"cost":14,"step":6},
+	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Automatic weapons deal 3% more damage to bosses and their parts per rank.","max":6,"cost":14,"step":6},
 	{"id":"ordnance_damage","name":"Warhead tooling","group":"Weapons","description":"Seeker Pods deal 5% more damage per rank.","max":4,"cost":12,"step":5},
 	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship’s starting ability gains one rank per purchase.","max":2,"cost":16,"step":10},
 	{"id":"cast_repair","name":"Field patch kit","group":"Abilities","description":"Each ability use repairs 1 hull per rank.","max":3,"cost":18,"step":8},
@@ -62,7 +62,9 @@ const HANGAR := [
 	{"id":"banish_relay","name":"Banish relay","group":"Tactics","description":"Regain one upgrade removal per rank when entering a new world.","max":2,"cost":20,"step":12},
 	{"id":"skip_patch","name":"Repair stores","group":"Tactics","description":"Skipping a draft repairs 6 extra hull per rank.","max":3,"cost":8,"step":4},
 	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each destroyed boss part pays 1 extra core per rank.","max":3,"cost":18,"step":8},
-	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Clear a world above 60% hull for 3 extra cores per rank.","max":3,"cost":18,"step":8}
+	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Clear a world above 60% hull for 3 extra cores per rank.","max":3,"cost":18,"step":8},
+	{"id":"module_breaker","name":"Breach sensors","group":"Weapons","description":"Deal 6% more damage to targetable boss modules per rank. Boss cores are unaffected.","max":3,"cost":18,"step":8},
+	{"id":"point_defense","name":"Point defense","group":"Hull","description":"Take 5% less damage from boss bullets and missiles per rank; not heavy beams.","max":3,"cost":16,"step":7}
 ]
 
 static func defaults() -> Dictionary:
@@ -77,14 +79,21 @@ static func entry(id: String) -> Dictionary:
 			return item
 	return {}
 
-# Future ranks cost more; historical purchases keep their actual receipts.
+# Historical purchases keep their exact receipts when resetting the Hangar.
+# The first 15% price increase remains the reference for the next +10%.
 static func legacy_price(id: String, rank: int) -> int:
 	var item := entry(id)
 	return int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
 
-static func price(id: String, rank: int) -> int:
+static func previous_price(id: String, rank: int) -> int:
 	var base := legacy_price(id, rank)
 	return ceili(float(base) * 1.15) if base > 0 else 0
+
+static func price(id: String, rank: int) -> int:
+	# Compound another 10% on the *visible* post-15%-increase price.
+	# Integer ranks round up, and saved paid receipts always win on refund.
+	var previous := previous_price(id, rank)
+	return ceili(float(previous) * 1.10) if previous > 0 else 0
 
 static func legacy_refund(hangar: Dictionary) -> int:
 	var total := 0
