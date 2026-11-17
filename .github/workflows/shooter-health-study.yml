@@ -1,7 +1,7 @@
 name: StarRun — targeted shooter HP screen-pressure experiment
+# Matched study already completed as PR #39 (Actions #44106741711).
+# Keep it manually rerunnable without repeating costly full campaigns on every PR.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
