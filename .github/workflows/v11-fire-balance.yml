@@ -1,8 +1,9 @@
 name: Star/Run 1.1 paired enemy-fire balance review
 on:
-  push:
-    branches:
-      - 'codex/starrun-v11-*'
+  # PR event makes the paired study a review gate and keeps its results
+  # accessible alongside the normal iPhone/playable PR checks.
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
