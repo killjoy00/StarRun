@@ -324,9 +324,27 @@ func enemy_fire_scale() -> float:
 	return {"normal": 1.0, "hard": 1.25, "insane": 2.0}[difficulty]
 
 func boss_projectile_rate_multiplier() -> float:
-	# Increase the frequency of boss projectile fans on Insane, not the
-	# separately telegraphed heavy beams or timed minion launch cycles.
-	return 1.25 if difficulty == "insane" else 1.0
+	# Every boss fires more often. Hard and Insane add boss-specific pressure
+	# beyond ordinary enemy fire; minion launches and heavy charge timers stay
+	# unchanged, preserving their independently readable counterplay.
+	return {"normal": 1.08, "hard": 1.15, "insane": 1.40}[difficulty]
+
+func boss_health_pressure() -> float:
+	# Regular enemies retain their existing difficulty health curve.
+	# Advanced bosses get a steeper, *separate* difficulty multiplier,
+	# and their targetable modules receive exactly the same factor.
+	# W1 Hard/Insane already have massive authored opener multipliers, so
+	# keep its extra pressure restrained; later bosses carry the escalation.
+	if stage == 1:
+		return {"normal": 1.10, "hard": 1.12, "insane": 1.12}[difficulty]
+	if stage == 2:
+		return {"normal": 1.18, "hard": 1.34, "insane": 1.55}[difficulty]
+	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
+
+func boss_projectile_damage_multiplier() -> float:
+	# Boss rounds and missiles hurt a little more on higher difficulties.
+	# Heavy beams keep their original telegraphed damage and duration.
+	return {"normal": 1.0, "hard": 1.05, "insane": 1.12}[difficulty]
 
 func projectile_interval_factor(kind: String) -> float:
 	# v1.1: a little more *ordinary gunfire*, with the bigger increase in
@@ -774,12 +792,12 @@ func _spawn_boss() -> void:
 			opener_boss_scale = 6.5 if difficulty == "hard" else 5.5
 		elif stage == 2:
 			opener_boss_scale = 2.5
-	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier()
+	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	for part in content.boss_modules.get(str(spec.boss), []):
-		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier()
+		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
@@ -995,11 +1013,11 @@ func _update_enemies() -> void:
 					bullet_kind = "gravity"
 				for i in range(count):
 					var angle: float = (i - (count - 1) / 2.0) * (0.19 if kind in ["arc_spire", "forge_turret"] else 0.15)
-					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale() * (opener_boss_enrage() if kind == "boss" else 1.0), "kind": bullet_kind, "source": kind})
+					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0) * (opener_boss_enrage() if kind == "boss" else 1.0), "kind": bullet_kind, "source": kind})
 				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
 					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
 					for i in range(volley):
-						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale(), "kind":"ordnance", "hp":12.0, "source":kind})
+						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0), "kind":"ordnance", "hp":12.0, "source":kind})
 				if kind == "boss3" and boss_phase_label().begins_with("FURNACE SEALED"):
 					for i in range(2):
 						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":kind})
@@ -1362,7 +1380,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "shieldguard":
 		amount *= 0.72
 	if enemy.kind == "boss_module":
-		amount *= 2.40 if _has_prototype("breach_optics") else 1.0
+		# Optional Hangar specialist tool: trade Cores for faster destruction
+		# of exposed launch bays, vents and pylons, never the core itself.
+		amount *= (2.40 if _has_prototype("breach_optics") else 1.0) * (1.0 + meta.module_breaker * 0.06)
 	elif _has_prototype("breach_optics"):
 		amount *= 0.90
 	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
@@ -1431,6 +1451,11 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount * stage_risk * stage_defense
+	# Boss projectile defense only covers ordinary status/chaff rounds and
+	# boss-launched missiles. Charged heavy beams and slag still require
+	# their own specific counters, not an invisible blanket resistance.
+	if source.begins_with("boss") and kind not in ["heavy", "hazard"]:
+		reduced *= 1.0 - float(meta.point_defense) * 0.05
 	# Simultaneous boss4 heavy lanes can both hit an autopiloted ship on a
 	# single simulation frame. Leave the first full-strength and cap the
 	# second to 35%, without shortening charge telegraphs or changing Aegis.
