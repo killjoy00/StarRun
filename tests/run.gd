@@ -192,6 +192,28 @@ func _test_ship_pilot_identity_tuning() -> void:
 	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
 	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.12), "Haven's support Seeker Pods gain 12 percent weapon damage, but no Pulse is installed")
 	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
+	# Insane matched seeds exposed a Haven early-wave DPS and survivability gap.
+	# Improve support pod cadence and the signature Mend, without a Pulse starter.
+	var haven_pods := Sim.new(88237, {}, "haven", "rookie")
+	var vanguard_pods := Sim.new(88237, {}, "vanguard", "rookie")
+	for sim in [haven_pods, vanguard_pods]:
+		sim._add_enemy("drone", Vector2(270, 175))
+		sim._update_weapons()
+	check(is_equal_approx(haven_pods.seeker_timer, 0.55) and is_equal_approx(vanguard_pods.seeker_timer, 0.70), "Haven pods reload faster without globally accelerating every ship")
+	var haven_hunter := Sim.new(88238, {}, "haven", "hunter")
+	var wraith_hunter := Sim.new(88238, {}, "wraith", "hunter")
+	for sim in [haven_hunter, wraith_hunter]:
+		sim._add_enemy("drone", Vector2(270, 175))
+		sim._update_weapons()
+	check(is_equal_approx(haven_hunter.seeker_timer, 0.50) and is_equal_approx(wraith_hunter.seeker_timer, 0.62), "Hunter retains the pilot lock-on advantage with Haven's support pod cadence")
+	var haven_mender := Sim.new(88239, {}, "haven", "rookie")
+	var regular_mender := Sim.new(88239, {}, "vanguard", "rookie")
+	regular_mender.upgrades.mend = 1
+	regular_mender.active_slots.append("mend")
+	check(haven_mender.activate("mend") and regular_mender.activate("mend"), "Both ships can activate a naturally available Repair Drone")
+	check(is_equal_approx(haven_mender.mend_rate / regular_mender.mend_rate, 1.25), "Haven signature Repair Drones heal 25 percent more than the general card")
+	check(int(haven_pods.upgrades.pulse) == 0, "Haven still has no Pulse starter after its support buffs")
+
 	var engineer := Sim.new(88235, {}, "vanguard", "engineer")
 	var rookie := Sim.new(88235, {}, "vanguard", "rookie")
 	check(is_equal_approx(engineer.weapon_power() / rookie.weapon_power(), 1.06), "Engineer converts maintained shields to 6 percent automatic output")

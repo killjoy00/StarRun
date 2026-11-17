@@ -113,3 +113,59 @@ jobs:
           path: review/
           retention-days: 30
           if-no-files-found: ignore
+
+  # The first Insane grid found Haven dying before the first boss in 9/12
+  # cases. Compare the new support-pod/Repair-Drone tuning causally against
+  # the immutable exact-seed previous PR head with the same elite rules.
+  haven_insane_ab:
+    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    name: Haven before/after / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {difficulty: insane, hangar: max, seeds: 2, offset: 4}
+          - {difficulty: normal, hangar: mid, seeds: 2, offset: 4}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Replay all Haven pilots on identical baseline and tuned seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/starrun-before-haven-support-buff"
+          git worktree add --detach "$BASELINE" 96c79f3f28b283067732b728f98d8036bc0b6220
+          mkdir -p review
+          for pilot in rookie ace engineer hunter scavenger tactician; do
+            for version in base new; do
+              root="$GITHUB_WORKSPACE"
+              if [[ "$version" == "base" ]]; then root="$BASELINE"; fi
+              godot --headless --path "$root" --editor --import --quit
+              log="$GITHUB_WORKSPACE/review/$version-$pilot.log"
+              godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+                --ship=haven --pilot="$pilot" --difficulty=${{ matrix.difficulty }} \
+                --hangar=${{ matrix.hangar }} --build=focused --strategy=timed --route=adaptive \
+                --stage-limit=2 --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+                2>&1 | tee "$log"
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then
+                echo "::error::Godot reported a script or runtime error"
+                exit 1
+              fi
+            done
+          done
+          python3 tools/report_identity_tuning.py \
+            haven ${{ matrix.difficulty }} ${{ matrix.hangar }} ${{ matrix.seeds }} review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve Haven support-buff paired results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: haven-support-ab-${{ matrix.difficulty }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore

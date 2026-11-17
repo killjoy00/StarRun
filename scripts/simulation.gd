@@ -1199,7 +1199,11 @@ func _update_weapons() -> void:
 		for n in range(barrels):
 			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
-		seeker_timer += (0.62 if pilot_id == "hunter" else 0.70)
+		# Haven clears early waves with rapid support pods instead of a Pulse starter.
+		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
+		if ship_id == "haven":
+			seeker_interval = 0.50 if pilot_id == "hunter" else 0.55
+		seeker_timer += seeker_interval
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
 		var target_id := -1
 		var target_pos := Vector2(270, -100)
@@ -1696,7 +1700,8 @@ func activate(ability: String) -> bool:
 		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * effect_strength
 	elif ability == "mend":
 		mend_left = 4.0
-		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
+		# This ship invests in field repair instead of the second starting gun.
+		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength * (1.25 if ship_id == "haven" else 1.0) / 4.0
 		# Repair drones are the support counter to the status damage in
 		# Ion Storm and the weapon-suppressing heat of Solar Foundry.
 		if corrosion_left > 0.0 or heat_left > 0.0:
