@@ -1,0 +1,68 @@
+name: StarRun 1.2 boss and Hangar paired review
+# The first 1.2 matched study completed on PR #37 (Actions #44007759643).
+# Retain the reproducible study for manual reruns without running dozens of
+# four-world campaigns on unrelated future pull requests or test-only fixes.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: starrun-boss-balance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  paired:
+    if: github.event_name == 'workflow_dispatch'
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.route }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: vanguard, difficulty: normal, hangar: none, pilot: rookie, build: baseline, route: adaptive, offset: 0, seeds: 3}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: rookie, build: focused, route: repair, offset: 1, seeds: 3}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: rookie, build: focused, route: overclock, offset: 1, seeds: 3}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: repair, offset: 3, seeds: 3}
+          - {ship: kestrel, difficulty: hard, hangar: mid, pilot: rookie, build: focused, route: adaptive, offset: 5, seeds: 3}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: bounty, offset: 6, seeds: 3}
+          - {ship: haven, difficulty: insane, hangar: mid, pilot: engineer, build: focused, route: adaptive, offset: 8, seeds: 3}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Replay matched real campaigns from 1.1 versus 1.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/StarRun-11-boss-baseline"
+          git worktree add --detach "$BASELINE" 52f0daf6467744e37f2e5c7c30bcbf7d322d4a55
+          mkdir -p review
+          for version in baseline candidate; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$version" == "baseline" ]]; then root="$BASELINE"; fi
+            godot --headless --path "$root" --editor --import --quit
+            logfile="$GITHUB_WORKSPACE/review/$version.log"
+            godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+              --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+              --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+              --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+              --build=${{ matrix.build }} --strategy=timed --route=${{ matrix.route }} --trace \
+              2>&1 | tee "$logfile"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$logfile"; then
+              echo "::error::Godot runtime error in $version"
+              exit 1
+            fi
+          done
+          python3 tools/report_boss_balance.py review/baseline.log review/candidate.log review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Save paired boss logs for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: boss-12-${{ matrix.ship }}-${{ matrix.difficulty }}-${{ matrix.hangar }}-${{ matrix.route }}
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30

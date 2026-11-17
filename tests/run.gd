@@ -20,6 +20,7 @@ func _run() -> void:
 	_test_interrupts_and_priority()
 	_test_lance_fire_reliability()
 	_test_v11_enemy_projectile_cadence()
+	_test_boss_scaling_and_hangar_expansion()
 	_test_draft_and_cooldowns()
 	_test_resume()
 	_test_saves()
@@ -328,6 +329,94 @@ func _test_lance_fire_reliability() -> void:
 			sim.step()
 		check(sim.effects.any(func(e): return e.kind == "lance"), "Prism lance shot must still be visible after 0.15 real seconds at 3x")
 
+func _test_boss_scaling_and_hangar_expansion() -> void:
+	# New Hangar purchases cost at least ten percent more than their displayed
+	# 1.1 prices. Already-paid receipts are never recomputed or inflated.
+	for entry in Catalog.HANGAR:
+		var key: String = str(entry.id)
+		for rank in range(int(entry.max)):
+			var old_price: int = Catalog.previous_price(key, rank)
+			check(Catalog.price(key, rank) == ceili(old_price * 1.10), "Compounded Hangar price for %s rank %d" % [key, rank])
+	var caps := {"hull":7,"shield":7,"regen":6,"ability_cooldown":6,"boss_damage":6}
+	for key in caps:
+		check(int(Catalog.entry(str(key)).max) == int(caps[key]), "Extra purchased rank is accessible for " + str(key))
+	check(Catalog.entry("module_breaker").max == 3 and Catalog.entry("point_defense").max == 3, "New boss module offense and projectile defense tracks are in the real Hangar catalog")
+	var saved_hangar := {"hull":7, "shield":7, "regen":6, "ability_cooldown":6, "boss_damage":6, "module_breaker":3, "point_defense":3}
+	var held := Sim.new(18802, saved_hangar)
+	var resumed := Sim.new(1)
+	check(resumed.restore(held.snapshot()) and resumed.snapshot() == held.snapshot(), "Expanded Hangar track values and newly introduced tracks round-trip in existing save schema")
+	check(is_equal_approx(held.max_hull, 170.0) and is_equal_approx(held.max_shield, 106.0), "One more Hull and Shield capacitor rank increases actual starting survival")
+	# On the same stage, the new boss-specific difficulty curve must rise
+	# faster than the ordinary enemy difficulty curve, without new enemies.
+	for stage_number in [1, 2, 3, 4]:
+		var cores := {}
+		var parts := {}
+		var ordinary := {}
+		var last_ready := {}
+		for mode in Catalog.DIFFICULTIES:
+			var sim := Sim.new(18803, {}, "vanguard", "rookie", mode)
+			sim.stage = stage_number
+			sim._add_enemy("drone", Vector2(270, 100))
+			ordinary[mode] = float(sim.enemies[0].max_hp)
+			sim._spawn_boss()
+			cores[mode] = float(sim.enemies[0].max_hp)
+			last_ready[mode] = sim.heavy_ready_at
+			if stage_number >= 2:
+				parts[mode] = float(sim.enemies[1].max_hp)
+		check(float(cores.hard) / float(cores.normal) > float(ordinary.hard) / float(ordinary.normal), "Hard boss %d scales more steeply than regular enemies" % stage_number)
+		check(float(cores.insane) / float(cores.hard) > float(ordinary.insane) / float(ordinary.hard), "Insane boss %d scales more steeply than regular enemies" % stage_number)
+		check(is_equal_approx(float(last_ready.normal), float(last_ready.hard)) and is_equal_approx(float(last_ready.normal), float(last_ready.insane)), "Harder boss %d preserves heavy-beam warning timing" % stage_number)
+		if stage_number >= 2:
+			check(is_equal_approx(float(parts.hard) / float(parts.normal), float(cores.hard) / float(cores.normal)) and is_equal_approx(float(parts.insane) / float(parts.normal), float(cores.insane) / float(cores.normal)), "Boss %d targetable parts scale as strongly as the core" % stage_number)
+	var fighter := Sim.new(18804)
+	fighter.stage = 3
+	fighter._spawn_boss()
+	var breaker := Sim.new(18804, {"module_breaker":3})
+	breaker.stage = 3
+	breaker._spawn_boss()
+	var regular_part: Dictionary = fighter.enemies[1]
+	var boosted_part: Dictionary = breaker.enemies[1]
+	var before: float = float(regular_part.hp)
+	var before_boosted: float = float(boosted_part.hp)
+	fighter._damage_enemy(regular_part, 100.0, "pulse")
+	breaker._damage_enemy(boosted_part, 100.0, "pulse")
+	check(is_equal_approx((before_boosted - float(boosted_part.hp)) / (before - float(regular_part.hp)), 1.18), "Breach sensors add 6 percent boss-module damage per rank")
+	var core_unboosted: Dictionary = fighter.enemies[0]
+	var core_boosted: Dictionary = breaker.enemies[0]
+	before = float(core_unboosted.hp)
+	before_boosted = float(core_boosted.hp)
+	fighter._damage_enemy(core_unboosted, 100.0, "pulse")
+	breaker._damage_enemy(core_boosted, 100.0, "pulse")
+	check(is_equal_approx(before_boosted - float(core_boosted.hp), before - float(core_unboosted.hp)), "Breach sensors do not strengthen generic shots or bypass protected cores")
+	var unshielded := Sim.new(18805)
+	var guarded := Sim.new(18805, {"point_defense":3})
+	for sim in [unshielded, guarded]:
+		sim.shield = 0.0
+		sim.hull = 100.0
+		sim._hit(20.0, "heat", "boss3")
+	check(is_equal_approx(float(guarded.damage_taken.heat) / float(unshielded.damage_taken.heat), 0.85), "Point defense reduces boss status projectiles by 5 percent per rank")
+	var regular_shot := Sim.new(18806, {"point_defense":3})
+	regular_shot.shield = 0
+	regular_shot._hit(20.0, "chaff", "gunship")
+	check(is_equal_approx(float(regular_shot.damage_taken.chaff), float(Sim.new(18806).damage_taken.chaff) + 20.0), "Point defense never softens regular enemies")
+	var unguarded_beam := Sim.new(18807)
+	var guarded_beam := Sim.new(18807, {"point_defense":3})
+	unguarded_beam._hit(25.0, "heavy", "Harvester")
+	guarded_beam._hit(25.0, "heavy", "Harvester")
+	check(is_equal_approx(float(unguarded_beam.damage_taken.heavy), float(guarded_beam.damage_taken.heavy)), "Boss heavy beam damage remains a distinct timing challenge")
+	var boss_volley_hard := Sim.new(18808, {}, "vanguard", "rookie", "hard")
+	var boss_volley_insane := Sim.new(18808, {}, "vanguard", "rookie", "insane")
+	for sim in [boss_volley_hard, boss_volley_insane]:
+		sim.stage = 3
+		sim.time = 10.0
+		sim.boss_spawn_time = 0.0
+		sim.heavy_ready_at = 999.0
+		sim.enemies = [{"id":101,"kind":"boss3","p":Vector2(270,135),"hp":100000.0,"max_hp":100000.0,"speed":0.0,"fire":0.0,"xp":0,"phase":0.0}]
+		sim._update_enemies()
+	check(boss_volley_hard.bullets.size() == boss_volley_insane.bullets.size(), "Harder bosses fire more often, not more bullets per volley")
+	check(float(boss_volley_insane.bullets[0].damage) / float(boss_volley_hard.bullets[0].damage) > boss_volley_insane.threat_scale() / boss_volley_hard.threat_scale(), "Boss projectile damage escalates slightly faster than regular enemy projectile damage")
+
+
 func _test_v11_enemy_projectile_cadence() -> void:
 	var probe := Sim.new(11101)
 	check(is_equal_approx(probe.projectile_interval_factor("drone"), 0.92), "1.1 fires ordinary World 1 bullets about 9% more often")
@@ -353,7 +442,7 @@ func _test_v11_enemy_projectile_cadence() -> void:
 	boss.heavy_ready_at = 1000000.0
 	boss.enemies = [{"id": 102, "kind": "boss", "p": Vector2(270, 135), "hp": 6200.0, "max_hp": 6200.0, "speed": 0.0, "fire": 0.0, "xp": 0, "phase": 0.0}]
 	boss._update_enemies()
-	check(is_equal_approx(float(boss.enemies[0].fire), 2.1 * 0.95) and boss.bullets.size() == 11, "1.1 boss projectile interval shortens but the fan's damage and bullet count do not")
+	check(is_equal_approx(float(boss.enemies[0].fire), (2.1 * 0.95) / boss.boss_projectile_rate_multiplier()) and boss.bullets.size() == 11, "Boss fans now fire faster, without adding bullets per volley or changing the heavy-beam clock")
 	check(boss.charges.is_empty(), "Ordinary boss projectile cadence must not secretly generate extra heavy beams")
 	var charger := Sim.new(16113)
 	charger.time = 40.0
@@ -521,9 +610,9 @@ func _test_hangar_and_tactics() -> void:
 	sim.hull = 50
 	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 68 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
 	check(Catalog.legacy_refund({"hull":3, "damage":2, "regen":1}) == 30, "Historic Hangar costs are preserved")
-	check(Catalog.price("hull",0) == 6 and Catalog.price("lance_start",0) == 46, "Future Hangar ranks cost about 15% more")
+	check(Catalog.previous_price("hull",0) == 6 and Catalog.previous_price("lance_start",0) == 46 and Catalog.price("hull",0) == 7 and Catalog.price("lance_start",0) == 51, "Hangar costs compound another 10% on the earlier visible 15%-higher price")
 	check(Catalog.refund({"hull":3, "damage":2, "regen":1}, {"hull":15, "damage":10, "regen":5}) == 30, "Historical purchase receipts prevent inflated refunds")
-	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 36, "Newly bought ranks refund their full updated price")
+	check(Catalog.refund({"hull":3, "damage":2, "regen":1}) == 42, "Newly bought ranks refund their full compounded price")
 	var credits := 0
 	for entry in Catalog.HANGAR:
 		credits += Catalog.price(entry.id, 0)
@@ -758,7 +847,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 	check(is_equal_approx(insane.threat_scale(), 2.0) and is_equal_approx(hard.threat_scale(), 1.25), "Insane enemy HP and shot strength rise 25% over the previous 1.6 scale")
 	check(is_equal_approx(insane.enemy_cadence_scale(), 1.6) and is_equal_approx(hard.enemy_cadence_scale(), 1.25), "Extra Insane toughness must not increase spawns or XP-granting kills")
 	check(is_equal_approx(insane.enemy_fire_scale(), 2.0) and is_equal_approx(hard.enemy_fire_scale(), 1.25), "Insane regular shot frequency rises 25% while spawn density remains unchanged")
-	check(is_equal_approx(insane.boss_projectile_rate_multiplier(), 1.25) and is_equal_approx(hard.boss_projectile_rate_multiplier(), 1.0), "Insane boss projectile fans fire 25% faster without increasing boss spawn or beam cadence")
+	check(is_equal_approx(normal.boss_projectile_rate_multiplier(), 1.08) and is_equal_approx(hard.boss_projectile_rate_multiplier(), 1.15) and is_equal_approx(insane.boss_projectile_rate_multiplier(), 1.40), "Boss projectile cadence increases on every difficulty, more steeply at higher difficulties")
 	check(is_equal_approx(insane.enemies[0].max_hp / hard.enemies[0].max_hp, 1.6), "Insane regular enemies have 60% more HP than Hard for the same equipment")
 	for shooter in [hard, insane]:
 		shooter.enemies[0].fire = 0.0
@@ -778,7 +867,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 		pilot._spawn_boss()
 		pilot.enemies[0].fire = 0.0
 		pilot._update_enemies()
-	check(is_equal_approx(float(hard_boss_volley.enemies[0].fire) / float(insane_boss_volley.enemies[0].fire), 1.25), "Insane boss fires projectile volleys 25% faster, without changing heavy beam scheduling")
+	check(is_equal_approx(float(hard_boss_volley.enemies[0].fire) / float(insane_boss_volley.enemies[0].fire), 1.40 / 1.15), "Insane boss fires more volleys than Hard, without changing heavy-beam scheduling")
 	check(is_equal_approx(hard_boss_volley.heavy_ready_at, insane_boss_volley.heavy_ready_at), "Insane additional projectiles preserve the existing heavy-beam warning interval")
 	check(normal.payout() < hard.payout() and hard.payout() < insane.payout(), "Hard and Insane must pay more cores")
 	check(normal.content.stage_count == 4 and normal.content.abilities.aegis.cooldown >= 14, "Four stages and slower Aegis must be configured")
@@ -1108,11 +1197,11 @@ func _test_route_prototype_balance_grid() -> void:
 		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction" % late_stage)
 		balanced._spawn_boss()
-		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90
-		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply the 10%% health reduction" % late_stage)
+		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90 * balanced.boss_health_pressure()
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply their own durability pressure on top of regular health scaling" % late_stage)
 		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
-		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90
-		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss modules apply the 10%% health reduction" % late_stage)
+		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90 * balanced.boss_health_pressure()
+		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss parts scale alongside their core" % late_stage)
 	var later_endless := Sim.new(9343)
 	later_endless.stage = 5
 	check(is_equal_approx(later_endless.enemy_health_multiplier(), 1.0) and is_equal_approx(later_endless.enemy_damage_multiplier(), 1.0), "Endless stages beyond the four-world campaign retain authored enemy stats")
@@ -1121,7 +1210,7 @@ func _test_route_prototype_balance_grid() -> void:
 	hard_opener._spawn_boss()
 	insane_opener._spawn_boss()
 	check(insane_opener.enemies[0].max_hp > hard_opener.enemies[0].max_hp, "Insane Harvester HP exceeds Hard at identical Hangar")
-	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5) / (1.25 * 6.5)), "The Insane World 1 boss is stronger than Hard with the authored enrage factors")
+	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5 * insane_opener.boss_health_pressure()) / (1.25 * 6.5 * hard_opener.boss_health_pressure())), "World 1 Insane-to-Hard HP ratio includes the authored opener and stronger 1.2 boss-specific difficulty scaling")
 	var hard_shot := Sim.new(8080, {}, "vanguard", "rookie", "hard")
 	var insane_shot := Sim.new(8080, {}, "vanguard", "rookie", "insane")
 	for shooter in [hard_shot, insane_shot]:
@@ -1698,7 +1787,7 @@ func _test_fusion_thresholds() -> void:
 	check(stable.restore(restored.snapshot()) and stable.snapshot() == restored.snapshot(), "The migrated full-bar hand stays fixed on subsequent resumes")
 
 func _test_expanded_hangar() -> void:
-	check(Catalog.HANGAR.size() == 38, "Sixteen new permanent tracks bring the Hangar to 38")
+	check(Catalog.HANGAR.size() == 40, "Two new boss-specialist tracks expand the Hangar catalog from 38 to 40")
 	var starting := Sim.new(3001,{"arc_start":1,"lance_start":1,"signature_rank":2})
 	check(starting.upgrades.arc == 1 and starting.upgrades.lance == 1, "Purchased starting weapons are installed")
 	check(Sim.new(3001,{"arc_start":1},"arcwing").upgrades.arc == 2, "Charged coil also improves an Arcwing’s starting weapon")
