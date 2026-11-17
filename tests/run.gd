@@ -186,6 +186,21 @@ func _test_interrupts_and_priority() -> void:
 	check(sim.shots[-1].target == 1, "Seekers must prioritize the charging source")
 	sim._damage_enemy(sim.enemies[0], 40, "pulse")
 	check(sim.charges.is_empty() and sim.beams_cancelled == 1, "Killing a charging source must cancel its beam")
+	check(sim.effects.any(func(e): return e.kind == "beam-canceled" and int(e.source) == 1 and is_equal_approx(float(e.x), 270.0)), "Destroying a charging ship must expose its canceled lane and source to the UI")
+	check(not sim.effects.any(func(e): return e.kind == "beam"), "Destroying the charger must never produce the actual red beam firing visual")
+	check(sim.events.any(func(e): return str(e.message).contains("Beam canceled")), "Interrupted charges must be explained in the combat event log")
+	var two_sources := Sim.new(201)
+	two_sources.enemies = [
+		{"id": 11, "kind": "sniper", "p": Vector2(180, 225), "hp": 40.0, "max_hp": 40.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0},
+		{"id": 12, "kind": "sniper", "p": Vector2(390, 225), "hp": 40.0, "max_hp": 40.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0}
+	]
+	two_sources.charges = [
+		{"source": 11, "x": 180.0, "remaining": 0.7, "duration": 1.8, "damage": 22.0},
+		{"source": 12, "x": 390.0, "remaining": 0.9, "duration": 1.8, "damage": 22.0}
+	]
+	two_sources._damage_enemy(two_sources.enemies[0], 100.0, "pulse")
+	check(two_sources.charges.size() == 1 and int(two_sources.charges[0].source) == 12 and two_sources.beams_cancelled == 1, "Killing one charging ship must preserve the other ship's still-dangerous lane")
+	check(two_sources.effects.filter(func(e): return e.kind == "beam-canceled").size() == 1, "Only a canceled charge gets the teal interruption feedback")
 	sim = Sim.new(20, {}, "arcwing")
 	sim.charges = [{"source": 99, "x": 270.0, "remaining": 1.0, "duration": 1.8, "damage": 30.0}]
 	sim.bullets = [{"p": Vector2(100, 100), "v": Vector2.ZERO, "damage": 12.0, "kind": "ordnance", "hp": 12.0, "source": "gunship"}]
