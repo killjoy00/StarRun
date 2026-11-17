@@ -1617,7 +1617,10 @@ func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
 	check(content.fusions.size() == 12 and content.passive_links.size() == 8, "Twenty-two base actives must include the optional Shieldstorm fusion and eight passive links")
 	for card in content.cards:
-		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
+		if str(card.tag) == "MUTATION":
+			check(int(card.max) == 1 and not Catalog.mutation(str(card.id)).is_empty(), "A weapon mutation is an exclusive one-time choice: " + str(card.id))
+		else:
+			check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every ranked upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
 		var sim := Sim.new(1901)
 		_fuse_pair(sim,pair)
