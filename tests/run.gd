@@ -21,6 +21,7 @@ func _run() -> void:
 	_test_lance_fire_reliability()
 	_test_v11_enemy_projectile_cadence()
 	_test_boss_scaling_and_hangar_expansion()
+	_test_shooter_health_screen_pressure()
 	_test_draft_and_cooldowns()
 	_test_resume()
 	_test_saves()
@@ -328,6 +329,38 @@ func _test_lance_fire_reliability() -> void:
 		for frame in range(27):
 			sim.step()
 		check(sim.effects.any(func(e): return e.kind == "lance"), "Prism lance shot must still be visible after 0.15 real seconds at 3x")
+
+func _test_shooter_health_screen_pressure() -> void:
+	# Baseline World 1 is unchanged regardless of difficulty and investment.
+	for mode in Catalog.DIFFICULTIES:
+		var first := Sim.new(71230, {}, "vanguard", "rookie", mode)
+		for kind in ["drone", "gunship", "sniper", "missile_bomber", "shieldguard", "carrier"]:
+			check(is_equal_approx(first.shooter_health_pressure(kind), 1.0), "Opening-world %s HP remains unchanged on %s" % [kind,mode])
+	# World 2+ changes only the tougher shooter class, not minion XP,
+	# heavyweight hazards, rapid threats, snipers or boss modules.
+	var baseline := Sim.new(71231)
+	baseline.stage = 2
+	baseline._add_enemy("ion_frigate", Vector2(270, 90))
+	var tested := Sim.new(71231)
+	tested.stage = 2
+	tested._add_enemy("ion_frigate", Vector2(270, 90))
+	var original: float = float(tested.content.enemies.ion_frigate.hp) * float(tested.stage_spec().health_scale) * tested.threat_scale() * tested.stage_risk * tested.enemy_health_multiplier()
+	check(is_equal_approx(float(tested.enemies[0].max_hp), original * 1.12), "Normal World 2 ion frigate gets 12 percent more HP without changing any other scaling")
+	check(int(tested.enemies[0].xp) == int(tested.content.enemies.ion_frigate.xp), "Tougher shooters retain the same XP reward")
+	for mode in Catalog.DIFFICULTIES:
+		var challenger := Sim.new(71232, {}, "vanguard", "rookie", mode)
+		challenger.stage = 3
+		for kind in ["gunship","shieldguard","ion_frigate","corroder","disruptor","arc_spire","forge_turret","gravity_sentinel"]:
+			check(is_equal_approx(challenger.shooter_health_pressure(kind), {"normal":1.15,"hard":1.20,"insane":1.25}[mode]), "Targeted backline enemy receives the correct optional HP increase: %s / %s" % [kind,mode])
+		for kind in ["drone","rusher","interceptor","ember_hunter","storm_weaver","sniper","void_lancer","carrier","echo_carrier","minelayer","slag_bomber","missile_bomber","boulder","station","boss","boss2","boss3","boss4","boss_module"]:
+			check(is_equal_approx(challenger.shooter_health_pressure(kind), 1.0), "Fast/XP/beam/boss units keep their old HP: %s / %s" % [kind,mode])
+	var stationary := Sim.new(71233)
+	stationary.stage = 4
+	stationary._add_enemy("gravity_sentinel", Vector2(270,100))
+	var original_health: float = float(stationary.content.enemies.gravity_sentinel.hp) * float(stationary.stage_spec().health_scale) * stationary.threat_scale() * stationary.stage_risk * stationary.enemy_health_multiplier()
+	check(is_equal_approx(float(stationary.enemies[0].max_hp), original_health * 1.15), "Targeted later world HP increase applies to real spawned sentinel")
+	check(Sim.new(33).restore(stationary.snapshot()), "Experimental HP and its spawned enemy states use the existing checkpoint save format")
+
 
 func _test_boss_scaling_and_hangar_expansion() -> void:
 	# New Hangar purchases cost at least ten percent more than their displayed
