@@ -2059,7 +2059,7 @@ func _show_beam_tutorial() -> void:
 	column.add_theme_constant_override("separation", 9)
 	panel.add_child(column)
 	Kit.caps(column, "LIVE TRAINING  ·  HEAVY BEAM", Kit.AMBER, 14)
-	Kit.label(column, "See the warning lane? A heavy beam is charging. Aegis blocks it—save your shield for the moment it fires.", 17, Kit.TEXT, true)
+	Kit.label(column, "The red lane shows where a heavy beam will fire. The red-marked enemy is charging it: destroy that enemy to cancel the beam, or use Aegis when it fires.", 17, Kit.TEXT, true)
 	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
 	var slot: int = sim.active_slots.find("aegis")
 	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
