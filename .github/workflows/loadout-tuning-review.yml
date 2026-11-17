@@ -119,7 +119,7 @@ jobs:
   # the immutable exact-seed previous PR head with the same elite rules.
   haven_insane_ab:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
-    name: Haven before/after / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    name: Haven before/after / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / seed-offset-${{ matrix.offset }}
     runs-on: ubuntu-latest
     timeout-minutes: 55
     strategy:
@@ -128,6 +128,8 @@ jobs:
         include:
           - {difficulty: insane, hangar: max, seeds: 2, offset: 4}
           - {difficulty: normal, hangar: mid, seeds: 2, offset: 4}
+          # Independent seeds check whether the small Normal regression generalizes.
+          - {difficulty: normal, hangar: mid, seeds: 4, offset: 24}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -165,7 +167,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: haven-support-ab-${{ matrix.difficulty }}
+          name: haven-support-ab-${{ matrix.difficulty }}-${{ matrix.offset }}
           path: review/
           retention-days: 30
           if-no-files-found: ignore
