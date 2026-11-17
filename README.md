@@ -30,6 +30,12 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 
 Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Flak Screen, EMP Blackout, Deflector, Rail Strike, Prism Reversal, Chaff Barrier, Capacitor, Precision Focus, Decoy Beacon, Signal Jammer, Energy Siphon, Chain Overload, Reactor Reboot, Salvage Surge, Wing Drones, Ion Mine.
 
+## Roguelike variations (candidate)
+
+Regular flights now have three optional **Artifact** rule sets: Glass Fleet, Arsenal Shift, and Drone Armada. Daily challenges always use Standard. Later-world drafts offer rare one-per-run **weapon mutations**: Ghost Rounds (Pulse penetration), Hydra Warheads (Seeker splits), and Chain Reactor (Arc death chains). After boss defeats a black-market trade can replace a Prototype offer, sacrificing hull or shield capacity for one of these mutations. Engineer and Scavenger now also have additional distinctive combat mechanics.
+
+See [roguelike variation implementation](docs/ROGUELIKE_VARIATION.md). Version remains **1.3**; this work is not signed for TestFlight or submitted to the App Store.
+
 ## Controls
 
 On iPhone, four compact on-screen buttons run left to right on one row. Fused abilities use just one button. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses. Level-up choices use keys 1–4 or touch.

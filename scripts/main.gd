@@ -20,7 +20,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal"}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard"}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -131,6 +131,8 @@ func _ready() -> void:
 	if not profile.get("pilot", "rookie") in profile.pilots_owned:
 		profile.pilot = "rookie"
 	Progress.prepare(profile)
+	if str(Catalog.artifact(str(profile.get("artifact","standard"))).id) != str(profile.get("artifact","standard")):
+		profile.artifact = "standard"
 	game_speed = float(profile.get("speed", 1.0))
 	if game_speed not in speed_options:
 		game_speed = 1.0
@@ -1014,6 +1016,17 @@ func _show_menu() -> void:
 		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
+	# Optional run-rule variants stay separate from the shared Daily flight.
+	Kit.label(body, "Optional flight artifact", 14, Kit.MUTED)
+	var artifact_row := HBoxContainer.new()
+	artifact_row.add_theme_constant_override("separation", 5)
+	body.add_child(artifact_row)
+	for option in [{"id":"standard","short":"Standard"},{"id":"glass_fleet","short":"Glass"},{"id":"arsenal_roulette","short":"Shift"},{"id":"drone_armada","short":"Drones"}]:
+		var selected: bool = str(profile.get("artifact","standard")) == str(option.id)
+		var artifact_button := _ui_button(artifact_row, str(option.short), _set_artifact.bind(str(option.id)), "amber" if selected else "secondary", 44, true)
+		artifact_button.name = "Artifact" + str(option.id).to_pascal_case()
+		artifact_button.tooltip_text = str(Catalog.artifact(str(option.id)).description)
+	Kit.label(body, str(Catalog.artifact(str(profile.get("artifact","standard"))).description), 14, Kit.MUTED, true)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -1121,6 +1134,13 @@ func _show_achievements() -> void:
 		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
 		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
 	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+func _set_artifact(id: String) -> void:
+	if str(Catalog.artifact(id).id) != id:
+		return
+	profile.artifact = id
+	_save_profile()
+	_show_menu()
 
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
@@ -1554,13 +1574,16 @@ func _draft_card(parent: Node, i: int) -> void:
 	var fusion: String = sim.fusion_target(id) if tag == "ABILITY" and not banish_mode else ""
 	var fused: Dictionary = sim.fusion_spec(fusion)
 	var accent := Kit.CYAN
-	var type_text := "Active" if tag == "ABILITY" else ("Auto weapon" if tag == "WEAPON" else "Passive")
+	var type_text := "Active" if tag == "ABILITY" else ("Auto weapon" if tag == "WEAPON" else ("Mutation" if tag == "MUTATION" else "Passive"))
 	var tag_text := ""
 	if not fusion.is_empty():
 		accent = Kit.VIOLET
 		tag_text = "Active  ·  fusion"
 	elif is_new_ability:
 		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
+	elif tag == "MUTATION":
+		accent = Kit.VIOLET
+		tag_text = "RARE WEAPON MUTATION · one per run"
 	elif id == "core_cache":
 		accent = Kit.AMBER
 		tag_text = "Cores"
@@ -1677,6 +1700,15 @@ func _show_build() -> void:
 	var body: VBoxContainer = view.body
 	_page_header(view.top, "%s  ·  Pilot %s" % [_name_part(Catalog.ship(sim.ship_id).name, 0), _name_part(Catalog.pilot(sim.pilot_id).name, 0)], "Build")
 	_tiles(body, [["Hull", "%d/%d" % [sim.hull, sim.max_hull], Kit.CYAN], ["Shield", "%d/%d" % [sim.shield, sim.max_shield], Color("9fcbff")], ["Level", str(sim.level)]])
+	if sim.artifact_id != "standard":
+		var rule: Dictionary = Catalog.artifact(sim.artifact_id)
+		_info_card(body, "Artifact: " + str(rule.name), str(rule.description), Kit.VIOLET)
+	if not sim.mutations.is_empty():
+		_section(body, "Mutated weapons")
+		for mutation_id in sim.mutations:
+			var mutation: Dictionary = Catalog.mutation(str(mutation_id))
+			if not mutation.is_empty():
+				_info_card(body, str(mutation.name), str(mutation.description), Kit.VIOLET)
 	_section(body, "Active abilities")
 	for slot in range(Catalog.ACTIVE_SLOTS):
 		var panel := PanelContainer.new()
@@ -1839,11 +1871,12 @@ func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
 	var view := _page(0.95, true, 540.0)
-	_page_header(view.top, "Between stages  ·  step 1 of 2", "Pick a prototype")
-	Kit.label(view.top, "You keep it for the rest of the run. Every prototype has a cost.", 16, Kit.MUTED, true)
+	_page_header(view.top, "Between stages  ·  step 1 of 2", "Prototype or black market")
+	Kit.label(view.top, "Install a prototype or accept an illegal weapon modification. You only get one; a black-market trade permanently sacrifices ship capacity.", 16, Kit.MUTED, true)
 	for i in range(sim.prototype_offers.size()):
 		var spec: Dictionary = sim.prototype_spec(str(sim.prototype_offers[i]))
-		var card := _tap_card(view.body, _choose_prototype.bind(i), Kit.CYAN)
+		var illegal: bool = str(spec.role) == "ILLEGAL TRADE"
+		var card := _tap_card(view.body, _choose_prototype.bind(i), Kit.AMBER if illegal else Kit.CYAN)
 		card_buttons.append(card.button)
 		var head := HBoxContainer.new()
 		head.add_theme_constant_override("separation", 8)
@@ -1851,7 +1884,7 @@ func _show_prototypes() -> void:
 		card.content.add_child(head)
 		var title := Kit.label(head, str(spec.name), 19, Color.WHITE, true)
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
-		_chip(head, str(spec.role).capitalize(), Kit.MUTED)
+		_chip(head, "BLACK MARKET" if illegal else str(spec.role).capitalize(), Kit.AMBER if illegal else Kit.MUTED)
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
@@ -1969,6 +2002,10 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
+	if sim.artifact_id != "standard":
+		build_lines.append("Artifact: " + str(Catalog.artifact(sim.artifact_id).name))
+	for id in sim.mutations:
+		build_lines.append("Mutation: " + str(Catalog.mutation(str(id)).name))
 	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
 	if sim.bounty_earned > 0:
 		_info_card(body, "Bounty contracts", "%d base cores from bounty runs." % sim.bounty_earned, Kit.AMBER)
@@ -2007,7 +2044,7 @@ func _new_run() -> void:
 	result_earned_cores = -1
 	result_awards.clear()
 	_save_profile()
-	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")))
+	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")), str(profile.get("artifact", "standard")))
 	_start_flight()
 
 func _new_daily_run() -> void:
@@ -2089,7 +2126,7 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else "Time your abilities. Survive four stages."
+	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Time your abilities. Survive four stages.")
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()

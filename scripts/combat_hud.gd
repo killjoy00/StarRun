@@ -47,7 +47,7 @@ static func refresh(host) -> void:
 		if occupied and not host.previous_ready.has(id):
 			host.previous_ready[id] = true
 	host.build_label.text = "%s / %s\nAUTOPILOT ONLINE\n\n" % [Catalog.ship(sim.ship_id).name.to_upper(), Catalog.pilot(sim.pilot_id).name.to_upper()]
-	for tag in ["WEAPON", "ABILITY", "SYSTEM"]:
+	for tag in ["WEAPON", "ABILITY", "SYSTEM", "MUTATION"]:
 		host.build_label.text += tag + "S\n"
 		for card in sim.content.cards:
 			if card.tag == tag and sim.upgrades[card.id] > 0 and sim.fused_into(str(card.id)).is_empty():

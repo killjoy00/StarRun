@@ -52,6 +52,7 @@ func _run() -> void:
 	_test_endless_encounters_and_cooldown_captures()
 	_test_elite_squad_counterplay()
 	_test_ship_pilot_identity_tuning()
+	_test_roguelike_variation()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -223,6 +224,104 @@ func _test_ship_pilot_identity_tuning() -> void:
 	var resumed := Sim.new(88236)
 	check(resumed.restore(engineer.snapshot()) and resumed.snapshot() == engineer.snapshot(), "Engineer shield-powered combat does not need a new save schema")
 
+
+func _test_roguelike_variation() -> void:
+	var standard := Sim.new(444)
+	var glass := Sim.new(444, {}, "vanguard", "rookie", "normal", "glass_fleet")
+	check(glass.max_hull == standard.max_hull * 0.50 and glass.max_shield == standard.max_shield * 1.25, "Glass Fleet trades half hull for bigger shields")
+	check(glass.weapon_power() > standard.weapon_power() * 1.49, "Glass Fleet earns a meaningful weapon damage advantage")
+	var army := Sim.new(445, {}, "vanguard", "rookie", "normal", "drone_armada")
+	check(army.upgrades.pulse == 0 and army.upgrades.seeker == 0, "Drone Armada disables conventional starting guns")
+	army._update_support()
+	check(army.escort_count == 3 and army.escort_left > 1000.0, "Drone Armada launches persistent autonomous escorts")
+	army._offer_cards(false)
+	check(army.cards.all(func(c): return str(c.tag) not in ["WEAPON", "MUTATION"]), "Drone mode cannot draft unusable conventional weapons")
+	var shift := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")
+	shift.upgrades.pulse = 4
+	shift.upgrades.seeker = 2
+	shift.upgrades.arc = 1
+	shift.upgrades.lance = 3
+	shift.stage_transition_queued = true
+	shift.stage_clears = 1
+	check(shift.begin_intermission() and shift.skip_prototype() and shift.choose_route("repair") and shift.advance_stage(), "Artifact mode passes through the real boss intermission")
+	check([shift.upgrades.pulse,shift.upgrades.seeker,shift.upgrades.arc,shift.upgrades.lance] == [3,4,2,1], "Arsenal Shift rotates actual weapon ranks without duplicating them")
+	var rare := Sim.new(447)
+	rare.stage = 2
+	rare.level = 5
+	rare._offer_cards(false)
+	check(not rare.cards.any(func(c): return str(c.tag) == "MUTATION"), "Mutation cards only appear at their rare milestone gate")
+	var rare_found := false
+	for candidate_seed in range(456, 486):
+		var candidate := Sim.new(candidate_seed)
+		candidate.stage = 2
+		candidate.level = 8
+		candidate._offer_cards(false)
+		if candidate.cards.any(func(c): return str(c.tag) == "MUTATION"):
+			rare_found = true
+			check(candidate.cards.any(func(c): return str(c.id) in ["piercing_pulse", "split_seeker"]), "Only mutations for owned weapons are offered")
+			break
+	check(rare_found, "Rare transformations must be obtainable in later-world drafts across multiple seeds")
+	var pulse := Sim.new(447)
+	check(pulse._install_mutation("piercing_pulse"), "Owned Pulse can receive Ghost Rounds")
+	check(not pulse._install_mutation("split_seeker"), "A run cannot stack multiple rare mutations")
+	pulse._update_weapons()
+	check(pulse.shots.any(func(s): return str(s.weapon) == "pulse" and int(s.pierce) == 1), "Ghost Rounds grants a real second-target projectile")
+	pulse.enemies = [
+		{"id":1,"kind":"drone","p":Vector2(270,400),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0},
+		{"id":2,"kind":"drone","p":Vector2(280,398),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0}
+	]
+	pulse.shots = [{"p":Vector2(270,416),"v":Vector2(0,-960),"damage":20.0,"weapon":"pulse","target":-1,"pierce":1,"last_enemy":-1}]
+	pulse._update_shots()
+	check(pulse.enemies[0].hp <= 80.0 and pulse.enemies[1].hp <= 88.0, "Ghost Rounds really strike a second target for 60 percent damage")
+	var rockets := Sim.new(448, {}, "wraith")
+	check(rockets._install_mutation("split_seeker"), "Wraith can install Hydra Warheads")
+	rockets.enemies = [
+		{"id":1,"kind":"drone","p":Vector2(270, 400),"hp":12.0,"max_hp":12.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0},
+		{"id":2,"kind":"drone","p":Vector2(290, 350),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0}
+	]
+	rockets.shots = [{"p":Vector2(270, 400), "v":Vector2.ZERO, "damage":25.0, "weapon":"seeker", "target":1}]
+	rockets._update_shots()
+	check(rockets.shots.any(func(s): return str(s.weapon) == "seeker" and bool(s.get("shard", false))), "Hydra Warhead spawns real homing fragments instead of cosmetic sparks")
+	var arc := Sim.new(449, {}, "arcwing")
+	check(arc._install_mutation("arc_reactor"), "Arcwing can mutate its Arc Coil")
+	arc.enemies = [
+		{"id":1,"kind":"drone","p":Vector2(270, 400),"hp":2.0,"max_hp":2.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0},
+		{"id":2,"kind":"drone","p":Vector2(280, 400),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0}
+	]
+	arc._damage_enemy(arc.enemies[0], 9.0, "arc")
+	check(arc.enemies[1].hp < 100.0 and arc.effects.any(func(e): return str(e.kind) == "arc"), "Chain Reactor does damage to a second enemy on an Arc Coil kill")
+	var market := Sim.new(450)
+	market.stage_transition_queued = true
+	market.stage_clears = 1
+	check(market.begin_intermission(), "Boss defeat permits a black market opportunity")
+	market.prototype_offers[2] = "market:piercing_pulse"
+	var prior_shield := market.max_shield
+	check(market.choose_prototype(2) and market.mutations == ["piercing_pulse"], "Black-market trade gives a real mutation")
+	check(is_equal_approx(market.max_shield, prior_shield * 0.75) and market.prototypes.is_empty(), "Black-market trade permanently sacrifices shield capacity, not a free Prototype")
+	check(not market.choose_prototype(2) and market.choose_route("repair"), "Cannot buy the same black-market trade twice")
+	var saved := market.snapshot()
+	var resumed := Sim.new()
+	check(resumed.restore(saved) and resumed.snapshot() == saved, "Market and mutation state survive a precise checkpoint")
+	var scavenge := Sim.new(451, {}, "vanguard", "scavenger")
+	scavenge.kills = 11
+	scavenge._add_enemy("drone", Vector2(270, 400))
+	scavenge._add_enemy("drone", Vector2(280, 405))
+	var neighbor: Dictionary = scavenge.enemies[1]
+	var old_hp: float = float(neighbor.hp)
+	scavenge._damage_enemy(scavenge.enemies[0], 10000.0, "pulse")
+	check(neighbor.hp < old_hp and scavenge.events.any(func(e): return "SCRAP STORM" in str(e.message)), "Scavenger converts every twelfth kill into a damaging wreckage shockwave")
+	var repair := Sim.new(452, {}, "vanguard", "engineer")
+	repair.shield = 1.0
+	repair._hit(5.0, "ordnance", "test")
+	check(repair.sentry_left > 5.0 and repair.events.any(func(e): return "FIELD SENTRY" in str(e.message)), "Engineer deploys a temporary offensive sentry on shield break")
+	repair._add_enemy("drone", Vector2(260,250))
+	repair._update_support()
+	check(repair.shots.any(func(s): return str(s.weapon) == "escort" and s.damage > 0.0), "Engineer sentry fires independent offensive shots")
+	var default_save := standard.snapshot()
+	for key in ["artifact_id", "mutations", "sentry_left", "sentry_timer"]:
+		default_save.erase(key)
+	check(Sim.new().restore(default_save), "Legacy flight checkpoints load without artifact or mutation fields")
+	check(Catalog.artifact("not_an_artifact").id == "standard" and Catalog.mutation("nonexistent").is_empty(), "Unknown modes and mutation IDs are safely rejected")
 
 func _test_elite_squad_counterplay() -> void:
 	# Promote existing normal spawn slots, never additional enemies/XP.
@@ -1528,7 +1627,10 @@ func _test_fusions_and_milestones() -> void:
 	var content := Sim.new(1901).content
 	check(content.fusions.size() == 12 and content.passive_links.size() == 8, "Twenty-two base actives must include the optional Shieldstorm fusion and eight passive links")
 	for card in content.cards:
-		check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every upgrade needs rank 5 and 10 milestones: " + str(card.id))
+		if str(card.tag) == "MUTATION":
+			check(int(card.max) == 1 and not Catalog.mutation(str(card.id)).is_empty(), "A weapon mutation is an exclusive one-time choice: " + str(card.id))
+		else:
+			check(int(card.max) == 10 and card.has("rank5") and card.has("rank10"), "Every ranked upgrade needs rank 5 and 10 milestones: " + str(card.id))
 	for pair in content.fusions:
 		var sim := Sim.new(1901)
 		_fuse_pair(sim,pair)

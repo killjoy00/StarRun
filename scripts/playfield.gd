@@ -925,6 +925,15 @@ func _bar(rect: Rect2, fraction: float, color: Color) -> void:
 	draw_rect(Rect2(rect.position, Vector2(rect.size.x * clampf(fraction, 0, 1), rect.size.y)), color)
 
 func _draw_support() -> void:
+	# Engineer's field sentry is a visible ship-mounted turret, separate from
+	# the ordinary Wing Drone visuals and their individual firing timers.
+	if sim.sentry_left > 0.0:
+		var turret: Vector2 = sim.ship_position() + Vector2(36.0, -5.0)
+		var shape := PackedVector2Array([turret+Vector2(0,-13), turret+Vector2(11,-3), turret+Vector2(8,10), turret+Vector2(-8,10), turret+Vector2(-11,-3)])
+		draw_colored_polygon(shape, Color("1b5361"))
+		FusionArt.outline(self, shape, CYAN, 2.0)
+		draw_circle(turret, 4.0, Color.WHITE)
+		draw_line(turret + Vector2(0,-6), turret + Vector2(0,-17), CYAN, 2.5, true)
 	if sim.escort_left > 0.0:
 		for i in range(sim.escort_count):
 			var p: Vector2 = sim.escort_position(i)
