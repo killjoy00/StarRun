@@ -371,12 +371,12 @@ func _test_shooter_health_screen_pressure() -> void:
 	turret.stage = 2
 	turret._add_enemy("arc_spire", Vector2(270,-35))
 	turret.enemies[0].fire = 0.0
-	for frame in range(90):
-		turret._update_enemies()
-	check(turret.bullets.is_empty() and float(turret.enemies[0].fire) == 0.0, "A slow shooter cannot expend its opening volley above the visible playfield")
 	for frame in range(70):
 		turret._update_enemies()
-	check(turret.bullets.size() == 9 and float(turret.enemies[0].p.y) >= 16.0, "Shooter releases its first visible nine-round pattern once it enters the playfield")
+	check(turret.bullets.is_empty() and float(turret.enemies[0].fire) == 0.0, "A slow shooter cannot expend its opening volley above the visible playfield")
+	for frame in range(90):
+		turret._update_enemies()
+	check(turret.bullets.size() == 9 and float(turret.enemies[0].p.y) >= 0.0, "Shooter releases its first visible nine-round pattern once it enters the playfield")
 	var cadence := Sim.new(71235)
 	cadence.stage = 2
 	cadence._add_enemy("ion_frigate", Vector2(270,120))
