@@ -20,7 +20,7 @@ const SCREENS := [
 	"ships", "pilots", "combat-1", "combat-4",
 	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
-	"results-loss", "results-win", "beam-tutorial", "endless-clear"
+	"results-loss", "results-win", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
@@ -160,6 +160,16 @@ func _prepare(scene, screen: String) -> void:
 		"beam-tutorial":
 			scene.sim.charges = [{"x":270.0, "remaining":1.5, "duration":1.8, "source":0, "damage":30.0}]
 			scene._show_beam_tutorial()
+		"beam-charging", "beam-canceled":
+			scene.mode = "playing"
+			scene._clear_overlay()
+			scene.sim.enemies = [{"id": 9, "kind": "sniper", "p": Vector2(280, 242), "hp": 60.0, "max_hp": 60.0, "fire": 99.0, "speed": 0.0, "phase": 0.0, "xp": 0}]
+			scene.sim.charges = [{"source": 9, "x": 280.0, "remaining": 1.2, "duration": 1.8, "damage": 30.0}]
+			if screen == "beam-canceled":
+				scene.sim._damage_enemy(scene.sim.enemies[0], 100.0, "pulse")
+				scene.sim.enemies.clear()
+			# The screenshot harness disables automatic processing.
+			scene.world._process(0.0)
 		"endless-clear":
 			scene.sim.endless_enabled = true
 			scene.sim.stage = 5
