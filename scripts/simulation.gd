@@ -36,6 +36,18 @@ var pilot_id := "rookie"
 var artifact_id := "standard"
 var mutations: Array = []
 var lance_refund_ready := false
+# In-flight traveling merchant. Explicitly enabled by the regular-flight UI:
+# Daily, existing simulation probes and historical saves are unchanged.
+var merchant_enabled := false
+var merchant_state := "" # "", "signal", "shop", "confirm"
+var merchant_offers: Array = []
+var merchant_selected := ""
+var merchant_next_at := INF
+var merchant_seen_stages: Array = []
+var merchant_visits := 0
+var merchant_trade_count := 0
+var merchant_pact_power := 0.0
+var merchant_trade_log: Array = []
 var sentry_left := 0.0
 var sentry_timer := 0.0
 var engineer_service_used := false
@@ -276,7 +288,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
-	if ended or stage_transition_queued or not intermission_step.is_empty() or not cards.is_empty():
+	if ended or stage_transition_queued or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
 	tick += 1
 	time = tick * DT
@@ -347,6 +359,8 @@ func step() -> void:
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
+	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and time >= merchant_next_at:
+		_try_merchant_signal()
 	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at:
 		_try_spawn_rival()
 	if time >= next_encounter_at and not boss_spawned:
@@ -538,6 +552,162 @@ func world1_opening_phase() -> String:
 	if elapsed < 21.0: return "recovery"
 	if elapsed < 30.0: return "counterattack"
 	return ""
+
+func enable_merchant() -> bool:
+	if not daily_day.is_empty() or merchant_enabled or ended:
+		return false
+	merchant_enabled = true
+	if stage in [2,3]:
+		_schedule_merchant()
+	return true
+
+func _schedule_merchant() -> void:
+	merchant_next_at = INF
+	if not merchant_enabled or not daily_day.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages:
+		return
+	# Independent seed math; never touch combat/draft RNG to decide visits.
+	if posmod(seed_value * 13 + stage * 47, 100) < 62:
+		merchant_next_at = stage_start + 65.0 + float(posmod(seed_value + stage * 29, 20))
+
+func _make_merchant_offers() -> Array:
+	var result: Array = []
+	var available: Array = _market_offers()
+	if not available.is_empty():
+		var item: Dictionary = available[posmod(seed_value + stage * 17, available.size())]
+		result.append({"id":"mutation:" + str(item.id), "name":"EXOTIC · " + str(item.name), "gain":str(item.description), "cost":str(item.market_cost), "tag":"ILLEGAL TECH"})
+	if merchant_pact_power <= 0.0:
+		result.append({"id":"pact", "name":"Hot Reactor", "gain":"+35% automatic weapon damage for the rest of this flight.", "cost":"Give up 22% maximum shield capacity this flight.", "tag":"HULL PACT"})
+	var old_slot := ""
+	for id in active_slots:
+		if str(id) != str(Catalog.ship(ship_id).signature) and fusion_spec(str(id)).is_empty():
+			old_slot = str(id)
+			break
+	if not old_slot.is_empty():
+		var new_id := ""
+		for candidate in ["emp","deflector","flak","jammer","overdrive","decoy","barrier"]:
+			if candidate not in active_slots and int(upgrades.get(candidate,0)) == 0 and fusion_spec(candidate).is_empty():
+				new_id = candidate
+				break
+		if not new_id.is_empty():
+			result.append({"id":"exchange:" + old_slot + ":" + new_id, "name":"Ability Exchange", "gain":"Replace %s with %s at rank 1; no extra ability slot." % [str(content.abilities[old_slot].name), str(content.abilities[new_id].name)], "cost":"Surrender every invested rank in %s." % str(content.abilities[old_slot].name), "tag":"UNLICENSED SWAP"})
+	if hull < max_hull * 0.90 or shield < max_shield * 0.75:
+		result.append({"id":"repair", "name":"Field Salvage", "gain":"Repair 40% of max hull and refill 30% of max shield.", "cost":"Spend 8 Cores already earned during this flight (no future credit).", "tag":"SALVAGE"})
+	result.append({"id":"sell_hull", "name":"Wreckage Contract", "gain":"Bank 16 bonus Cores for the flight's final payout.", "cost":"Give up 18% of maximum hull capacity this flight.", "tag":"SALVAGE PACT"})
+	return result.slice(0, 5)
+
+func _try_merchant_signal() -> bool:
+	if not merchant_enabled or not daily_day.is_empty() or not merchant_state.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages or boss_spawned or time < merchant_next_at:
+		return false
+	# Don't stack a trading interlude on a nemesis, heavy warning, or boss.
+	if enemies.size() >= _enemy_limit() - 7 or not charges.is_empty() or enemies.any(func(e): return bool(e.get("rival", false))):
+		return false
+	merchant_offers = _make_merchant_offers()
+	merchant_seen_stages.append(stage)
+	merchant_visits += 1
+	merchant_next_at = INF
+	merchant_selected = ""
+	merchant_state = "signal"
+	_log("UNREGISTERED MERCHANT - ship hailing at the edge of the convoy")
+	return true
+
+func merchant_hail() -> bool:
+	if merchant_state != "signal":
+		return false
+	merchant_state = "shop"
+	return true
+
+func merchant_preview(id: String) -> bool:
+	if merchant_state != "shop" or not merchant_offers.any(func(offer): return str(offer.id) == id):
+		return false
+	merchant_selected = id
+	merchant_state = "confirm"
+	return true
+
+func merchant_back() -> bool:
+	if merchant_state != "confirm":
+		return false
+	merchant_state = "shop"
+	merchant_selected = ""
+	return true
+
+func merchant_offer_spec(id: String) -> Dictionary:
+	for offer in merchant_offers:
+		if str(offer.id) == id:
+			return offer
+	return {}
+
+func merchant_can_afford(id: String) -> bool:
+	if id.begins_with("mutation:"):
+		var mutation: Dictionary = Catalog.mutation(id.trim_prefix("mutation:"))
+		return not mutation.is_empty() and mutations.is_empty() and artifact_id != "drone_armada" and int(upgrades.get(str(mutation.requires),0)) > 0
+	if id == "pact":
+		return merchant_pact_power <= 0.0
+	if id == "sell_hull":
+		return max_hull > 35.0
+	if id == "repair":
+		return choice_cores + bonus_cores >= 8
+	if id.begins_with("exchange:"):
+		var old_id: String = id.get_slice(":",1)
+		var new_id: String = id.get_slice(":",2)
+		return old_id in active_slots and old_id != str(Catalog.ship(ship_id).signature) and fusion_spec(old_id).is_empty() and int(upgrades.get(new_id,0)) == 0 and new_id not in active_slots and new_id in Catalog.ABILITIES
+	return false
+
+func merchant_accept() -> bool:
+	if merchant_state != "confirm" or merchant_selected.is_empty() or merchant_offer_spec(merchant_selected).is_empty() or not merchant_can_afford(merchant_selected):
+		return false
+	var chosen: String = merchant_selected
+	match chosen:
+		"pact":
+			max_shield *= 0.78
+			shield = minf(shield,max_shield)
+			merchant_pact_power = 0.35
+		"repair":
+			var remaining := 8
+			var from_bounty: int = mini(remaining,bonus_cores)
+			bonus_cores -= from_bounty
+			remaining -= from_bounty
+			choice_cores -= remaining
+			hull = minf(max_hull,hull + max_hull * 0.40)
+			shield = minf(max_shield,shield + max_shield * 0.30)
+		"sell_hull":
+			max_hull *= 0.82
+			hull = minf(max_hull,hull)
+			choice_cores += 16
+		_:
+			if chosen.begins_with("mutation:"):
+				var mutation_id: String = chosen.trim_prefix("mutation:")
+				if not _install_mutation(mutation_id):
+					return false
+				_apply_mutation_cost(mutation_id)
+			elif chosen.begins_with("exchange:"):
+				var old_id: String = chosen.get_slice(":",1)
+				var new_id: String = chosen.get_slice(":",2)
+				var slot_index: int = active_slots.find(old_id)
+				if slot_index < 0:
+					return false
+				upgrades[old_id] = 0
+				upgrades[new_id] = 1
+				active_slots[slot_index] = new_id
+				cooldowns[new_id] = 0.0
+				cooldown_totals[new_id] = float(content.abilities[new_id].cooldown)
+			else:
+				return false
+	merchant_trade_count += 1
+	merchant_trade_log.append(chosen)
+	merchant_state = ""
+	merchant_selected = ""
+	merchant_offers.clear()
+	_log("MERCHANT TRADE COMPLETE - " + chosen)
+	return true
+
+func merchant_leave() -> bool:
+	if merchant_state not in ["signal","shop","confirm"]:
+		return false
+	merchant_state = ""
+	merchant_selected = ""
+	merchant_offers.clear()
+	_log("Merchant signal dismissed")
+	return true
 
 func _market_offers() -> Array:
 	if not mutations.is_empty() or artifact_id == "drone_armada":
@@ -1173,6 +1343,7 @@ func advance_stage() -> bool:
 	pressure_waves = 0
 	endless_stage_spec.clear()
 	stage_start = time
+	_schedule_merchant()
 	boss_spawned = false
 	boss_spawn_time = 0.0
 	stage_transition_queued = false
@@ -1613,6 +1784,8 @@ func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
+	if merchant_pact_power > 0.0:
+		power *= 1.0 + merchant_pact_power
 	# Shielded Passage contributes immediate offense without needing a niche draft.
 	# It only rewards shields above half capacity during Worlds 2-4.
 	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
@@ -2627,7 +2800,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
