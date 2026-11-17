@@ -410,8 +410,27 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		_bar(Rect2(80,21,380,7),enemy.hp/enemy.max_hp,AMBER)
 		draw_string(ThemeDB.fallback_font, Vector2(80,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
 		draw_string(ThemeDB.fallback_font, Vector2(80,78), sim.boss_phase_label(), HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
-	elif enemy.hp < enemy.max_hp:
-		_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+	else:
+		var elite_role: String = str(enemy.get("elite_role", ""))
+		if elite_role == "leader" and p.y >= 0.0 and p.y <= 885.0:
+			# A distinctive amber target ring and literal label make it
+			# obvious who powers the squad even at reduced effects / 3x.
+			var ring_radius := 54.0 + sin(visual_time * 4.5) * (0.0 if profile.reduced else 2.0)
+			draw_arc(p, ring_radius, 0, TAU, 48, Color(AMBER,0.94), 3.5, true)
+			for corner in range(4):
+				var direction := Vector2.from_angle(corner * PI / 2.0 + PI / 4.0)
+				draw_line(p + direction * (ring_radius - 7), p + direction * (ring_radius + 7), AMBER, 3.0, true)
+			var label_x: float = clampf(p.x - 61.0, 8.0, 408.0)
+			draw_rect(Rect2(label_x-3.0, p.y-81.0, 130.0, 22.0), Color("1b1722",0.88))
+			draw_string(ThemeDB.fallback_font, Vector2(label_x, p.y-64.0), "ELITE LEADER", HORIZONTAL_ALIGNMENT_LEFT, 125, 15, AMBER)
+			_bar(Rect2(p.x-26, p.y+50, 52, 4), enemy.hp/enemy.max_hp, AMBER)
+		elif elite_role == "wing" and p.y >= 0.0 and p.y <= 885.0:
+			var disrupted: bool = bool(enemy.get("elite_disrupted",false))
+			var wing_color: Color = CYAN if disrupted else AMBER
+			draw_arc(p, 35, PI*0.12, PI*0.88, 16, Color(wing_color,0.75), 2.5, true)
+			draw_string(ThemeDB.fallback_font, p+Vector2(-28, -44), "OFFLINE" if disrupted else "LINKED", HORIZONTAL_ALIGNMENT_LEFT, 74, 12, wing_color)
+		if enemy.hp < enemy.max_hp and elite_role != "leader":
+			_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
 
 func _draw_boss_module(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
@@ -649,6 +668,13 @@ func _draw_effect(effect: Dictionary) -> void:
 		_draw_fusion_cast(effect, alpha, age)
 	elif effect.kind == "fusion-formed":
 		_draw_fusion_formed(effect, alpha, age)
+	elif effect.kind == "elite-broken":
+		# On-screen response to destroying the squad coordinator.
+		var radius := 28.0 + age * 90.0
+		draw_arc(p, radius, 0, TAU, 48, Color(CYAN,alpha*0.95), 4.0, true)
+		var label_pos: Vector2 = Vector2(clampf(p.x - 88,8,348),clampf(p.y-80,27,870))
+		draw_rect(Rect2(label_pos.x-4,label_pos.y-21,191,29), Color("09222c", alpha*0.90))
+		draw_string(ThemeDB.fallback_font, label_pos, "FORMATION BROKEN", HORIZONTAL_ALIGNMENT_LEFT, 184, 17, Color(CYAN,alpha))
 	elif effect.kind == "timed-counter":
 		# A successful defensive read should be unmistakable, not a generic explosion.
 		var radius := 43.0 + age * 43.0
