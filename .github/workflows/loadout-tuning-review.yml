@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   compare:
-    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
     name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
     runs-on: ubuntu-latest
     timeout-minutes: 55
@@ -70,7 +70,7 @@ jobs:
   # Complete the equal-Hangar six-ship/six-pilot grid on Insane.
   # Like the Normal/Hard audit this is deterministic bot evidence, not a player win rate.
   insane_grid:
-    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
     name: Insane / ${{ matrix.ship }} / equal max Hangar
     runs-on: ubuntu-latest
     timeout-minutes: 55
@@ -118,7 +118,7 @@ jobs:
   # cases. Compare the new support-pod/Repair-Drone tuning causally against
   # the immutable exact-seed previous PR head with the same elite rules.
   haven_insane_ab:
-    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
     name: Haven before/after / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
     runs-on: ubuntu-latest
     timeout-minutes: 55

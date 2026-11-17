@@ -1,5 +1,6 @@
 name: StarRun 1.3 — six ships × six pilots balance audit
-# The complete 72-cell audit finished as Actions run #44148947874.
+# The original 72-cell Normal/Hard audit finished as Actions run #44148947874.
+# The manual rerun matrix now also includes six Insane/max cells (108 in total).
 # Preserve it for manual reruns without launching 144 two-world bot
 # campaigns on every later PR or documentation commit.
 on:
@@ -32,6 +33,12 @@ jobs:
           - {ship: wraith, difficulty: hard, hangar: max}
           - {ship: arcwing, difficulty: hard, hangar: max}
           - {ship: haven, difficulty: hard, hangar: max}
+          - {ship: vanguard, difficulty: insane, hangar: max}
+          - {ship: kestrel, difficulty: insane, hangar: max}
+          - {ship: bulwark, difficulty: insane, hangar: max}
+          - {ship: wraith, difficulty: insane, hangar: max}
+          - {ship: arcwing, difficulty: insane, hangar: max}
+          - {ship: haven, difficulty: insane, hangar: max}
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Godot

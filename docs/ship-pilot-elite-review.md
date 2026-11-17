@@ -22,12 +22,31 @@ Under **Hard/max Hangar**, pilot aggregate first-world clears were: Rookie **9/1
 ### Targeted identity-preserving tuning
 
 - **Bulwark:** +12% *automatic weapon* damage against boss cores and targetable boss parts only. Still slower, heavier, Pulse-centric. Ordinary-wave damage unchanged.
-- **Haven:** +12% Seeker Pod damage. Still a repair/support ship without a Pulse starter and with its existing status resistance.
+- **Haven:** first-pass +12% Seeker Pod damage; the Insane follow-up also shortens Seeker reloads from 0.70s to 0.55s (Hunter: 0.62s to 0.50s), and makes the ship's signature Repair Drones heal 25% more. No Pulse starter, and its status resistance remains intact.
 - **Engineer pilot:** +6% automatic weapon damage while shield exceeds 50% capacity. Keeps +20 shield and +0.8 shield regeneration and makes protecting that shield an active strategic tradeoff. Every other pilot's bonuses are unchanged.
 - **Vanguard/Kestrel/Wraith/Arcwing and Rookie/Ace/Hunter/Scavenger/Tactician:** no broad numerical buffs or nerfs from the tiny sample. Arcwing World-2 concern is a separate follow-up, not a blanket nerf to Ion Storm.
 
 A matched study runs **every pilot** in Bulwark/Haven on Hard/max Hangar with independent seeds and Normal/mid Hangar as a no-regression guard. It compares the immutable same-elite pre-tuning commit `cf17a7d5c5de72a31f0d62cb848b815bd22b730d` against the new traits; there is **no extra elite-formation variable** in this causal comparison. Tests verify exact boss/Seeker/shield conditional multipliers and save compatibility. Do not claim true player win probabilities or balanced skill ceilings from two seeds.
 
+
+### Insane/max Hangar follow-up: finding the underpowered support ship
+
+On the **first-pass 1.3 tuning** (before the extra Haven support changes), the same 6 ships × 6 pilots with two identical starts per pilot were simulated for up to two worlds on **Insane/max Hangar**, timed active-ability use, actual card offers and natural elite formations. Source: [Actions #44157962809](https://github.com/killjoy00/StarRun/actions/runs/44157962809).
+
+| Ship | Insane/max World 1 | Insane/max World 2 |
+| --- | ---: | ---: |
+| Vanguard | 5/12 | 4/12 |
+| Kestrel | 5/12 | 5/12 |
+| Bulwark | 10/12 | 10/12 |
+| Wraith | 9/12 | 9/12 |
+| Arcwing | 9/12 | 9/12 |
+| Haven | **2/12** | **2/12** |
+
+**Diagnosis:** 9/12 Haven attempts died before the World-1 boss. The support ship struggled to eliminate early threats and earn upgrades, not merely to damage the boss. More boss-only damage cannot solve that. Other ships ranged from 5/12 to 10/12 first-world clears with the same seeds and Hangar spend.
+
+**Second targeted Haven adjustment:** a quicker signature Seeker Pod reload (~20–21% shorter) and +25% effectiveness of Haven's Repair Drones, retaining its no-Pulse identity. Dedicated [matched Haven before/after jobs](https://github.com/killjoy00/StarRun/actions/workflows/loadout-tuning-review.yml) compare all pilots against the immutable first-pass PR head `96c79f3f28b283067732b728f98d8036bc0b6220` on Insane/max plus a Normal/mid no-regression control. Do not claim the follow-up improves outcomes until those jobs finish.
+
+These are just **two starting seeds per pilot**: useful for finding glaring weaknesses, not estimates of true player win rates. The full original Normal/mid and Hard/max study and this Insane/max follow-up use the same two starting seeds, but different Hangar tiers by difficulty to stress realistic progression points. A future manual audit can rerun all three tiers.
 ## Goal 3: meaningful elite formation counterplay in Worlds 2–4
 
 - Reuse the existing three queued normal enemy spawn slots; about **half of naturally occurring encounter formations** in Worlds 2, 3 and 4 are promoted to a coordinated squad. No World-1 elites or new boss phases.
@@ -41,5 +60,5 @@ A matched study runs **every pilot** in Bulwark/Haven on Hard/max Hangar with in
 - All six ship-specific campaign smokes, genuine four-world Normal victory, save/replay, UI, actual visual screenshots and unsigned iPhone build must pass.
 - New deterministic tests cover elite leader destruction before and after wings spawn, ordinary enemy shots, no added XP, unchanged World-1, real-time cue, and existing checkpoint formats.
 - Matched tuning evidence for Bulwark/Haven must be reviewed before merge; do not force equality between free and paid pilots at any cost.
-- The 72-cell baseline audit remains manually rerunnable, not an expensive recurring CI requirement.
+- The 72-cell Normal/Hard baseline plus the Insane/max follow-up remain manually rerunnable as a three-difficulty audit; the costly full grid is not a standing CI requirement.
 - **Stay at version 1.3**, queue a new signed build only after an approved green merge, and do not submit to public App Review or enable ads.
