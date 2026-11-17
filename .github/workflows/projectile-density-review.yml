@@ -1,0 +1,70 @@
+name: Projectile density — pre-1.1 versus 1.1 versus 1.2
+# The 12-seed pre-1.1 / 1.1 / 1.2 study finished on PR #38, run #44103290731.
+# Keep a manual rerun but avoid this cost on every unrelated gameplay PR.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: projectile-density-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: vanguard, difficulty: normal, hangar: none, pilot: rookie, build: baseline, route: adaptive, offset: 0, seeds: 3}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: rookie, build: focused, route: repair, offset: 1, seeds: 3}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: repair, offset: 3, seeds: 3}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: bounty, offset: 6, seeds: 3}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Sample only actual visible enemy projectiles during matched gameplay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review
+          PRE="$RUNNER_TEMP/StarRun-pre11"
+          V11="$RUNNER_TEMP/StarRun-11"
+          git worktree add --detach "$PRE" 5603b43f1f84f87094792c8cefe00756b3e3d985
+          git worktree add --detach "$V11" 52f0daf6467744e37f2e5c7c30bcbf7d322d4a55
+          # Identical sampling and bot controls; gameplay mechanics remain
+          # pinned to each source version. This patch is diagnostics-only.
+          cp tests/balance_matrix.gd "$PRE/tests/balance_matrix.gd"
+          cp tests/balance_matrix.gd "$V11/tests/balance_matrix.gd"
+          for version in pre11 v11 v12; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$version" == "pre11" ]]; then root="$PRE"; fi
+            if [[ "$version" == "v11" ]]; then root="$V11"; fi
+            godot --headless --path "$root" --editor --import --quit
+            log="$GITHUB_WORKSPACE/review/$version.log"
+            godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+              --density --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+              --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+              --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+              --build=${{ matrix.build }} --strategy=timed --route=${{ matrix.route }} \
+              2>&1 | tee "$log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then
+              echo "::error::Invalid projectile density simulation for $version"
+              exit 1
+            fi
+            test "$(grep -c 'DENSITY_TRACE ' "$log")" -eq "${{ matrix.seeds }}"
+          done
+          python3 tools/compare_projectile_density.py review/pre11.log review/v11.log review/v12.log review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve exact real-combat logs and density tables
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shot-density-${{ matrix.ship }}-${{ matrix.difficulty }}-${{ matrix.hangar }}
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30
