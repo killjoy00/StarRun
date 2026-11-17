@@ -323,7 +323,7 @@ func step() -> void:
 		# A busier first impression is not a free XP fountain: Normal W1
 		# spawn cadence rises while its per-enemy XP drops proportionally.
 		if stage == 1 and difficulty == "normal":
-			pace *= 0.78
+			pace *= 0.84
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
@@ -400,7 +400,7 @@ func shooter_first_fire_window(kind: String) -> Vector2:
 	# W1 previously contained many 17-HP targets erased before their first
 	# volley. Shorten the initial tell only in Normal's early encounter ecology.
 	if stage == 1 and difficulty == "normal":
-		return Vector2(0.60, 1.20) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(0.85, 1.35)
+		return Vector2(0.95, 1.60) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(1.25, 2.15)
 	# A surviving shooter should get a chance to reveal its projectile
 	# pattern before the auto-weapons erase it. A shorter *first* timer
 	# does not accelerate the ongoing fire interval or increase XP.
@@ -866,7 +866,7 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.78)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.82)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
@@ -935,10 +935,10 @@ func _spawn_world1_strike_wing() -> void:
 		member["strike_wing"] = true
 		# Only the grouped attackers gain a modest window to reveal their
 		# patterns before automatic fire clears the formation.
-		member.max_hp *= 1.20
+		member.max_hp *= 1.10
 		member.hp = member.max_hp
-		member.fire = 0.72 + index * 0.16
-	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.78
+		member.fire = 1.15 + index * 0.24
+	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.84
 	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("STRIKE WING - coordinated enemy attack")
 
