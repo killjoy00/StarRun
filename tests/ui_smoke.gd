@@ -1,4 +1,5 @@
 extends SceneTree
+const Sim = preload("res://scripts/simulation.gd")
 class MemoryServices extends "res://scripts/platform_services.gd":
 	var values: Dictionary = {}
 	func write_atomic(path: String, value: Dictionary) -> bool:
@@ -394,6 +395,25 @@ func _run() -> void:
 	native_share.response = ERR_CANT_OPEN
 	scene._share_daily_result()
 	check(scene.pending_share_text.is_empty() and scene.toast_detail.text.contains("copied"), "Immediate native share errors also fall back to clipboard")
+	# A deleted charging enemy must leave its lane cancellation visible for
+	# the same real duration at any game speed. Playfield is normally driven
+	# by the scene tree; call it explicitly to inspect the real-time cue.
+	scene.sim = Sim.new(88201)
+	scene.mode = "playing"
+	scene.world.set_process(false)
+	scene.sim.enemies = [{"id": 22, "kind": "sniper", "p": Vector2(250, 230), "hp": 60.0, "max_hp": 60.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0}]
+	scene.sim.charges = [{"source": 22, "x": 250.0, "remaining": 0.9, "duration": 1.8, "damage": 30.0}]
+	scene.world._process(0.0)
+	check(scene.world.beam_cancel_feedback.is_empty(), "A live red warning lane must not show interruption feedback")
+	scene.sim._damage_enemy(scene.sim.enemies[0], 100.0, "pulse")
+	scene.world._process(0.0)
+	check(scene.world.beam_cancel_feedback.size() == 1, "Destroying the marked charger must present an explicit canceled-beam cue")
+	scene.world._process(0.35)
+	check(scene.world.beam_cancel_feedback.size() == 1 and is_equal_approx(float(scene.world.beam_cancel_feedback[0].remaining), 0.50), "Beam interruption must remain visible after 350ms of real time")
+	scene.world._process(0.50)
+	check(scene.world.beam_cancel_feedback.is_empty(), "Beam cancellation cue must expire after 0.85 real seconds")
+	scene._show_beam_tutorial()
+	check(_contains_text(scene.overlay, "destroy that enemy to cancel the beam"), "First beam tutorial must explain destroying its charging enemy")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame
