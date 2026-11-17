@@ -958,10 +958,10 @@ func _update_enemies() -> void:
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
 			# An opening salvo from a very slow turret should emerge
-			# *on-screen*, not spawn uselessly above the top boundary.
+			# at the top edge, not be held until deep into the playfield.
 			# This applies only to the HP-tested shooters in Worlds 2+;
 			# their later volleys use their existing interval unchanged.
-			if stage > 1 and is_pressure_shooter(kind) and enemy.p.y < 16.0:
+			if stage > 1 and is_pressure_shooter(kind) and enemy.p.y < 0.0:
 				enemy.fire = 0.0
 				continue
 			# Jammer and EMP still cancel boss beams, but the Harvester
