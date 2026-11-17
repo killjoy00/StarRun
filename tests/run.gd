@@ -381,8 +381,8 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 	fighter._damage_enemy(regular_part, 100.0, "pulse")
 	breaker._damage_enemy(boosted_part, 100.0, "pulse")
 	check(is_equal_approx((before_boosted - float(boosted_part.hp)) / (before - float(regular_part.hp)), 1.18), "Breach sensors add 6 percent boss-module damage per rank")
-	var core_unboosted := fighter.enemies[0]
-	var core_boosted := breaker.enemies[0]
+	var core_unboosted: Dictionary = fighter.enemies[0]
+	var core_boosted: Dictionary = breaker.enemies[0]
 	before = float(core_unboosted.hp)
 	before_boosted = float(core_boosted.hp)
 	fighter._damage_enemy(core_unboosted, 100.0, "pulse")
