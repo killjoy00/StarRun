@@ -66,6 +66,12 @@ func _check_consent() -> void:
 	if consent_status != info.ConsentStatus.OBTAINED and consent_status != info.ConsentStatus.NOT_REQUIRED:
 		return
 	consent_ready = true
+	# Star/Run targets ages 13+; cap creative content at PG even if an
+	# account-wide AdMob setting is more permissive. This is NOT an age gate.
+	# Do not globally declare players adult or child without knowing their age.
+	var request_config := RequestConfiguration.new()
+	request_config.max_ad_content_rating = RequestConfiguration.MAX_AD_CONTENT_RATING_PG
+	MobileAds.set_request_configuration(request_config)
 	MobileAds.initialize()
 	_start_banner()
 
