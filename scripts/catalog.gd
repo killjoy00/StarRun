@@ -2,6 +2,19 @@ extends RefCounted
 ## One catalog drives prices, refunds, unlockable actives, and the Hangar UI.
 const ACTIVE_SLOTS := 4
 const DIFFICULTIES := ["normal", "hard", "insane"]
+# Optional challenge rules are local to regular flights. Daily always uses standard.
+const ARTIFACTS := [
+	{"id":"standard", "name":"Standard", "description":"The classic four-world flight."},
+	{"id":"glass_fleet", "name":"Glass Fleet", "description":"Half maximum hull, +25% shields and +50% automatic weapon damage."},
+	{"id":"arsenal_roulette", "name":"Arsenal Shift", "description":"At every warp, owned Pulse, Seeker, Arc and Lance ranks rotate to the next weapon."},
+	{"id":"drone_armada", "name":"Drone Armada", "description":"No conventional automatic guns or weapon drafts. Three persistent escort drones grow with your level."},
+]
+# One extraordinary weapon transformation at a time; can be drafted or bought from a black market.
+const MUTATIONS := [
+	{"id":"piercing_pulse", "requires":"pulse", "name":"Ghost Rounds", "description":"Pulse bolts punch through the first enemy and carry 60% damage into a second target.", "market_cost":"Sell 25% of maximum shield capacity."},
+	{"id":"split_seeker", "requires":"seeker", "name":"Hydra Warheads", "description":"Seeker impacts launch up to three miniature homing missiles at other enemies.", "market_cost":"Sell 20% of maximum hull capacity."},
+	{"id":"arc_reactor", "requires":"arc", "name":"Chain Reactor", "description":"Arc Coil kills release a lightning burst that jumps to two nearby threats.", "market_cost":"Sell 15% of maximum hull and shield capacity."},
+]
 const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
 const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine"]
 
@@ -9,9 +22,9 @@ const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "
 const PILOTS := [
 	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"Balanced training. No special bonus.", "trait":"STANDARD ISSUE"},
 	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage and stronger forward tracking.", "trait":"PRECISION"},
-	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 starting shield, +0.8 shield/s regeneration, and +6% automatic weapon damage while shields are above half.", "trait":"FIELD REPAIR"},
+	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield, regeneration and shield-based weapon power. A temporary sentry activates when your shield breaks.", "trait":"FIELD REPAIR"},
 	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% seeker damage and faster lock-on.", "trait":"MISSILE EXPERT"},
-	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP and +15% post-flight cores.", "trait":"COLLECTOR"},
+	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP, +15% Cores, and a damaging scrap shockwave every 12 defeated enemies.", "trait":"COLLECTOR"},
 	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter ability cooldowns and one extra reroll per flight.", "trait":"BATTLE PLAN"}
 ]
 const SHIPS := [
@@ -112,6 +125,18 @@ static func refund(hangar: Dictionary, paid: Dictionary = {}) -> int:
 			for rank in range(int(hangar.get(id, 0))):
 				total += price(id, rank)
 	return total
+
+static func artifact(id: String) -> Dictionary:
+	for spec in ARTIFACTS:
+		if str(spec.id) == id:
+			return spec
+	return ARTIFACTS[0]
+
+static func mutation(id: String) -> Dictionary:
+	for spec in MUTATIONS:
+		if str(spec.id) == id:
+			return spec
+	return {}
 
 static func pilot(id: String) -> Dictionary:
 	for item in PILOTS:

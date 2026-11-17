@@ -31,6 +31,10 @@ var stage_transition_queued := false
 var active_slots: Array = []
 var ship_id := "vanguard"
 var pilot_id := "rookie"
+var artifact_id := "standard"
+var mutations: Array = []
+var sentry_left := 0.0
+var sentry_timer := 0.0
 var next_hazard := 20.0
 var tick := 0
 var time := 0.0
@@ -115,7 +119,7 @@ var beams_cancelled := 0
 var last_heavy_hit_tick := -1
 var meta := Catalog.defaults()
 
-func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal") -> void:
+func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal", selected_artifact: String = "standard") -> void:
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
@@ -127,12 +131,15 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 		cooldown_totals[str(fusion.id)] = float(fusion.cooldown)
 		upgrades[str(fusion.id)] = 0
 		content.cards.append({"id":str(fusion.id), "name":str(fusion.name), "tag":"ABILITY", "description":str(fusion.description), "max":10, "rank5":"20% stronger effect, 10% shorter cooldown", "rank10":"45% stronger effect, 20% shorter cooldown"})
+	for mutation in Catalog.MUTATIONS:
+		content.cards.append({"id":str(mutation.id), "name":str(mutation.name), "tag":"MUTATION", "description":str(mutation.description), "max":1, "min_stage":2})
 	for card in content.cards:
 		if not upgrades.has(card.id):
 			upgrades[card.id] = 0
 	ship_id = Catalog.ship(selected_ship).id
 	pilot_id = Catalog.pilot(selected_pilot).id
 	difficulty = selected_difficulty if selected_difficulty in Catalog.DIFFICULTIES else "normal"
+	artifact_id = selected_artifact if not Catalog.artifact(selected_artifact).is_empty() and str(Catalog.artifact(selected_artifact).id) == selected_artifact else "standard"
 	seed_value = run_seed
 	rng.seed = run_seed
 	next_encounter_at = 55.0 + float(run_seed % 23)
@@ -152,6 +159,14 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	var signature: String = chassis.signature
 	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0))) + int(meta.signature_rank)
 	active_slots = [signature]
+	if artifact_id == "glass_fleet":
+		max_hull *= 0.50
+		hull = max_hull
+		max_shield *= 1.25
+		shield = max_shield
+	elif artifact_id == "drone_armada":
+		for weapon in ["pulse", "seeker", "arc", "lance"]:
+			upgrades[weapon] = 0
 	pilot_rerolls_left = 1 if pilot_id == "tactician" else 0
 	rerolls_left = meta.rerolls + pilot_rerolls_left
 	banishes_left = meta.banishes
@@ -447,6 +462,27 @@ func claim_endless() -> bool:
 func _enemy_limit() -> int:
 	return mini(55, 20 + (stage - 1) * 5)
 
+func _has_mutation(id: String) -> bool:
+	return id in mutations
+
+func _install_mutation(id: String) -> bool:
+	var spec: Dictionary = Catalog.mutation(id)
+	if spec.is_empty() or not mutations.is_empty() or int(upgrades.get(str(spec.requires), 0)) <= 0 or artifact_id == "drone_armada":
+		return false
+	mutations.append(id)
+	upgrades[id] = 1
+	_log("WEAPON MUTATED - " + str(spec.name))
+	return true
+
+func _market_offers() -> Array:
+	if not mutations.is_empty() or artifact_id == "drone_armada":
+		return []
+	var offers: Array = []
+	for mutation in Catalog.MUTATIONS:
+		if int(upgrades.get(str(mutation.requires), 0)) > 0:
+			offers.append(mutation)
+	return offers
+
 func _has_prototype(id: String) -> bool:
 	return id in prototypes
 
@@ -666,10 +702,22 @@ func begin_intermission() -> bool:
 	prototype_offers.clear()
 	while prototype_offers.size() < mini(3, available.size()):
 		prototype_offers.append(available.pop_at(rng.randi_range(0, available.size() - 1)))
+	# One third of boss intermissions reveal an optional, costly mutation
+	# in the third offer slot. It replaces a Prototype; no extra free pick.
+	if not prototype_offers.is_empty() and stage <= 3 and rng.randi_range(0, 2) == 0:
+		var market: Array = _market_offers()
+		if not market.is_empty():
+			var offered: Dictionary = market[rng.randi_range(0, market.size() - 1)]
+			prototype_offers[prototype_offers.size() - 1] = "market:" + str(offered.id)
 	intermission_step = "route" if prototype_offers.is_empty() else "prototype"
 	return true
 
 func prototype_spec(id: String) -> Dictionary:
+	if id.begins_with("market:"):
+		var mutation: Dictionary = Catalog.mutation(id.trim_prefix("market:"))
+		if mutation.is_empty():
+			return {}
+		return {"id":id, "name":"BLACK MARKET · " + str(mutation.name), "role":"ILLEGAL TRADE", "benefit":str(mutation.description), "cost":str(mutation.market_cost)}
 	for spec in content.prototypes:
 		if spec.id == id:
 			return spec
@@ -679,7 +727,28 @@ func choose_prototype(index: int) -> bool:
 	if intermission_step != "prototype" or index < 0 or index >= prototype_offers.size():
 		return false
 	var id: String = str(prototype_offers[index])
-	if id in prototypes or prototype_spec(id).is_empty():
+	if prototype_spec(id).is_empty():
+		return false
+	if id.begins_with("market:"):
+		var mutation_id: String = id.trim_prefix("market:")
+		if not _install_mutation(mutation_id):
+			return false
+		match mutation_id:
+			"piercing_pulse":
+				max_shield *= 0.75
+				shield = minf(shield, max_shield)
+			"split_seeker":
+				max_hull *= 0.80
+				hull = minf(hull, max_hull)
+			"arc_reactor":
+				max_hull *= 0.85
+				hull = minf(hull, max_hull)
+				max_shield *= 0.85
+				shield = minf(shield, max_shield)
+		intermission_step = "route"
+		_log("Black market trade accepted - equipment sacrificed for " + str(Catalog.mutation(mutation_id).name))
+		return true
+	if id in prototypes:
 		return false
 	prototypes.append(id)
 	if id == "mirror_cell":
@@ -879,6 +948,14 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	if artifact_id == "arsenal_roulette":
+		# Move existing ranks, rather than gifting or destroying upgrades.
+		var before: Array = [int(upgrades.pulse), int(upgrades.seeker), int(upgrades.arc), int(upgrades.lance)]
+		upgrades.pulse = before[3]
+		upgrades.seeker = before[0]
+		upgrades.arc = before[1]
+		upgrades.lance = before[2]
+		_log("ARSENAL SHIFT - automatic weapon ranks rotated")
 	stage_casts.clear()
 	banishes_left += int(meta.banish_relay)
 	escort_left = 0.0
@@ -1143,16 +1220,27 @@ func _deploy_ion_mines(count: int, damage: float, radius: float) -> void:
 	while ion_mines.size() > 6: ion_mines.pop_front()
 
 func _update_support() -> void:
+	if artifact_id == "drone_armada" and escort_left <= 0.0:
+		_launch_escorts(3, 9999.0, 10.0)
+	if sentry_left > 0.0:
+		sentry_left = maxf(0.0, sentry_left - DT)
+		sentry_timer -= DT
+		if sentry_timer <= 0.0:
+			sentry_timer += 0.45
+			var sentry_origin: Vector2 = ship_position() + Vector2(36.0, -5.0)
+			var sentry_target: Dictionary = _nearest(sentry_origin)
+			if not sentry_target.is_empty() and shots.size() < 500:
+				shots.append({"p":sentry_origin, "v":(sentry_target.p - sentry_origin).normalized() * 750.0, "damage":12.0 * weapon_power(), "weapon":"escort", "target":int(sentry_target.id)})
 	if escort_left > 0.0:
 		escort_left = maxf(0.0,escort_left-DT)
 		escort_timer -= DT
 		if escort_timer <= 0.0 and escort_left > 0.0:
-			escort_timer += 0.5
+			escort_timer += 0.48 if artifact_id == "drone_armada" else 0.5
 			for i in range(escort_count):
 				var p := escort_position(i)
 				var target := _nearest(p)
 				if not target.is_empty() and shots.size() < 500:
-					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":escort_damage,"weapon":"escort","target":int(target.id)})
+					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id)})
 	var armed: Array = []
 	for mine in ion_mines:
 		mine.fuse -= DT
@@ -1197,7 +1285,7 @@ func _update_weapons() -> void:
 		pulse_timer += 0.19
 		var barrels := 3 if rank_at("pulse", 10) else (2 if rank_at("pulse", 5) else 1)
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1})
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1, "pierce":(1 if _has_mutation("piercing_pulse") else 0), "last_enemy":-1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		# Haven clears early waves with rapid support pods instead of a Pulse starter.
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
@@ -1259,6 +1347,8 @@ func _update_weapons() -> void:
 
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	if artifact_id == "glass_fleet":
+		power *= 1.50
 	# Shielded Passage contributes immediate offense without needing a niche draft.
 	# It only rewards shields above half capacity during Worlds 2-4.
 	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
@@ -1384,6 +1474,7 @@ func _update_bullets() -> void:
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 
 func _update_shots() -> void:
+	var spawned_shards: Array = []
 	# Only interceptor-capable projectiles belong in collision buckets.
 	# Avoid the former every-player-shot x every-enemy-bullet scan.
 	const CELL := 64.0
@@ -1447,12 +1538,30 @@ func _update_shots() -> void:
 				if enemy.hp <= 0.0:
 					continue
 				var radius := 68.0 if str(enemy.kind).begins_with("boss") and enemy.kind != "boss_module" else (30.0 if enemy.kind == "boss_module" else 25.0)
-				if shot.p.distance_squared_to(enemy.p) < radius * radius:
+				if shot.p.distance_squared_to(enemy.p) < radius * radius and int(shot.get("last_enemy", -1)) != int(enemy.id):
 					_damage_enemy(enemy, shot.damage, shot.weapon)
-					struck = true
-					break
+					if shot.weapon == "seeker" and _has_mutation("split_seeker") and not bool(shot.get("shard", false)):
+						var victims: Array = []
+						for other in enemies:
+							if other.hp > 0.0 and int(other.id) != int(enemy.id) and other.p.distance_squared_to(enemy.p) < 380.0 * 380.0:
+								victims.append(other)
+						victims.sort_custom(func(a, b): return a.p.distance_squared_to(enemy.p) < b.p.distance_squared_to(enemy.p))
+						for n in range(mini(3, victims.size())):
+							var victim: Dictionary = victims[n]
+							var start: Vector2 = enemy.p + Vector2((n - 1) * 13.0, -12.0)
+							spawned_shards.append({"p":start, "v":(victim.p - start).normalized() * 650.0, "damage":float(shot.damage) * 0.35, "weapon":"seeker", "target":int(victim.id), "shard":true})
+						if not victims.is_empty():
+							effects.append({"kind":"explosion", "p":enemy.p, "life":0.42, "max_life":0.42, "born":tick})
+					if shot.weapon == "pulse" and int(shot.get("pierce", 0)) > 0:
+						shot["pierce"] = 0
+						shot["last_enemy"] = int(enemy.id)
+						shot["damage"] = float(shot.damage) * 0.60
+					else:
+						struck = true
+						break
 		if struck:
 			shot.p.y = -200
+	shots.append_array(spawned_shards)
 	shots = shots.filter(func(s): return s.p.y > -100 and s.p.y < HEIGHT and s.p.x > -50 and s.p.x < WIDTH + 50)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 
@@ -1492,6 +1601,27 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp > 0:
 		return
 	kills += 1
+	# The Salvager turns collected wreckage into a physical shockwave every
+	# twelve real kills. Chained wreckage damage does not trigger itself.
+	if weapon == "arc" and _has_mutation("arc_reactor"):
+		var chained := 0
+		for nearby in enemies:
+			if chained >= 2:
+				break
+			if float(nearby.hp) > 0.0 and int(nearby.id) != int(enemy.id) and nearby.p.distance_squared_to(enemy.p) <= 180.0 * 180.0:
+				effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.42, "max_life":0.42, "born":tick})
+				_damage_enemy(nearby, amount * 0.35, "nova")
+				chained += 1
+	if pilot_id == "scavenger" and weapon != "scrap" and kills % 12 == 0 and not str(enemy.kind).begins_with("boss"):
+		effects.append({"kind":"ion-burst", "p":enemy.p, "radius":145.0, "life":0.65, "max_life":0.65, "born":tick})
+		var jumped := 0
+		for nearby in enemies:
+			if jumped >= 2:
+				break
+			if float(nearby.hp) > 0.0 and int(nearby.id) != int(enemy.id) and nearby.p.distance_squared_to(enemy.p) <= 145.0 * 145.0:
+				_damage_enemy(nearby, 30.0 * weapon_power(), "scrap")
+				jumped += 1
+		_log("SCRAP STORM - salvaged wreckage discharged")
 	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
 		bonus_cores += int(meta.module_salvage)
@@ -1611,6 +1741,10 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	effects.append({"kind": "hull-hit" if hull_damage > 0 else "shield-hit", "p": ship_position(), "life": 0.22, "max_life": 0.22, "born": tick})
 	damage_taken[kind] = float(damage_taken.get(kind, 0.0)) + reduced
 	if had_shield and shield <= 0:
+		if pilot_id == "engineer" and hull > 0.0:
+			sentry_left = 6.0
+			sentry_timer = 0.0
+			_log("FIELD SENTRY - Engineer deployed an emergency turret")
 		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
@@ -1964,6 +2098,10 @@ func _offer_cards(consume_level: bool = true) -> void:
 	for card in content.cards:
 		if stage < int(card.get("min_stage", 1)):
 			continue
+		if card.tag == "MUTATION" and (not mutations.is_empty() or int(upgrades.get(str(Catalog.mutation(str(card.id)).get("requires", "")), 0)) <= 0):
+			continue
+		if artifact_id == "drone_armada" and card.tag in ["WEAPON", "MUTATION"]:
+			continue
 		if not fused_into(str(card.id)).is_empty():
 			continue
 		if not fusion_spec(str(card.id)).is_empty() and str(card.id) not in active_slots:
@@ -2009,6 +2147,13 @@ func _offer_cards(consume_level: bool = true) -> void:
 						missing_partners.append(option)
 		if not missing_partners.is_empty():
 			cards[cards.size() - 1] = missing_partners[rng.randi_range(0, missing_partners.size() - 1)]
+	# Rare, opt-in transformation: at a four-level milestone in later
+	# worlds, one normal card may be replaced by a matching weapon mutation.
+	# Never inject a weapon the player does not own.
+	if stage >= 2 and level % 4 == 0 and mutations.is_empty() and not cards.is_empty() and rng.randi_range(0, 2) == 0:
+		var candidates: Array = pool.filter(func(c): return str(c.tag) == "MUTATION")
+		if not candidates.is_empty():
+			cards[cards.size() - 1] = candidates[rng.randi_range(0, candidates.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
 		var has_defense := false
 		for card in cards:
@@ -2058,6 +2203,9 @@ func choose_card(index: int) -> bool:
 		hull = minf(max_hull, hull + 30)
 	elif id == "core_cache":
 		choice_cores += MAXED_DRAFT_CORES
+	elif not Catalog.mutation(id).is_empty():
+		if not _install_mutation(id):
+			return false
 	else:
 		var card: Dictionary = cards[index]
 		if card.tag == "ABILITY" and int(upgrades[id]) == 0:
@@ -2112,7 +2260,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
