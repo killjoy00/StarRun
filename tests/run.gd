@@ -336,6 +336,7 @@ func _test_shooter_health_screen_pressure() -> void:
 		var first := Sim.new(71230, {}, "vanguard", "rookie", mode)
 		for kind in ["drone", "gunship", "sniper", "missile_bomber", "shieldguard", "carrier"]:
 			check(is_equal_approx(first.shooter_health_pressure(kind), 1.0), "Opening-world %s HP remains unchanged on %s" % [kind,mode])
+			check(first.shooter_first_fire_window(kind) == Vector2(1.0, 3.0), "Opening-world %s first-shot delay stays at 1–3 seconds on %s" % [kind,mode])
 	# World 2+ changes only the tougher shooter class, not minion XP,
 	# heavyweight hazards, rapid threats, snipers or boss modules.
 	var baseline := Sim.new(71231)
@@ -347,19 +348,46 @@ func _test_shooter_health_screen_pressure() -> void:
 	var original: float = float(tested.content.enemies.ion_frigate.hp) * float(tested.stage_spec().health_scale) * tested.threat_scale() * tested.stage_risk * tested.enemy_health_multiplier()
 	check(is_equal_approx(float(tested.enemies[0].max_hp), original * 1.12), "Normal World 2 ion frigate gets 12 percent more HP without changing any other scaling")
 	check(int(tested.enemies[0].xp) == int(tested.content.enemies.ion_frigate.xp), "Tougher shooters retain the same XP reward")
+	check(tested.shooter_first_fire_window("ion_frigate") == Vector2(0.95, 1.80), "World 2 target shooters receive the shorter and readable first shot window")
+	check(float(tested.enemies[0].fire) >= 0.95 and float(tested.enemies[0].fire) <= 1.80, "Spawned World 2 shooter actually starts at the shortened timer")
 	for mode in Catalog.DIFFICULTIES:
 		var challenger := Sim.new(71232, {}, "vanguard", "rookie", mode)
 		challenger.stage = 3
 		for kind in ["gunship","shieldguard","ion_frigate","corroder","disruptor","arc_spire","forge_turret","gravity_sentinel"]:
 			check(is_equal_approx(challenger.shooter_health_pressure(kind), {"normal":1.15,"hard":1.20,"insane":1.25}[mode]), "Targeted backline enemy receives the correct optional HP increase: %s / %s" % [kind,mode])
+			check(challenger.shooter_first_fire_window(kind) == Vector2(0.85, 1.65), "Later-world %s uses a quicker opening shot but not a faster repeated attack on %s" % [kind,mode])
 		for kind in ["drone","rusher","interceptor","ember_hunter","storm_weaver","sniper","void_lancer","carrier","echo_carrier","minelayer","slag_bomber","missile_bomber","boulder","station","boss","boss2","boss3","boss4","boss_module"]:
 			check(is_equal_approx(challenger.shooter_health_pressure(kind), 1.0), "Fast/XP/beam/boss units keep their old HP: %s / %s" % [kind,mode])
+			check(challenger.shooter_first_fire_window(kind) == Vector2(1.0, 3.0), "Hazards/fast/beam/boss opening volleys are unchanged: %s / %s" % [kind,mode])
 	var stationary := Sim.new(71233)
 	stationary.stage = 4
 	stationary._add_enemy("gravity_sentinel", Vector2(270,100))
 	var original_health: float = float(stationary.content.enemies.gravity_sentinel.hp) * float(stationary.stage_spec().health_scale) * stationary.threat_scale() * stationary.stage_risk * stationary.enemy_health_multiplier()
 	check(is_equal_approx(float(stationary.enemies[0].max_hp), original_health * 1.15), "Targeted later world HP increase applies to real spawned sentinel")
 	check(Sim.new(33).restore(stationary.snapshot()), "Experimental HP and its spawned enemy states use the existing checkpoint save format")
+	# Faster opening shots must be visible, not wasted above the viewport.
+	# Some new arc spires move slowly and would otherwise fire at y < 0.
+	var turret := Sim.new(71234)
+	turret.stage = 2
+	turret._add_enemy("arc_spire", Vector2(270,-35))
+	turret.enemies[0].fire = 0.0
+	for frame in range(90):
+		turret._update_enemies()
+	check(turret.bullets.is_empty() and float(turret.enemies[0].fire) == 0.0, "A slow shooter cannot expend its opening volley above the visible playfield")
+	for frame in range(70):
+		turret._update_enemies()
+	check(turret.bullets.size() == 9 and float(turret.enemies[0].p.y) >= 16.0, "Shooter releases its first visible nine-round pattern once it enters the playfield")
+	var cadence := Sim.new(71235)
+	cadence.stage = 2
+	cadence._add_enemy("ion_frigate", Vector2(270,120))
+	cadence.enemies[0].fire = 0.0
+	cadence._update_enemies()
+	var next_interval: float = float(cadence.content.enemies.ion_frigate.interval) / cadence.enemy_fire_scale() * cadence.projectile_interval_factor("ion_frigate")
+	check(is_equal_approx(float(cadence.enemies[0].fire), next_interval), "Later volleys retain the existing 1.2 interval; only the first-shot delay changes")
+	check(cadence.bullets.size() == 3 and int(cadence.enemies[0].xp) == 9, "Earlier opening shot preserves the ordinary volley count and XP")
+	var checkpoint := cadence.snapshot()
+	var reloaded := Sim.new(999)
+	check(reloaded.restore(checkpoint) and reloaded.snapshot() == checkpoint, "A shooter that has fired a first volley restores without rescheduling it")
 
 
 func _test_boss_scaling_and_hangar_expansion() -> void:
