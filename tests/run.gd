@@ -1210,7 +1210,7 @@ func _test_route_prototype_balance_grid() -> void:
 	hard_opener._spawn_boss()
 	insane_opener._spawn_boss()
 	check(insane_opener.enemies[0].max_hp > hard_opener.enemies[0].max_hp, "Insane Harvester HP exceeds Hard at identical Hangar")
-	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5) / (1.25 * 6.5)), "The Insane World 1 boss is stronger than Hard with the authored enrage factors")
+	check(is_equal_approx(insane_opener.enemies[0].max_hp / hard_opener.enemies[0].max_hp, (2.0 * 5.5 * insane_opener.boss_health_pressure()) / (1.25 * 6.5 * hard_opener.boss_health_pressure())), "World 1 Insane-to-Hard HP ratio includes the authored opener and stronger 1.2 boss-specific difficulty scaling")
 	var hard_shot := Sim.new(8080, {}, "vanguard", "rookie", "hard")
 	var insane_shot := Sim.new(8080, {}, "vanguard", "rookie", "insane")
 	for shooter in [hard_shot, insane_shot]:
@@ -1787,7 +1787,7 @@ func _test_fusion_thresholds() -> void:
 	check(stable.restore(restored.snapshot()) and stable.snapshot() == restored.snapshot(), "The migrated full-bar hand stays fixed on subsequent resumes")
 
 func _test_expanded_hangar() -> void:
-	check(Catalog.HANGAR.size() == 38, "Sixteen new permanent tracks bring the Hangar to 38")
+	check(Catalog.HANGAR.size() == 40, "Two new boss-specialist tracks expand the Hangar catalog from 38 to 40")
 	var starting := Sim.new(3001,{"arc_start":1,"lance_start":1,"signature_rank":2})
 	check(starting.upgrades.arc == 1 and starting.upgrades.lance == 1, "Purchased starting weapons are installed")
 	check(Sim.new(3001,{"arc_start":1},"arcwing").upgrades.arc == 2, "Charged coil also improves an Arcwing’s starting weapon")
