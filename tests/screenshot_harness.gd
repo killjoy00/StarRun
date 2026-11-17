@@ -107,6 +107,9 @@ func _prepare(scene, screen: String) -> void:
 				scene.sim.rival_retire_pending = true
 				scene._show_rival_retired()
 			else:
+				# This gallery follows the retirement frame in sequence.
+				# Don't re-create the same captain as both active and archived.
+				scene.profile.rival_active = {}
 				scene._show_rival_journal()
 		"settings":
 			scene.mode = "menu"
