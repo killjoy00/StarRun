@@ -23,6 +23,7 @@ func _run() -> void:
 	var hangar_style := "none"
 	var route_policy := "adaptive"
 	var pilot_id := "rookie"
+	var artifact_id := "standard"
 	var trace := false
 	var density := false
 	var require_win := false
@@ -46,6 +47,8 @@ func _run() -> void:
 			route_policy = arg.get_slice("=", 1)
 		elif arg.begins_with("--pilot="):
 			pilot_id = arg.get_slice("=", 1)
+		elif arg.begins_with("--artifact="):
+			artifact_id = arg.get_slice("=", 1)
 		elif arg.begins_with("--seed-offset="):
 			seed_offset = maxi(0, int(arg.get_slice("=", 1)))
 		elif arg.begins_with("--stage-limit="):
@@ -58,7 +61,7 @@ func _run() -> void:
 			density = true
 		elif arg == "--require-win":
 			require_win = true
-	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
+	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
 		return
@@ -101,18 +104,27 @@ func _run() -> void:
 				var route_unanswered_seconds := 0.0
 				var route_boss_seconds := 0.0
 				var route_boss_clears := 0
+				var enemy_samples := 0
+				var enemy_sum := 0
+				var empty_samples := 0
+				var max_visible_enemies := 0
+				var opening_samples := 0
+				var opening_enemy_sum := 0
+				var total_pilot_procs := 0
+				var total_kills := 0
+				var total_levels := 0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
-					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit, density)
+					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit, density, artifact_id)
 					if density:
 						print("DENSITY_TRACE ", JSON.stringify({
-							"seed":seed, "ship":ship_id, "difficulty":difficulty,
+							"seed":seed, "ship":ship_id, "difficulty":difficulty, "artifact":artifact_id, "pilot":pilot_id,
 							"hangar":hangar_style, "build":build_style, "route":route_policy,
 							"strategy":strategy, "phases":result.density
 						}))
 					if trace:
 						print("CAMPAIGN_TRACE ", JSON.stringify({
-							"seed":seed,"ship":ship_id,"difficulty":difficulty,"strategy":strategy,
+							"seed":seed,"ship":ship_id,"difficulty":difficulty,"artifact":artifact_id,"pilot":pilot_id,"strategy":strategy,
 							"build":build_style,"hangar":hangar_style,"route":route_policy,
 							"routes":result.routes,"stages":result.stages,"final":result.final
 						}))
@@ -140,15 +152,34 @@ func _run() -> void:
 					timeouts += int(result.timeout)
 					casts += int(result.casts)
 					hull += float(result.hull)
+					total_kills += int(result.final.kills)
+					total_levels += int(result.final.level)
+					total_pilot_procs += int(result.pilot_procs.get(pilot_id, 0))
+					for density_phase in result.density:
+						var stats: Dictionary = result.density[density_phase]
+						if not str(density_phase).begins_with("W1/") or str(density_phase) == "W1/boss":
+							continue
+						enemy_samples += int(stats.samples)
+						enemy_sum += int(stats.enemy_sum)
+						empty_samples += int(stats.empty_enemy_samples)
+						max_visible_enemies = maxi(max_visible_enemies, int(stats.max_visible_enemies))
+						if str(density_phase) == "W1/opening":
+							opening_samples += int(stats.samples)
+							opening_enemy_sum += int(stats.enemy_sum)
 					campaigns += int(result.won)
 					campaign_wins += int(result.won)
 					for stage_index in range(4):
 						if int(result.clears) > stage_index:
 							clears[stage_index] += 1
 				print("BALANCE_MATRIX ", JSON.stringify({
-					"ship":ship_id, "difficulty":difficulty, "policy":strategy, "build":build_style, "hangar":hangar_style, "route":route_policy, "pilot":pilot_id,
+					"ship":ship_id, "difficulty":difficulty, "policy":strategy, "build":build_style, "hangar":hangar_style, "route":route_policy, "pilot":pilot_id, "artifact":artifact_id,
 					"seeds":seeds, "world_clears":clears, "campaign_wins":campaigns,
 					"timeouts":timeouts, "casts":casts,
+					"pilot_procs":total_pilot_procs, "mean_level":snappedf(float(total_levels) / seeds, 0.1), "mean_kills":snappedf(float(total_kills) / seeds, 0.1),
+					"w1_mean_visible_enemies":snappedf(float(enemy_sum) / maxf(1.0, float(enemy_samples)), 0.01),
+					"w1_opening_visible_enemies":snappedf(float(opening_enemy_sum) / maxf(1.0, float(opening_samples)), 0.01),
+					"w1_empty_screen_pct":snappedf(100.0 * float(empty_samples) / maxf(1.0, float(enemy_samples)), 0.1),
+					"w1_peak_visible_enemies":max_visible_enemies,
 					"mean_final_hull":snappedf(hull / seeds, 0.1),
 					"shieldstorm_runs":route_shieldstorm,"focus5_runs":route_focus5,"focus10_runs":route_focus10,"shieldstorm_trigger_worlds":route_triggers,
 					"pristine_focus_seconds":snappedf(route_pristine_seconds,0.1),
@@ -168,8 +199,8 @@ func _run() -> void:
 		push_error("%d of %d unupgraded Hard/Insane attempts cleared World 1 (ship %s, pilot %s). Investigate and rebalance before merging." % [world1_clears, trials, only_ship, pilot_id])
 	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) else 0)
 
-func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false) -> Dictionary:
-	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty)
+func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard") -> Dictionary:
+	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty, artifact_id)
 	var timed_out := false
 	var fault := false
 	var stage_reports: Array = []
@@ -218,11 +249,12 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		# contribute no samples. Heavy-beam charge lanes are counted separately.
 		# This is read-only instrumentation: no RNG, damage or input changes.
 		if track_density and sim.tick % 12 == 0:
-			var phase: String = "W%d/%s" % [sim.stage, "boss" if sim.boss_spawned else "waves"]
+			var phase: String = "W%d/%s" % [sim.stage, "boss" if sim.boss_spawned else ("opening" if sim.stage == 1 and sim.time - sim.stage_start < 45.0 else ("mid" if sim.stage == 1 and sim.time - sim.stage_start < 120.0 else "waves"))]
 			if not density_by_phase.has(phase):
 				density_by_phase[phase] = {
 					"samples":0, "bullet_sum":0, "boss_bullet_sum":0,
-					"charge_sum":0, "max_visible":0, "over_20":0, "over_40":0
+					"charge_sum":0, "max_visible":0, "over_20":0, "over_40":0,
+					"enemy_sum":0, "empty_enemy_samples":0, "max_visible_enemies":0
 				}
 			var visible := 0
 			var boss_owned := 0
@@ -232,7 +264,15 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 					visible += 1
 					if str(bullet.get("source", "")).begins_with("boss"):
 						boss_owned += 1
+			var visible_enemies := 0
+			for enemy in sim.enemies:
+				var enemy_p: Vector2 = enemy.p
+				if enemy.hp > 0.0 and enemy_p.x >= 0.0 and enemy_p.x <= Sim.WIDTH and enemy_p.y >= 0.0 and enemy_p.y <= 920.0:
+					visible_enemies += 1
 			var record: Dictionary = density_by_phase[phase]
+			record.enemy_sum += visible_enemies
+			record.empty_enemy_samples += int(visible_enemies == 0)
+			record.max_visible_enemies = maxi(int(record.max_visible_enemies), visible_enemies)
 			record.samples += 1
 			record.bullet_sum += visible
 			record.boss_bullet_sum += boss_owned
@@ -257,7 +297,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	if stage_reports.is_empty() or int(stage_reports[-1].stage) != sim.stage:
 		stage_reports.append(_stage_report(sim, status))
 	return {
-		"clears":int(sim.stage_clears), "won":bool(sim.won),
+		"clears":int(sim.stage_clears), "won":bool(sim.won), "pilot_procs":sim.pilot_procs.duplicate(),
 		"hull":float(sim.hull), "casts":int(sim.ability_uses),
 		"timeout":timed_out, "fault":fault, "stages":stage_reports, "routes":routes,
 		"shieldstorm":int(sim.upgrades.get("shieldstorm",0)) > 0,

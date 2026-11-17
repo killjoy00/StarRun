@@ -42,6 +42,7 @@ var hunter_target_id := -1
 var hunter_mark_left := 0.0
 var hunter_mark_cooldown := 0.0
 var tactician_counter_used := false
+var pilot_procs := {"ace":0, "hunter":0, "tactician":0, "engineer":0, "scavenger":0}
 var next_hazard := 20.0
 var tick := 0
 var time := 0.0
@@ -1291,7 +1292,7 @@ func _update_support() -> void:
 			for candidate in enemies:
 				if float(candidate.hp) <= 0.0 or candidate.p.y < -5.0 or candidate.kind == "boulder":
 					continue
-				if candidate.kind in ["sniper","missile_bomber","shieldguard","carrier","ion_frigate","storm_weaver","slag_bomber","void_lancer","boss_module","boss","boss2","boss3","boss4"] or str(candidate.get("elite_role","")) == "leader":
+				if candidate.kind in ["gunship","sniper","missile_bomber","shieldguard","carrier","ion_frigate","storm_weaver","slag_bomber","void_lancer","boss_module","boss","boss2","boss3","boss4"] or str(candidate.get("elite_role","")) == "leader":
 					priority = candidate
 					break
 			if not priority.is_empty():
@@ -1699,6 +1700,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 					_damage_enemy(nearby, 14.0 * weapon_power(), "precision")
 					strikes += 1
 			if strikes > 0:
+				pilot_procs.ace += 1
 				_log("PRECISION CROSSFIRE - Ace volley")
 	# Hunter's hunted target pays off with an immediate shield recovery and
 	# frees the lock for the next threat; the next mark is not instantaneous.
@@ -1707,6 +1709,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		hunter_target_id = -1
 		hunter_mark_left = 0.0
 		hunter_mark_cooldown = minf(hunter_mark_cooldown, 2.5)
+		pilot_procs.hunter += 1
 		_log("HUNT COMPLETE - shields restored")
 	# The Salvager turns collected wreckage into a physical shockwave every
 	# twelve real kills. Chained wreckage damage does not trigger itself.
@@ -1728,6 +1731,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			if float(nearby.hp) > 0.0 and int(nearby.id) != int(enemy.id) and nearby.p.distance_squared_to(enemy.p) <= 145.0 * 145.0:
 				_damage_enemy(nearby, 30.0 * weapon_power(), "scrap")
 				jumped += 1
+		pilot_procs.scavenger += 1
 		_log("SCRAP STORM - salvaged wreckage discharged")
 	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
@@ -1851,6 +1855,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		if pilot_id == "engineer" and hull > 0.0:
 			sentry_left = 6.0
 			sentry_timer = 0.0
+			pilot_procs.engineer += 1
 			_log("FIELD SENTRY - Engineer deployed an emergency turret")
 		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
@@ -1926,6 +1931,7 @@ func activate(ability: String) -> bool:
 					if slot == ability:
 						cooldown_totals[slot] = cooldowns[slot]
 			effects.append({"kind":"ion-burst", "p":ship_position(), "radius":150.0, "life":0.6, "max_life":0.6, "born":tick})
+			pilot_procs.tactician += 1
 			_log("TACTICAL COUNTERBATTERY - %d threats suppressed" % suppressed)
 	if not fusion_spec(ability).is_empty():
 		_activate_fusion(ability, effect_strength)
@@ -2397,7 +2403,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -2408,7 +2414,7 @@ func restore(state: Dictionary) -> bool:
 		return false
 	for key in state:
 		if key not in ["version", "rng"]:
-			if key in ["upgrades", "cooldowns", "meta", "damage_dealt"]:
+			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs"]:
 				var merged: Dictionary = get(key).duplicate(true)
 				merged.merge(state[key], true)
 				set(key, merged)
