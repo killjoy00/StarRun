@@ -19,6 +19,7 @@ func _run() -> void:
 	_test_defenses()
 	_test_interrupts_and_priority()
 	_test_lance_fire_reliability()
+	_test_v11_enemy_projectile_cadence()
 	_test_draft_and_cooldowns()
 	_test_resume()
 	_test_saves()
@@ -187,6 +188,21 @@ func _test_interrupts_and_priority() -> void:
 	check(sim.shots[-1].target == 1, "Seekers must prioritize the charging source")
 	sim._damage_enemy(sim.enemies[0], 40, "pulse")
 	check(sim.charges.is_empty() and sim.beams_cancelled == 1, "Killing a charging source must cancel its beam")
+	check(sim.effects.any(func(e): return e.kind == "beam-canceled" and int(e.source) == 1 and is_equal_approx(float(e.x), 270.0)), "Destroyed charging source must expose its canceled lane to the visual layer")
+	check(not sim.effects.any(func(e): return e.kind == "beam"), "Destroying a charger must not draw an actual fired heavy beam")
+	check(sim.events.any(func(e): return str(e.message).contains("Beam canceled")), "Player-facing combat log explains the canceled charge")
+	var two_sources := Sim.new(201)
+	two_sources.enemies = [
+		{"id": 11, "kind": "sniper", "p": Vector2(180, 225), "hp": 40.0, "max_hp": 40.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0},
+		{"id": 12, "kind": "sniper", "p": Vector2(390, 225), "hp": 40.0, "max_hp": 40.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0}
+	]
+	two_sources.charges = [
+		{"source": 11, "x": 180.0, "remaining": 0.7, "duration": 1.8, "damage": 22.0},
+		{"source": 12, "x": 390.0, "remaining": 0.9, "duration": 1.8, "damage": 22.0}
+	]
+	two_sources._damage_enemy(two_sources.enemies[0], 100.0, "pulse")
+	check(two_sources.charges.size() == 1 and int(two_sources.charges[0].source) == 12 and two_sources.beams_cancelled == 1, "Destroying one charging source leaves unrelated active red warning lanes alone")
+	check(two_sources.effects.filter(func(e): return e.kind == "beam-canceled").size() == 1, "Only canceled red beam lane receives a cyan cancellation cue")
 	sim = Sim.new(20, {}, "arcwing")
 	sim.charges = [{"source": 99, "x": 270.0, "remaining": 1.0, "duration": 1.8, "damage": 30.0}]
 	sim.bullets = [{"p": Vector2(100, 100), "v": Vector2.ZERO, "damage": 12.0, "kind": "ordnance", "hp": 12.0, "source": "gunship"}]
@@ -228,6 +244,42 @@ func _test_lance_fire_reliability() -> void:
 		for frame in range(27):
 			sim.step()
 		check(sim.effects.any(func(e): return e.kind == "lance"), "Prism lance shot must still be visible after 0.15 real seconds at 3x")
+
+func _test_v11_enemy_projectile_cadence() -> void:
+	var probe := Sim.new(11101)
+	check(is_equal_approx(probe.projectile_interval_factor("drone"), 0.92), "1.1 fires ordinary World 1 bullets about 9% more often")
+	probe.stage = 3
+	check(is_equal_approx(probe.projectile_interval_factor("drone"), 0.94), "Later worlds receive only about 6% more regular projectile volleys on top of existing pressure")
+	check(is_equal_approx(probe.projectile_interval_factor("boss3"), 0.95), "Boss projectile fans accelerate modestly without changing beam charge timing")
+	check(is_equal_approx(probe.projectile_interval_factor("missile_bomber"), 0.96), "Dangerous ordnance volleys accelerate less than small bullets")
+	for unchanged in ["carrier", "echo_carrier", "minelayer", "slag_bomber"]:
+		check(is_equal_approx(probe.projectile_interval_factor(unchanged), 1.0), "Minion or mine attack cycles must not create extra XP or hazard density: " + unchanged)
+	for difficulty in Catalog.DIFFICULTIES:
+		var regular := Sim.new(16111, {}, "vanguard", "rookie", difficulty)
+		regular.time = 40.0
+		regular.heavy_ready_at = 1000000.0
+		regular.enemies = [{"id": 101, "kind": "drone", "p": Vector2(270, 120), "hp": 18.0, "max_hp": 18.0, "speed": 0.0, "fire": 0.0, "xp": 3, "phase": 0.0}]
+		regular._update_enemies()
+		var expected: float = float(regular.content.enemies.drone.interval) / regular.enemy_fire_scale() * 0.92
+		check(is_equal_approx(float(regular.enemies[0].fire), expected), "Regular enemy cooldown uses 1.1 tuning on " + difficulty)
+		check(regular.bullets.size() == 3 and regular.kills == 0 and regular.xp == 0.0 and regular.enemies.size() == 1, "1.1 changes ordinary volley cadence, not shot count, kills, spawns or XP on " + difficulty)
+	var boss := Sim.new(16112)
+	boss.time = 12.0
+	boss.boss_spawned = true
+	boss.boss_spawn_time = 10.0
+	boss.heavy_ready_at = 1000000.0
+	boss.enemies = [{"id": 102, "kind": "boss", "p": Vector2(270, 135), "hp": 6200.0, "max_hp": 6200.0, "speed": 0.0, "fire": 0.0, "xp": 0, "phase": 0.0}]
+	boss._update_enemies()
+	check(is_equal_approx(float(boss.enemies[0].fire), 2.1 * 0.95) and boss.bullets.size() == 11, "1.1 boss projectile interval shortens but the fan's damage and bullet count do not")
+	check(boss.charges.is_empty(), "Ordinary boss projectile cadence must not secretly generate extra heavy beams")
+	var charger := Sim.new(16113)
+	charger.time = 40.0
+	charger.heavy_ready_at = 0.0
+	charger.enemies = [{"id": 103, "kind": "sniper", "p": Vector2(270, 120), "hp": 36.0, "max_hp": 36.0, "speed": 0.0, "fire": 0.0, "xp": 7, "phase": 0.0}]
+	charger._update_enemies()
+	check(charger.charges.size() == 1 and is_equal_approx(float(charger.charges[0].duration), 1.8), "Heavy-beam telegraph must remain 1.8 seconds")
+	check(is_equal_approx(charger.heavy_ready_at - charger.time, 7.5), "1.1 gunfire buff must not increase heavy-beam frequency")
+
 
 func _test_draft_and_cooldowns() -> void:
 	var sim := Sim.new()

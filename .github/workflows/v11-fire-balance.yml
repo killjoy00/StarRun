@@ -1,0 +1,68 @@
+name: Star/Run 1.1 paired enemy-fire balance review
+on:
+  # PR event makes the paired study a review gate and keeps its results
+  # accessible alongside the normal iPhone/playable PR checks.
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: starrun-v11-balance-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: vanguard, difficulty: normal, hangar: none, build: baseline, route: adaptive, offset: 0}
+          - {ship: arcwing, difficulty: normal, hangar: mid, build: focused, route: repair, offset: 1}
+          - {ship: kestrel, difficulty: hard, hangar: mid, build: focused, route: adaptive, offset: 2}
+          - {ship: bulwark, difficulty: hard, hangar: max, build: focused, route: repair, offset: 4}
+          - {ship: wraith, difficulty: insane, hangar: max, build: focused, route: bounty, offset: 6}
+          - {ship: haven, difficulty: insane, hangar: mid, build: shielded, route: repair, offset: 8}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Reproduce baseline and 1.1 on identical starting seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Post-Prism-lance main is the immutable pre-v1.1 gameplay baseline.
+          git worktree add --detach "$RUNNER_TEMP/starrun-v11-baseline" 5603b43f1f84f87094792c8cefe00756b3e3d985
+          mkdir -p review
+          for label in baseline v11; do
+            game_dir="$GITHUB_WORKSPACE"
+            if [[ "$label" == "baseline" ]]; then
+              game_dir="$RUNNER_TEMP/starrun-v11-baseline"
+            fi
+            godot --headless --path "$game_dir" --editor --import --quit
+            output="$GITHUB_WORKSPACE/review/$label.log"
+            godot --headless --path "$game_dir" --script "$game_dir/tests/balance_matrix.gd" -- \
+              --seeds=3 --seed-offset=${{ matrix.offset }} \
+              --ship=${{ matrix.ship }} --difficulty=${{ matrix.difficulty }} \
+              --hangar=${{ matrix.hangar }} --build=${{ matrix.build }} \
+              --route=${{ matrix.route }} \
+              2>&1 | tee "$output"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$output"; then
+              echo "::error::Godot reported a runtime issue in $label"
+              exit 1
+            fi
+          done
+          python3 tools/report_v11_fire_balance.py review/baseline.log review/v11.log review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve paired logs and per-stage comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v11-balance-${{ matrix.ship }}-${{ matrix.difficulty }}-${{ matrix.hangar }}
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30
