@@ -1,9 +1,8 @@
 name: Star/Run 1.1 paired enemy-fire balance review
+# This 1.1-specific paired study ran as a PR check for release validation.
+# Keep it manually rerunnable without imposing 108 extra simulations on
+# unrelated future PRs. The weekly balance matrix already runs separately.
 on:
-  # PR event makes the paired study a review gate and keeps its results
-  # accessible alongside the normal iPhone/playable PR checks.
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
