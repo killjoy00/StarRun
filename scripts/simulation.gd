@@ -1699,14 +1699,14 @@ func _update_bullets() -> void:
 			if bullet.fuse <= 0.0:
 				effects.append({"kind":"explosion", "p":bullet.p, "life":0.38, "max_life":0.38, "born":tick})
 				if bullet.p.distance_to(ship) < (105.0 if bullet.kind == "slag" else 83.0):
-					_hit(bullet.damage, "hazard", "Molten slag" if bullet.kind == "slag" else "Proximity mine")
+					_hit(bullet.damage, "hazard", "rival" if str(bullet.get("source","")) == "rival" else ("Molten slag" if bullet.kind == "slag" else "Proximity mine"))
 				bullet.hp = 0.0
 		var bullet_pace: float = (0.45 if chrono_left > 0 else 1.0) * control_pace
 		bullet.p += bullet.v * DT * bullet_pace
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
 			if not (barrier_left > 0.0 and _is_small_shot(str(bullet.kind))):
-				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, "Molten slag" if bullet.kind == "slag" else ("Proximity mine" if bullet.kind == "mine" else str(bullet.source)))
+				_hit(bullet.damage, "hazard" if bullet.kind in ["mine", "slag"] else bullet.kind, "rival" if str(bullet.get("source","")) == "rival" else ("Molten slag" if bullet.kind == "slag" else ("Proximity mine" if bullet.kind == "mine" else str(bullet.source))))
 			bullet.p.y = HEIGHT + 100
 	bullets = bullets.filter(func(b): return b.p.y < HEIGHT + 35 and b.p.y > -100 and b.p.x > -60 and b.p.x < WIDTH + 60 and b.get("hp", 1) > 0)
 

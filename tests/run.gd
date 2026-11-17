@@ -156,6 +156,14 @@ func _test_rival_captain_campaign() -> void:
 				check(foe.hp > hp_before - 20.0 and foe.rival_shield_left > 1.0, "Reactive shield reduces damage during a real burst")
 			"hunter_lock": check(fixture.charges.size() == 1 and fixture.charges[0].remaining >= 1.5, "Hunter Lock announces a real single-lane beam")
 			"mine_scatter": check(fixture.bullets.size() == 3 and fixture.bullets.all(func(b): return b.kind == "mine" and b.source == "rival"), "Mine Scatter sends three destroyable mine attacks")
+	var mine_contact := Sim.new(94901)
+	mine_contact.bullets = [{"p":mine_contact.ship_position(), "v":Vector2.ZERO, "damage":10000.0, "kind":"mine", "hp":15.0, "fuse":1.0, "source":"rival"}]
+	mine_contact._update_bullets()
+	check(mine_contact.ended and mine_contact.last_killing_source == "rival", "A rival mine hitting the ship credits the rival's actual lethal attack")
+	var mine_fuse := Sim.new(94902)
+	mine_fuse.bullets = [{"p":mine_fuse.ship_position(), "v":Vector2.ZERO, "damage":10000.0, "kind":"mine", "hp":15.0, "fuse":0.0, "source":"rival"}]
+	mine_fuse._update_bullets()
+	check(mine_fuse.ended and mine_fuse.last_killing_source == "rival", "A rival mine detonating near the ship also credits the captain")
 	var recurring := Sim.new(94010)
 	recurring.configure_rival(record)
 	recurring._try_spawn_rival()
