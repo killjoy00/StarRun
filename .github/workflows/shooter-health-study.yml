@@ -1,0 +1,69 @@
+name: StarRun — targeted shooter HP screen-pressure experiment
+# Matched study already completed as PR #39 (Actions #44106741711).
+# Keep it manually rerunnable without repeating costly full campaigns on every PR.
+# Completed the combined HP and first-shot matched study on PR #39,
+# Actions run #44127618898. Preserve manual reruns without adding the
+# 12-seed double-campaign comparison to every future gameplay PR.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: shooter-health-study-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: vanguard, difficulty: normal, hangar: none, pilot: rookie, build: baseline, route: adaptive, offset: 0, seeds: 3}
+          - {ship: arcwing, difficulty: normal, hangar: mid, pilot: rookie, build: focused, route: repair, offset: 1, seeds: 3}
+          - {ship: bulwark, difficulty: hard, hangar: max, pilot: rookie, build: focused, route: repair, offset: 3, seeds: 3}
+          - {ship: wraith, difficulty: insane, hangar: max, pilot: hunter, build: focused, route: bounty, offset: 6, seeds: 3}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Compare actual bullet occupancy under identical starting conditions
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/starrun-shooter-health-12-base"
+          # Exact source of the shooter-health experiment, before any game
+          # logic modification. It already contains read-only density mode.
+          git worktree add --detach "$BASELINE" 834f3cdf749e139fc6a430c804049bd915ab5aec
+          mkdir -p review
+          for version in baseline challenger; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$version" == baseline ]]; then root="$BASELINE"; fi
+            godot --headless --path "$root" --editor --import --quit
+            log="$GITHUB_WORKSPACE/review/$version.log"
+            godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+              --density --trace --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+              --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} \
+              --difficulty=${{ matrix.difficulty }} --hangar=${{ matrix.hangar }} \
+              --build=${{ matrix.build }} --strategy=timed --route=${{ matrix.route }} \
+              2>&1 | tee "$log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then
+              echo "::error::Godot simulation failed for $version"
+              exit 1
+            fi
+            test "$(grep -c 'DENSITY_TRACE ' "$log")" -eq "${{ matrix.seeds }}"
+            test "$(grep -c 'CAMPAIGN_TRACE ' "$log")" -eq "${{ matrix.seeds }}"
+          done
+          python3 tools/compare_shooter_hp.py review/baseline.log review/challenger.log review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve raw playable simulations
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: shooter-hp-${{ matrix.ship }}-${{ matrix.difficulty }}-${{ matrix.hangar }}
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30

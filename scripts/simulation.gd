@@ -346,6 +346,31 @@ func boss_projectile_damage_multiplier() -> float:
 	# Heavy beams keep their original telegraphed damage and duration.
 	return {"normal": 1.0, "hard": 1.05, "insane": 1.12}[difficulty]
 
+func is_pressure_shooter(kind: String) -> bool:
+	# This group shoots ordinary projectile patterns, not additional
+	# XP-bearing minions, mines, heavy charge lanes or boss volleys.
+	return kind in [
+		"gunship", "shieldguard", "ion_frigate", "corroder",
+		"disruptor", "arc_spire", "forge_turret", "gravity_sentinel"
+	]
+
+func shooter_health_pressure(kind: String) -> float:
+	# Only slower ranged shooters in Worlds 2+ get HP. Keep World 1 and
+	# hazard/boss/beam ecology unchanged for accessible first-run learning.
+	if stage <= 1 or not is_pressure_shooter(kind):
+		return 1.0
+	if stage == 2:
+		return {"normal":1.12, "hard":1.16, "insane":1.20}[difficulty]
+	return {"normal":1.15, "hard":1.20, "insane":1.25}[difficulty]
+
+func shooter_first_fire_window(kind: String) -> Vector2:
+	# A surviving shooter should get a chance to reveal its projectile
+	# pattern before the auto-weapons erase it. A shorter *first* timer
+	# does not accelerate the ongoing fire interval or increase XP.
+	if stage <= 1 or not is_pressure_shooter(kind):
+		return Vector2(1.0, 3.0)
+	return Vector2(0.95, 1.80) if stage == 2 else Vector2(0.85, 1.65)
+
 func projectile_interval_factor(kind: String) -> float:
 	# v1.1: a little more *ordinary gunfire*, with the bigger increase in
 	# the relatively quiet first world. Higher worlds already have a stage
@@ -732,8 +757,9 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier()
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
+	var first_fire := shooter_first_fire_window(kind)
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Encounter variants are reproducible by seed. Each has a different timing demand:
@@ -931,6 +957,13 @@ func _update_enemies() -> void:
 			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
+			# An opening salvo from a very slow turret should emerge
+			# at the top edge, not be held until deep into the playfield.
+			# This applies only to the HP-tested shooters in Worlds 2+;
+			# their later volleys use their existing interval unchanged.
+			if stage > 1 and is_pressure_shooter(kind) and enemy.p.y < 0.0:
+				enemy.fire = 0.0
+				continue
 			# Jammer and EMP still cancel boss beams, but the Harvester
 			# gradually adapts after a prolonged advanced-difficulty fight.
 			# It keeps firing its dodgeable projectile fans instead of
