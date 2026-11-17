@@ -23,6 +23,8 @@ var endless_stage_spec: Dictionary = {}
 var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
+var next_pressure_wave_at := 7.0
+var pressure_waves := 0
 var boss_attack_pattern := "sweep"
 var cooldown_totals: Dictionary = {}
 var stage_start := 0.0
@@ -35,6 +37,7 @@ var artifact_id := "standard"
 var mutations: Array = []
 var sentry_left := 0.0
 var sentry_timer := 0.0
+var engineer_service_used := false
 # Combat skill identities. Rookie/Vale deliberately remains the generic pilot.
 var ace_chain := 0
 var ace_chain_left := 0.0
@@ -311,6 +314,7 @@ func step() -> void:
 		if _has_prototype("bastion_lattice"):
 			recharge *= 1.85
 		shield = minf(max_shield, shield + recharge)
+	_engineer_service_window()
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
@@ -320,11 +324,12 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		# A busier first impression is not a free XP fountain: Normal W1
-		# spawn cadence rises while its per-enemy XP drops proportionally.
-		if stage == 1 and difficulty == "normal":
-			pace *= 0.60
+		# Ordinary spawns and their XP remain on the familiar progression curve.
+		# Additional screen-presence reinforcements below grant zero XP.
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
+		_spawn_world1_pressure()
+		next_pressure_wave_at = time + 3.25
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -397,10 +402,8 @@ func shooter_health_pressure(kind: String) -> float:
 	return {"normal":1.15, "hard":1.20, "insane":1.25}[difficulty]
 
 func shooter_first_fire_window(kind: String) -> Vector2:
-	# W1 previously contained many 17-HP targets erased before their first
-	# volley. Shorten the initial tell only in Normal's early encounter ecology.
-	if stage == 1 and difficulty == "normal":
-		return Vector2(1.25, 2.10) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(1.55, 2.60)
+	# Normal World 1 keeps the original initial fire window; special wing
+	# arrivals have an explicit, readable first shot timer of their own.
 	# A surviving shooter should get a chance to reveal its projectile
 	# pattern before the auto-weapons erase it. A shorter *first* timer
 	# does not accelerate the ongoing fire interval or increase XP.
@@ -870,7 +873,7 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.60)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
@@ -889,7 +892,10 @@ func _spawn_encounter() -> void:
 	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
 	if stage == 1 and difficulty == "normal":
-		_spawn_world1_strike_wing()
+		# If slow guns are already holding a crowded screen, do not pile
+		# another formation on top of it just to hit a clock.
+		if _visible_world1_enemies() < 3:
+			_spawn_world1_strike_wing()
 		return
 	var ecology := ((stage - 1) % int(content.stage_count)) + 1
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
@@ -942,9 +948,38 @@ func _spawn_world1_strike_wing() -> void:
 		member.max_hp *= 1.20
 		member.hp = member.max_hp
 		member.fire = 1.85 + index * 0.20
-	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.60
+	var pace := maxf(0.55, 1.65 - elapsed / 260.0)
 	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("STRIKE WING - coordinated enemy attack")
+
+func _visible_world1_enemies() -> int:
+	var visible := 0
+	for enemy in enemies:
+		var p: Vector2 = enemy.p
+		if enemy.hp > 0.0 and p.x >= 0.0 and p.x <= WIDTH and p.y >= 0.0 and p.y <= 920.0:
+			visible += 1
+	return visible
+
+func _spawn_world1_pressure() -> void:
+	# The opening director fills EMPTY space, not low ship statistics.
+	# Extra pressure ships are genuine, attackable enemies, but do not
+	# grant XP or turn strong early builds into an endless upgrade fountain.
+	var count: int = mini(2, maxi(0, 3 - _visible_world1_enemies()))
+	count = mini(count, maxi(0, _enemy_limit() - enemies.size()))
+	if count <= 0:
+		return
+	for index in range(count):
+		var kind: String = ["gunship", "interceptor", "drone"][(seed_value + pressure_waves + index) % 3]
+		_add_enemy(kind, Vector2(135.0 + 270.0 * index, 72.0 + 30.0 * index))
+		var wing: Dictionary = enemies[-1]
+		wing["strike_wing"] = true
+		wing["pressure_wing"] = true
+		wing.xp = 0
+		wing.max_hp *= 1.45
+		wing.hp = wing.max_hp
+		wing.fire = 1.90 + index * 0.20
+	pressure_waves += 1
+	_log("STRIKE WING REINFORCEMENTS - no additional XP")
 
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
@@ -1013,6 +1048,7 @@ func advance_stage() -> bool:
 		_log("ARSENAL SHIFT - automatic weapon ranks rotated")
 	stage_casts.clear()
 	tactician_counter_used = false
+	engineer_service_used = false
 	ace_chain = 0
 	ace_chain_left = 0.0
 	hunter_target_id = -1
@@ -1026,6 +1062,8 @@ func advance_stage() -> bool:
 	encounter_index = 0
 	encounter_queue.clear()
 	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
+	next_pressure_wave_at = time + 7.0
+	pressure_waves = 0
 	endless_stage_spec.clear()
 	stage_start = time
 	boss_spawned = false
@@ -1279,6 +1317,15 @@ func _deploy_ion_mines(count: int, damage: float, radius: float) -> void:
 		p.y = clampf(p.y,65,865)
 		ion_mines.append({"p":p,"fuse":1.8,"damage":damage,"radius":radius})
 	while ion_mines.size() > 6: ion_mines.pop_front()
+
+func _engineer_service_window() -> void:
+	if pilot_id != "engineer" or engineer_service_used or boss_spawned or time - stage_start < 25.0 or shield <= max_shield * 0.50:
+		return
+	engineer_service_used = true
+	sentry_left = maxf(sentry_left, 4.0)
+	sentry_timer = 0.0
+	pilot_procs.engineer += 1
+	_log("FIELD SENTRY - proactive engineering sweep")
 
 func _update_support() -> void:
 	if artifact_id == "drone_armada" and escort_left <= 0.0:
@@ -1712,7 +1759,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		shield = minf(max_shield, shield + 10.0)
 		hunter_target_id = -1
 		hunter_mark_left = 0.0
-		hunter_mark_cooldown = minf(hunter_mark_cooldown, 2.5)
+		hunter_mark_cooldown = maxf(hunter_mark_cooldown, 10.0)
 		pilot_procs.hunter += 1
 		_log("HUNT COMPLETE - shields restored")
 	# The Salvager turns collected wreckage into a physical shockwave every
@@ -2407,7 +2454,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

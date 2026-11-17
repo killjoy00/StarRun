@@ -22,7 +22,7 @@ const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "
 const PILOTS := [
 	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"Balanced training. No special bonus.", "trait":"STANDARD ISSUE"},
 	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage, stronger tracking, and a precision crossfire volley after three rapid weapon kills.", "trait":"PRECISION"},
-	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield, regeneration and shield-based weapon power. A temporary sentry activates when your shield breaks.", "trait":"FIELD REPAIR"},
+	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield, regeneration and shield-powered weapons. A sentry deploys at a maintenance window or if shields break.", "trait":"FIELD REPAIR"},
 	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% Seeker damage, faster lock-on, and a marked priority target that your auto-weapons pursue.", "trait":"MISSILE EXPERT"},
 	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP, +15% Cores, and a damaging scrap shockwave every 12 defeated enemies.", "trait":"COLLECTOR"},
 	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter cooldowns, one extra reroll, and a once-per-world counterbattery when an ability is timed against incoming fire.", "trait":"BATTLE PLAN"}

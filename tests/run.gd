@@ -237,7 +237,20 @@ func _test_world1_density_and_pilot_identities() -> void:
 	normal._spawn_encounter()
 	check(normal.enemies.size() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
 	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
-	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 does not grant free XP for every extra enemy")
+	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 strike wings are paid for from scheduled spawn slots")
+	var director := Sim.new(8151, {}, "vanguard", "rookie", "normal")
+	director.time = 7.0
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == 2 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director fills a sparse screen with two real, non-XP reinforcement enemies")
+	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
+	var untouched := director.enemies.size()
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == untouched + 1, "Director only adds the one enemy missing from its three-visible target")
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == untouched + 1, "Director adds nothing while three visible enemies are already present")
+	var pressure_save := director.snapshot()
+	var pressure_restored := Sim.new()
+	check(pressure_restored.restore(pressure_save) and pressure_restored.snapshot() == pressure_save, "Reinforcement timing and wave state survive exact resume")
 	check(normal.next_spawn > normal.time + 3.0, "Strike wing spends future spawn slots instead of stacking extra kills")
 	hard.time = hard.next_encounter_at
 	hard._spawn_encounter()
@@ -268,6 +281,7 @@ func _test_world1_density_and_pilot_identities() -> void:
 	hunter.shield = 0.0
 	hunter._damage_enemy(enemy, 1000.0, "seeker")
 	check(hunter.shield >= 10.0 and hunter.hunter_target_id == -1, "Hunter's target elimination restores shields and releases the mark")
+	check(hunter.hunter_mark_cooldown >= 10.0, "Hunter's mark payout has a real cooldown; it cannot refill shields on every two-second kill")
 	var nyx := Sim.new(4214, {}, "vanguard", "tactician")
 	check(nyx.activate("aegis") and not nyx.tactician_counter_used, "Tactician cannot earn its one-time counterbattery by blind casting")
 	var counter := Sim.new(4215, {}, "vanguard", "tactician")
@@ -377,6 +391,12 @@ func _test_roguelike_variation() -> void:
 	repair.shield = 1.0
 	repair._hit(5.0, "ordnance", "test")
 	check(repair.sentry_left > 5.0 and repair.events.any(func(e): return "FIELD SENTRY" in str(e.message)), "Engineer deploys a temporary offensive sentry on shield break")
+	var maintenance := Sim.new(4519, {}, "vanguard", "engineer")
+	maintenance.time = 26.0
+	maintenance._engineer_service_window()
+	check(maintenance.engineer_service_used and maintenance.sentry_left >= 4.0 and maintenance.pilot_procs.engineer == 1, "Engineer proactively deploys its unique visible turret once per world at healthy shields")
+	maintenance._engineer_service_window()
+	check(maintenance.pilot_procs.engineer == 1, "Engineer cannot repeat the free service window for an unlimited stream of sentries")
 	repair._add_enemy("drone", Vector2(260,250))
 	repair._update_support()
 	check(repair.shots.any(func(s): return str(s.weapon) == "escort" and s.damage > 0.0), "Engineer sentry fires independent offensive shots")
