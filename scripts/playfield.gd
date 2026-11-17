@@ -34,6 +34,11 @@ var seen_formations := {}
 var beam_cancel_feedback: Array = []
 var seen_beam_cancel_ids := {}
 var seen_beam_cancel_order: Array = []
+# Formation interruptions must remain readable at 3x game speed: cache
+# once and hold the feedback in real presentation seconds.
+var elite_break_feedback: Array = []
+var seen_elite_break_ids := {}
+var seen_elite_break_order: Array = []
 
 func _process(delta: float) -> void:
 	if host == null or host.sim == null:
@@ -49,12 +54,18 @@ func _process(delta: float) -> void:
 		beam_cancel_feedback.clear()
 		seen_beam_cancel_ids.clear()
 		seen_beam_cancel_order.clear()
+		elite_break_feedback.clear()
+		seen_elite_break_ids.clear()
+		seen_elite_break_order.clear()
 	if host.mode == "playing":
 		shield_break_clock = maxf(0.0, shield_break_clock - delta)
 		formation_clock = maxf(0.0, formation_clock - delta)
 		for feedback in beam_cancel_feedback:
 			feedback.remaining = float(feedback.remaining) - delta
 		beam_cancel_feedback = beam_cancel_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
+		for feedback in elite_break_feedback:
+			feedback.remaining = float(feedback.remaining) - delta
+		elite_break_feedback = elite_break_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
 	for effect in host.sim.effects:
 		if effect.kind == "beam-canceled":
 			var cue_id := "%d:%d:%d" % [int(effect.born), int(effect.source), roundi(float(effect.x))]
@@ -64,6 +75,14 @@ func _process(delta: float) -> void:
 				if seen_beam_cancel_order.size() > 128:
 					seen_beam_cancel_ids.erase(seen_beam_cancel_order.pop_front())
 				beam_cancel_feedback.append({"p":effect.p, "x":float(effect.x), "remaining":0.85, "duration":0.85})
+		if effect.kind == "elite-broken":
+			var elite_key := "%d:%d" % [int(effect.born), int(effect.get("source",-1))]
+			if not seen_elite_break_ids.has(elite_key):
+				seen_elite_break_ids[elite_key] = true
+				seen_elite_break_order.append(elite_key)
+				if seen_elite_break_order.size() > 64:
+					seen_elite_break_ids.erase(seen_elite_break_order.pop_front())
+				elite_break_feedback.append({"p":effect.p, "remaining":1.05, "duration":1.05})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -129,7 +148,7 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken"]:
 			_draw_effect(effect)
 	if formation_clock > 0.0:
 		_draw_fusion_formed(formation, formation_clock/1.2, 1.0-formation_clock/1.2)
@@ -138,6 +157,7 @@ func _draw() -> void:
 			_draw_effect(effect)
 	_draw_threats()
 	_draw_beam_cancel_feedback()
+	_draw_elite_break_feedback()
 	_draw_shield_feedback(ship)
 	for bullet in sim.bullets:
 		_draw_projectile(bullet)
@@ -410,8 +430,27 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		_bar(Rect2(80,21,380,7),enemy.hp/enemy.max_hp,AMBER)
 		draw_string(ThemeDB.fallback_font, Vector2(80,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
 		draw_string(ThemeDB.fallback_font, Vector2(80,78), sim.boss_phase_label(), HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
-	elif enemy.hp < enemy.max_hp:
-		_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+	else:
+		var elite_role: String = str(enemy.get("elite_role", ""))
+		if elite_role == "leader" and p.y >= 0.0 and p.y <= 885.0:
+			# A distinctive amber target ring and literal label make it
+			# obvious who powers the squad even at reduced effects / 3x.
+			var ring_radius := 54.0 + sin(visual_time * 4.5) * (0.0 if profile.reduced else 2.0)
+			draw_arc(p, ring_radius, 0, TAU, 48, Color(AMBER,0.94), 3.5, true)
+			for corner in range(4):
+				var direction := Vector2.from_angle(corner * PI / 2.0 + PI / 4.0)
+				draw_line(p + direction * (ring_radius - 7), p + direction * (ring_radius + 7), AMBER, 3.0, true)
+			var label_x: float = clampf(p.x - 61.0, 8.0, 408.0)
+			draw_rect(Rect2(label_x-3.0, p.y-81.0, 130.0, 22.0), Color("1b1722",0.88))
+			draw_string(ThemeDB.fallback_font, Vector2(label_x, p.y-64.0), "ELITE LEADER", HORIZONTAL_ALIGNMENT_LEFT, 125, 15, AMBER)
+			_bar(Rect2(p.x-26, p.y+50, 52, 4), enemy.hp/enemy.max_hp, AMBER)
+		elif elite_role == "wing" and p.y >= 0.0 and p.y <= 885.0:
+			var disrupted: bool = bool(enemy.get("elite_disrupted",false))
+			var wing_color: Color = CYAN if disrupted else AMBER
+			draw_arc(p, 35, PI*0.12, PI*0.88, 16, Color(wing_color,0.75), 2.5, true)
+			draw_string(ThemeDB.fallback_font, p+Vector2(-28, -44), "OFFLINE" if disrupted else "LINKED", HORIZONTAL_ALIGNMENT_LEFT, 74, 12, wing_color)
+		if enemy.hp < enemy.max_hp and elite_role != "leader":
+			_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
 
 func _draw_boss_module(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
@@ -614,6 +653,18 @@ func _draw_beam_cancel_feedback() -> void:
 			draw_rect(Rect2(tag_x - 4, tag_y - 20, 126, 26), Color(THREAT_INK, alpha * 0.90))
 			draw_string(ThemeDB.fallback_font, Vector2(tag_x, tag_y), "SOURCE DOWN", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color(CYAN, alpha))
 
+func _draw_elite_break_feedback() -> void:
+	for cue in elite_break_feedback:
+		var alpha: float = clampf(float(cue.remaining) / float(cue.duration), 0.0, 1.0)
+		var age: float = 1.0 - alpha
+		var p: Vector2 = cue.p
+		if p.y < 0.0 or p.y > 850.0:
+			continue
+		draw_arc(p, 30.0 + age * 95.0, 0.0, TAU, 48, Color(CYAN, alpha * 0.94), 4.0, true)
+		var label_pos := Vector2(clampf(p.x - 88.0, 8.0, 345.0), clampf(p.y - 73.0, 29.0, 876.0))
+		draw_rect(Rect2(label_pos.x - 4.0, label_pos.y - 22.0, 193.0, 29.0), Color("09222c", alpha * 0.90))
+		draw_string(ThemeDB.fallback_font, label_pos, "FORMATION BROKEN", HORIZONTAL_ALIGNMENT_LEFT, 185, 17, Color(CYAN, alpha))
+
 func _draw_shield_feedback(ship: Vector2) -> void:
 	# Presentation uses real time so the break remains visible even at 3x speed.
 	var age := 1.0 - shield_break_clock / 0.75 if shield_break_clock > 0.0 else -1.0
@@ -649,6 +700,13 @@ func _draw_effect(effect: Dictionary) -> void:
 		_draw_fusion_cast(effect, alpha, age)
 	elif effect.kind == "fusion-formed":
 		_draw_fusion_formed(effect, alpha, age)
+	elif effect.kind == "elite-broken":
+		# On-screen response to destroying the squad coordinator.
+		var radius := 28.0 + age * 90.0
+		draw_arc(p, radius, 0, TAU, 48, Color(CYAN,alpha*0.95), 4.0, true)
+		var label_pos: Vector2 = Vector2(clampf(p.x - 88,8,348),clampf(p.y-80,27,870))
+		draw_rect(Rect2(label_pos.x-4,label_pos.y-21,191,29), Color("09222c", alpha*0.90))
+		draw_string(ThemeDB.fallback_font, label_pos, "FORMATION BROKEN", HORIZONTAL_ALIGNMENT_LEFT, 184, 17, Color(CYAN,alpha))
 	elif effect.kind == "timed-counter":
 		# A successful defensive read should be unmistakable, not a generic explosion.
 		var radius := 43.0 + age * 43.0

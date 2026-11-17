@@ -102,6 +102,34 @@ func _run() -> void:
 	host.sim.stage = 1
 	field._process(0.0)
 	check(field.shield_break_clock == 0.0, "Warp repair must clear any previous stage break burst")
+	# Real elite squad art must be readable on the actual 540x960 playfield,
+	# including when reduced effects is enabled. No screenshot mockups.
+	host.sim = Sim.new(7600)
+	host.sim.stage = 2
+	host.sim._spawn_encounter()
+	for i in range(3):
+		host.sim._spawn_enemy()
+	for i in range(host.sim.enemies.size()):
+		host.sim.enemies[i].p = Vector2(155 + i * 116, 300 + (i % 2) * 55)
+	check(str(host.sim.enemies[0].get("elite_role","")) == "leader", "Fixture uses a genuine generated elite leader, not a decorative marker")
+	for reduced in [false,true]:
+		host.profile.reduced = reduced
+		field.queue_redraw()
+		var alive := await _frame(viewport)
+		alive.save_png(output.path_join("elite-leader-%s.png" % ("reduced" if reduced else "full")))
+		check(alive.get_size() == Vector2i(540,960), "Elite leader indicator renders in portrait at both detail levels")
+	host.sim._damage_enemy(host.sim.enemies[0], float(host.sim.enemies[0].hp) + 9999.0, "pulse")
+	check(host.sim.effects.any(func(e): return e.kind == "elite-broken"), "Destroying the leader creates a visible formation-broken effect")
+	field._process(0.01)
+	check(field.elite_break_feedback.size() == 1, "Formation broken feedback is tracked once for a real-time visual hold")
+	field.queue_redraw()
+	var disrupted := await _frame(viewport)
+	disrupted.save_png(output.path_join("elite-formation-broken.png"))
+	check(disrupted.get_size() == Vector2i(540,960), "Formation-broken cue renders on the real playfield")
+	field._process(0.50)
+	check(field.elite_break_feedback.size() == 1, "Formation cue survives 0.5 real seconds even when combat runs at 3x")
+	field._process(0.65)
+	check(field.elite_break_feedback.is_empty(), "Formation cue expires after a full real-time hold without retriggering")
 	viewport.queue_free()
 	await process_frame
 	var scene := PhoneScene.new()

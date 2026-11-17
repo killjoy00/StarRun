@@ -50,6 +50,8 @@ func _run() -> void:
 	_test_contextual_active_balance()
 	_test_five_balance_followups()
 	_test_endless_encounters_and_cooldown_captures()
+	_test_elite_squad_counterplay()
+	_test_ship_pilot_identity_tuning()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -156,6 +158,138 @@ func _test_five_balance_followups() -> void:
 	blocked._hit(20.0, "heavy", "first lane")
 	blocked._hit(20.0, "heavy", "second lane")
 	check(is_equal_approx(blocked.hull, blocked.max_hull), "An available Aegis still counters overlapping heavy beams fully")
+
+
+func _test_ship_pilot_identity_tuning() -> void:
+	# Ships retain their distinct starting weapons and survivability.
+	# These small traits address the clear Hard/max-Hangar Bulwark/Haven
+	# boss damage gaps without making ordinary waves easier for Bulwark.
+	var siege := Sim.new(88231, {}, "bulwark", "rookie")
+	var baseline := Sim.new(88231, {}, "vanguard", "rookie")
+	for sim in [siege, baseline]:
+		sim._spawn_boss()
+		sim._damage_enemy(sim.enemies[0], 100.0, "pulse")
+	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.12), "Bulwark has a narrowly scoped 12 percent automatic siege bonus against boss cores")
+	var part_siege := Sim.new(88232, {}, "bulwark", "rookie")
+	var part_base := Sim.new(88232, {}, "vanguard", "rookie")
+	for sim in [part_siege,part_base]:
+		sim.stage = 2
+		sim._spawn_boss()
+		sim._damage_enemy(sim.enemies[1], 100.0, "pulse")
+	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.12), "Bulwark siege bonus also applies to actual targetable boss modules")
+	var drone_siege := Sim.new(88233, {}, "bulwark", "rookie")
+	var drone_base := Sim.new(88233, {}, "vanguard", "rookie")
+	for sim in [drone_siege,drone_base]:
+		sim._add_enemy("drone", Vector2(270,180))
+		sim._damage_enemy(sim.enemies[0], 5.0, "pulse")
+	check(is_equal_approx(float(drone_siege.damage_dealt.pulse), float(drone_base.damage_dealt.pulse)), "Bulwark does not gain extra damage against ordinary waves")
+	var haven := Sim.new(88234, {}, "haven", "rookie")
+	var regular := Sim.new(88234, {}, "vanguard", "rookie")
+	for sim in [haven,regular]:
+		sim._add_enemy("drone", Vector2(270,175))
+		sim._update_weapons()
+	var haven_seeker: Array = haven.shots.filter(func(s): return s.weapon == "seeker")
+	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
+	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.12), "Haven's support Seeker Pods gain 12 percent weapon damage, but no Pulse is installed")
+	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
+	# Insane matched seeds exposed a Haven early-wave DPS and survivability gap.
+	# Improve support pod cadence and the signature Mend, without a Pulse starter.
+	var haven_pods := Sim.new(88237, {}, "haven", "rookie")
+	var vanguard_pods := Sim.new(88237, {}, "vanguard", "rookie")
+	for sim in [haven_pods, vanguard_pods]:
+		sim._add_enemy("drone", Vector2(270, 175))
+		sim._update_weapons()
+	check(is_equal_approx(haven_pods.seeker_timer + Sim.DT * 0.95, 0.55) and is_equal_approx(vanguard_pods.seeker_timer + Sim.DT, 0.70), "Haven pods reload faster without globally accelerating every ship")
+	var haven_hunter := Sim.new(88238, {}, "haven", "hunter")
+	var wraith_hunter := Sim.new(88238, {}, "wraith", "hunter")
+	for sim in [haven_hunter, wraith_hunter]:
+		sim._add_enemy("drone", Vector2(270, 175))
+		sim._update_weapons()
+	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.62), "Hunter retains the pilot lock-on advantage with Haven's support pod cadence")
+	var haven_mender := Sim.new(88239, {}, "haven", "rookie")
+	var regular_mender := Sim.new(88239, {}, "vanguard", "rookie")
+	regular_mender.upgrades.mend = 1
+	regular_mender.active_slots.append("mend")
+	check(haven_mender.activate("mend") and regular_mender.activate("mend"), "Both ships can activate a naturally available Repair Drone")
+	check(is_equal_approx(haven_mender.mend_rate / regular_mender.mend_rate, 1.25), "Haven signature Repair Drones heal 25 percent more than the general card")
+	check(int(haven_pods.upgrades.pulse) == 0, "Haven still has no Pulse starter after its support buffs")
+
+	var engineer := Sim.new(88235, {}, "vanguard", "engineer")
+	var rookie := Sim.new(88235, {}, "vanguard", "rookie")
+	check(is_equal_approx(engineer.weapon_power() / rookie.weapon_power(), 1.06), "Engineer converts maintained shields to 6 percent automatic output")
+	engineer.shield = engineer.max_shield * 0.50
+	check(is_equal_approx(engineer.weapon_power(), rookie.weapon_power()), "Engineer loses its bonus at half shields, preserving the defensive tradeoff")
+	check(is_equal_approx(engineer.max_shield - rookie.max_shield, 20.0), "Existing Engineer shielding is unchanged")
+	var resumed := Sim.new(88236)
+	check(resumed.restore(engineer.snapshot()) and resumed.snapshot() == engineer.snapshot(), "Engineer shield-powered combat does not need a new save schema")
+
+
+func _test_elite_squad_counterplay() -> void:
+	# Promote existing normal spawn slots, never additional enemies/XP.
+	var opener := Sim.new(7600)
+	opener._spawn_encounter()
+	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "World 1 never introduces elites or changes its original formation queue")
+	var squad := Sim.new(7600)
+	squad.stage = 2
+	squad._spawn_encounter()
+	check(squad.encounter_queue.size() == 3 and squad.encounter_queue[0] is Dictionary, "One of two World 2-4 natural encounters becomes an elite three-ship formation")
+	var queued_before: Array = squad.encounter_queue.duplicate(true)
+	var queued_restored := Sim.new(1)
+	check(queued_restored.restore(squad.snapshot()) and queued_restored.encounter_queue == queued_before, "Elite formation queue is deterministic through a checkpoint")
+	for i in range(3):
+		squad._spawn_enemy()
+	check(squad.enemies.size() == 3 and squad.encounter_queue.is_empty(), "Elite squads consume exactly three ordinary enemy spawn slots")
+	var leader: Dictionary = squad.enemies[0]
+	var wing: Dictionary = squad.enemies[1]
+	check(str(leader.get("elite_role", "")) == "leader" and str(wing.get("elite_role", "")) == "wing", "Leader and escort roles are explicit for visuals and auto-targeting")
+	check(int(wing.elite_squad) == int(leader.id) and squad._elite_leader_active(wing), "Wing firing bonus depends on a specific living leader")
+	var raw_leader_hp: float = float(squad.content.enemies[str(leader.kind)].hp) * float(squad.stage_spec().health_scale) * squad.threat_scale() * squad.stage_risk * squad.enemy_health_multiplier() * squad.shooter_health_pressure(str(leader.kind))
+	check(is_equal_approx(float(leader.max_hp), raw_leader_hp * 1.20), "Elite leader has a visible but restrained 20 percent health bonus")
+	wing.p = Vector2(280.0, 175.0)
+	wing.fire = 0.0
+	squad._update_enemies()
+	var interval: float = float(squad.content.enemies[str(wing.kind)].interval) / squad.enemy_fire_scale() * squad.projectile_interval_factor(str(wing.kind))
+	check(is_equal_approx(float(wing.fire), interval * 0.80), "Escort attacks 20 percent faster only while the elite leader is active")
+	var saved := squad.snapshot()
+	var resumed := Sim.new(1)
+	check(resumed.restore(saved) and resumed.snapshot() == saved, "Leader and wing state survives mid-fight save and restore")
+	squad._damage_enemy(leader, float(leader.hp) + 999.0, "pulse")
+	check(not squad._elite_leader_active(wing) and bool(wing.elite_disrupted), "Destroying the leader removes escort coordination without killing escorts")
+	check(float(wing.fire) >= 1.80 and squad.effects.any(func(e): return e.kind == "elite-broken"), "Leader destruction interrupts the next escort salvo and creates readable feedback")
+	check(squad.events.any(func(e): return "FORMATION BROKEN" in str(e.message)), "Player receives a named formation-break event")
+	wing.fire = 0.0
+	squad._update_enemies()
+	check(is_equal_approx(float(wing.fire), interval), "Surviving disrupted wing returns to ordinary firing rate")
+	var early := Sim.new(7600)
+	early.stage = 2
+	early._spawn_encounter()
+	early._spawn_enemy()
+	early._damage_enemy(early.enemies[0], float(early.enemies[0].hp) + 999.0, "pulse")
+	check(early.encounter_queue.all(func(q): return q is Dictionary and bool(q.disrupted)), "Destroying a leader before the escorts arrive also disables their queued attack boost")
+	for i in range(2):
+		early._spawn_enemy()
+	check(early.enemies.size() == 3 and bool(early.enemies[1].elite_disrupted) and float(early.enemies[1].fire) >= 1.8, "Late-arriving escorts spawn already disrupted without an extra enemy reward")
+	var late := Sim.new(7600)
+	late.stage = 3
+	late.encounter_index = 1
+	late._spawn_encounter()
+	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is String, "Other formations remain ordinary and World 3 encounters alternate")
+	late.encounter_queue.clear()
+	late.stage = 4
+	late.encounter_index = 0
+	late._spawn_encounter()
+	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is Dictionary, "World 4 includes marked elite formations too")
+	# Historical string queues remain functional when loading older 1.3 saves.
+	var legacy := Sim.new(7600)
+	legacy.stage = 3
+	legacy.encounter_queue = ["gunship","shieldguard","disruptor"]
+	legacy._spawn_enemy()
+	check(legacy.enemies.size() == 1 and not legacy.enemies[0].has("elite_role"), "Plain-string formation checkpoints from earlier builds still spawn normally")
+	var pre_boss := Sim.new(7600)
+	pre_boss.stage = 2
+	pre_boss._spawn_encounter()
+	pre_boss._spawn_boss()
+	check(pre_boss.encounter_queue.is_empty() and not pre_boss.enemies.any(func(e): return e.has("elite_role")), "Boss entry clears elite queues and does not change boss encounters")
 
 
 func _test_endless_encounters_and_cooldown_captures() -> void:

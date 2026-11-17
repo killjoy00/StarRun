@@ -747,8 +747,24 @@ func _spawn_enemy() -> void:
 	if not encounter_queue.is_empty():
 		# A formation consumes normal spawn opportunities, not extra waves of XP.
 		var formation_slot: int = 3 - encounter_queue.size()
-		var queued_kind: String = str(encounter_queue.pop_front())
+		# Existing saves can still contain plain string queues. New elite
+		# queues carry leader/wing information without a save format bump.
+		var queued: Variant = encounter_queue.pop_front()
+		var queued_kind: String = str(queued.get("kind", "")) if queued is Dictionary else str(queued)
 		_add_enemy(queued_kind, Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0))
+		if queued is Dictionary and not enemies.is_empty():
+			var unit: Dictionary = enemies[-1]
+			unit["elite_squad"] = int(queued.get("squad", -1))
+			unit["elite_role"] = "leader" if bool(queued.get("leader", false)) else "wing"
+			unit["elite_disrupted"] = bool(queued.get("disrupted", false))
+			if unit.elite_role == "leader":
+				unit.max_hp *= 1.20
+				unit.hp = unit.max_hp
+				unit.fire = 1.10
+			elif unit.elite_disrupted:
+				unit.fire = maxf(float(unit.fire), 1.8)
+			else:
+				unit.fire = 1.25
 		return
 	if endless_enabled and stage > int(content.stage_count):
 		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
@@ -762,13 +778,26 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
-## Encounter variants are reproducible by seed. Each has a different timing demand:
-## armored escorts, mine-heavy bomber convoys, or protected carrier launches.
+## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
+## the same three normal spawn slots into an elite leader/wing formation.
+## Breaking the leader cancels coordination, not enemies, XP or future waves.
+func _elite_leader_active(wing: Dictionary) -> bool:
+	if str(wing.get("elite_role", "")) != "wing" or bool(wing.get("elite_disrupted", false)):
+		return false
+	var leader_id: int = int(wing.get("elite_squad", -1))
+	for other in enemies:
+		if int(other.id) == leader_id and float(other.hp) > 0.0 and str(other.get("elite_role", "")) == "leader":
+			return true
+	return false
+
 func _spawn_encounter() -> void:
 	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
 	var ecology := ((stage - 1) % int(content.stage_count)) + 1
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
+	# One elite squad in every two natural encounter opportunities; never
+	# World 1, boss phases, or an extra third-party spawn/kill payout.
+	var elite: bool = stage in [2, 3, 4] and (encounter_index + seed_value) % 2 == 0
 	encounter_index += 1
 	var formation: Array = []
 	match pattern:
@@ -780,8 +809,18 @@ func _spawn_encounter() -> void:
 			_log("BOMBER CONVOY - ordnance incoming")
 		2:
 			formation = ["carrier", "gunship", "interceptor"] if ecology == 1 else (["carrier", "shieldguard", "disruptor"] if ecology == 2 else (["carrier", "slag_bomber", "ember_hunter"] if ecology == 3 else ["echo_carrier", "phase_stalker", "gravity_sentinel"]))
-			_log("ELITE CARRIER - prioritize the launch ship")
-	encounter_queue = formation.duplicate()
+			_log("CARRIER ESCORT - prioritize the launch ship")
+	if elite:
+		var leader_id: int = next_id
+		encounter_queue.clear()
+		for index in range(formation.size()):
+			encounter_queue.append({
+				"kind":str(formation[index]), "squad":leader_id,
+				"leader":index == 0, "disrupted":false
+			})
+		_log("ELITE FORMATION - destroy the marked leader to disrupt escorts")
+	else:
+		encounter_queue = formation.duplicate()
 
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
@@ -979,6 +1018,10 @@ func _update_enemies() -> void:
 				# launch cycle and accidentally create more XP on Insane.
 				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
 				enemy.fire = (float(content.enemies[kind].interval) / attack_scale) * projectile_interval_factor(kind)
+				# Elite wingmen fire about 20% more volleys only while their
+				# marked leader survives. Destroying it restores normal pacing.
+				if _elite_leader_active(enemy):
+					enemy.fire *= 0.80
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
@@ -1156,7 +1199,11 @@ func _update_weapons() -> void:
 		for n in range(barrels):
 			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
-		seeker_timer += (0.62 if pilot_id == "hunter" else 0.70)
+		# Haven clears early waves with rapid support pods instead of a Pulse starter.
+		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
+		if ship_id == "haven":
+			seeker_interval = 0.50 if pilot_id == "hunter" else 0.55
+		seeker_timer += seeker_interval
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
 		var target_id := -1
 		var target_pos := Vector2(270, -100)
@@ -1179,7 +1226,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.12 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -1216,6 +1263,11 @@ func weapon_power() -> float:
 	# It only rewards shields above half capacity during Worlds 2-4.
 	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
 		power *= 1.15
+	# Engineer can convert well-maintained shields into modest weapon output.
+	# Its repair identity remains, while the payoff no longer disappears
+	# against max-Hangar boss health in long fights.
+	if pilot_id == "engineer" and shield > max_shield * 0.50:
+		power *= 1.06
 	if hull < max_hull * 0.60:
 		power *= 1.0 + passive_bonus("last_stand", 0.03, 0.10, 0.20)
 	if shield > max_shield * 0.75:
@@ -1294,6 +1346,10 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 			var d: float = origin.distance_squared_to(enemy.p)
 			if enemy.kind == "boss_module":
 				d *= 0.22
+			elif str(enemy.get("elite_role", "")) == "leader":
+				# The player controls abilities, not aim. Give a readable
+				# elite counterplay objective a moderate auto-target bias.
+				d *= 0.55
 			if d < distance:
 				distance = d
 				best = enemy
@@ -1406,6 +1462,10 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
+			# Bulwark retains its slower fire and tank role, but is no
+			# longer disproportionately weak at long advanced bosses.
+			if ship_id == "bulwark":
+				amount *= 1.12
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
@@ -1436,6 +1496,23 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "boss_module":
 		bonus_cores += int(meta.module_salvage)
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
+	if str(enemy.get("elite_role", "")) == "leader":
+		# Escorts should lose their buff even if the leader dies before all
+		# queued wings appear. This is a brief tactical opening, not a kill
+		# reward or a free removal of the remaining enemies.
+		var disrupted := 0
+		var squad_id: int = int(enemy.id)
+		for wing in enemies:
+			if int(wing.id) != squad_id and int(wing.get("elite_squad", -1)) == squad_id and float(wing.hp) > 0.0:
+				wing["elite_disrupted"] = true
+				wing.fire = maxf(float(wing.fire), 1.8)
+				disrupted += 1
+		for queued in encounter_queue:
+			if queued is Dictionary and int(queued.get("squad", -1)) == squad_id:
+				queued["disrupted"] = true
+				disrupted += 1
+		effects.append({"kind":"elite-broken", "p":enemy.p, "source":squad_id, "life":1.25, "max_life":1.25, "born":tick})
+		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
 	# Boss components are targets, but only the core can end a stage or pay a contract.
@@ -1623,7 +1700,8 @@ func activate(ability: String) -> bool:
 		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * effect_strength
 	elif ability == "mend":
 		mend_left = 4.0
-		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength / 4.0
+		# This ship invests in field repair instead of the second starting gun.
+		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength * (1.25 if ship_id == "haven" else 1.0) / 4.0
 		# Repair drones are the support counter to the status damage in
 		# Ion Storm and the weapon-suppressing heat of Solar Foundry.
 		if corrosion_left > 0.0 or heat_left > 0.0:
