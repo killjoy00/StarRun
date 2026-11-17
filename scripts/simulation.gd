@@ -747,8 +747,24 @@ func _spawn_enemy() -> void:
 	if not encounter_queue.is_empty():
 		# A formation consumes normal spawn opportunities, not extra waves of XP.
 		var formation_slot: int = 3 - encounter_queue.size()
-		var queued_kind: String = str(encounter_queue.pop_front())
+		# Existing saves can still contain plain string queues. New elite
+		# queues carry leader/wing information without a save format bump.
+		var queued: Variant = encounter_queue.pop_front()
+		var queued_kind: String = str(queued.get("kind", "")) if queued is Dictionary else str(queued)
 		_add_enemy(queued_kind, Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0))
+		if queued is Dictionary and not enemies.is_empty():
+			var unit: Dictionary = enemies[-1]
+			unit["elite_squad"] = int(queued.get("squad", -1))
+			unit["elite_role"] = "leader" if bool(queued.get("leader", false)) else "wing"
+			unit["elite_disrupted"] = bool(queued.get("disrupted", false))
+			if unit.elite_role == "leader":
+				unit.max_hp *= 1.20
+				unit.hp = unit.max_hp
+				unit.fire = 1.10
+			elif unit.elite_disrupted:
+				unit.fire = maxf(float(unit.fire), 1.8)
+			else:
+				unit.fire = 1.25
 		return
 	if endless_enabled and stage > int(content.stage_count):
 		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
@@ -762,13 +778,26 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
-## Encounter variants are reproducible by seed. Each has a different timing demand:
-## armored escorts, mine-heavy bomber convoys, or protected carrier launches.
+## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
+## the same three normal spawn slots into an elite leader/wing formation.
+## Breaking the leader cancels coordination, not enemies, XP or future waves.
+func _elite_leader_active(wing: Dictionary) -> bool:
+	if str(wing.get("elite_role", "")) != "wing" or bool(wing.get("elite_disrupted", false)):
+		return false
+	var leader_id: int = int(wing.get("elite_squad", -1))
+	for other in enemies:
+		if int(other.id) == leader_id and float(other.hp) > 0.0 and str(other.get("elite_role", "")) == "leader":
+			return true
+	return false
+
 func _spawn_encounter() -> void:
 	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
 	var ecology := ((stage - 1) % int(content.stage_count)) + 1
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
+	# One elite squad in every two natural encounter opportunities; never
+	# World 1, boss phases, or an extra third-party spawn/kill payout.
+	var elite: bool = stage in [2, 3, 4] and (encounter_index + seed_value) % 2 == 0
 	encounter_index += 1
 	var formation: Array = []
 	match pattern:
@@ -780,8 +809,18 @@ func _spawn_encounter() -> void:
 			_log("BOMBER CONVOY - ordnance incoming")
 		2:
 			formation = ["carrier", "gunship", "interceptor"] if ecology == 1 else (["carrier", "shieldguard", "disruptor"] if ecology == 2 else (["carrier", "slag_bomber", "ember_hunter"] if ecology == 3 else ["echo_carrier", "phase_stalker", "gravity_sentinel"]))
-			_log("ELITE CARRIER - prioritize the launch ship")
-	encounter_queue = formation.duplicate()
+			_log("CARRIER ESCORT - prioritize the launch ship")
+	if elite:
+		var leader_id: int = next_id
+		encounter_queue.clear()
+		for index in range(formation.size()):
+			encounter_queue.append({
+				"kind":str(formation[index]), "squad":leader_id,
+				"leader":index == 0, "disrupted":false
+			})
+		_log("ELITE FORMATION - destroy the marked leader to disrupt escorts")
+	else:
+		encounter_queue = formation.duplicate()
 
 func _spawn_hazard() -> void:
 	if enemies.size() >= _enemy_limit() - 1:
@@ -979,6 +1018,10 @@ func _update_enemies() -> void:
 				# launch cycle and accidentally create more XP on Insane.
 				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
 				enemy.fire = (float(content.enemies[kind].interval) / attack_scale) * projectile_interval_factor(kind)
+				# Elite wingmen fire about 20% more volleys only while their
+				# marked leader survives. Destroying it restores normal pacing.
+				if _elite_leader_active(enemy):
+					enemy.fire *= 0.80
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
@@ -1294,6 +1337,10 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 			var d: float = origin.distance_squared_to(enemy.p)
 			if enemy.kind == "boss_module":
 				d *= 0.22
+			elif str(enemy.get("elite_role", "")) == "leader":
+				# The player controls abilities, not aim. Give a readable
+				# elite counterplay objective a moderate auto-target bias.
+				d *= 0.55
 			if d < distance:
 				distance = d
 				best = enemy
@@ -1436,6 +1483,23 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "boss_module":
 		bonus_cores += int(meta.module_salvage)
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
+	if str(enemy.get("elite_role", "")) == "leader":
+		# Escorts should lose their buff even if the leader dies before all
+		# queued wings appear. This is a brief tactical opening, not a kill
+		# reward or a free removal of the remaining enemies.
+		var disrupted := 0
+		var squad_id: int = int(enemy.id)
+		for wing in enemies:
+			if int(wing.id) != squad_id and int(wing.get("elite_squad", -1)) == squad_id and float(wing.hp) > 0.0:
+				wing["elite_disrupted"] = true
+				wing.fire = maxf(float(wing.fire), 1.8)
+				disrupted += 1
+		for queued in encounter_queue:
+			if queued is Dictionary and int(queued.get("squad", -1)) == squad_id:
+				queued["disrupted"] = true
+				disrupted += 1
+		effects.append({"kind":"elite-broken", "p":enemy.p, "life":1.25, "max_life":1.25, "born":tick})
+		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
 	# Boss components are targets, but only the core can end a stage or pay a contract.
