@@ -34,6 +34,11 @@ var seen_formations := {}
 var beam_cancel_feedback: Array = []
 var seen_beam_cancel_ids := {}
 var seen_beam_cancel_order: Array = []
+# Formation interruptions must remain readable at 3x game speed: cache
+# once and hold the feedback in real presentation seconds.
+var elite_break_feedback: Array = []
+var seen_elite_break_ids := {}
+var seen_elite_break_order: Array = []
 
 func _process(delta: float) -> void:
 	if host == null or host.sim == null:
@@ -49,12 +54,18 @@ func _process(delta: float) -> void:
 		beam_cancel_feedback.clear()
 		seen_beam_cancel_ids.clear()
 		seen_beam_cancel_order.clear()
+		elite_break_feedback.clear()
+		seen_elite_break_ids.clear()
+		seen_elite_break_order.clear()
 	if host.mode == "playing":
 		shield_break_clock = maxf(0.0, shield_break_clock - delta)
 		formation_clock = maxf(0.0, formation_clock - delta)
 		for feedback in beam_cancel_feedback:
 			feedback.remaining = float(feedback.remaining) - delta
 		beam_cancel_feedback = beam_cancel_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
+		for feedback in elite_break_feedback:
+			feedback.remaining = float(feedback.remaining) - delta
+		elite_break_feedback = elite_break_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
 	for effect in host.sim.effects:
 		if effect.kind == "beam-canceled":
 			var cue_id := "%d:%d:%d" % [int(effect.born), int(effect.source), roundi(float(effect.x))]
@@ -64,6 +75,14 @@ func _process(delta: float) -> void:
 				if seen_beam_cancel_order.size() > 128:
 					seen_beam_cancel_ids.erase(seen_beam_cancel_order.pop_front())
 				beam_cancel_feedback.append({"p":effect.p, "x":float(effect.x), "remaining":0.85, "duration":0.85})
+		if effect.kind == "elite-broken":
+			var elite_key := "%d:%d" % [int(effect.born), int(effect.get("source",-1))]
+			if not seen_elite_break_ids.has(elite_key):
+				seen_elite_break_ids[elite_key] = true
+				seen_elite_break_order.append(elite_key)
+				if seen_elite_break_order.size() > 64:
+					seen_elite_break_ids.erase(seen_elite_break_order.pop_front())
+				elite_break_feedback.append({"p":effect.p, "remaining":1.05, "duration":1.05})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -129,7 +148,7 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken"]:
 			_draw_effect(effect)
 	if formation_clock > 0.0:
 		_draw_fusion_formed(formation, formation_clock/1.2, 1.0-formation_clock/1.2)
@@ -138,6 +157,7 @@ func _draw() -> void:
 			_draw_effect(effect)
 	_draw_threats()
 	_draw_beam_cancel_feedback()
+	_draw_elite_break_feedback()
 	_draw_shield_feedback(ship)
 	for bullet in sim.bullets:
 		_draw_projectile(bullet)
@@ -632,6 +652,18 @@ func _draw_beam_cancel_feedback() -> void:
 			var tag_y: float = clampf(source.y + 72.0, 32, 882)
 			draw_rect(Rect2(tag_x - 4, tag_y - 20, 126, 26), Color(THREAT_INK, alpha * 0.90))
 			draw_string(ThemeDB.fallback_font, Vector2(tag_x, tag_y), "SOURCE DOWN", HORIZONTAL_ALIGNMENT_LEFT, 120, 16, Color(CYAN, alpha))
+
+func _draw_elite_break_feedback() -> void:
+	for cue in elite_break_feedback:
+		var alpha: float = clampf(float(cue.remaining) / float(cue.duration), 0.0, 1.0)
+		var age: float = 1.0 - alpha
+		var p: Vector2 = cue.p
+		if p.y < 0.0 or p.y > 850.0:
+			continue
+		draw_arc(p, 30.0 + age * 95.0, 0.0, TAU, 48, Color(CYAN, alpha * 0.94), 4.0, true)
+		var label_pos := Vector2(clampf(p.x - 88.0, 8.0, 345.0), clampf(p.y - 73.0, 29.0, 876.0))
+		draw_rect(Rect2(label_pos.x - 4.0, label_pos.y - 22.0, 193.0, 29.0), Color("09222c", alpha * 0.90))
+		draw_string(ThemeDB.fallback_font, label_pos, "FORMATION BROKEN", HORIZONTAL_ALIGNMENT_LEFT, 185, 17, Color(CYAN, alpha))
 
 func _draw_shield_feedback(ship: Vector2) -> void:
 	# Presentation uses real time so the break remains visible even at 3x speed.
