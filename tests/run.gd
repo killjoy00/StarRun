@@ -220,7 +220,7 @@ func _test_lance_fire_reliability() -> void:
 	var beams: Array = sim.effects.filter(func(e): return e.kind == "lance")
 	check(beams.size() == 1 and sim.lance_timer > 0.0 and float(sim.damage_dealt.lance) > 0.0 and sim.enemies[1].hp < 100.0, "Prism lance must fire and hit the first living target after a dead-only frame")
 	if not beams.is_empty():
-		check(absf(float(beams[0].to.x) - 270.0) < 1.0, "Prism lance must not aim at a dead charging source")
+		check(Geometry2D.get_closest_point_to_segment(sim.enemies[1].p, beams[0].p, beams[0].to).distance_to(sim.enemies[1].p) < 1.0, "Prism lance must not aim at a dead charging source")
 		check(float(beams[0].max_life) >= 0.60, "Prism lance effect must remain readable at 3x speed")
 		var before_damage: float = float(sim.damage_dealt.lance)
 		sim._update_weapons()
