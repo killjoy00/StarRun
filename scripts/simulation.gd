@@ -346,6 +346,22 @@ func boss_projectile_damage_multiplier() -> float:
 	# Heavy beams keep their original telegraphed damage and duration.
 	return {"normal": 1.0, "hard": 1.05, "insane": 1.12}[difficulty]
 
+func shooter_health_pressure(kind: String) -> float:
+	# Experimental screen-pressure tuning: only durable back-line ranged
+	# shooters, and only after World 1. These units survive a little longer
+	# to make their existing projectiles visible against advanced builds.
+	# No extra waves, rewards, firing-speed changes or new heavy beams.
+	# Exclude speedy rushers, heavy-beam chargers, XP-spawning carriers,
+	# bomb/mine hazards and bosses so their counterplay stays unchanged.
+	if stage <= 1 or kind not in [
+		"gunship", "shieldguard", "ion_frigate", "corroder",
+		"disruptor", "arc_spire", "forge_turret", "gravity_sentinel"
+	]:
+		return 1.0
+	if stage == 2:
+		return {"normal":1.12, "hard":1.16, "insane":1.20}[difficulty]
+	return {"normal":1.15, "hard":1.20, "insane":1.25}[difficulty]
+
 func projectile_interval_factor(kind: String) -> float:
 	# v1.1: a little more *ordinary gunfire*, with the bigger increase in
 	# the relatively quiet first world. Higher worlds already have a stage
@@ -732,7 +748,7 @@ func _spawn_enemy() -> void:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier()
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(1.0, 3.0), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
