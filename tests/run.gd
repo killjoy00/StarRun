@@ -50,6 +50,7 @@ func _run() -> void:
 	_test_contextual_active_balance()
 	_test_five_balance_followups()
 	_test_endless_encounters_and_cooldown_captures()
+	_test_elite_squad_counterplay()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -156,6 +157,74 @@ func _test_five_balance_followups() -> void:
 	blocked._hit(20.0, "heavy", "first lane")
 	blocked._hit(20.0, "heavy", "second lane")
 	check(is_equal_approx(blocked.hull, blocked.max_hull), "An available Aegis still counters overlapping heavy beams fully")
+
+
+func _test_elite_squad_counterplay() -> void:
+	# Promote existing normal spawn slots, never additional enemies/XP.
+	var opener := Sim.new(7600)
+	opener._spawn_encounter()
+	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "World 1 never introduces elites or changes its original formation queue")
+	var squad := Sim.new(7600)
+	squad.stage = 2
+	squad._spawn_encounter()
+	check(squad.encounter_queue.size() == 3 and squad.encounter_queue[0] is Dictionary, "One of two World 2-4 natural encounters becomes an elite three-ship formation")
+	var queued_before: Array = squad.encounter_queue.duplicate(true)
+	var queued_restored := Sim.new(1)
+	check(queued_restored.restore(squad.snapshot()) and queued_restored.encounter_queue == queued_before, "Elite formation queue is deterministic through a checkpoint")
+	for i in range(3):
+		squad._spawn_enemy()
+	check(squad.enemies.size() == 3 and squad.encounter_queue.is_empty(), "Elite squads consume exactly three ordinary enemy spawn slots")
+	var leader: Dictionary = squad.enemies[0]
+	var wing: Dictionary = squad.enemies[1]
+	check(str(leader.get("elite_role", "")) == "leader" and str(wing.get("elite_role", "")) == "wing", "Leader and escort roles are explicit for visuals and auto-targeting")
+	check(int(wing.elite_squad) == int(leader.id) and squad._elite_leader_active(wing), "Wing firing bonus depends on a specific living leader")
+	var raw_leader_hp: float = float(squad.content.enemies[str(leader.kind)].hp) * float(squad.stage_spec().health_scale) * squad.threat_scale() * squad.stage_risk * squad.enemy_health_multiplier() * squad.shooter_health_pressure(str(leader.kind))
+	check(is_equal_approx(float(leader.max_hp), raw_leader_hp * 1.20), "Elite leader has a visible but restrained 20 percent health bonus")
+	wing.p = Vector2(280.0, 175.0)
+	wing.fire = 0.0
+	squad._update_enemies()
+	var interval: float = float(squad.content.enemies[str(wing.kind)].interval) / squad.enemy_fire_scale() * squad.projectile_interval_factor(str(wing.kind))
+	check(is_equal_approx(float(wing.fire), interval * 0.80), "Escort attacks 20 percent faster only while the elite leader is active")
+	var saved := squad.snapshot()
+	var resumed := Sim.new(1)
+	check(resumed.restore(saved) and resumed.snapshot() == saved, "Leader and wing state survives mid-fight save and restore")
+	squad._damage_enemy(leader, float(leader.hp) + 999.0, "pulse")
+	check(not squad._elite_leader_active(wing) and bool(wing.elite_disrupted), "Destroying the leader removes escort coordination without killing escorts")
+	check(float(wing.fire) >= 1.80 and squad.effects.any(func(e): return e.kind == "elite-broken"), "Leader destruction interrupts the next escort salvo and creates readable feedback")
+	check(squad.events.any(func(e): return "FORMATION BROKEN" in str(e.message)), "Player receives a named formation-break event")
+	wing.fire = 0.0
+	squad._update_enemies()
+	check(is_equal_approx(float(wing.fire), interval), "Surviving disrupted wing returns to ordinary firing rate")
+	var early := Sim.new(7600)
+	early.stage = 2
+	early._spawn_encounter()
+	early._spawn_enemy()
+	early._damage_enemy(early.enemies[0], float(early.enemies[0].hp) + 999.0, "pulse")
+	check(early.encounter_queue.all(func(q): return q is Dictionary and bool(q.disrupted)), "Destroying a leader before the escorts arrive also disables their queued attack boost")
+	for i in range(2):
+		early._spawn_enemy()
+	check(early.enemies.size() == 3 and bool(early.enemies[1].elite_disrupted) and float(early.enemies[1].fire) >= 1.8, "Late-arriving escorts spawn already disrupted without an extra enemy reward")
+	var late := Sim.new(7600)
+	late.stage = 3
+	late.encounter_index = 1
+	late._spawn_encounter()
+	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is String, "Other formations remain ordinary and World 3 encounters alternate")
+	late.encounter_queue.clear()
+	late.stage = 4
+	late.encounter_index = 0
+	late._spawn_encounter()
+	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is Dictionary, "World 4 includes marked elite formations too")
+	# Historical string queues remain functional when loading older 1.3 saves.
+	var legacy := Sim.new(7600)
+	legacy.stage = 3
+	legacy.encounter_queue = ["gunship","shieldguard","disruptor"]
+	legacy._spawn_enemy()
+	check(legacy.enemies.size() == 1 and not legacy.enemies[0].has("elite_role"), "Plain-string formation checkpoints from earlier builds still spawn normally")
+	var pre_boss := Sim.new(7600)
+	pre_boss.stage = 2
+	pre_boss._spawn_encounter()
+	pre_boss._spawn_boss()
+	check(pre_boss.encounter_queue.is_empty() and not pre_boss.enemies.any(func(e): return e.has("elite_role")), "Boss entry clears elite queues and does not change boss encounters")
 
 
 func _test_endless_encounters_and_cooldown_captures() -> void:
