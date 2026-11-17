@@ -103,7 +103,7 @@ func _pick_upgrade(sim: RefCounted) -> bool:
 	return sim.choose_card(best)
 
 func _cast(sim: RefCounted) -> void:
-	var imminent := sim.charges.any(func(c): return float(c.remaining) < 0.5)
+	var imminent: bool = sim.charges.any(func(c): return float(c.remaining) < 0.5)
 	if imminent:
 		if not sim.activate("aegis"): sim.activate("nova")
 	elif sim.enemies.size() >= 4:
