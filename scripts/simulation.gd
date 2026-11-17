@@ -35,6 +35,7 @@ var ship_id := "vanguard"
 var pilot_id := "rookie"
 var artifact_id := "standard"
 var mutations: Array = []
+var lance_refund_ready := false
 var sentry_left := 0.0
 var sentry_timer := 0.0
 var engineer_service_used := false
@@ -331,12 +332,15 @@ func step() -> void:
 	if not boss_spawned and time - stage_start >= float(content.boss_at):
 		_spawn_boss()
 	if time >= next_spawn and not boss_spawned:
-		_spawn_enemy()
 		var stage_time := time - stage_start
-		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		# Ordinary spawns and their XP remain on the familiar progression curve.
-		# Additional screen-presence reinforcements below grant zero XP.
-		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		# Scout contact → visible warning → coordinated wing → brief breathing
+		# space → counterattack. No enemy/XP spawning during the scripted gap.
+		if stage == 1 and difficulty == "normal" and stage_time >= 10.0 and stage_time < 19.0:
+			next_spawn = stage_start + 19.0
+		else:
+			_spawn_enemy()
+			var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+			next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
 		_spawn_world1_pressure()
 		next_pressure_wave_at = time + 7.5
@@ -514,6 +518,26 @@ func _install_mutation(id: String) -> bool:
 	upgrades[id] = 1
 	_log("WEAPON MUTATED - " + str(spec.name))
 	return true
+
+func _apply_mutation_cost(id: String) -> void:
+	var item: Dictionary = Catalog.mutation(id)
+	if item.is_empty():
+		return
+	max_hull *= float(item.get("hull_factor", 1.0))
+	hull = minf(max_hull, hull)
+	max_shield *= float(item.get("shield_factor", 1.0))
+	shield = minf(max_shield, shield)
+
+func world1_opening_phase() -> String:
+	if stage != 1 or difficulty != "normal" or not daily_day.is_empty():
+		return ""
+	var elapsed: float = time - stage_start
+	if elapsed < 8.0: return "scouts"
+	if elapsed < 12.0: return "warning"
+	if elapsed < 18.0: return "formation"
+	if elapsed < 21.0: return "recovery"
+	if elapsed < 30.0: return "counterattack"
+	return ""
 
 func _market_offers() -> Array:
 	if not mutations.is_empty() or artifact_id == "drone_armada":
@@ -774,18 +798,7 @@ func choose_prototype(index: int) -> bool:
 		var mutation_id: String = id.trim_prefix("market:")
 		if not _install_mutation(mutation_id):
 			return false
-		match mutation_id:
-			"piercing_pulse":
-				max_shield *= 0.75
-				shield = minf(shield, max_shield)
-			"split_seeker":
-				max_hull *= 0.80
-				hull = minf(hull, max_hull)
-			"arc_reactor":
-				max_hull *= 0.85
-				hull = minf(hull, max_hull)
-				max_shield *= 0.85
-				shield = minf(shield, max_shield)
+		_apply_mutation_cost(mutation_id)
 		intermission_step = "route"
 		_log("Black market trade accepted - equipment sacrificed for " + str(Catalog.mutation(mutation_id).name))
 		return true
@@ -1562,6 +1575,12 @@ func _update_weapons() -> void:
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
 			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
+			if _has_mutation("grounding_arc") and target.hp > 0.0:
+				target.fire = maxf(float(target.fire), 1.8)
+				var canceled: int = charges.size()
+				charges = charges.filter(func(charge): return int(charge.source) != int(target.id))
+				beams_cancelled += canceled - charges.size()
+				effects.append({"kind":"timed-counter", "p":target.p, "life":0.55, "max_life":0.55, "born":tick})
 	if upgrades.lance > 0 and lance_timer <= 0.0:
 		var target := _nearest(origin)
 		for enemy in enemies:
@@ -1571,6 +1590,8 @@ func _update_weapons() -> void:
 		# projectile pass. Do not consume a full lance cycle without firing.
 		if not target.is_empty():
 			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
+			lance_refund_ready = true
+			var echo_used := false
 			var end: Vector2 = origin + (target.p - origin).normalized() * 1200
 			# Keep each instantaneous strike legible at 3x (0.20s real time).
 			# The effect duration changes visuals, not damage or shot cadence.
@@ -1578,7 +1599,15 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					_damage_enemy(enemy, (22 + upgrades.lance * 7) * weapon_power() * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0), "lance")
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0)
+					_damage_enemy(enemy, strike_damage, "lance")
+					if _has_mutation("refracting_lance") and not echo_used:
+						for other in enemies:
+							if other.hp > 0.0 and int(other.id) != int(enemy.id) and Geometry2D.get_closest_point_to_segment(other.p, origin, end).distance_to(other.p) >= 32.0 and other.p.distance_squared_to(enemy.p) <= 245.0 * 245.0:
+								effects.append({"kind":"lance", "p":enemy.p, "to":other.p, "life":0.42, "max_life":0.42, "born":tick})
+								_damage_enemy(other, strike_damage * 0.35, "lance_echo")
+								echo_used = true
+								break
 
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
@@ -1777,6 +1806,25 @@ func _update_shots() -> void:
 				var radius := 68.0 if str(enemy.kind).begins_with("boss") and enemy.kind != "boss_module" else (30.0 if enemy.kind == "boss_module" else 25.0)
 				if shot.p.distance_squared_to(enemy.p) < radius * radius and int(shot.get("last_enemy", -1)) != int(enemy.id):
 					_damage_enemy(enemy, shot.damage, shot.weapon)
+					if shot.weapon == "pulse" and _has_mutation("ricochet_pulse"):
+						var jump: Dictionary = {}
+						for other in enemies:
+							if other.hp > 0.0 and int(other.id) != int(enemy.id) and other.p.distance_squared_to(enemy.p) <= 290.0 * 290.0:
+								jump = other
+								break
+						if not jump.is_empty():
+							effects.append({"kind":"arc", "p":enemy.p, "to":jump.p, "life":0.32, "max_life":0.32, "born":tick})
+							_damage_enemy(jump, float(shot.damage) * 0.35, "pulse_echo")
+					if shot.weapon == "seeker" and _has_mutation("breach_seeker"):
+						var spread := 0
+						for other in enemies:
+							if spread >= 2:
+								break
+							if other.hp > 0.0 and int(other.id) != int(enemy.id) and other.p.distance_squared_to(enemy.p) < 170.0 * 170.0:
+								_damage_enemy(other, float(shot.damage) * 0.25, "seeker_blast")
+								spread += 1
+						if spread > 0:
+							effects.append({"kind":"ion-burst", "p":enemy.p, "radius":125.0, "life":0.50, "max_life":0.50, "born":tick})
 					if shot.weapon == "seeker" and _has_mutation("split_seeker") and not bool(shot.get("shard", false)):
 						var victims: Array = []
 						for other in enemies:
@@ -1816,6 +1864,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
 			amount *= 1.0 + passive_bonus("opening_salvo", 0.04, 0.15, 0.25)
+	if weapon == "seeker" and _has_mutation("breach_seeker") and str(enemy.kind).begins_with("boss"):
+		amount *= 1.25
 	if pilot_id == "hunter" and hunter_mark_left > 0.0 and int(enemy.id) == hunter_target_id and weapon in ["pulse", "seeker", "arc", "lance"]:
 		amount *= 1.15
 	if bool(enemy.get("rival", false)) and str(enemy.get("rival_trait", "")) == "reactive_shield":
@@ -1846,6 +1896,10 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
 	if enemy.hp > 0:
 		return
+	if weapon == "lance" and _has_mutation("capacitor_lance") and lance_refund_ready:
+		lance_timer = maxf(0.0, lance_timer - 0.65)
+		lance_refund_ready = false
+		effects.append({"kind":"timed-counter", "p":enemy.p, "life":0.45, "max_life":0.45, "born":tick})
 	if bool(enemy.get("rival", false)) and rival_outcome.is_empty():
 		rival_outcome = "retired"
 		rival_retire_pending = true
@@ -2573,7 +2627,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
