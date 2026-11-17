@@ -3,6 +3,7 @@ extends RefCounted
 ## Daily flights use the same UTC seed, ship, pilot and zero-Hangar loadout
 ## for everyone. Replays improve a local best, but do not farm Core rewards.
 const Catalog = preload("res://scripts/catalog.gd")
+const RivalCaptains = preload("res://scripts/rival_captains.gd")
 
 const ACHIEVEMENTS = [
 	{"id":"first_finish","name":"First Debrief","description":"Finish your first flight, win or lose.","category":"FLIGHT","target":1},
@@ -48,6 +49,7 @@ static func daily_score(sim: RefCounted) -> int:
 	return int(sim.stage_clears) * 10000 + int(sim.kills) * 3 + int(sim.level) * 50 + (5000 if sim.won else 0) + maxi(0, roundi(float(sim.hull)))
 
 static func prepare(profile: Dictionary) -> void:
+	RivalCaptains.prepare(profile)
 	if not profile.get("achievements", {}) is Dictionary:
 		profile.achievements = {}
 	if not profile.has("achievements"):
@@ -118,7 +120,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var unique_key := ("daily:%s:%d" % [day, int(sim.daily_attempt)]) if daily else ("flight:%d" % int(sim.seed_value))
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
-	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false}
+	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{}}
 	if daily:
 		result.score = daily_score(sim)
 		result.best_score = int(record.get("best_score", -1))
@@ -178,6 +180,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 			unlocked[id] = utc_day()
 			awarded.append(id)
 	profile.achievements = unlocked
+	result.rival_news = RivalCaptains.settle(profile, sim)
 	profile.last_settled_run_key = unique_key
 	result.earned = earned
 	result.awarded = awarded
