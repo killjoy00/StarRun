@@ -72,3 +72,33 @@ clear systematic imbalance remains. Do not nerf a route based on 2–3 seeds.
 
 Baseline: immutable Star/Run 1.1 main commit
 `1509dcad9092cf9a2d4660886bfecb121662df64`.
+
+## Matched study results (GitHub Actions 44003018896)
+
+All 14 jobs passed at the behavior-measuring commit; a subsequent test-only change corrected a test fixture that had accidentally let every shield recharge to maximum. The simulator's combat behavior did not change between those two commits.
+
+| Timed-ability build / route | Baseline four-world clears | Challenger |
+| --- | ---: | ---: |
+| Arcwing Normal / mid Hangar / Shielded | 2/3 | 2/3 |
+| Arcwing Normal / mid Hangar / Redline | 3/3 | 2/3 |
+| Arcwing Normal / mid Hangar / Hunter | 3/3 | 3/3 |
+| Bulwark Hard / max Hangar / Shielded | 1/3 | 1/3 |
+| Bulwark Hard / max Hangar / Redline | 2/3 | 1/3 |
+| Bulwark Hard / max Hangar / Hunter | 1/3 | 1/3 |
+| Wraith Insane / max Hangar / Shielded | 3/3 | 3/3 |
+| Wraith Insane / max Hangar / Redline | 3/3 | 3/3 |
+| Wraith Insane / max Hangar / Hunter | 3/3 | 3/3 |
+
+**Route decision:** No consistent three-route domination after the latest Shielded buffs. Hold numerical route powers, HP and rewards unchanged. Redline lost one clear in two three-seed comparisons, but the result is too sparse to justify an across-the-board nerf or buff.
+
+**Progression:** Kestrel Hard/mid Hangar and Haven Insane/mid Hangar both cleared World 1 in **0/5** timed focused-build trials before and after. In one Kestrel seed, boss HP remaining decreased from about 16,343 to 2,298 and survival extended by 15 seconds, but changing draft RNG prevents attributing that entirely to the purchased sustain. No-Hangar Kestrel Hard and Haven Insane both passed separate no-clear gates. The additional rank-two sustain is a modest progression improvement, not a solution to the entire difficulty gap.
+
+**Fusion availability:** Shielded-build Arcwing Normal/mid Hangar with Shielded Passage cleared World 2 in 2/5 baseline vs 4/5 challenger runs, and World 3 in 1/5 vs 3/5. Neither configuration cleared World 4. Shieldstorm formation was 3/5 baseline vs 2/5 challenger; the new targeted offer increases the opportunity to draft a missing partner, but it is **not proven** to improve actual fusion completion or win rates. Avoid extra automatic fusion power until broader seeds or human UAT.
+
+**Overlapping warnings:** Defensive-readiness and charge/bullet overlap seconds vary with build and survival length; they did not decrease consistently. The actual secondary heavy-beam hit reduction is separately unit-tested and does not depend on winning a scripted campaign.
+
+**Boss pacing finding:** The well-equipped Wraith on Insane demolished the World 3 Crucible boss in roughly 1.4–4.5 simulated seconds and World 4 Void Regent in roughly 1.3–2.8 seconds in challenger victorious runs. This is a real late-build pacing issue. Do **not** add a hidden boss HP multiplier, artificial victory gate, or blanket invulnerability in this balance patch: those would devalue Hangar investment and might make ordinary builds unable to clear. A later visible boss-phase redesign with tested counterplay is more appropriate.
+
+**World 1 24-seed benchmark:** 9/24 no-actives, 18/24 on-cooldown, 17/24 timed (older 1.1: 9/24, 17/24, 17/24). Timed play preserved higher average ending hull but did not consistently outperform spam in raw clears. The exact active-use bot and the small fixture are limitations; next iteration should target dangerous windows and usability instead of blindly inflating damage/cooldown bonuses.
+
+All statistics are scripted samples; none are human win rates. The release must still pass the full CI suite and on-device QA.
