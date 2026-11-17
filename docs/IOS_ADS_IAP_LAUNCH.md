@@ -1,5 +1,17 @@
 # Star/Run iPhone monetization — staged release gates
 
+## Store-first initial release (November 16, 2026)
+Star/Run must be publicly listed in the App Store before AdMob can complete app review. For Apple's **first public review only**, ship a **free, ad-free game with no visible Remove Ads purchase**:
+- `data/admob.json`: `enabled=false`, `test_mode=false`. No Google sample ads or live ad SDK in the initial public build.
+- The iPhone Settings panel hides the purchase/restore controls while ads are disabled, avoiding a paid Remove Ads offer that cannot currently provide value. The StoreKit implementation and Apple IAP record remain intact for a later update.
+- The already-requested **0.9.6 sandbox beta** is pinned to its older source SHA, so that earlier beta remains usable for exercising test ads/purchases (if the signed upload succeeded); this new change does **not** modify it.
+- Before submitting the initial ad-free binary, **recheck the published Apple App Privacy answers**. AdMob's six data categories may need to be removed for this initial binary because the Google Mobile Ads SDK is absent. Game Center and any other included SDKs must still be disclosed accurately.
+- Submit initial version without the `Remove Ads` IAP. Apple's first non-consumable can be reviewed with **a later new app version** after AdMob approval and on-device testing.
+- After Apple's public launch and AdMob app approval, create a separately reviewed update that re-enables live ads with the privacy/consent gates and activates the already-configured non-consumable. Submit that IAP together with the new app version. Do not switch production ads on merely because code compiles.
+
+**Do not reuse 0.9.6's Google sample-ad TestFlight binary as the public App Store build.** A new signed candidate built from this store-first configuration is required.
+
+
 ## Product choice
 - **One non-consumable:** Remove Ads; canonical product ID \`com.rsm.starrun.remove_ads\`.
 - **Price:** Owned by the publisher in App Store Connect (do not embed USD or a guessed amount in the UI). The app shows Apple's *localized* price returned by StoreKit.
