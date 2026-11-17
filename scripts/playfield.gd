@@ -572,12 +572,15 @@ func _draw_threats() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(label_x, 679), "BEAM %.1fs" % charge.remaining, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, DANGER)
 		# The warning lane is only half the story: mark the enemy powering it.
 		# Never mark the same boss twice when it charges two lanes at once.
-		if marked_sources.has(int(charge.source)):
+		# Legacy/visual-test lanes can be anonymous; keep their red warning
+		# fully functional, but do not invent an enemy to mark as its source.
+		var source_id: int = int(charge.get("source", -1))
+		if source_id < 0 or marked_sources.has(source_id):
 			continue
 		for enemy in sim.enemies:
-			if int(enemy.id) != int(charge.source) or float(enemy.hp) <= 0.0:
+			if int(enemy.id) != source_id or float(enemy.hp) <= 0.0:
 				continue
-			marked_sources[int(charge.source)] = true
+			marked_sources[source_id] = true
 			var source: Vector2 = enemy.p
 			if source.y < 0.0 or source.y > 810.0:
 				break
