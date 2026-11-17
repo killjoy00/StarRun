@@ -51,6 +51,7 @@ func _run() -> void:
 	_test_five_balance_followups()
 	_test_endless_encounters_and_cooldown_captures()
 	_test_elite_squad_counterplay()
+	_test_ship_pilot_identity_tuning()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -157,6 +158,48 @@ func _test_five_balance_followups() -> void:
 	blocked._hit(20.0, "heavy", "first lane")
 	blocked._hit(20.0, "heavy", "second lane")
 	check(is_equal_approx(blocked.hull, blocked.max_hull), "An available Aegis still counters overlapping heavy beams fully")
+
+
+func _test_ship_pilot_identity_tuning() -> void:
+	# Ships retain their distinct starting weapons and survivability.
+	# These small traits address the clear Hard/max-Hangar Bulwark/Haven
+	# boss damage gaps without making ordinary waves easier for Bulwark.
+	var siege := Sim.new(88231, {}, "bulwark", "rookie")
+	var baseline := Sim.new(88231, {}, "vanguard", "rookie")
+	for sim in [siege, baseline]:
+		sim._spawn_boss()
+		sim._damage_enemy(sim.enemies[0], 100.0, "pulse")
+	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.12), "Bulwark has a narrowly scoped 12 percent automatic siege bonus against boss cores")
+	var part_siege := Sim.new(88232, {}, "bulwark", "rookie")
+	var part_base := Sim.new(88232, {}, "vanguard", "rookie")
+	for sim in [part_siege,part_base]:
+		sim.stage = 2
+		sim._spawn_boss()
+		sim._damage_enemy(sim.enemies[1], 100.0, "pulse")
+	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.12), "Bulwark siege bonus also applies to actual targetable boss modules")
+	var drone_siege := Sim.new(88233, {}, "bulwark", "rookie")
+	var drone_base := Sim.new(88233, {}, "vanguard", "rookie")
+	for sim in [drone_siege,drone_base]:
+		sim._add_enemy("drone", Vector2(270,180))
+		sim._damage_enemy(sim.enemies[0], 5.0, "pulse")
+	check(is_equal_approx(float(drone_siege.damage_dealt.pulse), float(drone_base.damage_dealt.pulse)), "Bulwark does not gain extra damage against ordinary waves")
+	var haven := Sim.new(88234, {}, "haven", "rookie")
+	var regular := Sim.new(88234, {}, "vanguard", "rookie")
+	for sim in [haven,regular]:
+		sim._add_enemy("drone", Vector2(270,175))
+		sim._update_weapons()
+	var haven_seeker: Array = haven.shots.filter(func(s): return s.weapon == "seeker")
+	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
+	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.12), "Haven's support Seeker Pods gain 12 percent weapon damage, but no Pulse is installed")
+	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
+	var engineer := Sim.new(88235, {}, "vanguard", "engineer")
+	var rookie := Sim.new(88235, {}, "vanguard", "rookie")
+	check(is_equal_approx(engineer.weapon_power() / rookie.weapon_power(), 1.06), "Engineer converts maintained shields to 6 percent automatic output")
+	engineer.shield = engineer.max_shield * 0.50
+	check(is_equal_approx(engineer.weapon_power(), rookie.weapon_power()), "Engineer loses its bonus at half shields, preserving the defensive tradeoff")
+	check(is_equal_approx(engineer.max_shield - rookie.max_shield, 20.0), "Existing Engineer shielding is unchanged")
+	var resumed := Sim.new(88236)
+	check(resumed.restore(engineer.snapshot()) and resumed.snapshot() == engineer.snapshot(), "Engineer shield-powered combat does not need a new save schema")
 
 
 func _test_elite_squad_counterplay() -> void:
