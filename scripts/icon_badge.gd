@@ -4,7 +4,7 @@ const FusionArt = preload("res://scripts/fusion_art.gd")
 const CYAN := Color("66f5df")
 const AMBER := Color("ffc078")
 const VIOLET := Color("b3a3ff")
-const TRACK_ICONS := {"beam_plating": "armor", "shield_restart": "regen", "hazard_seals": "insulation", "warp_repairs": "mend", "arc_start": "arc", "lance_start": "pulse", "boss_damage": "boss_hunter", "ordnance_damage": "seeker", "signature_rank": "amplifier", "cast_repair": "repair", "opening_charge": "coolant", "reroll_focus": "rerolls", "banish_relay": "banishes", "skip_patch": "skips", "module_salvage": "cores", "clean_clear": "bounty"}
+const TRACK_ICONS := {"beam_plating": "armor", "shield_restart": "regen", "hazard_seals": "insulation", "warp_repairs": "mend", "arc_start": "arc", "lance_start": "pulse", "boss_damage": "boss_hunter", "ordnance_damage": "seeker", "signature_rank": "amplifier", "cast_repair": "repair", "opening_charge": "coolant", "reroll_focus": "rerolls", "banish_relay": "banishes", "skip_patch": "skips", "module_salvage": "cores", "clean_clear": "bounty", "module_breaker": "boss_hunter", "point_defense": "deflector"}
 var icon_id := "pulse"
 
 func _ready() -> void:
