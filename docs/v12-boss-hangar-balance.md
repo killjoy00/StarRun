@@ -95,3 +95,47 @@ If the ordinary Normal full-campaign completion fixture fails, reduce boss
 health pressure (especially World 2+) before merging. Any signed TestFlight
 build must follow final CI and require a new 1.2 request, not silently replace
 the currently pinned 1.1 request.
+
+## Matched-seed outcomes (Actions 44007759643)
+
+All seven paired cases ran from the immutable merged 1.1 baseline with
+identical starting seeds, timed active use and normally offered draft cards.
+Total campaign clears: **9/21 baseline; 9/21 candidate**. This is not a
+human-player win percentage; gameplay and draft RNG diverge after changes.
+
+| Test configuration | 1.1 wins | 1.2 wins |
+| --- | ---: | ---: |
+| Vanguard Normal/no Hangar | 0/3 | 0/3 |
+| Arcwing Normal/mid Hangar, Shielded | 2/3 | 2/3 |
+| Arcwing Normal/mid Hangar, Redline | 2/3 | 3/3 |
+| Kestrel Hard/mid Hangar | 1/3 | 1/3 |
+| Bulwark Hard/max Hangar | 1/3 | 1/3 |
+| Haven Insane/mid Hangar | 0/3 | 0/3 |
+| Wraith Insane/max Hangar | 3/3 | 2/3 |
+
+Measured defeated-boss examples (seconds, average among cleared bosses):
+- Vanguard Normal/no Hangar World 1: 56.6→62.0; 3/3 bosses beaten both.
+- Arcwing Normal/mid, Shielded World 2: 7.8→22.4, World 3:
+  16.1→20.8, World 4: 12.7→14.6; full campaign wins still 2/3.
+- Kestrel Hard/mid World 1: 75.6→83.2; 1/3 campaigns won in each.
+- Bulwark Hard/max World 4: 4.6→6.6; 1/3 campaigns won in each.
+- Wraith Insane/max World 3: 3.5→5.2, World 4: 2.0→3.5; its
+  3/3 original campaign wins fell to 2/3.
+
+**Decision:** the stronger boss encounter values create longer fights and
+reduce the dominance of max-Hangar Insane builds, without eliminating
+Normal four-world completion or materially reducing total scripted wins.
+Late boss phases can still collapse in a few seconds for an exceptionally
+strong build. Visible phase-specific boss design remains issue #36 rather
+than hidden invulnerability in this release.
+
+The new optional Hangar tracks were included in fully maxed build simulations
+because they are purchasable. The mid-Hangar test configurations remain
+built using the existing core track whitelist. This matched study does
+**not** measure how many flights players need to afford more expensive
+upgrades; that requires economy-specific telemetry or user playtesting.
+
+All initial parser and UI checks passed. The 24-seed regression required
+only two corrections to stale test expectations: the old World-1
+Hard/Insane boss-health ratio and the previous 38-track Hangar count.
+Neither correction changes mechanics or the numbers above.
