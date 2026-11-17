@@ -20,5 +20,6 @@ The November 17, 2026 owner report: **Normal World 1 is too sparse and feels tri
 ## Validation and release guards
 - All changes are on a PR until matched-seed World 1 presence, empty-screen %, crowd %, hostile bullet density, actual survival, earned level/XP, and 36 loadouts are reviewed. Test bots aren't human win rates.
 - Normal/mid, Hard/max and Insane/max cross ship/pilot samples, plus Standard, Glass Fleet, Arsenal Shift and Drone Armada artifacts; full 4-world nonforced campaign tests.
+- Drone Armada's tracking was corrected, and each later world now scales its escort damage +75% per world. This compensates for weapon-rank cards being forbidden in that challenge, without raising World 1 damage or adding free XP.
 - Existing save format still version 1; all new fields optional in old checkpoints, and chosen artifact/Daily remain intact.
 - Marketing version remains **1.3**; no signed upload or public App Store release.

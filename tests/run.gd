@@ -311,6 +311,12 @@ func _test_roguelike_variation() -> void:
 	army.escort_timer = 0.0
 	army._update_support()
 	check(army.shots.size() == 3 and army.shots.all(func(s): return bool(s.get("homing",false))), "Drone Armada gets three homing support guns instead of aim-and-miss projectiles")
+	var w1_drone_damage: float = float(army.shots[0].damage)
+	army.shots.clear()
+	army.stage = 2
+	army.escort_timer = 0.0
+	army._update_support()
+	check(army.shots.size() == 3 and is_equal_approx(float(army.shots[0].damage), w1_drone_damage * 1.75), "Drone Armada scales into World 2 without making World 1 easier")
 	army._offer_cards(false)
 	check(army.cards.all(func(c): return str(c.tag) not in ["WEAPON", "MUTATION"]), "Drone mode cannot draft unusable conventional weapons")
 	var shift := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")

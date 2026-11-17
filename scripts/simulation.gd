@@ -1369,7 +1369,7 @@ func _update_support() -> void:
 				var p := escort_position(i)
 				var target := _nearest(p)
 				if not target.is_empty() and shots.size() < 500:
-					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id), "homing":artifact_id == "drone_armada"})
+					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() * (1.0 + 0.75 * float(stage - 1)) if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id), "homing":artifact_id == "drone_armada"})
 	var armed: Array = []
 	for mine in ion_mines:
 		mine.fuse -= DT
