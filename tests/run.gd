@@ -293,6 +293,10 @@ func _test_roguelike_variation() -> void:
 	check(army.upgrades.pulse == 0 and army.upgrades.seeker == 0, "Drone Armada disables conventional starting guns")
 	army._update_support()
 	check(army.escort_count == 3 and army.escort_left > 1000.0, "Drone Armada launches persistent autonomous escorts")
+	army._add_enemy("gunship", Vector2(260,240))
+	army.escort_timer = 0.0
+	army._update_support()
+	check(army.shots.size() == 3 and army.shots.all(func(s): return bool(s.get("homing",false))), "Drone Armada gets three homing support guns instead of aim-and-miss projectiles")
 	army._offer_cards(false)
 	check(army.cards.all(func(c): return str(c.tag) not in ["WEAPON", "MUTATION"]), "Drone mode cannot draft unusable conventional weapons")
 	var shift := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")

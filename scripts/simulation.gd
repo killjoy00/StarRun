@@ -323,7 +323,7 @@ func step() -> void:
 		# A busier first impression is not a free XP fountain: Normal W1
 		# spawn cadence rises while its per-enemy XP drops proportionally.
 		if stage == 1 and difficulty == "normal":
-			pace *= 0.84
+			pace *= 0.60
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
@@ -400,7 +400,7 @@ func shooter_first_fire_window(kind: String) -> Vector2:
 	# W1 previously contained many 17-HP targets erased before their first
 	# volley. Shorten the initial tell only in Normal's early encounter ecology.
 	if stage == 1 and difficulty == "normal":
-		return Vector2(0.95, 1.60) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(1.25, 2.15)
+		return Vector2(1.25, 2.10) if kind in ["gunship", "shieldguard", "missile_bomber", "sniper", "carrier"] else Vector2(1.55, 2.60)
 	# A surviving shooter should get a chance to reveal its projectile
 	# pattern before the auto-weapons erase it. A shorter *first* timer
 	# does not accelerate the ongoing fire interval or increase XP.
@@ -482,6 +482,10 @@ func claim_endless() -> bool:
 	return true
 
 func _enemy_limit() -> int:
+	# Normal World 1 spawns a more visible crowd, but never allows endless
+	# accumulated squads to flatten slow, defensive starting ships.
+	if stage == 1 and difficulty == "normal":
+		return 11
 	return mini(55, 20 + (stage - 1) * 5)
 
 func _has_mutation(id: String) -> bool:
@@ -866,7 +870,7 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.82)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": (maxi(1, roundi(float(spec.xp) * 0.60)) if stage == 1 and difficulty == "normal" else int(spec.xp)), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Encounter variants are reproducible by seed. Worlds 2-4 sometimes promote
@@ -935,10 +939,10 @@ func _spawn_world1_strike_wing() -> void:
 		member["strike_wing"] = true
 		# Only the grouped attackers gain a modest window to reveal their
 		# patterns before automatic fire clears the formation.
-		member.max_hp *= 1.10
+		member.max_hp *= 1.20
 		member.hp = member.max_hp
-		member.fire = 1.15 + index * 0.24
-	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.84
+		member.fire = 1.85 + index * 0.20
+	var pace := maxf(0.55, 1.65 - elapsed / 260.0) * 0.60
 	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("STRIKE WING - coordinated enemy attack")
 
@@ -1318,7 +1322,7 @@ func _update_support() -> void:
 				var p := escort_position(i)
 				var target := _nearest(p)
 				if not target.is_empty() and shots.size() < 500:
-					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id)})
+					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id), "homing":artifact_id == "drone_armada"})
 	var armed: Array = []
 	for mine in ion_mines:
 		mine.fuse -= DT
@@ -1567,7 +1571,7 @@ func _update_shots() -> void:
 			ordnance_cells[cell] = []
 		ordnance_cells[cell].append(bullet)
 	for shot in shots:
-		if shot.weapon in ["seeker", "barrage"] and shot.target >= 0:
+		if (shot.weapon in ["seeker", "barrage"] or bool(shot.get("homing", false))) and shot.target >= 0:
 			var alive := enemies.any(func(e): return e.id == shot.target and e.hp > 0)
 			if not alive:
 				var replacement := _nearest(shot.p)
@@ -1587,7 +1591,7 @@ func _update_shots() -> void:
 			if not candidate.is_empty():
 				var desired: Vector2 = (candidate.p - shot.p).normalized()
 				shot.v = shot.v.rotated(clampf(shot.v.angle_to(desired), -DT * (0.85 + meta.guidance * 0.12 + (0.25 if pilot_id == "ace" else 0.0)), DT * (0.85 + meta.guidance * 0.12)))
-		if shot.weapon in ["seeker", "barrage"] and shot.target >= 0:
+		if (shot.weapon in ["seeker", "barrage"] or bool(shot.get("homing", false))) and shot.target >= 0:
 			for enemy in enemies:
 				if enemy.id == shot.target:
 					shot.v = shot.v.lerp((enemy.p - shot.p).normalized() * 650, DT * 8.0)
