@@ -4,9 +4,9 @@ The November 17, 2026 owner report: **Normal World 1 is too sparse and feels tri
 
 ## Current approach
 - A first visible three-enemy **strike wing** appears about 12–16 seconds into a Normal run if the screen isn't already crowded. Other three-ship engagements recur but only when fewer than three enemies remain visible.
-- Every 3.25 seconds a bounded **presence director** checks actual visible enemies. It fills up to three visible enemies, at most two additional reinforcements per pulse, without targeting ship IDs or Hangar rank. If slow fire has already left several enemies on screen, it does nothing.
+- Every 7.5 seconds a bounded **presence director** checks actual visible enemies. It fills up to two visible enemies, at most one additional reinforcement per pulse, without targeting ship IDs or Hangar rank. If slow fire has already left several enemies on screen, it does nothing.
 - Reinforcement attackers have a distinctive cyan wing marker, damageable hull, and a telegraphed initial attack delay; **they grant zero XP**. They are still actual enemies rather than a cosmetic background effect. Normal ordinary enemy cadence/XP and Hard/Insane stage rules are unchanged.
-- A normal strike wing replaces three future normal spawn slots. Its encounters do not create a separate reward farm.
+- A normal strike wing replaces three future normal spawn slots. Its encounters do not create a separate reward farm. The director pulses at 8 seconds initially and stays subordinate to the early strike-wing arrival.
 - World 1 Normal uses a conservative maximum live enemy cap of 11, so even slow ships don't accumulate unlimited overlapping squads.
 
 ## Five distinct pilots, one deliberately generic pilot

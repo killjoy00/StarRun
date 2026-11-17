@@ -23,7 +23,7 @@ var endless_stage_spec: Dictionary = {}
 var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
-var next_pressure_wave_at := 7.0
+var next_pressure_wave_at := 8.0
 var pressure_waves := 0
 var boss_attack_pattern := "sweep"
 var cooldown_totals: Dictionary = {}
@@ -329,7 +329,7 @@ func step() -> void:
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
 		_spawn_world1_pressure()
-		next_pressure_wave_at = time + 3.25
+		next_pressure_wave_at = time + 7.5
 	if time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
@@ -964,7 +964,7 @@ func _spawn_world1_pressure() -> void:
 	# The opening director fills EMPTY space, not low ship statistics.
 	# Extra pressure ships are genuine, attackable enemies, but do not
 	# grant XP or turn strong early builds into an endless upgrade fountain.
-	var count: int = mini(2, maxi(0, 3 - _visible_world1_enemies()))
+	var count: int = mini(1, maxi(0, 2 - _visible_world1_enemies()))
 	count = mini(count, maxi(0, _enemy_limit() - enemies.size()))
 	if count <= 0:
 		return
@@ -975,9 +975,9 @@ func _spawn_world1_pressure() -> void:
 		wing["strike_wing"] = true
 		wing["pressure_wing"] = true
 		wing.xp = 0
-		wing.max_hp *= 1.45
+		wing.max_hp *= 1.65
 		wing.hp = wing.max_hp
-		wing.fire = 1.90 + index * 0.20
+		wing.fire = 2.20 + index * 0.20
 	pressure_waves += 1
 	_log("STRIKE WING REINFORCEMENTS - no additional XP")
 
@@ -1062,7 +1062,7 @@ func advance_stage() -> bool:
 	encounter_index = 0
 	encounter_queue.clear()
 	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
-	next_pressure_wave_at = time + 7.0
+	next_pressure_wave_at = time + 8.0
 	pressure_waves = 0
 	endless_stage_spec.clear()
 	stage_start = time
