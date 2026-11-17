@@ -1507,7 +1507,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			if queued is Dictionary and int(queued.get("squad", -1)) == squad_id:
 				queued["disrupted"] = true
 				disrupted += 1
-		effects.append({"kind":"elite-broken", "p":enemy.p, "life":1.25, "max_life":1.25, "born":tick})
+		effects.append({"kind":"elite-broken", "p":enemy.p, "source":squad_id, "life":1.25, "max_life":1.25, "born":tick})
 		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
 	if salvage_left > 0.0:
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
