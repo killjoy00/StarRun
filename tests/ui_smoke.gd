@@ -172,6 +172,38 @@ func _run() -> void:
 			check(settings.get_global_rect().end.x <= logical.x - 8.0, "Settings must remain inside the screen")
 		check(_contains_text(scene.overlay, "Change") and _contains_text(scene.overlay, "Play daily"), "Selecting a ship or pilot and starting a Daily must remain obvious")
 		check(_contains_text(scene.overlay, "Awards"), "Achievements must be discoverable from the title")
+		check(_contains_text(scene.overlay, "Rivals"), "A local captain journal is discoverable from the title")
+		var previous_sim: RefCounted = scene.sim
+		var past := Sim.new(95800)
+		past.last_killing_source = "gunship"
+		var record: Dictionary = scene.RivalCaptains._generated(past,1,1)
+		scene.profile.rival_active = record.duplicate(true)
+		scene.sim = Sim.new(95803)
+		scene.sim.configure_rival(record)
+		scene.sim._try_spawn_rival()
+		scene._show_rival_intro()
+		await process_frame
+		var picture: Control = scene.overlay.find_child("RivalCutscenePortrait", true, false)
+		check(scene.mode == "rival_intro" and _contains_text(scene.overlay, "RIVAL SIGHTED!") and _contains_text(scene.overlay, "!  HOSTILE CAPTAIN"), "Rival reveal displays warning, portrait and exclamation without advancing gameplay")
+		check(picture != null and picture.size.x >= 100 and scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Portrait warning fits mobile and desktop safe areas")
+		scene._dismiss_rival_stinger()
+		check(scene.mode == "playing" and not scene.sim.rival_intro_pending, "Engage resumes combat and persists cutscene acknowledgment")
+		scene.sim.rival_outcome = "retired"
+		scene.sim.rival_retire_pending = true
+		scene._show_rival_retired()
+		await process_frame
+		check(scene.mode == "rival_retired" and _contains_text(scene.overlay, "RIVAL DEFEATED!") and scene.profile.rival_trophies.size() == 1, "Retirement reveal gives a cosmetic trophy once")
+		scene._dismiss_rival_stinger()
+		scene._show_rival_journal()
+		await process_frame
+		check(scene.mode == "rival_journal" and _contains_text(scene.overlay, "Retired captains (1)") and _contains_text(scene.overlay, str(record.name)), "Journal shows the named captain and retirement history")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100, "Journal scroll and footer remain inside the phone display")
+		scene.sim = previous_sim
+		scene.profile.rival_active = {}
+		scene.profile.rival_archive = []
+		scene.profile.rival_trophies = []
+		scene.services.delete_run()
+		scene._show_menu()
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
 		scene._show_achievements()
 		await process_frame

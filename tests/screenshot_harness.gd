@@ -20,7 +20,7 @@ const SCREENS := [
 	"ships", "pilots", "combat-1", "combat-4",
 	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
-	"results-loss", "results-win", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear"
+	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
@@ -93,6 +93,21 @@ func _prepare(scene, screen: String) -> void:
 			scene.result_daily_score = scene.Progress.daily_score(scene.sim)
 			scene.result_daily_best = scene.result_daily_score
 			scene._show_results()
+		"rival-intro", "rival-retired", "rival-journal":
+			var origin := Sim.new(84001)
+			origin.last_killing_source = "gunship"
+			var rival: Dictionary = scene.RivalCaptains._generated(origin,1,1)
+			scene.profile.rival_active = rival.duplicate(true)
+			scene.sim.configure_rival(rival)
+			scene.sim._try_spawn_rival()
+			if screen == "rival-intro":
+				scene._show_rival_intro()
+			elif screen == "rival-retired":
+				scene.sim.rival_outcome = "retired"
+				scene.sim.rival_retire_pending = true
+				scene._show_rival_retired()
+			else:
+				scene._show_rival_journal()
 		"settings":
 			scene.mode = "menu"
 			# Apple App Review evidence: native UI rendered at the exact

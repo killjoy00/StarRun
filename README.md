@@ -36,6 +36,14 @@ Regular flights now have three optional **Artifact** rule sets: Glass Fleet, Ars
 
 See [roguelike variation implementation](docs/ROGUELIKE_VARIATION.md). Version remains **1.3**; this work is not signed for TestFlight or submitted to the App Store.
 
+## Persistent rival captains
+
+A real named enemy attack can create a **locally saved rival captain** when the ship is destroyed in an ordinary flight. After a different completed flight, the captain may return (seed-deterministic chance) as a recognizable attackable ship with a distinctive signature tactic. The game freezes briefly for a **RIVAL SIGHTED!** warning featuring an original seeded helmet portrait and large exclamation badge, and displays a second reveal when the captain is defeated.
+
+Five signatures: Charged Barrage, Interceptor Screen, Reactive Shield, Hunter Lock and Mine Scatter. Defeating a rival awards exactly one **cosmetic dossier trophy**, saved in the title's **Rivals** journal along with encounter history. This is local-only, needs no account, does not introduce combat upgrades or change Daily. Version remains **1.3**; no signed TestFlight/App Store submission is included.
+
+See [rival design and testing](docs/RIVAL_CAPTAINS.md).
+
 ## Controls
 
 On iPhone, four compact on-screen buttons run left to right on one row. Fused abilities use just one button. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses. Level-up choices use keys 1–4 or touch.
