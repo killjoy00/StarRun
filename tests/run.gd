@@ -46,6 +46,7 @@ func _run() -> void:
 	_test_support_actives()
 	_test_late_world_ability_counters()
 	_test_contextual_active_balance()
+	_test_five_balance_followups()
 	_test_endless_encounters_and_cooldown_captures()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
@@ -72,6 +73,87 @@ func _run() -> void:
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
+
+func _test_five_balance_followups() -> void:
+	# 1. Counter rewards must require actual timing, not a distant red lane.
+	var precise := Sim.new(8320)
+	precise.shield = 5.0
+	precise.charges = [{"source":1,"x":precise.ship_position(0.45).x,"remaining":0.45,"duration":1.8,"damage":35.0}]
+	check(precise.activate("aegis") and precise.shield >= 19.0 and precise.cooldowns.aegis < 11.0, "Aegis near impact restores shields and earns its 25% cooldown refund")
+	var off_lane := Sim.new(8320)
+	off_lane.shield = 5.0
+	off_lane.charges = [{"source":1,"x":35.0,"remaining":0.45,"duration":1.8,"damage":35.0}]
+	check(off_lane.activate("aegis") and is_equal_approx(off_lane.shield, 5.0) and is_equal_approx(float(off_lane.cooldowns.aegis), 14.0), "Aegis cannot earn precision bonus from a warning lane that misses")
+	var flak_late := Sim.new(8321)
+	flak_late.active_slots = ["flak"]
+	flak_late.upgrades.flak = 1
+	flak_late.stage = 2
+	flak_late.shield = 1.0
+	flak_late.bullets = [{"p":flak_late.ship_position()+Vector2(0,-52),"v":Vector2(0,150),"kind":"ordnance","source":"test","damage":11.0}]
+	check(flak_late.activate("flak") and flak_late.shield >= 17.0 and flak_late.cooldowns.flak < 13.0, "World 2+ close-call Flak restores 16 shields and earns a small cooldown refund")
+	var jam_precise := Sim.new(8322)
+	jam_precise.active_slots = ["jammer"]
+	jam_precise.upgrades.jammer = 1
+	jam_precise.charges = [{"source":1,"x":270.0,"remaining":0.65,"duration":1.8,"damage":35.0}]
+	var jam_early := Sim.new(8322)
+	jam_early.active_slots = ["jammer"]
+	jam_early.upgrades.jammer = 1
+	jam_early.charges = [{"source":1,"x":270.0,"remaining":1.25,"duration":1.8,"damage":35.0}]
+	check(jam_precise.activate("jammer") and jam_early.activate("jammer") and jam_precise.charges.is_empty() and jam_early.charges.is_empty(), "Both timely and early Jammer casts still stop an active beam")
+	check(jam_precise.cooldowns.jammer < jam_early.cooldowns.jammer * 0.80, "The final-second Jammer counter earns a stronger refund than an early cast")
+	# 2. Early Hangar ranks: no change at zero or one rank.
+	var no_hangar := Sim.new(8323, {}, "kestrel", "rookie", "hard")
+	var basic := Sim.new(8323, {"regen":1,"repair":1}, "kestrel", "rookie", "hard")
+	var invested := Sim.new(8323, {"regen":2,"repair":2}, "kestrel", "rookie", "hard")
+	for test_sim in [no_hangar, basic, invested]:
+		test_sim.hull -= 45.0
+		test_sim.shield -= 30.0
+		test_sim.next_spawn = INF
+		test_sim.next_hazard = INF
+		test_sim.next_encounter_at = INF
+		for frame in range(1800):
+			test_sim.step()
+	check(invested.hull > basic.hull + 3.0 and invested.shield > basic.shield + 3.0, "Rank-two Hangar investment creates meaningful World 1 hull/shield sustain")
+	check(basic.hull > no_hangar.hull and basic.shield > no_hangar.shield, "First permanent Hangar rank still helps; zero-rank difficulty stays the same")
+	# 3. Committed fusion partners appear naturally as legal choices.
+	var combo := Sim.new(8324)
+	combo.upgrades.aegis = 3
+	combo.level = 6
+	combo.pending_levels = 1
+	combo._offer_cards()
+	check(combo.cards.any(func(c): return str(c.id) in ["flak", "nova"]), "Rank-3 Aegis investment can find Flak or Nova in an actual draft")
+	check(combo.cards.map(func(c): return str(c.id)).size() == combo.cards.map(func(c): return str(c.id)).duplicate().size(), "Fusion guidance must preserve the standard hand size")
+	var known_ids := {}
+	for offered in combo.cards:
+		check(not known_ids.has(str(offered.id)), "Fusion guidance never duplicates a card in the same hand")
+		known_ids[str(offered.id)] = true
+	var previous_cards := combo.cards.duplicate(true)
+	var resumed := Sim.new(1)
+	check(resumed.restore(combo.snapshot()) and resumed.cards == previous_cards, "A fusion-partner offer survives a save/restore without redrawing")
+	var bar_full := Sim.new(8324)
+	bar_full.active_slots = ["aegis","mend","overdrive","siphon"]
+	bar_full.upgrades.aegis = 3
+	bar_full.level = 6
+	bar_full._offer_cards()
+	check(not bar_full.cards.any(func(c): return c.tag == "ABILITY" and int(bar_full.upgrades[c.id]) == 0), "Fusion guidance cannot bypass the four-ability slot limit")
+	# 5. A no-steering ship should not take two full heavy hits on the same tick.
+	var stacked := Sim.new(8325)
+	stacked.shield = 0.0
+	stacked.hull = 100.0
+	stacked._hit(20.0, "heavy", "first lane")
+	stacked._hit(20.0, "heavy", "second lane")
+	check(is_equal_approx(stacked.hull, 73.0), "Secondary simultaneous heavy beam deals 35%, not two full uncontrollable hits")
+	check(stacked.events.any(func(e): return str(e.message).contains("Overlapping heavy beams")), "Stacked heavy-beam protection is explained in the event log")
+	stacked.tick += 1
+	stacked._hit(20.0, "heavy", "later lane")
+	check(is_equal_approx(stacked.hull, 53.0), "Independent heavy beam on a later tick keeps its full strength")
+	var blocked := Sim.new(8325)
+	blocked.aegis_left = 1.0
+	blocked.shield = 0.0
+	blocked._hit(20.0, "heavy", "first lane")
+	blocked._hit(20.0, "heavy", "second lane")
+	check(is_equal_approx(blocked.hull, blocked.max_hull), "An available Aegis still counters overlapping heavy beams fully")
+
 
 func _test_endless_encounters_and_cooldown_captures() -> void:
 	var cooldown := Sim.new(7711)
