@@ -11,6 +11,8 @@ const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
+const RivalCaptains = preload("res://scripts/rival_captains.gd")
+const RivalPortrait = preload("res://scripts/rival_portrait.gd")
 const GameCenterBridge = preload("res://scripts/game_center_bridge.gd")
 const RemoveAdsStore = preload("res://scripts/remove_ads_store.gd")
 const CYAN := Color("66f5df")
@@ -85,6 +87,8 @@ var result_awards: Array = []
 var result_daily_score := -1
 var result_daily_best := -1
 var result_new_best := false
+var result_rival_news: Dictionary = {}
+var rival_stinger_clock := 0.0
 var game_center := GameCenterBridge.new()
 var daily_share_service: Object = null
 var pending_share_text := ""
@@ -1035,6 +1039,7 @@ func _show_menu() -> void:
 	_ui_button(row, "Hangar", _show_hangar, "ghost", 46, true)
 	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 46, true)
 	awards_button.tooltip_text = "Achievements and milestones"
+	_ui_button(row, "Rivals", _show_rival_journal, "ghost", 46, true)
 	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
 	var primary: Button
 	if saved.is_empty():
@@ -1134,6 +1139,91 @@ func _show_achievements() -> void:
 		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
 		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
 	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+func _rival_identity(parent: Node, record: Dictionary, note: String) -> void:
+	var frame := PanelContainer.new()
+	frame.add_theme_stylebox_override("panel", Kit.box(Color("18151f"), Kit.DANGER, 14, 2, 12, 12))
+	frame.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	parent.add_child(frame)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 10)
+	frame.add_child(content)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	content.add_child(row)
+	var portrait := RivalPortrait.new()
+	portrait.name = "RivalCutscenePortrait"
+	portrait.rival = record.duplicate(true)
+	portrait.custom_minimum_size = Vector2(120, 142)
+	row.add_child(portrait)
+	var text_column := VBoxContainer.new()
+	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_column.add_theme_constant_override("separation", 6)
+	row.add_child(text_column)
+	Kit.caps(text_column, "!  HOSTILE CAPTAIN", Kit.DANGER, 14)
+	Kit.label(text_column, str(record.get("name","Unknown captain")), 21, Kit.TEXT, true)
+	Kit.label(text_column, RivalCaptains.trait_name(str(record.get("trait",""))), 17, Kit.AMBER, true)
+	Kit.label(content, note, 16, Kit.MUTED, true)
+	Kit.label(content, RivalCaptains.counterplay(str(record.get("trait",""))), 16, Kit.TEXT, true)
+
+func _show_rival_journal() -> void:
+	RivalCaptains.prepare(profile)
+	mode = "rival_journal"
+	var view := _page(1.0, true, 520.0)
+	_page_header(view.top, "LOCAL DOSSIER", "Rival captains", _show_menu)
+	Kit.label(view.top, "Personal enemies. No online tracking or combat bonuses.", 15, Kit.MUTED, true)
+	var active: Dictionary = profile.rival_active
+	if active.is_empty():
+		_info_card(view.body, "No active rival", "Lose to an enemy captain and they may return in a later regular flight.", Kit.MUTED)
+	else:
+		_section(view.body, "Still at large", Kit.DANGER)
+		_rival_identity(view.body, active, "Defeated you: %d  ·  Sightings: %d  ·  Escapes: %d\nFirst encountered in World %d" % [int(active.get("defeat_count",1)), int(active.get("times_encountered",0)), int(active.get("times_escaped",0)), int(active.get("world_created",1))])
+	var history: Array = profile.rival_archive
+	_section(view.body, "Retired captains (%d)" % history.size(), Kit.AMBER)
+	if history.is_empty():
+		Kit.label(view.body, "No retired rivals yet. Every captain you defeat earns a permanent cosmetic dossier trophy.", 16, Kit.MUTED, true)
+	for i in range(history.size()-1, -1, -1):
+		var retired: Dictionary = history[i]
+		_rival_identity(view.body, retired, "RETIRED  !  ·  Defeated you %d time(s)  ·  %d encounter(s)\nTrophy recorded on this device." % [int(retired.get("defeat_count",1)),int(retired.get("times_encountered",0))])
+	_focus(_ui_button(reading_footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+func _rival_stinger(title: String, note: String, reward: bool = false) -> void:
+	mode = "rival_retired" if reward else "rival_intro"
+	rival_stinger_clock = 0.0
+	var view := _page(0.97, true, 490.0)
+	_page_header(view.top, "!  INCOMING TRANSMISSION  !", title)
+	Kit.label(view.top, "A captain from your flight history has returned." if not reward else "The score is settled.", 16, Kit.AMBER, true)
+	_rival_identity(view.body, sim.rival_record, note)
+	var action := _ui_button(reading_footer, "Continue flight", _dismiss_rival_stinger, "primary", 60, true)
+	_focus(action)
+	sound.play("warning" if not reward else "victory")
+	_haptic(120)
+	_save_run()
+
+func _show_rival_intro() -> void:
+	if not sim.rival_intro_pending or sim.rival_record.is_empty():
+		return
+	if RivalCaptains.note_encounter(profile, sim):
+		_save_profile()
+	_rival_stinger("RIVAL SIGHTED!", "This captain's earlier attack ended one of your flights.\nDefeats: %d  ·  World %d  ·  Eliminate or survive the captain." % [int(sim.rival_record.get("defeat_count",1)),int(sim.stage)])
+
+func _show_rival_retired() -> void:
+	if not sim.rival_retire_pending or sim.rival_record.is_empty():
+		return
+	if RivalCaptains.retire(profile, sim):
+		_save_profile()
+	_rival_stinger("RIVAL DEFEATED!", "Captain retired. A permanent trophy and battle record have been added to your local Rival dossier.", true)
+
+func _dismiss_rival_stinger() -> void:
+	if mode not in ["rival_intro", "rival_retired"]:
+		return
+	sim.rival_intro_pending = false
+	sim.rival_retire_pending = false
+	mode = "playing"
+	_clear_overlay()
+	rival_stinger_clock = 0.0
+	accumulator = 0.0
+	_save_run()
 
 func _set_artifact(id: String) -> void:
 	if str(Catalog.artifact(id).id) != id:
@@ -1940,6 +2030,21 @@ func _show_results() -> void:
 	var qualifier: String = "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
 	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], "Victory" if sim.won else "Ship destroyed")
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
+	if not result_rival_news.is_empty():
+		var recent: Dictionary = result_rival_news.get("rival", {})
+		var event_kind: String = str(result_rival_news.get("kind", ""))
+		if not recent.is_empty():
+			match event_kind:
+				"created":
+					_rival_identity(body, recent, "!  NEW RIVAL RECORDED\nThis captain was responsible for your defeat. They may return in a later regular flight.")
+				"rival_defeat":
+					_rival_identity(body, recent, "!  YOUR RIVAL STRUCK AGAIN\nTheir record grows stronger. You can still settle the score.")
+				"retired":
+					_rival_identity(body, recent, "RIVAL DEFEATED  ·  Permanent cosmetic trophy saved.")
+	if sim.rival_outcome == "retired" and result_rival_news.is_empty() and not sim.rival_record.is_empty():
+		_rival_identity(body, sim.rival_record, "RIVAL RETIRED  ·  Recorded in your permanent local dossier.")
+	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
+		_ui_button(body, "Open rival dossier", _show_rival_journal, "secondary", 48)
 	var total_damage := 0.0
 	var worst_kind := ""
 	var worst_damage := 0.0
@@ -2043,8 +2148,12 @@ func _new_run() -> void:
 	build_show_all = false
 	result_earned_cores = -1
 	result_awards.clear()
+	result_rival_news.clear()
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")), str(profile.get("artifact", "standard")))
+	var returning: Dictionary = RivalCaptains.for_launch(profile, sim)
+	if not returning.is_empty():
+		sim.configure_rival(returning)
 	_start_flight()
 
 func _new_daily_run() -> void:
@@ -2054,6 +2163,7 @@ func _new_daily_run() -> void:
 	build_show_all = false
 	result_earned_cores = -1
 	result_awards.clear()
+	result_rival_news.clear()
 	profile.runs += 1
 	var attempt: int = Progress.start_daily(profile, str(setup.day))
 	_save_profile()
@@ -2066,6 +2176,7 @@ func _resume_run() -> void:
 	banish_mode = false
 	result_earned_cores = -1
 	result_awards.clear()
+	result_rival_news.clear()
 	var state := services.read_save(Services.RUN)
 	sim = Simulation.new()
 	if not sim.restore(state):
@@ -2130,7 +2241,11 @@ func _start_flight() -> void:
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
-	if sim.stage_transition_queued:
+	if sim.rival_retire_pending:
+		_show_rival_retired()
+	elif sim.rival_intro_pending:
+		_show_rival_intro()
+	elif sim.stage_transition_queued:
 		match sim.intermission_step:
 			"prototype": _show_prototypes()
 			"route": _show_route_choice()
@@ -2145,6 +2260,10 @@ func _process(delta: float) -> void:
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
+	if mode in ["rival_intro", "rival_retired"]:
+		rival_stinger_clock += delta
+		if rival_stinger_clock >= 3.6:
+			_dismiss_rival_stinger()
 	if mode == "stage_clear":
 		var before: float = stage_clear_clock
 		stage_clear_clock += delta
@@ -2163,10 +2282,14 @@ func _process(delta: float) -> void:
 		while accumulator >= Simulation.DT and mode == "playing":
 			sim.step()
 			accumulator -= Simulation.DT
-			if sim.stage_transition_queued:
-				_show_stage_clear()
-			elif sim.ended:
+			if sim.ended:
 				_finish()
+			elif sim.rival_retire_pending:
+				_show_rival_retired()
+			elif sim.rival_intro_pending:
+				_show_rival_intro()
+			elif sim.stage_transition_queued:
+				_show_stage_clear()
 			elif not sim.cards.is_empty():
 				_show_cards()
 			elif sim.stage == 1 and not bool(profile.get("beam_tutorial_seen", false)) and "aegis" in sim.active_slots and not sim.charges.is_empty():
@@ -2206,7 +2329,7 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial"] or (mode == "settings" and sheet_base == "paused")
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "rival_intro", "rival_retired"] or (mode == "settings" and sheet_base == "paused")
 	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
@@ -2317,6 +2440,10 @@ func _finish_intermission() -> void:
 
 func _finish() -> void:
 	mode = "results"
+	# A crash between the rival's defeat and the result panel must still
+	# retire their dossier exactly once.
+	if sim.rival_outcome == "retired":
+		RivalCaptains.retire(profile, sim)
 	# Both ordinary and daily flights settle exactly once, even after a
 	# crash/repeated callback. Only a first daily completion pays Cores.
 	var settlement: Dictionary = Progress.settle(profile, sim)
@@ -2325,6 +2452,7 @@ func _finish() -> void:
 	result_daily_score = int(settlement.score)
 	result_daily_best = int(settlement.best_score)
 	result_new_best = bool(settlement.new_best)
+	result_rival_news = settlement.get("rival_news", {})
 	_save_profile()
 	services.delete_run()
 	_show_results()

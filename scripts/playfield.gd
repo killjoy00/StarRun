@@ -383,13 +383,13 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		draw_line(Vector2(-15,27),Vector2(15,27),Color("aacbd4"),2,true)
 		draw_set_transform(Vector2.ZERO)
 	else:
-		var size := Vector2(190,190) if boss else Vector2(66,66)
+		var size := Vector2(190,190) if boss else (Vector2(98,98) if bool(enemy.get("rival",false)) else Vector2(66,66))
 		if kind in ["sniper", "missile_bomber", "carrier", "shieldguard"]:
 			size = Vector2(82,82)
 		if kind in ["interceptor", "rusher"]:
 			size = Vector2(52,64)
 		var art_key := ("boss" if boss else (kind if SHIPS.has(kind) else ("gunship" if kind in ["missile_bomber", "carrier", "shieldguard", "minelayer", "ion_frigate", "corroder", "disruptor"] else "drone")))
-		var tint := Color.WHITE
+		var tint := Color("ff9a86") if bool(enemy.get("rival",false)) else Color.WHITE
 		match kind:
 			"interceptor": tint = Color("66f5df")
 			"rusher": tint = Color("ff938e")
@@ -439,6 +439,15 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		if sim.pilot_id == "hunter" and int(enemy.id) == sim.hunter_target_id and sim.hunter_mark_left > 0.0 and p.y >= 0.0 and p.y <= 885.0:
 			draw_arc(p, 48.0, 0.0, TAU, 32, Color("ffb96e"), 2.8, true)
 			draw_string(ThemeDB.fallback_font, p + Vector2(-26,-60), "HUNT", HORIZONTAL_ALIGNMENT_LEFT, 78, 13, AMBER)
+		if bool(enemy.get("rival",false)) and p.y >= 0.0 and p.y <= 885.0:
+			var ring := 65.0 + (0.0 if profile.reduced else sin(visual_time * 5.0) * 3.0)
+			draw_arc(p, ring, 0, TAU, 48, DANGER, 3.5, true)
+			draw_circle(p+Vector2(45,-60), 15.0, AMBER)
+			draw_string(ThemeDB.fallback_font, p+Vector2(39,-52), "!", HORIZONTAL_ALIGNMENT_LEFT, 20, 25, THREAT_INK)
+			var label_x := clampf(p.x-97.0, 8.0, 330.0)
+			draw_rect(Rect2(label_x-4.0, p.y-110.0, 198.0, 27.0), Color("261522",0.92))
+			draw_string(ThemeDB.fallback_font, Vector2(label_x, p.y-91.0), "RIVAL CAPTAIN", HORIZONTAL_ALIGNMENT_LEFT, 194, 17, DANGER)
+			_bar(Rect2(p.x-53,p.y+61,106,6),float(enemy.hp)/maxf(1.0,float(enemy.max_hp)),DANGER)
 		if elite_role == "leader" and p.y >= 0.0 and p.y <= 885.0:
 			# A distinctive amber target ring and literal label make it
 			# obvious who powers the squad even at reduced effects / 3x.
