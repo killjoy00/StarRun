@@ -27,7 +27,7 @@ static func _generated(sim: RefCounted, finished_runs: int, run_number: int) -> 
 	var serial := maxi(1, absi(int(sim.seed_value))) + int(sim.stage) * 37
 	var generator := RandomNumberGenerator.new()
 	generator.seed = serial * 23 + 173
-	var trait: String = str(TRAITS[generator.randi_range(0, TRAITS.size() - 1)])
+	var signature_id: String = str(TRAITS[generator.randi_range(0, TRAITS.size() - 1)])
 	var title := "Captain %s %s" % [FIRST[generator.randi_range(0, FIRST.size() - 1)], LAST[generator.randi_range(0, LAST.size() - 1)]]
 	var kind: String = str(sim.last_killing_source)
 	# Boss captains recur in a nimble, counterable fighter rather than
@@ -35,7 +35,7 @@ static func _generated(sim: RefCounted, finished_runs: int, run_number: int) -> 
 	var fighter := kind if kind in ["gunship", "interceptor", "shieldguard", "missile_bomber", "ion_frigate", "sniper"] else "gunship"
 	return {"version":VERSION, "id":serial, "name":title, "portrait_seed":generator.randi_range(1, 99999),
 		"source_enemy_type":kind, "combat_kind":fighter, "world_created":clampi(int(sim.stage), 1, 4),
-		"trait":trait, "defeat_count":1, "times_encountered":0, "times_escaped":0,
+		"trait":signature_id, "defeat_count":1, "times_encountered":0, "times_escaped":0,
 		"last_encounter_seed":-1, "last_escape_seed":-1, "last_defeat_seed":serial,
 		"created_run":run_number, "created_completed_runs":finished_runs, "retired":false, "reward_claimed":false}
 

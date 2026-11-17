@@ -1044,9 +1044,9 @@ func _rival_action(enemy: Dictionary, minions: Array) -> void:
 	if jammer_left > 0.0 or emp_left > 0.0:
 		enemy.rival_timer = 0.7
 		return
-	var trait: String = str(enemy.rival_trait)
+	var signature_id: String = str(enemy.rival_trait)
 	var power: float = threat_scale() * stage_risk * (1.0 + 0.12 * float(int(enemy.rival_rank) - 1))
-	match trait:
+	match signature_id:
 		"charged_barrage":
 			if charges.size() < 3:
 				var predicted: float = ship_position(time + 1.9).x
