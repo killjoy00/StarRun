@@ -1,9 +1,10 @@
 name: StarRun — targeted shooter HP screen-pressure experiment
 # Matched study already completed as PR #39 (Actions #44106741711).
 # Keep it manually rerunnable without repeating costly full campaigns on every PR.
+# Completed the combined HP and first-shot matched study on PR #39,
+# Actions run #44127618898. Preserve manual reruns without adding the
+# 12-seed double-campaign comparison to every future gameplay PR.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
