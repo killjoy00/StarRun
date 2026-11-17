@@ -66,3 +66,50 @@ jobs:
           path: review/
           retention-days: 30
           if-no-files-found: ignore
+
+  # Complete the equal-Hangar six-ship/six-pilot grid on Insane.
+  # Like the Normal/Hard audit this is deterministic bot evidence, not a player win rate.
+  insane_grid:
+    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    name: Insane / ${{ matrix.ship }} / equal max Hangar
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Simulate six pilots with identical Hangar and starting seeds
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          for pilot in rookie ace engineer hunter scavenger tactician; do
+            echo "::group::${{ matrix.ship }} / insane / $pilot"
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --seeds=2 --seed-offset=4 \
+              --ship=${{ matrix.ship }} --pilot="$pilot" \
+              --difficulty=insane --hangar=max --build=focused \
+              --strategy=timed --route=adaptive --stage-limit=2 --trace \
+              2>&1 | tee "review/$pilot.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "review/$pilot.log"; then
+              echo "::error::Godot reported a runtime script failure"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+          python3 tools/report_ship_pilot_grid.py \
+            ${{ matrix.ship }} insane max review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve per-pilot Insane combat receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: insane-ship-pilot-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
