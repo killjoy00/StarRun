@@ -2,6 +2,8 @@ extends SceneTree
 const Sim = preload("res://scripts/simulation.gd")
 const Services = preload("res://scripts/platform_services.gd")
 const Catalog = preload("res://scripts/catalog.gd")
+const Progress = preload("res://scripts/meta_progress.gd")
+const Rivals = preload("res://scripts/rival_captains.gd")
 var failures := 0
 var assertions := 0
 
@@ -54,6 +56,7 @@ func _run() -> void:
 	_test_ship_pilot_identity_tuning()
 	_test_roguelike_variation()
 	_test_world1_density_and_pilot_identities()
+	_test_rival_captain_campaign()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -79,6 +82,108 @@ func _run() -> void:
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
+
+func _test_rival_captain_campaign() -> void:
+	var profile := {"cores":0, "runs":1}
+	Progress.prepare(profile)
+	var defeated := Sim.new(91001)
+	defeated._hit(10000.0,"ordnance","gunship")
+	check(defeated.ended and defeated.last_killing_source == "gunship", "Actual lethal enemy attacks record their source")
+	var created: Dictionary = Progress.settle(profile, defeated)
+	var record: Dictionary = profile.rival_active
+	check(str(created.rival_news.get("kind","")) == "created" and Rivals.valid(record), "Eligible regular defeat creates a versioned named captain")
+	check(record.version == 1 and str(record.name).begins_with("Captain ") and int(record.defeat_count) == 1, "Rival has stable original captain identity and history")
+	check(Progress.settle(profile, defeated).earned == 0 and profile.rival_active == record, "Repeated settlement cannot generate another rival")
+	var daily := Sim.new(91002)
+	daily.daily_day = "2026-11-17"
+	daily._hit(10000.0,"chaff","gunship")
+	var daily_profile := {"cores":0,"runs":1}
+	Progress.settle(daily_profile,daily)
+	check(daily_profile.rival_active.is_empty() and not daily.configure_rival(record), "Daily never creates or enables rivals")
+	var hazard := Sim.new(91003)
+	hazard._hit(10000.0,"hazard","Boulder collision")
+	var hazard_profile := {"cores":0,"runs":1}
+	Progress.settle(hazard_profile,hazard)
+	check(hazard_profile.rival_active.is_empty(), "Hazard deaths cannot create a personal rival")
+	profile.runs = 2
+	check(Rivals.for_launch(profile, Sim.new(91004)).is_empty(), "A rival does not return in the very next flight")
+	var intervening := Sim.new(91005)
+	intervening.ended = true
+	Progress.settle(profile,intervening)
+	profile.runs = 3
+	var chosen: RefCounted
+	for seed in range(91006, 91140):
+		var candidate := Sim.new(seed)
+		if not Rivals.for_launch(profile,candidate).is_empty():
+			chosen = candidate
+			break
+	check(chosen != null, "A bounded seeded chance eventually yields an eligible encounter")
+	if chosen == null:
+		return
+	check(chosen.configure_rival(Rivals.for_launch(profile,chosen)) and chosen._try_spawn_rival(), "A regular flight spawns one real captain encounter")
+	check(chosen.rival_spawned and chosen.rival_intro_pending and chosen.enemies.size() == 1 and chosen.enemies[0].xp == 0, "Rival introduction creates a combat target, not free XP")
+	check(not chosen._try_spawn_rival(), "One rival spawn maximum per flight")
+	check(Rivals.note_encounter(profile,chosen) and not Rivals.note_encounter(profile,chosen) and int(profile.rival_active.times_encountered) == 1, "Reopening a cutscene does not duplicate sighting history")
+	var save: Dictionary = chosen.snapshot()
+	var resumed := Sim.new()
+	check(resumed.restore(save) and resumed.snapshot() == save, "Rival intro, threat, positioning and RNG survive exact checkpoint restore")
+	var legacy := Sim.new(91060).snapshot()
+	for key in ["rival_record","rival_stage","rival_spawn_at","rival_spawned","rival_intro_pending","rival_retire_pending","rival_outcome","last_killing_source"]:
+		legacy.erase(key)
+	check(Sim.new().restore(legacy), "Original version-1 saved flights remain valid without rival fields")
+	var captain: Dictionary = chosen.enemies[0]
+	chosen._damage_enemy(captain, captain.hp + 1.0, "pulse")
+	check(chosen.rival_outcome == "retired" and chosen.rival_retire_pending and chosen.xp == 0.0, "Captain dies for real without award XP and queues a victory cutscene")
+	check(Rivals.retire(profile,chosen) and not Rivals.retire(profile,chosen), "Captain retirement and trophy award apply once")
+	check(profile.rival_active.is_empty() and profile.rival_archive.size() == 1 and profile.rival_trophies.size() == 1, "Retired captain enters permanent cosmetic history only")
+	check(profile.rival_archive[0].reward_claimed and Rivals.for_launch(profile,Sim.new(91100)).is_empty(), "Retired captains never return or grant a second prize")
+	for n in range(Rivals.TRAITS.size()):
+		var kind: String = str(Rivals.TRAITS[n])
+		var fixture := Sim.new(92000 + n)
+		var variant: Dictionary = record.duplicate(true)
+		variant.trait = kind
+		check(fixture.configure_rival(variant) and fixture._try_spawn_rival(), "Five real captain signatures: " + kind)
+		var foe: Dictionary = fixture.enemies[0]
+		foe.rival_timer = 0.0
+		var minions: Array = []
+		fixture._rival_action(foe,minions)
+		match kind:
+			"charged_barrage": check(fixture.charges.size() == 2 and fixture.charges[0].duration >= 1.8, "Charged Barrage uses telegraphed interceptable dual beams")
+			"interceptor_screen": check(minions.size() == 2 and minions.all(func(x): return bool(x.rival_escort)), "Interceptor Screen creates two actual fighters")
+			"reactive_shield":
+				var hp_before: float = float(foe.hp)
+				fixture._damage_enemy(foe,20.0,"pulse")
+				check(foe.hp > hp_before - 20.0 and foe.rival_shield_left > 1.0, "Reactive shield reduces damage during a real burst")
+			"hunter_lock": check(fixture.charges.size() == 1 and fixture.charges[0].remaining >= 1.5, "Hunter Lock announces a real single-lane beam")
+			"mine_scatter": check(fixture.bullets.size() == 3 and fixture.bullets.all(func(b): return b.kind == "mine" and b.source == "rival"), "Mine Scatter sends three destroyable mine attacks")
+	var mine_contact := Sim.new(94901)
+	mine_contact.bullets = [{"p":mine_contact.ship_position(), "v":Vector2.ZERO, "damage":10000.0, "kind":"mine", "hp":15.0, "fuse":1.0, "source":"rival"}]
+	mine_contact._update_bullets()
+	check(mine_contact.ended and mine_contact.last_killing_source == "rival", "A rival mine hitting the ship credits the rival's actual lethal attack")
+	var mine_fuse := Sim.new(94902)
+	mine_fuse.bullets = [{"p":mine_fuse.ship_position(), "v":Vector2.ZERO, "damage":10000.0, "kind":"mine", "hp":15.0, "fuse":0.0, "source":"rival"}]
+	mine_fuse._update_bullets()
+	check(mine_fuse.ended and mine_fuse.last_killing_source == "rival", "A rival mine detonating near the ship also credits the captain")
+	var recurring := Sim.new(94010)
+	recurring.configure_rival(record)
+	recurring._try_spawn_rival()
+	recurring._hit(10000.0,"ordnance","rival")
+	var recurring_profile := {"cores":0,"runs":3,"rival_active":record.duplicate(true)}
+	Progress.settle(recurring_profile,recurring)
+	check(int(recurring_profile.rival_active.defeat_count) == 2, "An active rival can defeat the player again without creating a new captain")
+	var escaped := Sim.new(94011)
+	escaped.configure_rival(record)
+	escaped._try_spawn_rival()
+	escaped.enemies[0].p.y = 900.0
+	escaped._update_enemies()
+	escaped.ended = true
+	var escaped_profile := {"cores":0,"runs":3,"rival_active":record.duplicate(true)}
+	Progress.settle(escaped_profile,escaped)
+	check(escaped.rival_outcome == "escaped" and escaped_profile.rival_active.times_escaped == 1, "Escaping rivals remain active and the escape is recorded once")
+	var corrupt := {"rival_active":{"id":"broken","trait":"unknown"},"rival_archive":[{},{"id":"bad"}],"rival_trophies":"invalid"}
+	Rivals.prepare(corrupt)
+	check(corrupt.rival_active.is_empty() and corrupt.rival_archive.is_empty() and corrupt.rival_trophies.is_empty(), "Invalid local record data safely resets without touching Hangar or Daily")
+	check(Sim.new(94012).rival_record.is_empty(), "No rival runs in ordinary simulation stress fixtures")
 
 func _test_five_balance_followups() -> void:
 	# 1. Counter rewards must require actual timing, not a distant red lane.
