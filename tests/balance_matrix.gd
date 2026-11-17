@@ -24,6 +24,7 @@ func _run() -> void:
 	var route_policy := "adaptive"
 	var pilot_id := "rookie"
 	var trace := false
+	var density := false
 	var require_win := false
 	var seed_offset := 0
 	var stage_limit := 4
@@ -53,6 +54,8 @@ func _run() -> void:
 			require_no_world1_clears = true
 		elif arg == "--trace":
 			trace = true
+		elif arg == "--density":
+			density = true
 		elif arg == "--require-win":
 			require_win = true
 	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id):
@@ -100,7 +103,13 @@ func _run() -> void:
 				var route_boss_clears := 0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
-					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit)
+					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit, density)
+					if density:
+						print("DENSITY_TRACE ", JSON.stringify({
+							"seed":seed, "ship":ship_id, "difficulty":difficulty,
+							"hangar":hangar_style, "build":build_style, "route":route_policy,
+							"strategy":strategy, "phases":result.density
+						}))
 					if trace:
 						print("CAMPAIGN_TRACE ", JSON.stringify({
 							"seed":seed,"ship":ship_id,"difficulty":difficulty,"strategy":strategy,
@@ -159,7 +168,7 @@ func _run() -> void:
 		push_error("%d of %d unupgraded Hard/Insane attempts cleared World 1 (ship %s, pilot %s). Investigate and rebalance before merging." % [world1_clears, trials, only_ship, pilot_id])
 	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) else 0)
 
-func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4) -> Dictionary:
+func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false) -> Dictionary:
 	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty)
 	var timed_out := false
 	var fault := false
@@ -169,6 +178,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	var pristine_focus_seconds := 0.0
 	var overlap_seconds := 0.0
 	var unanswered_overlap_seconds := 0.0
+	var density_by_phase := {}
 	for _frame in range(4 * 60 * 600):
 		if sim.ended:
 			status = "won" if sim.won else "dead"
@@ -203,6 +213,33 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			_pick_upgrade(sim, build_style)
 			continue
 		_cast(sim, strategy)
+		# Every 0.2 simulated seconds, sample only enemy projectiles inside
+		# the actual 540x960 playfield. Pause time, intermissions and drafts
+		# contribute no samples. Heavy-beam charge lanes are counted separately.
+		# This is read-only instrumentation: no RNG, damage or input changes.
+		if track_density and sim.tick % 12 == 0:
+			var phase: String = "W%d/%s" % [sim.stage, "boss" if sim.boss_spawned else "waves"]
+			if not density_by_phase.has(phase):
+				density_by_phase[phase] = {
+					"samples":0, "bullet_sum":0, "boss_bullet_sum":0,
+					"charge_sum":0, "max_visible":0, "over_20":0, "over_40":0
+				}
+			var visible := 0
+			var boss_owned := 0
+			for bullet in sim.bullets:
+				var p: Vector2 = bullet.p
+				if p.x >= 0.0 and p.x <= Sim.WIDTH and p.y >= 0.0 and p.y <= Sim.HEIGHT:
+					visible += 1
+					if str(bullet.get("source", "")).begins_with("boss"):
+						boss_owned += 1
+			var record: Dictionary = density_by_phase[phase]
+			record.samples += 1
+			record.bullet_sum += visible
+			record.boss_bullet_sum += boss_owned
+			record.charge_sum += sim.charges.size()
+			record.max_visible = maxi(int(record.max_visible), visible)
+			record.over_20 += int(visible >= 20)
+			record.over_40 += int(visible >= 40)
 		# Sample every 0.2s: are bullet and heavy-beam warnings competing
 		# for a defensive action that is currently unavailable?
 		if sim.tick % 12 == 0 and _danger_overlap(sim):
@@ -229,6 +266,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		"pristine_focus_seconds":snappedf(pristine_focus_seconds,0.1),
 		"overlap_seconds":snappedf(overlap_seconds,0.1),
 		"unanswered_overlap_seconds":snappedf(unanswered_overlap_seconds,0.1),
+		"density":density_by_phase,
 		"final":{"level":sim.level,"kills":sim.kills,"status":status, "build":build_style}
 	}
 
