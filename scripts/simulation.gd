@@ -1124,15 +1124,19 @@ func _update_weapons() -> void:
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
 			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
-	if upgrades.lance > 0 and lance_timer <= 0.0 and not enemies.is_empty():
-		lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
+	if upgrades.lance > 0 and lance_timer <= 0.0:
 		var target := _nearest(origin)
 		for enemy in enemies:
-			if not charges.is_empty() and enemy.id == charges[0].source:
+			if not charges.is_empty() and enemy.id == charges[0].source and enemy.hp > 0.0:
 				target = enemy
+		# Kills earlier this tick leave dead enemies in the array until the
+		# projectile pass. Do not consume a full lance cycle without firing.
 		if not target.is_empty():
+			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
 			var end: Vector2 = origin + (target.p - origin).normalized() * 1200
-			effects.append({"kind":"lance", "p":origin, "to":end, "life":0.28, "max_life":0.28, "born":tick})
+			# Keep each instantaneous strike legible at 3x (0.20s real time).
+			# The effect duration changes visuals, not damage or shot cadence.
+			effects.append({"kind":"lance", "p":origin, "to":end, "life":0.60, "max_life":0.60, "born":tick})
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
