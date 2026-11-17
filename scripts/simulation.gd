@@ -336,7 +336,7 @@ func boss_health_pressure() -> float:
 	# W1 Hard/Insane already have massive authored opener multipliers, so
 	# keep its extra pressure restrained; later bosses carry the escalation.
 	if stage == 1:
-		return {"normal": 1.10, "hard": 1.12, "insane": 1.12}[difficulty]
+		return {"normal": 1.10, "hard": 1.12, "insane": 1.35}[difficulty]
 	if stage == 2:
 		return {"normal": 1.18, "hard": 1.34, "insane": 1.55}[difficulty]
 	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
