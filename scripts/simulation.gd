@@ -1368,8 +1368,16 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var is_boss: bool = str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"]
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
+	for charge in charges:
+		if int(charge.source) == int(enemy.id):
+			# The red warning lane must not simply vanish when its emitter dies.
+			# The playfield displays this cancel event for 0.85 real seconds,
+			# independent of 0.5x/1x/2x/3x game speed.
+			effects.append({"kind":"beam-canceled", "p":enemy.p, "x":float(charge.x), "source":int(enemy.id), "reason":"source", "life":1.0, "max_life":1.0, "born":tick})
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
+	if charges.size() < before:
+		_log("Beam canceled - charging enemy destroyed")
 	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
