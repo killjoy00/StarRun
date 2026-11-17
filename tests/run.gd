@@ -266,6 +266,13 @@ func _test_roguelike_variation() -> void:
 	check(not pulse._install_mutation("split_seeker"), "A run cannot stack multiple rare mutations")
 	pulse._update_weapons()
 	check(pulse.shots.any(func(s): return str(s.weapon) == "pulse" and int(s.pierce) == 1), "Ghost Rounds grants a real second-target projectile")
+	pulse.enemies = [
+		{"id":1,"kind":"drone","p":Vector2(270,400),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0},
+		{"id":2,"kind":"drone","p":Vector2(280,398),"hp":100.0,"max_hp":100.0,"xp":3,"phase":0.0,"speed":0.0,"fire":99.0}
+	]
+	pulse.shots = [{"p":Vector2(270,416),"v":Vector2(0,-960),"damage":20.0,"weapon":"pulse","target":-1,"pierce":1,"last_enemy":-1}]
+	pulse._update_shots()
+	check(pulse.enemies[0].hp <= 80.0 and pulse.enemies[1].hp <= 88.0, "Ghost Rounds really strike a second target for 60 percent damage")
 	var rockets := Sim.new(448, {}, "wraith")
 	check(rockets._install_mutation("split_seeker"), "Wraith can install Hydra Warheads")
 	rockets.enemies = [
@@ -307,6 +314,9 @@ func _test_roguelike_variation() -> void:
 	repair.shield = 1.0
 	repair._hit(5.0, "ordnance", "test")
 	check(repair.sentry_left > 5.0 and repair.events.any(func(e): return "FIELD SENTRY" in str(e.message)), "Engineer deploys a temporary offensive sentry on shield break")
+	repair._add_enemy("drone", Vector2(260,250))
+	repair._update_support()
+	check(repair.shots.any(func(s): return str(s.weapon) == "escort" and s.damage > 0.0), "Engineer sentry fires independent offensive shots")
 	var default_save := standard.snapshot()
 	for key in ["artifact_id", "mutations", "sentry_left", "sentry_timer"]:
 		default_save.erase(key)
