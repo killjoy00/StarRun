@@ -245,6 +245,22 @@ func _test_roguelike_variation() -> void:
 	shift.stage_clears = 1
 	check(shift.begin_intermission() and shift.skip_prototype() and shift.choose_route("repair") and shift.advance_stage(), "Artifact mode passes through the real boss intermission")
 	check([shift.upgrades.pulse,shift.upgrades.seeker,shift.upgrades.arc,shift.upgrades.lance] == [3,4,2,1], "Arsenal Shift rotates actual weapon ranks without duplicating them")
+	var rare := Sim.new(447)
+	rare.stage = 2
+	rare.level = 5
+	rare._offer_cards(false)
+	check(not rare.cards.any(func(c): return str(c.tag) == "MUTATION"), "Mutation cards only appear at their rare milestone gate")
+	var rare_found := false
+	for candidate_seed in range(456, 486):
+		var candidate := Sim.new(candidate_seed)
+		candidate.stage = 2
+		candidate.level = 8
+		candidate._offer_cards(false)
+		if candidate.cards.any(func(c): return str(c.tag) == "MUTATION"):
+			rare_found = true
+			check(candidate.cards.any(func(c): return str(c.id) in ["piercing_pulse", "split_seeker"]), "Only mutations for owned weapons are offered")
+			break
+	check(rare_found, "Rare transformations must be obtainable in later-world drafts across multiple seeds")
 	var pulse := Sim.new(447)
 	check(pulse._install_mutation("piercing_pulse"), "Owned Pulse can receive Ghost Rounds")
 	check(not pulse._install_mutation("split_seeker"), "A run cannot stack multiple rare mutations")

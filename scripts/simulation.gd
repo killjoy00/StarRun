@@ -2095,10 +2095,14 @@ func _activate_fusion(id: String, strength: float) -> void:
 
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
+	var mutation_pool: Array = []
 	for card in content.cards:
 		if stage < int(card.get("min_stage", 1)):
 			continue
-		if card.tag == "MUTATION" and (not mutations.is_empty() or int(upgrades.get(str(Catalog.mutation(str(card.id)).get("requires", "")), 0)) <= 0):
+		if card.tag == "MUTATION":
+			var spec: Dictionary = Catalog.mutation(str(card.id))
+			if mutations.is_empty() and artifact_id != "drone_armada" and int(upgrades.get(str(spec.requires), 0)) > 0 and int(upgrades.get(str(card.id), 0)) == 0 and card.id not in banished:
+				mutation_pool.append(card.duplicate(true))
 			continue
 		if artifact_id == "drone_armada" and card.tag in ["WEAPON", "MUTATION"]:
 			continue
@@ -2151,7 +2155,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 	# worlds, one normal card may be replaced by a matching weapon mutation.
 	# Never inject a weapon the player does not own.
 	if stage >= 2 and level % 4 == 0 and mutations.is_empty() and not cards.is_empty() and rng.randi_range(0, 2) == 0:
-		var candidates: Array = pool.filter(func(c): return str(c.tag) == "MUTATION")
+		var candidates: Array = mutation_pool
 		if not candidates.is_empty():
 			cards[cards.size() - 1] = candidates[rng.randi_range(0, candidates.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
