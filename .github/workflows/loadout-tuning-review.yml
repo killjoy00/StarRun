@@ -1,0 +1,68 @@
+name: StarRun 1.3 — targeted ship and pilot retest
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: starrun-identity-tuning-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    if: startsWith(github.head_ref, 'codex/starrun-13-ship-pilot-')
+    name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: bulwark, difficulty: hard, hangar: max, limit: 1, seeds: 3, offset: 18}
+          - {ship: haven, difficulty: hard, hangar: max, limit: 1, seeds: 3, offset: 18}
+          - {ship: bulwark, difficulty: normal, hangar: mid, limit: 2, seeds: 2, offset: 4}
+          - {ship: haven, difficulty: normal, hangar: mid, limit: 2, seeds: 2, offset: 4}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Match every pilot on baseline and tuned loadout mechanics
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/starrun-elite-before-loadout-tuning"
+          # This immutable PR commit includes the same elite combat rules
+          # but none of the later Bulwark/Haven/Engineer trait tuning.
+          git worktree add --detach "$BASELINE" cf17a7d5c5de72a31f0d62cb848b815bd22b730d
+          mkdir -p review
+          for pilot in rookie ace engineer hunter scavenger tactician; do
+            for version in base new; do
+              root="$GITHUB_WORKSPACE"
+              if [[ "$version" == "base" ]]; then root="$BASELINE"; fi
+              godot --headless --path "$root" --editor --import --quit
+              log="$GITHUB_WORKSPACE/review/$version-$pilot.log"
+              godot --headless --path "$root" --script "$root/tests/balance_matrix.gd" -- \
+                --ship=${{ matrix.ship }} --pilot="$pilot" --difficulty=${{ matrix.difficulty }} \
+                --hangar=${{ matrix.hangar }} --build=focused --strategy=timed --route=adaptive \
+                --stage-limit=${{ matrix.limit }} --seeds=${{ matrix.seeds }} --seed-offset=${{ matrix.offset }} \
+                2>&1 | tee "$log"
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then
+                echo "::error::Godot reported a script or runtime error"
+                exit 1
+              fi
+            done
+          done
+          python3 tools/report_identity_tuning.py \
+            ${{ matrix.ship }} ${{ matrix.difficulty }} ${{ matrix.hangar }} ${{ matrix.seeds }} review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve baseline-versus-tuned receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: loadout-tuning-${{ matrix.ship }}-${{ matrix.difficulty }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
