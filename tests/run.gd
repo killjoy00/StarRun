@@ -53,6 +53,7 @@ func _run() -> void:
 	_test_elite_squad_counterplay()
 	_test_ship_pilot_identity_tuning()
 	_test_roguelike_variation()
+	_test_world1_density_and_pilot_identities()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -225,6 +226,78 @@ func _test_ship_pilot_identity_tuning() -> void:
 	check(resumed.restore(engineer.snapshot()) and resumed.snapshot() == engineer.snapshot(), "Engineer shield-powered combat does not need a new save schema")
 
 
+func _test_world1_density_and_pilot_identities() -> void:
+	# First impressions: simultaneous visible threats rather than a late
+	# stream of isolated targets that autopilot clears before they shoot.
+	var normal := Sim.new(8150, {}, "vanguard", "rookie", "normal")
+	var hard := Sim.new(8150, {}, "vanguard", "rookie", "hard")
+	var old_hard_schedule: float = 55.0 + float(8150 % 23)
+	check(normal.next_encounter_at <= 17.0 and is_equal_approx(hard.next_encounter_at, old_hard_schedule), "World 1 Normal opens with a real wing inside 17 seconds without changing Hard's gate")
+	normal.time = normal.next_encounter_at
+	normal._spawn_encounter()
+	check(normal.enemies.size() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
+	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
+	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 strike wings are paid for from scheduled spawn slots")
+	var director := Sim.new(8151, {}, "vanguard", "rookie", "normal")
+	director.time = 8.0
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
+	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
+	var untouched := director.enemies.size()
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")
+	director._spawn_world1_pressure()
+	check(director.enemies.size() == untouched + 1, "Director holds off while two enemies are already visible")
+	var pressure_save := director.snapshot()
+	var pressure_restored := Sim.new()
+	check(pressure_restored.restore(pressure_save) and pressure_restored.snapshot() == pressure_save, "Reinforcement timing and wave state survive exact resume")
+	check(normal.next_spawn > normal.time + 3.0, "Strike wing spends future spawn slots instead of stacking extra kills")
+	hard.time = hard.next_encounter_at
+	hard._spawn_encounter()
+	check(hard.enemies.is_empty() and hard.encounter_queue.size() == 3, "Hard/Insane retain their original staggered formations")
+	var generic := Sim.new(4210, {}, "vanguard", "rookie")
+	check(generic.ace_chain == 0 and generic.hunter_target_id == -1 and not generic.tactician_counter_used, "Vale is the no-frills pilot")
+	var ace := Sim.new(4211, {}, "wraith", "ace")
+	ace.stage = 2
+	for j in range(4):
+		ace._add_enemy("drone", Vector2(200.0 + j * 19.0, 330))
+	for i in range(3):
+		ace._damage_enemy(ace.enemies[i], 1000.0, "seeker")
+	check(ace.events.any(func(e): return "PRECISION CROSSFIRE" in str(e.message)), "Ace chains three fast automatic-weapon kills even without Pulse")
+	check(ace.enemies[3].hp < ace.enemies[3].max_hp, "Ace's precision volley deals real damage to a nearby threat")
+	var interrupted := Sim.new(4212, {}, "vanguard", "ace")
+	interrupted.ace_chain = 2
+	interrupted.ace_chain_left = 0.0
+	interrupted.step()
+	check(interrupted.ace_chain == 0, "Ace's kill streak expires without rapid consecutive kills")
+	var hunter := Sim.new(4213, {}, "vanguard", "hunter")
+	hunter._add_enemy("gunship", Vector2(250, 180))
+	hunter._update_support()
+	check(hunter.hunter_target_id == hunter.enemies[0].id, "Hunter designates actual visible threats")
+	var enemy: Dictionary = hunter.enemies[0]
+	var first: float = enemy.hp
+	hunter._damage_enemy(enemy, 12.0, "pulse")
+	check(enemy.hp <= first - 13.0, "Hunter automatically deals extra damage to the marked target")
+	hunter.shield = 0.0
+	hunter._damage_enemy(enemy, 1000.0, "seeker")
+	check(hunter.shield >= 10.0 and hunter.hunter_target_id == -1, "Hunter's target elimination restores shields and releases the mark")
+	check(hunter.hunter_mark_cooldown >= 10.0, "Hunter's mark payout has a real cooldown; it cannot refill shields on every two-second kill")
+	var nyx := Sim.new(4214, {}, "vanguard", "tactician")
+	check(nyx.activate("aegis") and not nyx.tactician_counter_used, "Tactician cannot earn its one-time counterbattery by blind casting")
+	var counter := Sim.new(4215, {}, "vanguard", "tactician")
+	counter.charges.append({"source":777,"x":250.0,"remaining":0.5,"duration":1.8,"damage":23.0})
+	check(counter.activate("aegis") and counter.tactician_counter_used and counter.events.any(func(e): return "TACTICAL COUNTERBATTERY" in str(e.message)), "A timed ability against a real warning triggers the one-world counterbattery")
+	var saved: Dictionary = counter.snapshot()
+	var restore := Sim.new()
+	check(restore.restore(saved) and restore.snapshot() == saved, "New pilot states survive exact checkpoint restore")
+	counter.stage_transition_queued = true
+	counter.stage_clears = 1
+	check(counter.begin_intermission() and counter.skip_prototype() and counter.choose_route("repair") and counter.advance_stage() and not counter.tactician_counter_used, "Tactician gets a fresh counterbattery only after a successful warp")
+	var old := generic.snapshot()
+	for key in ["ace_chain","ace_chain_left","hunter_target_id","hunter_mark_left","hunter_mark_cooldown","tactician_counter_used"]:
+		old.erase(key)
+	check(Sim.new().restore(old), "Historical 1.3 saves remain compatible with new optional pilot fields")
+
 func _test_roguelike_variation() -> void:
 	var standard := Sim.new(444)
 	var glass := Sim.new(444, {}, "vanguard", "rookie", "normal", "glass_fleet")
@@ -234,6 +307,16 @@ func _test_roguelike_variation() -> void:
 	check(army.upgrades.pulse == 0 and army.upgrades.seeker == 0, "Drone Armada disables conventional starting guns")
 	army._update_support()
 	check(army.escort_count == 3 and army.escort_left > 1000.0, "Drone Armada launches persistent autonomous escorts")
+	army._add_enemy("gunship", Vector2(260,240))
+	army.escort_timer = 0.0
+	army._update_support()
+	check(army.shots.size() == 3 and army.shots.all(func(s): return bool(s.get("homing",false))), "Drone Armada gets three homing support guns instead of aim-and-miss projectiles")
+	var w1_drone_damage: float = float(army.shots[0].damage)
+	army.shots.clear()
+	army.stage = 2
+	army.escort_timer = 0.0
+	army._update_support()
+	check(army.shots.size() == 3 and is_equal_approx(float(army.shots[0].damage), w1_drone_damage * 1.75), "Drone Armada scales into World 2 without making World 1 easier")
 	army._offer_cards(false)
 	check(army.cards.all(func(c): return str(c.tag) not in ["WEAPON", "MUTATION"]), "Drone mode cannot draft unusable conventional weapons")
 	var shift := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")
@@ -314,6 +397,12 @@ func _test_roguelike_variation() -> void:
 	repair.shield = 1.0
 	repair._hit(5.0, "ordnance", "test")
 	check(repair.sentry_left > 5.0 and repair.events.any(func(e): return "FIELD SENTRY" in str(e.message)), "Engineer deploys a temporary offensive sentry on shield break")
+	var maintenance := Sim.new(4519, {}, "vanguard", "engineer")
+	maintenance.time = 26.0
+	maintenance._engineer_service_window()
+	check(maintenance.engineer_service_used and maintenance.sentry_left >= 4.0 and maintenance.pilot_procs.engineer == 1, "Engineer proactively deploys its unique visible turret once per world at healthy shields")
+	maintenance._engineer_service_window()
+	check(maintenance.pilot_procs.engineer == 1, "Engineer cannot repeat the free service window for an unlimited stream of sentries")
 	repair._add_enemy("drone", Vector2(260,250))
 	repair._update_support()
 	check(repair.shots.any(func(s): return str(s.weapon) == "escort" and s.damage > 0.0), "Engineer sentry fires independent offensive shots")
@@ -325,9 +414,13 @@ func _test_roguelike_variation() -> void:
 
 func _test_elite_squad_counterplay() -> void:
 	# Promote existing normal spawn slots, never additional enemies/XP.
-	var opener := Sim.new(7600)
+	var opener := Sim.new(7600, {}, "vanguard", "rookie", "hard")
 	opener._spawn_encounter()
-	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "World 1 never introduces elites or changes its original formation queue")
+	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "Hard World 1 retains its old staggered, non-elite formation queue")
+	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
+	normal_opener.time = normal_opener.next_encounter_at
+	normal_opener._spawn_encounter()
+	check(normal_opener.encounter_queue.is_empty() and normal_opener.enemies.size() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
 	var squad := Sim.new(7600)
 	squad.stage = 2
 	squad._spawn_encounter()

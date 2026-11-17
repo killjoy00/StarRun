@@ -1,0 +1,150 @@
+name: StarRun 1.3 — World 1 and pilot balance
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: world1-pilots-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  opener:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/world1-presence-')
+    name: Empty Hangar before/after - ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Matched-seed World 1 real-combat occupancy, baseline versus candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/starrun-before-world1"
+          git worktree add --detach "$BASELINE" 038849087dfb9701f50d75d6a4288544ea2a147a
+          # Identical standalone observer and controller on both revisions.
+          # Neither baseline nor candidate gets forced kills/equipment.
+          cp tests/world1_presence_probe.gd "$BASELINE/tests/world1_presence_probe.gd"
+          godot --headless --path . --editor --import --quit
+          godot --headless --path "$BASELINE" --editor --import --quit
+          mkdir -p review
+          for version in base new; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$version" == base ]]; then root="$BASELINE"; fi
+            godot --headless --path "$root" --script "$root/tests/world1_presence_probe.gd" -- \
+              --ship=${{ matrix.ship }} --difficulty=normal --seeds=3 --seed-offset=21 \
+              2>&1 | tee "review/$version-normal.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "review/$version-normal.log"; then exit 1; fi
+          done
+          for mode in hard insane; do
+            godot --headless --path . --script tests/world1_presence_probe.gd -- \
+              --ship=${{ matrix.ship }} --difficulty="$mode" --seeds=2 --seed-offset=4 \
+              2>&1 | tee "review/$mode.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "review/$mode.log"; then exit 1; fi
+          done
+          python3 tools/report_world1_presence.py review/base-normal.log review/new-normal.log \
+            > review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+          grep 'WORLD1_PROBE ' review/hard.log review/insane.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve matched-seed data and summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: world1-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  artifacts:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/world1-presence-')
+    name: Artifact modes - ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, wraith, arcwing]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Equal-seed artifact and empty progression audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          for artifact in standard glass_fleet arsenal_roulette drone_armada; do
+            for spec in normal:mid:2 hard:max:1 insane:max:1; do
+              IFS=: read -r difficulty hangar seeds <<< "$spec"
+              log="review/$artifact-$difficulty.log"
+              godot --headless --path . --script tests/balance_matrix.gd -- \
+                --ship=${{ matrix.ship }} --pilot=rookie \
+                --difficulty="$difficulty" --hangar="$hangar" --build=focused \
+                --strategy=timed --route=adaptive --stage-limit=2 \
+                --artifact="$artifact" --seeds="$seeds" --seed-offset=17 \
+                2>&1 | tee "$log"
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then exit 1; fi
+            done
+          done
+          grep 'BALANCE_MATRIX ' review/*.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve artifact reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  pilots:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/world1-presence-')
+    name: Six pilots - ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Matched-seed six-pilot Normal and Hard grid
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          for pilot in rookie ace engineer hunter scavenger tactician; do
+            for spec in normal:mid:2:2 hard:max:1:1 insane:max:1:1; do
+              IFS=: read -r difficulty hangar seeds limit <<< "$spec"
+              log="review/$pilot-$difficulty.log"
+              godot --headless --path . --script tests/balance_matrix.gd -- \
+                --ship=${{ matrix.ship }} --pilot="$pilot" \
+                --difficulty="$difficulty" --hangar="$hangar" \
+                --build=focused --strategy=timed --route=adaptive \
+                --artifact=standard --stage-limit="$limit" \
+                --seeds="$seeds" --seed-offset=4 \
+                2>&1 | tee "$log"
+              if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|GDScript backtrace' "$log"; then exit 1; fi
+            done
+          done
+          grep 'BALANCE_MATRIX ' review/*.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve all six pilots per ship
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilots-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore

@@ -432,6 +432,13 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(80,78), sim.boss_phase_label(), HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
 	else:
 		var elite_role: String = str(enemy.get("elite_role", ""))
+		# Normal World 1 strike wings share a cyan chevron, distinct from
+		# later amber elite-leader priority markers.
+		if bool(enemy.get("strike_wing", false)) and p.y >= 0.0 and p.y <= 885.0:
+			draw_arc(p, 37.0, PI * 1.12, PI * 1.88, 20, Color(CYAN, 0.80), 2.2, true)
+		if sim.pilot_id == "hunter" and int(enemy.id) == sim.hunter_target_id and sim.hunter_mark_left > 0.0 and p.y >= 0.0 and p.y <= 885.0:
+			draw_arc(p, 48.0, 0.0, TAU, 32, Color("ffb96e"), 2.8, true)
+			draw_string(ThemeDB.fallback_font, p + Vector2(-26,-60), "HUNT", HORIZONTAL_ALIGNMENT_LEFT, 78, 13, AMBER)
 		if elite_role == "leader" and p.y >= 0.0 and p.y <= 885.0:
 			# A distinctive amber target ring and literal label make it
 			# obvious who powers the squad even at reduced effects / 3x.
