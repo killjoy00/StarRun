@@ -18,6 +18,7 @@ func _run() -> void:
 	_test_course()
 	_test_defenses()
 	_test_interrupts_and_priority()
+	_test_lance_fire_reliability()
 	_test_draft_and_cooldowns()
 	_test_resume()
 	_test_saves()
@@ -200,6 +201,33 @@ func _test_interrupts_and_priority() -> void:
 	check(sim.enemies[0].hp == 200.0, "Aegis capstone must not reflect before a beam lands")
 	sim._update_charges()
 	check(sim.enemies[0].hp == 140.0 and sim.prevented == 35.0, "Aegis capstone must reflect a blocked heavy beam")
+
+func _test_lance_fire_reliability() -> void:
+	# A mine or Aegis reflection can kill the last enemy before the weapon
+	# pass. Its dead dictionary remains in enemies until _update_shots().
+	var sim := Sim.new(16401)
+	sim.upgrades.lance = 1
+	sim.enemies = [{"id": 81, "kind": "drone", "p": Vector2(450, 310), "hp": 0.0, "max_hp": 20.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0}]
+	sim.lance_timer = 0.0
+	sim._update_weapons()
+	check(sim.lance_timer <= 0.0 and not sim.effects.any(func(e): return e.kind == "lance"), "Prism lance must not waste its cooldown on an already-killed target")
+
+	# The next available living enemy should receive the strike immediately;
+	# a stale charge from a dead source must never steal targeting priority.
+	sim.enemies.append({"id": 82, "kind": "drone", "p": Vector2(270, 400), "hp": 100.0, "max_hp": 100.0, "speed": 0.0, "fire": 99.0, "xp": 0, "phase": 0.0})
+	sim.charges = [{"source": 81, "x": 450.0, "remaining": 0.8, "duration": 1.8, "damage": 20.0}]
+	sim._update_weapons()
+	var beams: Array = sim.effects.filter(func(e): return e.kind == "lance")
+	check(beams.size() == 1 and sim.lance_timer > 0.0 and float(sim.damage_dealt.lance) > 0.0 and sim.enemies[1].hp < 100.0, "Prism lance must fire and hit the first living target after a dead-only frame")
+	if not beams.is_empty():
+		check(absf(float(beams[0].to.x) - 270.0) < 1.0, "Prism lance must not aim at a dead charging source")
+		check(float(beams[0].max_life) >= 0.60, "Prism lance effect must remain readable at 3x speed")
+		var before_damage: float = float(sim.damage_dealt.lance)
+		sim._update_weapons()
+		check(is_equal_approx(float(sim.damage_dealt.lance), before_damage) and sim.effects.filter(func(e): return e.kind == "lance").size() == 1, "A single lance burst must deal damage only once until the next cooldown")
+		for frame in range(27):
+			sim.step()
+		check(sim.effects.any(func(e): return e.kind == "lance"), "Prism lance shot must still be visible after 0.15 real seconds at 3x")
 
 func _test_draft_and_cooldowns() -> void:
 	var sim := Sim.new()
