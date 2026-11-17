@@ -324,6 +324,19 @@ func boss_projectile_rate_multiplier() -> float:
 	# separately telegraphed heavy beams or timed minion launch cycles.
 	return 1.25 if difficulty == "insane" else 1.0
 
+func projectile_interval_factor(kind: String) -> float:
+	# v1.1: a little more *ordinary gunfire*, with the bigger increase in
+	# the relatively quiet first world. Higher worlds already have a stage
+	# fire-rate multiplier. Do not create extra XP-bearing minions, extra
+	# mine/slag hazards, or shorten the heavy-beam warning/interval.
+	if kind in ["carrier", "echo_carrier", "minelayer", "slag_bomber"]:
+		return 1.0
+	if kind.begins_with("boss"):
+		return 0.95  # ~5% more boss projectile fans
+	if kind == "missile_bomber":
+		return 0.96  # Ordnance is harder to clear than ordinary shots
+	return 0.92 if stage == 1 else 0.94  # ~9% W1, ~6% W2+
+
 # Harvester pressure rises during a prolonged opening boss fight on the
 # progression difficulties. It is independent of Hangar state, does not
 # create extra enemies or XP, and leaves Normal untouched. Faster builds
@@ -905,12 +918,12 @@ func _update_enemies() -> void:
 				enemy.fire = 0.5
 				continue
 			if kind.begins_with("boss"):
-				enemy.fire = (2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) / boss_projectile_rate_multiplier()
+				enemy.fire = ((2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) / boss_projectile_rate_multiplier()) * projectile_interval_factor(kind)
 			else:
 				# Carrier attacks also launch minions; do not accelerate their
 				# launch cycle and accidentally create more XP on Insane.
 				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
-				enemy.fire = float(content.enemies[kind].interval) / attack_scale
+				enemy.fire = (float(content.enemies[kind].interval) / attack_scale) * projectile_interval_factor(kind)
 			# More shots late in World 1, without granting additional enemy XP.
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
@@ -1372,8 +1385,15 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var is_boss: bool = str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"]
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
+	for charge in charges:
+		if int(charge.source) == int(enemy.id):
+			# Explain why a heavy-beam warning vanishes when its emitter dies.
+			# The playfield holds the cue in real time even at 3x game speed.
+			effects.append({"kind":"beam-canceled", "p":enemy.p, "x":float(charge.x), "source":int(enemy.id), "reason":"source", "life":1.0, "max_life":1.0, "born":tick})
 	charges = charges.filter(func(c): return c.source != enemy.id)
 	beams_cancelled += before - charges.size()
+	if charges.size() < before:
+		_log("Beam canceled - charging enemy destroyed")
 	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
