@@ -1,7 +1,8 @@
 name: Five-part StarRun balance comparison
+# Completed one-time route, progression and fusion study is preserved in
+# PR #35's Actions run. Keep reruns available manually without charging every
+# unrelated gameplay PR for 78 additional fully simulated campaigns.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +12,7 @@ concurrency:
 
 jobs:
   compare:
-    if: startsWith(github.head_ref, 'codex/starrun-five-part-')
+    if: github.event_name == 'workflow_dispatch'
     name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.route }}
     runs-on: ubuntu-latest
     timeout-minutes: 50
@@ -76,7 +77,7 @@ jobs:
           retention-days: 30
 
   no_hangar_gate:
-    if: startsWith(github.head_ref, 'codex/starrun-five-part-')
+    if: github.event_name == 'workflow_dispatch'
     name: No-Hangar World 1 / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest
     timeout-minutes: 35
