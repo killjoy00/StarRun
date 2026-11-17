@@ -94,6 +94,10 @@ func _run() -> void:
 				var route_focus10 := 0
 				var route_triggers := 0
 				var route_pristine_seconds := 0.0
+				var route_overlap_seconds := 0.0
+				var route_unanswered_seconds := 0.0
+				var route_boss_seconds := 0.0
+				var route_boss_clears := 0
 				for seed_index in range(seeds):
 					var seed := 810000 + (seed_offset + seed_index + 1) * 7919
 					var result: Dictionary = _trial(seed, ship_id, difficulty, strategy, build_style, hangar_style, pilot_id, route_policy, stage_limit)
@@ -118,6 +122,12 @@ func _run() -> void:
 					route_focus10 += int(result.focus10)
 					route_triggers += int(result.shieldstorm_trigger_worlds)
 					route_pristine_seconds += float(result.pristine_focus_seconds)
+					route_overlap_seconds += float(result.overlap_seconds)
+					route_unanswered_seconds += float(result.unanswered_overlap_seconds)
+					for stage_report in result.stages:
+						if str(stage_report.status) == "cleared" and bool(stage_report.boss_spawned):
+							route_boss_seconds += float(stage_report.boss_seconds)
+							route_boss_clears += 1
 					timeouts += int(result.timeout)
 					casts += int(result.casts)
 					hull += float(result.hull)
@@ -132,7 +142,11 @@ func _run() -> void:
 					"timeouts":timeouts, "casts":casts,
 					"mean_final_hull":snappedf(hull / seeds, 0.1),
 					"shieldstorm_runs":route_shieldstorm,"focus5_runs":route_focus5,"focus10_runs":route_focus10,"shieldstorm_trigger_worlds":route_triggers,
-					"pristine_focus_seconds":snappedf(route_pristine_seconds,0.1)
+					"pristine_focus_seconds":snappedf(route_pristine_seconds,0.1),
+					"overlap_seconds":snappedf(route_overlap_seconds,0.1),
+					"unanswered_overlap_seconds":snappedf(route_unanswered_seconds,0.1),
+					"mean_cleared_boss_seconds":snappedf(route_boss_seconds / maxf(1.0, float(route_boss_clears)), 0.1),
+					"bosses_cleared":route_boss_clears
 				}))
 	print("BALANCE_MATRIX_SUMMARY ", JSON.stringify({
 		"cells":cells, "seeds_per_cell":seeds, "trials":trials, "faults":faults, "world1_clears":world1_clears, "stage_limit":stage_limit, "campaign_wins":campaign_wins, "build":build_style, "hangar":hangar_style, "route":route_policy,
@@ -153,6 +167,8 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	var routes: Array = []
 	var status := "dead"
 	var pristine_focus_seconds := 0.0
+	var overlap_seconds := 0.0
+	var unanswered_overlap_seconds := 0.0
 	for _frame in range(4 * 60 * 600):
 		if sim.ended:
 			status = "won" if sim.won else "dead"
@@ -187,6 +203,12 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			_pick_upgrade(sim, build_style)
 			continue
 		_cast(sim, strategy)
+		# Sample every 0.2s: are bullet and heavy-beam warnings competing
+		# for a defensive action that is currently unavailable?
+		if sim.tick % 12 == 0 and _danger_overlap(sim):
+			overlap_seconds += 12.0 * Sim.DT
+			if not _ready_overlap_counter(sim):
+				unanswered_overlap_seconds += 12.0 * Sim.DT
 		# Measure actual uptime, not just whether the rank was purchased.
 		if sim.stage >= 2 and sim.rank_at("shield_focus", 5) and sim.hull >= sim.max_hull - 0.01:
 			pristine_focus_seconds += Sim.DT
@@ -205,8 +227,36 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		"focus5":sim.rank_at("shield_focus",5), "focus10":sim.rank_at("shield_focus",10),
 		"shieldstorm_trigger_worlds":stage_reports.filter(func(report): return bool(report.shieldstorm_triggered)).size(),
 		"pristine_focus_seconds":snappedf(pristine_focus_seconds,0.1),
+		"overlap_seconds":snappedf(overlap_seconds,0.1),
+		"unanswered_overlap_seconds":snappedf(unanswered_overlap_seconds,0.1),
 		"final":{"level":sim.level,"kills":sim.kills,"status":status, "build":build_style}
 	}
+
+# Count only overlapping threats aimed near the autopilot's future lane.
+# This is a diagnostic, not a forced counter or a source of bonus damage.
+func _danger_overlap(sim: RefCounted) -> bool:
+	var beam_relevant := false
+	for charge in sim.charges:
+		var remaining: float = float(charge.remaining)
+		if remaining > 0.0 and remaining <= 0.8 and absf(sim.ship_position(sim.time + remaining).x - float(charge.x)) < 45.0:
+			beam_relevant = true
+			break
+	if not beam_relevant:
+		return false
+	var predicted: Vector2 = sim.ship_position(sim.time + 0.4)
+	for bullet in sim.bullets:
+		if (bullet.p + bullet.v * 0.4).distance_squared_to(predicted) < 90.0 * 90.0:
+			return true
+	return false
+
+func _ready_overlap_counter(sim: RefCounted) -> bool:
+	if sim.aegis_left > 0.0:
+		return true
+	for active_id in sim.active_slots:
+		if str(active_id) in ["aegis", "nova", "emp", "jammer", "flak", "capacitor", "shieldstorm", "nova_aegis", "stasis_lock", "ghost_signal"] and float(sim.cooldowns.get(str(active_id), 999.0)) <= 0.0:
+			return true
+	return false
+
 
 func _pick_upgrade(sim: RefCounted, build_style: String = "baseline") -> void:
 	if build_style == "focused":
@@ -457,6 +507,7 @@ func _stage_report(sim: RefCounted, status: String) -> Dictionary:
 		tail_events.append(str(sim.events[idx].message))
 	return {
 		"stage":int(sim.stage), "status":status, "elapsed":snappedf(float(sim.time-sim.stage_start),0.1),
+		"boss_seconds":snappedf(maxf(0.0, float(sim.time - sim.boss_spawn_time)), 0.1) if sim.boss_spawned else 0.0,
 		"hull":snappedf(float(sim.hull),0.1),"max_hull":snappedf(float(sim.max_hull),0.1),
 		"shield":snappedf(float(sim.shield),0.1),"level":int(sim.level),
 		"shieldstorm_triggered":bool(sim.shieldstorm_pulse_used),

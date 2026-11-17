@@ -111,6 +111,8 @@ var ability_uses := 0
 var prevented := 0.0
 var beams_fired := 0
 var beams_cancelled := 0
+# Stacked heavy-beam damage in one physics frame offers no extra input window.
+var last_heavy_hit_tick := -1
 var meta := Catalog.defaults()
 
 func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal") -> void:
@@ -260,7 +262,9 @@ func step() -> void:
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
-	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * 0.15 + (0.25 if ship_id == "haven" else 0.0)
+	# Rank 2 of the permanent Hangar repair line is a meaningful milestone.
+	# No-Hangar Hard/Insane progression gates remain completely unchanged.
+	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * (0.20 if meta.repair >= 2 else 0.15) + (0.25 if ship_id == "haven" else 0.0)
 	if rank_at("repair_bots", 5): repair_rate += 0.35
 	if rank_at("repair_bots", 10): repair_rate += 0.70
 	if passive_link_active("field_recovery"): repair_rate *= 1.40
@@ -268,7 +272,7 @@ func step() -> void:
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
-		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * 0.25 + (0.8 if pilot_id == "engineer" else 0.0)) * DT
+		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * (0.30 if meta.regen >= 2 else 0.25) + (0.8 if pilot_id == "engineer" else 0.0)) * DT
 		if rank_at("regen", 5): recharge += 0.55 * DT
 		if rank_at("regen", 10): recharge += 1.0 * DT
 		if passive_link_active("shield_cycle"): recharge *= 1.40
@@ -1427,6 +1431,14 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		effects.append({"kind": "shield-hit", "p": ship_position(), "life": 0.16, "max_life": 0.16, "born": tick})
 		return
 	var reduced := amount * stage_risk * stage_defense
+	# Simultaneous boss4 heavy lanes can both hit an autopiloted ship on a
+	# single simulation frame. Leave the first full-strength and cap the
+	# second to 35%, without shortening charge telegraphs or changing Aegis.
+	if kind == "heavy":
+		if tick == last_heavy_hit_tick:
+			reduced *= 0.35
+			_log("Overlapping heavy beams - secondary impact reduced")
+		last_heavy_hit_tick = tick
 	# Haven's support chassis resists damaging status rounds, which dominate
 	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
 	if kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
@@ -1519,7 +1531,7 @@ func activate(ability: String) -> bool:
 	if ability == "aegis":
 		# A well-read telegraph earns a small resource rebate; blind cooldown
 		# casts still give normal short-lived immunity without the bonus.
-		var imminent := charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.7)
+		var imminent := charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.7 and absf(ship_position(time + float(c.remaining)).x - float(c.x)) < 43.0)
 		if not imminent:
 			var near_ship: Vector2 = ship_position(time + 0.30)
 			for bullet in bullets:
@@ -1527,8 +1539,8 @@ func activate(ability: String) -> bool:
 					imminent = true
 					break
 		if imminent:
-			shield = minf(max_shield, shield + 10.0 * effect_strength)
-			cooldowns[ability] *= 0.80
+			shield = minf(max_shield, shield + (18.0 if stage >= 2 else 14.0) * effect_strength)
+			cooldowns[ability] *= 0.75
 			cooldown_totals[ability] = cooldowns[ability]
 			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
 			_log("Aegis precision counter - shields restored")
@@ -1577,7 +1589,9 @@ func activate(ability: String) -> bool:
 		bullets = bullets.filter(func(b): return b.kind not in ["ordnance", "mine", "slag"])
 		prevented += stopped * 12.0
 		if stopped > 0 and close_call:
-			shield = minf(max_shield, shield + (12.0 if stage >= 2 else 8.0) * effect_strength)
+			shield = minf(max_shield, shield + (16.0 if stage >= 2 else 10.0) * effect_strength)
+			cooldowns[ability] *= 0.90
+			cooldown_totals[ability] = cooldowns[ability]
 			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
 			_log("Flak close-call intercept - shield restored")
 		for enemy in enemies:
@@ -1636,11 +1650,12 @@ func activate(ability: String) -> bool:
 		jammer_left = (5.0 + upgrades.jammer * 0.5) * effect_strength
 		# The regular cast suppresses future charges. A cast during the visible
 		# final 1.5s of a beam charge also interrupts it and earns a cooldown rebate.
+		var precise_interrupt := charges.any(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 0.9)
 		var interrupted := charges.filter(func(c): return float(c.remaining) > 0.0 and float(c.remaining) <= 1.5).size()
 		if interrupted > 0:
 			charges = charges.filter(func(c): return float(c.remaining) > 1.5)
 			beams_cancelled += interrupted
-			cooldowns[ability] *= 0.80
+			cooldowns[ability] *= (0.70 if precise_interrupt else 0.90)
 			cooldown_totals[ability] = cooldowns[ability]
 			effects.append({"kind":"timed-counter", "p":ship_position(), "life":0.65, "max_life":0.65, "born":tick})
 			_log("Signal jammer interrupted %d charging beam(s)" % interrupted)
@@ -1836,7 +1851,28 @@ func _offer_cards(consume_level: bool = true) -> void:
 		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and (not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty()))
 		var partners := learnable.filter(func(c): return not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty())
 		if not has_partner and not partners.is_empty():
-			cards[0] = partners[rng.randi_range(0, partners.size() - 1)]
+			var options: Array = partners.filter(func(p): return not cards.any(func(c): return c.id == p.id))
+			if not options.is_empty():
+				cards[0] = options[rng.randi_range(0, options.size() - 1)]
+	# Once an active is invested to rank 3, occasionally surface its
+	# still-missing fusion partner as a *choice*, not a free installation.
+	# Preserve the free-slot, banish, and max-rank rules from the actual pool.
+	if level >= 4 and level % 3 == 0 and active_slots.size() < Catalog.ACTIVE_SLOTS and not cards.is_empty():
+		var missing_partners: Array = []
+		for fusion in content.fusions:
+			var first: String = str(fusion.parts[0])
+			var second: String = str(fusion.parts[1])
+			var candidate := ""
+			if first in active_slots and int(upgrades[first]) >= 3 and second not in active_slots:
+				candidate = second
+			elif second in active_slots and int(upgrades[second]) >= 3 and first not in active_slots:
+				candidate = first
+			if not candidate.is_empty():
+				for option in pool:
+					if str(option.id) == candidate and not cards.any(func(c): return str(c.id) == candidate):
+						missing_partners.append(option)
+		if not missing_partners.is_empty():
+			cards[cards.size() - 1] = missing_partners[rng.randi_range(0, missing_partners.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
 		var has_defense := false
 		for card in cards:
@@ -1940,7 +1976,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
