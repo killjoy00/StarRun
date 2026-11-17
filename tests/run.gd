@@ -414,9 +414,13 @@ func _test_roguelike_variation() -> void:
 
 func _test_elite_squad_counterplay() -> void:
 	# Promote existing normal spawn slots, never additional enemies/XP.
-	var opener := Sim.new(7600)
+	var opener := Sim.new(7600, {}, "vanguard", "rookie", "hard")
 	opener._spawn_encounter()
-	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "World 1 never introduces elites or changes its original formation queue")
+	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "Hard World 1 retains its old staggered, non-elite formation queue")
+	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
+	normal_opener.time = normal_opener.next_encounter_at
+	normal_opener._spawn_encounter()
+	check(normal_opener.encounter_queue.is_empty() and normal_opener.enemies.size() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
 	var squad := Sim.new(7600)
 	squad.stage = 2
 	squad._spawn_encounter()
