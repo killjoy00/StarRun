@@ -16,7 +16,7 @@ change.
 
 | World | Normal boss HP vs 1.1 | Hard boss HP vs 1.1 | Insane boss HP vs 1.1 |
 | --- | ---: | ---: | ---: |
-| 1, Harvester | ×1.10 | ×1.12 | ×1.12 |
+| 1, Harvester | ×1.10 | ×1.12 | ×1.35 |
 | 2, Storm Carrier | ×1.18 | ×1.34 | ×1.55 |
 | 3, Crucible Engine | ×1.30 | ×1.55 | ×1.85 |
 | 4, Void Regent | ×1.30 | ×1.55 | ×1.85 |
@@ -24,7 +24,7 @@ change.
 The boss-specific **increment** on Hard/Insane is bigger than the increment
 for the ordinary enemy. In particular, previous Harvester Hard/Insane HP was
 already raised substantially; this revision does not repeat that full jump
-at the opening boss. Stage 2 maintains the existing World-1-to-2 boss-HP
+at the opening boss, while Insane gets a larger increase to overcome the legacy World-1 Hard-to-Insane scaling inversion. Stage 2 maintains the existing World-1-to-2 boss-HP
 bridge. Endless uses the same World-3+ additional multiplier without
 changing the authored endless growth curve.
 
