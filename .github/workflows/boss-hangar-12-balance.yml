@@ -1,7 +1,8 @@
 name: StarRun 1.2 boss and Hangar paired review
+# The first 1.2 matched study completed on PR #37 (Actions #44007759643).
+# Retain the reproducible study for manual reruns without running dozens of
+# four-world campaigns on unrelated future pull requests or test-only fixes.
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -11,7 +12,7 @@ concurrency:
 
 jobs:
   paired:
-    if: startsWith(github.head_ref, 'codex/starrun-boss-hardness-hangar-')
+    if: github.event_name == 'workflow_dispatch'
     name: ${{ matrix.ship }} / ${{ matrix.difficulty }} / ${{ matrix.hangar }} / ${{ matrix.route }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
