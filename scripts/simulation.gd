@@ -49,6 +49,13 @@ var stage_start := 0.0
 var stage_clears := 0
 var stage_transition_queued := false
 var active_slots: Array = []
+# Fresh regular flights offer player-selected evolution and fusion decisions.
+# Existing suspended flights opt out if their checkpoint lacks the flag.
+var build_choices_active := true
+var weapon_evolutions: Dictionary = {}
+var pending_build_choices: Array = []
+var fusion_declined: Array = []
+var evolution_lifeline_tick := -1
 var ship_id := "vanguard"
 var pilot_id := "rookie"
 var artifact_id := "standard"
@@ -884,25 +891,103 @@ func fusion_hint(id: String) -> String:
 	var spec := fusion_spec(target)
 	return str(spec.name) + ": " + str(spec.description) + " (frees one slot)"
 
+func _new_build_decisions() -> bool:
+	return build_choices_active and stage >= 2 and daily_day.is_empty() and artifact_id != "drone_armada"
+
+func evolution_id(weapon: String) -> String:
+	return str(weapon_evolutions.get(weapon, "")) if _new_build_decisions() else ""
+
+func _queue_weapon_evolutions() -> void:
+	if not _new_build_decisions():
+		return
+	for weapon in ["pulse", "seeker", "arc", "lance"]:
+		if int(upgrades.get(weapon, 0)) < 5 or weapon_evolutions.has(weapon):
+			continue
+		if not pending_build_choices.any(func(c): return str(c.kind) == "evolution" and str(c.id) == weapon):
+			pending_build_choices.append({"kind":"evolution", "id":weapon})
+
+func _fusion_is_eligible(id: String) -> bool:
+	var spec: Dictionary = fusion_spec(id)
+	return not spec.is_empty() and str(spec.parts[0]) in active_slots and str(spec.parts[1]) in active_slots and int(upgrades[str(spec.parts[0])]) >= FUSION_RANK and int(upgrades[str(spec.parts[1])]) >= FUSION_RANK
+
+func _commit_fusion(id: String) -> bool:
+	if not _fusion_is_eligible(id):
+		return false
+	var spec: Dictionary = fusion_spec(id)
+	var first: String = str(spec.parts[0])
+	var second: String = str(spec.parts[1])
+	var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
+	var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
+	active_slots.erase(first)
+	active_slots.erase(second)
+	active_slots.insert(insert_at, id)
+	upgrades[id] = 1
+	cooldowns[id] = current_cd
+	effects.append({"kind":"fusion-formed", "fusion":id, "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
+	_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(spec.name) + ". One slot freed.")
+	return true
+
+func resolve_build_choice(value: String) -> bool:
+	if pending_build_choices.is_empty():
+		return false
+	var choice: Dictionary = pending_build_choices[0]
+	var id: String = str(choice.id)
+	if str(choice.kind) == "evolution":
+		if weapon_evolutions.has(id) or not content.weapon_evolutions.has(id):
+			return false
+		var options: Array = content.weapon_evolutions[id]
+		if not options.any(func(o): return str(o.id) == value):
+			return false
+		weapon_evolutions[id] = value
+		for option in options:
+			if str(option.id) == value:
+				_log(str(option.name) + " evolution installed on " + id.capitalize())
+		effects.append({"kind":"engine-online", "engine":"evolution_" + id, "p":ship_position(), "life":0.85, "max_life":0.85, "born":tick})
+	elif str(choice.kind) == "fusion":
+		if value == "keep":
+			if id not in fusion_declined:
+				fusion_declined.append(id)
+			_log("Kept separate abilities instead of " + str(fusion_spec(id).get("name", id)))
+		elif value == "fuse":
+			if not _commit_fusion(id):
+				return false
+		else:
+			return false
+	else:
+		return false
+	pending_build_choices.pop_front()
+	return true
+
+# Noninteractive simulation clients use a reproducible default when the next
+# step begins. The real UI intercepts the queued decision before that step.
+func _auto_resolve_build_choices() -> void:
+	while not pending_build_choices.is_empty():
+		var choice: Dictionary = pending_build_choices[0]
+		var answer := "fuse"
+		if str(choice.kind) == "evolution":
+			var weapon: String = str(choice.id)
+			answer = str(content.weapon_evolutions[weapon][0].id)
+			if (weapon == "pulse" and pilot_id not in ["ace", "rookie"]) or (weapon == "seeker" and pilot_id == "engineer") or (weapon == "arc" and ship_id == "arcwing") or (weapon == "lance" and pilot_id == "engineer"):
+				answer = str(content.weapon_evolutions[weapon][1].id)
+		if not resolve_build_choice(answer):
+			break
+
 func _can_learn_active(_id: String) -> bool:
 	# New actives start at rank 1, so none can bypass a full bar by fusing.
 	return active_slots.size() < Catalog.ACTIVE_SLOTS
 
 func _try_fuse() -> void:
 	for fusion in content.fusions:
-		var first: String = str(fusion.parts[0])
-		var second: String = str(fusion.parts[1])
-		if first not in active_slots or second not in active_slots or int(upgrades[first]) < FUSION_RANK or int(upgrades[second]) < FUSION_RANK:
+		var id: String = str(fusion.id)
+		if not _fusion_is_eligible(id):
 			continue
-		var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
-		var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
-		active_slots.erase(first)
-		active_slots.erase(second)
-		active_slots.insert(insert_at, str(fusion.id))
-		upgrades[str(fusion.id)] = 1
-		cooldowns[str(fusion.id)] = current_cd
-		effects.append({"kind":"fusion-formed", "fusion":str(fusion.id), "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
-		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
+		if _new_build_decisions():
+			# One offer only. Keeping two separate actives is a valid build.
+			if id not in fusion_declined and not pending_build_choices.any(func(c): return str(c.kind) == "fusion" and str(c.id) == id):
+				pending_build_choices.append({"kind":"fusion", "id":id})
+		else:
+			# W1, published Dailies, and pre-overhaul saves keep auto-fusion.
+			_commit_fusion(id)
 
 # Every engine is earned in regular Worlds 2+ only. The published Daily,
 # World 1 opener, old saves and no-Hangar difficulty gates are unchanged.
