@@ -801,7 +801,7 @@ func _test_world1_mutations_and_merchant() -> void:
 	check(visitor.mutations.is_empty() and is_equal_approx(visitor.max_shield,before_shield), "Preview is reversible and has no economic side effects")
 	var confirmed: Dictionary = visitor.snapshot()
 	check(Sim.new().restore(confirmed), "A pending irreversible offer resumes at confirmation without redrawing inventory")
-	check(visitor.merchant_accept() and visitor.merchant_trade_count == 1 and visitor.mutations.size() == 1 and visitor.merchant_state.is_empty(), "A confirmed exotic trade modifies the existing run exactly once")
+	check(visitor.merchant_accept() and visitor.merchant_trade_count == 1 and visitor.mutations.size() == 1 and visitor.merchant_state == "receipt", "A confirmed exotic trade changes the flight once and persists its receipt")
 	check(visitor.max_hull < before_hull or visitor.max_shield < before_shield, "Merchant mutation always charges its explicit hull/shield sacrifice")
 	check(not visitor.merchant_accept() and not visitor._try_merchant_signal(), "Completed merchant trades cannot repeat or reroll the same stage")
 	var declined := Sim.new(61122)
