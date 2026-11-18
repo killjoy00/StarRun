@@ -249,9 +249,10 @@ func _test_hidden_archive() -> void:
 	arrival.time = arrival.archive_next_attack
 	arrival._update_archive_attack()
 	check(arrival.archive_attack == "lattice", "Second phase telegraphs converging projectile fire")
+	var lattice_bullets_before: int = arrival.bullets.size()
 	arrival.time = arrival.archive_attack_until
 	arrival._update_archive_attack()
-	check(arrival.bullets.size() == 2 * sector.LATTICE_PROJECTILES_PER_SIDE, "Unanswered lattice fires both strengthened projectile fans")
+	check(arrival.bullets.size() - lattice_bullets_before == 2 * sector.LATTICE_PROJECTILES_PER_SIDE, "Unanswered lattice adds both strengthened projectile fans without erasing a phase surge")
 	check(is_equal_approx(arrival.archive_exposed_until - arrival.time, sector.UNANSWERED_EXPOSURE_SECONDS), "Missing a telegraph produces a shorter opening than a counter")
 	core = arrival._boss_core()
 	arrival._damage_enemy(core, 9999999.0, "nova")
