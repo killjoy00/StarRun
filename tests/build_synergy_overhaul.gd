@@ -175,5 +175,38 @@ func _run() -> void:
 	for i in range(6):
 		no_cast._damage_enemy(ship_target, 20.0, "pulse")
 	check(no_cast.ability_uses == 0 and ship_target.hp < ship_target.max_hp, "Specialization has real payoff without any manual ability cast")
+	var overlap := _sim(912019)
+	overlap.active_slots = ["aegis", "nova", "flak"]
+	for id in overlap.active_slots:
+		overlap.upgrades[id] = 5
+	overlap._try_fuse()
+	check(overlap.pending_build_choices.size() == 2, "Two candidate fusions may share one earned ability")
+	check(overlap.resolve_build_choice("fuse") and overlap.pending_build_choices.is_empty(), "Fusing one recipe discards a now-impossible overlapping second offer")
+	check(overlap.active_slots.size() == 2 and "nova_aegis" in overlap.active_slots, "Overlapping fusion resolves once, preserving the unrelated third ability")
+	var automatic := _sim(912020, "pulse")
+	automatic._queue_weapon_evolutions()
+	check(automatic.pending_build_choices.size() == 1, "Scripted-client fallback starts with a real queued choice")
+	automatic.step()
+	check(automatic.pending_build_choices.is_empty() and automatic.weapon_evolutions.has("pulse"), "Headless no-cast simulation chooses a deterministic default instead of stalling")
+	var quiet_interceptor := _sim(912021, "seeker", "interceptor")
+	var quiet_target: Dictionary = _enemy(quiet_interceptor)
+	quiet_interceptor._damage_enemy(quiet_target, 15.0, "seeker")
+	check(float(quiet_target.get("evo_intercept_ready", 0.0)) == 0.0, "Interceptor does not waste its cooldown on targets without a charged attack")
+	quiet_interceptor.charges.append({"source":int(quiet_target.id), "x":270.0, "remaining":0.75, "duration":1.6, "damage":26.0})
+	quiet_interceptor._damage_enemy(quiet_target, 15.0, "seeker")
+	check(quiet_interceptor.charges.is_empty() and quiet_interceptor.beams_cancelled == 1, "Interceptor interrupts a later genuine charging enemy")
+	var engineer := _sim(912022)
+	engineer.pilot_id = "engineer"
+	var rookie := _sim(912022)
+	for player in [engineer, rookie]:
+		player.upgrades.shield = 5
+		player.upgrades.regen = 2
+		player.upgrades.shield_focus = 2
+		_enemy(player)
+	for i in range(440):
+		engineer._update_build_engines()
+		rookie._update_build_engines()
+	check(int(engineer.engine_procs.fortress_reactor) > int(rookie.engine_procs.fortress_reactor), "Engineer gets a modest earlier defensive-engine payoff, not a universal stat multiplier")
+	check(engineer.ability_uses == 0 and rookie.ability_uses == 0, "Pilot-driven engine identity still requires no manual cast")
 	print("BUILD_OVERHAUL_RESULT %d checks, %d failures" % [checks, failures])
 	quit(0 if failures == 0 else 1)
