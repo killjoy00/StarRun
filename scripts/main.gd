@@ -95,6 +95,11 @@ var result_new_best := false
 var result_rival_news: Dictionary = {}
 var rival_stinger_clock := 0.0
 var opening_last_phase := ""
+# Restrained one-shot audio/haptic responses to meaningful build payoffs.
+var spectacle_audio_wait := 0.0
+var spectacle_audio_seen := {}
+var spectacle_audio_order: Array = []
+var spectacle_audio_run: RefCounted
 var game_center := GameCenterBridge.new()
 var daily_share_service: Object = null
 var pending_share_text := ""
@@ -1760,10 +1765,12 @@ func _draft_card(parent: Node, i: int) -> void:
 	Kit.label(info, str(fused.description) if not fusion.is_empty() else str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
 		Kit.label(info, "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank], 15, Kit.VIOLET, true)
-	elif current < 10 and (reaches_milestone or (not _compact_ui() and tag in ["WEAPON", "SYSTEM", "ABILITY"])):
+	elif reaches_milestone:
+		# Don't repeat distant rank descriptions on every ordinary card.
+		# Only a breakpoint reached by THIS pick needs an extra text line.
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
-			Kit.label(info, ("Now: %s" % reward) if reaches_milestone else ("At rank %d: %s" % [milestone, reward]), 15, accent if reaches_milestone else Kit.MUTED, true)
+			Kit.label(info, "Now: " + reward, 15, accent, true)
 	if current == 0 and tag in ["WEAPON", "SYSTEM"]:
 		var link: String = sim.passive_hint(id)
 		if not link.is_empty():
@@ -2596,6 +2603,10 @@ func _resume_beam_tutorial() -> void:
 func _start_flight() -> void:
 	mode = "playing"
 	opening_last_phase = ""
+	spectacle_audio_run = sim
+	spectacle_audio_seen.clear()
+	spectacle_audio_order.clear()
+	spectacle_audio_wait = 0.0
 	_clear_overlay()
 	accumulator = 0.0
 	last_hull = sim.hull
@@ -2605,7 +2616,7 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Time your abilities. Survive four stages.")
+	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Build your ship. Outlast four worlds.")
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
@@ -2714,6 +2725,7 @@ func _process(delta: float) -> void:
 			save_clock = 0
 			_save_run()
 	sound.update(sim, mode, delta)
+	_play_spectacle_cues(delta)
 	var shake := 0.0
 	if mode == "playing" and not profile.reduced:
 		for effect in sim.effects:
@@ -2731,6 +2743,46 @@ func _process(delta: float) -> void:
 	speed_button.text = _speed_label()
 	queue_redraw()
 	world.queue_redraw()
+
+# Sound and haptics belong to rare, meaningful events, not every projectile
+# or button press. Each effect can be heard once and is rate-limited in
+# real seconds, so 3x does not turn mutation procs into a cacophony.
+func _play_spectacle_cues(delta: float) -> void:
+	if spectacle_audio_run != sim:
+		spectacle_audio_run = sim
+		spectacle_audio_seen.clear()
+		spectacle_audio_order.clear()
+		spectacle_audio_wait = 0.0
+	spectacle_audio_wait = maxf(0.0, spectacle_audio_wait - delta)
+	if mode not in ["playing", "stage_clear", "warp"]:
+		return
+	var priority := 0
+	for effect in sim.effects:
+		var kind: String = str(effect.kind)
+		if kind not in ["mutation-installed", "boss-module-break", "boss-phase-break"]:
+			continue
+		var key := "%s:%d:%d:%d" % [kind, int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y))]
+		if spectacle_audio_seen.has(key):
+			continue
+		spectacle_audio_seen[key] = true
+		spectacle_audio_order.append(key)
+		if spectacle_audio_order.size() > 96:
+			spectacle_audio_seen.erase(spectacle_audio_order.pop_front())
+		priority = maxi(priority, 3 if kind == "boss-phase-break" else (2 if kind == "mutation-installed" else 1))
+	if priority == 0 or spectacle_audio_wait > 0.0:
+		return
+	if priority == 3:
+		sound.play("boss-explosion", -11.0)
+		_haptic(55)
+		spectacle_audio_wait = 0.75
+	elif priority == 2:
+		sound.play("archive-release", -18.0)
+		_haptic(40)
+		spectacle_audio_wait = 0.80
+	else:
+		sound.play("explosion", -17.0)
+		_haptic(30)
+		spectacle_audio_wait = 0.40
 
 func _update_hud() -> void:
 	CombatHud.refresh(self)
