@@ -198,6 +198,35 @@ func _run() -> void:
 		await process_frame
 		check(scene.mode == "rival_journal" and _contains_text(scene.overlay, "Retired captains (1)") and _contains_text(scene.overlay, str(record.name)), "Journal shows the named captain and retirement history")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100, "Journal scroll and footer remain inside the phone display")
+		var merchant := Sim.new(55020)
+		scene.sim = merchant
+		merchant.enable_merchant()
+		merchant.stage = 2
+		merchant.time = 80.0
+		merchant.merchant_next_at = 70.0
+		check(merchant._try_merchant_signal(), "Merchant fixture starts from a genuine opt-in mid-flight signal")
+		scene._show_merchant_signal()
+		await process_frame
+		var quartermaster: Control = scene.overlay.find_child("MerchantHailPortrait", true, false)
+		check(scene.mode == "merchant_signal" and quartermaster != null and quartermaster.size.x >= 100.0 and _contains_text(scene.overlay, "Open the channel"), "Merchant signal displays bespoke ship art and an explicit hail decision")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Merchant hail fits iPhone safe area")
+		scene._merchant_hail()
+		await process_frame
+		check(scene.mode == "merchant_shop" and _contains_text(scene.overlay, "Quartermaster") and _contains_text(scene.overlay, "Leave without a deal"), "Market displays real offers, an exit and no forced purchase")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100, "Five merchant offers scroll on narrow phones")
+		var starting_shield: float = merchant.max_shield
+		scene._merchant_preview("pact")
+		await process_frame
+		check(scene.mode == "merchant_confirm" and _contains_text(scene.overlay, "Confirm this trade") and is_equal_approx(merchant.max_shield,starting_shield), "Trade preview is an actual separate irreversible-cost confirmation")
+		scene._merchant_back()
+		check(scene.mode == "merchant_shop" and is_equal_approx(merchant.max_shield,starting_shield), "Declining confirmation has no effect")
+		scene._merchant_preview("pact")
+		scene._merchant_accept()
+		await process_frame
+		check(scene.mode == "merchant_receipt" and merchant.merchant_trade_count == 1 and merchant.max_shield < starting_shield, "Accepting a deal charges exactly once and displays a receipt")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Merchant receipt fits small phones")
+		scene._merchant_resume()
+		check(scene.mode == "playing" and merchant.merchant_state.is_empty(), "Returning from the merchant unpauses gameplay")
 		scene.sim = previous_sim
 		scene.profile.rival_active = {}
 		scene.profile.rival_archive = []
