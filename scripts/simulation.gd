@@ -49,6 +49,13 @@ var stage_start := 0.0
 var stage_clears := 0
 var stage_transition_queued := false
 var active_slots: Array = []
+# Fresh regular flights offer player-selected evolution and fusion decisions.
+# Existing suspended flights opt out if their checkpoint lacks the flag.
+var build_choices_active := true
+var weapon_evolutions: Dictionary = {}
+var pending_build_choices: Array = []
+var fusion_declined: Array = []
+var evolution_lifeline_tick := -1
 var ship_id := "vanguard"
 var pilot_id := "rookie"
 var artifact_id := "standard"
@@ -328,6 +335,8 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
+	if not pending_build_choices.is_empty():
+		_auto_resolve_build_choices()
 	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
 	# The Daily UTC day is assigned after Sim.new(). Restore its original
@@ -873,6 +882,8 @@ func fusion_target(id: String) -> String:
 	var after_pick := mini(10, current + (1 if current == 0 else 2))
 	for fusion in content.fusions:
 		if id in fusion.parts:
+			if _new_build_decisions() and str(fusion.id) in fusion_declined:
+				continue
 			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
 			if id in active_slots and other in active_slots and after_pick >= FUSION_RANK and int(upgrades[other]) >= FUSION_RANK:
 				return str(fusion.id)
@@ -884,25 +895,114 @@ func fusion_hint(id: String) -> String:
 	var spec := fusion_spec(target)
 	return str(spec.name) + ": " + str(spec.description) + " (frees one slot)"
 
+func _new_build_decisions() -> bool:
+	return build_choices_active and stage >= 2 and daily_day.is_empty() and artifact_id != "drone_armada"
+
+func evolution_id(weapon: String) -> String:
+	return str(weapon_evolutions.get(weapon, "")) if _new_build_decisions() else ""
+
+func _queue_weapon_evolutions() -> void:
+	if not _new_build_decisions():
+		return
+	for weapon in ["pulse", "seeker", "arc", "lance"]:
+		if int(upgrades.get(weapon, 0)) < 5 or weapon_evolutions.has(weapon):
+			continue
+		if not pending_build_choices.any(func(c): return str(c.kind) == "evolution" and str(c.id) == weapon):
+			pending_build_choices.append({"kind":"evolution", "id":weapon})
+
+func _fusion_is_eligible(id: String) -> bool:
+	var spec: Dictionary = fusion_spec(id)
+	return not spec.is_empty() and str(spec.parts[0]) in active_slots and str(spec.parts[1]) in active_slots and int(upgrades[str(spec.parts[0])]) >= FUSION_RANK and int(upgrades[str(spec.parts[1])]) >= FUSION_RANK
+
+func _commit_fusion(id: String) -> bool:
+	if not _fusion_is_eligible(id):
+		return false
+	var spec: Dictionary = fusion_spec(id)
+	var first: String = str(spec.parts[0])
+	var second: String = str(spec.parts[1])
+	var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
+	var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
+	active_slots.erase(first)
+	active_slots.erase(second)
+	active_slots.insert(insert_at, id)
+	upgrades[id] = 1
+	cooldowns[id] = current_cd
+	effects.append({"kind":"fusion-formed", "fusion":id, "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
+	_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(spec.name) + ". One slot freed.")
+	return true
+
+func resolve_build_choice(value: String) -> bool:
+	if pending_build_choices.is_empty():
+		return false
+	var choice: Dictionary = pending_build_choices[0]
+	var id: String = str(choice.id)
+	if str(choice.kind) == "evolution":
+		if weapon_evolutions.has(id) or not content.weapon_evolutions.has(id):
+			return false
+		var options: Array = content.weapon_evolutions[id]
+		if not options.any(func(o): return str(o.id) == value):
+			return false
+		weapon_evolutions[id] = value
+		for option in options:
+			if str(option.id) == value:
+				_log(str(option.name) + " evolution installed on " + id.capitalize())
+		effects.append({"kind":"engine-online", "engine":"evolution_" + id, "p":ship_position(), "life":0.85, "max_life":0.85, "born":tick})
+	elif str(choice.kind) == "fusion":
+		if value == "keep":
+			if id not in fusion_declined:
+				fusion_declined.append(id)
+			_log("Kept separate abilities instead of " + str(fusion_spec(id).get("name", id)))
+		elif value == "fuse":
+			if not _commit_fusion(id):
+				return false
+		else:
+			return false
+	else:
+		return false
+	pending_build_choices.pop_front()
+	# Two eligible fusion recipes can share a component. Accepting one
+	# consumes it; stale overlapping offers must not block resume or bots.
+	var valid: Array = []
+	for other_choice in pending_build_choices:
+		if str(other_choice.kind) == "fusion":
+			if _fusion_is_eligible(str(other_choice.id)) and str(other_choice.id) not in fusion_declined:
+				valid.append(other_choice)
+		elif str(other_choice.kind) == "evolution":
+			if not weapon_evolutions.has(str(other_choice.id)) and int(upgrades.get(str(other_choice.id), 0)) >= 5:
+				valid.append(other_choice)
+	pending_build_choices = valid
+	return true
+
+# Noninteractive simulation clients use a reproducible default when the next
+# step begins. The real UI intercepts the queued decision before that step.
+func _auto_resolve_build_choices() -> void:
+	while not pending_build_choices.is_empty():
+		var choice: Dictionary = pending_build_choices[0]
+		var answer := "fuse"
+		if str(choice.kind) == "evolution":
+			var weapon: String = str(choice.id)
+			answer = str(content.weapon_evolutions[weapon][0].id)
+			if (weapon == "pulse" and pilot_id not in ["ace", "rookie"]) or (weapon == "seeker" and pilot_id == "engineer") or (weapon == "arc" and ship_id == "arcwing") or (weapon == "lance" and pilot_id == "engineer"):
+				answer = str(content.weapon_evolutions[weapon][1].id)
+		if not resolve_build_choice(answer):
+			break
+
 func _can_learn_active(_id: String) -> bool:
 	# New actives start at rank 1, so none can bypass a full bar by fusing.
 	return active_slots.size() < Catalog.ACTIVE_SLOTS
 
 func _try_fuse() -> void:
 	for fusion in content.fusions:
-		var first: String = str(fusion.parts[0])
-		var second: String = str(fusion.parts[1])
-		if first not in active_slots or second not in active_slots or int(upgrades[first]) < FUSION_RANK or int(upgrades[second]) < FUSION_RANK:
+		var id: String = str(fusion.id)
+		if not _fusion_is_eligible(id):
 			continue
-		var insert_at: int = mini(active_slots.find(first), active_slots.find(second))
-		var current_cd: float = maxf(float(cooldowns.get(first, 0.0)), float(cooldowns.get(second, 0.0)))
-		active_slots.erase(first)
-		active_slots.erase(second)
-		active_slots.insert(insert_at, str(fusion.id))
-		upgrades[str(fusion.id)] = 1
-		cooldowns[str(fusion.id)] = current_cd
-		effects.append({"kind":"fusion-formed", "fusion":str(fusion.id), "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
-		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
+		if _new_build_decisions():
+			# One offer only. Keeping two separate actives is a valid build.
+			if id not in fusion_declined and not pending_build_choices.any(func(c): return str(c.kind) == "fusion" and str(c.id) == id):
+				pending_build_choices.append({"kind":"fusion", "id":id})
+		else:
+			# W1, published Dailies, and pre-overhaul saves keep auto-fusion.
+			_commit_fusion(id)
 
 # Every engine is earned in regular Worlds 2+ only. The published Daily,
 # World 1 opener, old saves and no-Hangar difficulty gates are unchanged.
@@ -964,17 +1064,18 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 			engine_execution_hits = 0
 		engine_execution_hits += 1
 		var tier: int = engine_tier("execution_network")
-		if engine_execution_hits >= (3 if tier == 3 else 5) and tick >= engine_execution_ready_tick:
+		var needed: int = maxi(3, (3 if tier == 3 else 5) - (1 if pilot_id == "ace" else 0) - (1 if _source_active("overdrive") else 0))
+		if engine_execution_hits >= needed and tick >= engine_execution_ready_tick:
 			engine_execution_hits = 0
 			engine_execution_ready_tick = tick + (36 if tier == 3 else 55)
 			engine_procs.execution_network += 1
 			_engine_cue("execution_network", false, enemy.p)
-			_damage_enemy(enemy, minf(1600.0, amount * (2.0 if tier == 3 else 1.4)), "engine_execution")
+			_damage_enemy(enemy, minf(1600.0, amount * (2.0 if tier == 3 else 1.4) * (1.10 if _has_prototype("volatile_core") else 1.0)), "engine_execution")
 	elif weapon == "seeker" and engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy):
 		if engine_siege_target != id or engine_siege_expires < time:
 			engine_siege_target = id
 			engine_siege_stacks = 0
-		engine_siege_stacks = mini(3, engine_siege_stacks + 1)
+		engine_siege_stacks = mini(3, engine_siege_stacks + (2 if pilot_id == "hunter" else 1))
 		engine_siege_expires = time + 5.0
 		if engine_siege_stacks == 2:
 			engine_procs.missile_siege += 1
@@ -990,13 +1091,13 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 				continue
 			engine_storm_marks.erase(mark)
 			var tier: int = engine_tier("storm_circuit")
-			engine_storm_ready_tick = tick + (32 if tier == 3 else 52)
+			engine_storm_ready_tick = tick + (32 if tier == 3 else (46 if pilot_id == "tactician" or _has_prototype("null_harmonics") else 52))
 			engine_procs.storm_circuit += 1
 			_engine_cue("storm_circuit", false, enemy.p)
 			_damage_enemy(enemy, minf(900.0, amount * (0.95 if tier == 3 else 0.65)), "engine_storm")
 			var jumped := 0
 			for nearby in enemies:
-				if jumped >= (2 if tier == 3 else 1):
+				if jumped >= (2 if tier == 3 or ship_id == "arcwing" else 1):
 					break
 				if float(nearby.hp) > 0.0 and int(nearby.id) != id and nearby.p.distance_squared_to(enemy.p) <= 180.0 * 180.0:
 					effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.28, "max_life":0.28, "born":tick})
@@ -1014,7 +1115,7 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 			engine_prism_ready_tick = tick + 90
 			engine_procs.prism_hunter += 1
 			_engine_cue("prism_hunter", false, enemy.p)
-			_damage_enemy(enemy, minf(2200.0, amount * (1.50 if tier == 3 else 1.10)), "engine_prism")
+			_damage_enemy(enemy, minf(2200.0, amount * (1.50 if tier == 3 else 1.10) * (1.10 if _source_active("focus") else 1.0)), "engine_prism")
 
 # Both fortress and salvage fire themselves. No extra combat button or
 # ability casts; bounded tick budgets and no extra XP/kill duplication.
@@ -1023,13 +1124,14 @@ func _update_build_engines() -> void:
 	if tier >= 2 and shield_offline <= 0.0 and max_shield > 0.0 and shield >= max_shield * 0.75:
 		engine_fortress_charge = minf(9.0, engine_fortress_charge + DT)
 		var threshold := 6.0 if tier == 3 else 8.0
+		threshold -= (0.70 if pilot_id == "engineer" else 0.0) + (0.40 if _source_active("aegis") else 0.0) + (0.35 if route_choice == "repair" else 0.0)
 		if engine_fortress_charge >= threshold:
 			var target: Dictionary = _nearest(ship_position())
 			if not target.is_empty():
 				engine_fortress_charge = 0.0
 				engine_procs.fortress_reactor += 1
 				_engine_cue("fortress_reactor", false, ship_position())
-				_damage_enemy(target, minf(500.0, (65.0 if tier == 3 else 42.0) * weapon_power() * (1.0 + float(stage - 1) * 0.30)), "engine_fortress")
+				_damage_enemy(target, minf(500.0, (65.0 if tier == 3 else 42.0) * weapon_power() * (1.0 + float(stage - 1) * 0.30) * (1.18 if _has_prototype("bastion_lattice") else 1.0)), "engine_fortress")
 	else:
 		engine_fortress_charge = 0.0
 	if engine_tier("salvage_carrier") >= 2 and engine_salvage_charge >= 6.0 and tick >= engine_salvage_ready_tick and shots.size() < 498:
@@ -1043,7 +1145,7 @@ func _update_build_engines() -> void:
 			for n in range(2 if engine_tier("salvage_carrier") == 3 else 1):
 				var p: Vector2 = origin + Vector2(-26.0 if n == 0 else 26.0, -10.0)
 				shots.append({"p":p, "v":(target.p - p).normalized() * 690.0, "damage":minf(280.0, 26.0 * weapon_power() * (1.0 + float(stage - 1) * 0.25)), "weapon":"escort", "target":int(target.id), "homing":true})
-			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5))
+			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5) + (0.5 if pilot_id == "engineer" else 0.0))
 
 func active_passive_links() -> Array:
 	var pairs: Array = []
@@ -1764,6 +1866,8 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	_queue_weapon_evolutions()
+	_try_fuse()
 	signal_status = ""
 	signal_until = 0.0
 	if secret_entered:
@@ -2328,7 +2432,7 @@ func _update_weapons() -> void:
 		arc_timer = 1.7
 		var visited: Array = []
 		var start := origin
-		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0)):
+		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0) + (1 if evolution_id("arc") == "tempest" else 0)):
 			var target := _nearest(start, visited)
 			if target.is_empty() or start.distance_to(target.p) > 640:
 				break
@@ -2623,6 +2727,39 @@ func _update_shots() -> void:
 	shots = shots.filter(func(s): return s.p.y > -100 and s.p.y < HEIGHT and s.p.x > -50 and s.p.x < WIDTH + 50)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 
+func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) -> void:
+	if damage <= 0.01:
+		return
+	if weapon == "pulse":
+		match evolution_id("pulse"):
+			"duelist":
+				var old_hits: int = int(enemy.get("evo_duelist_hits", 0)) if float(enemy.get("evo_duelist_until", -1.0)) >= time else 0
+				enemy["evo_duelist_hits"] = mini(5, old_hits + 1)
+				enemy["evo_duelist_until"] = time + 3.0
+			"spotter":
+				enemy["evo_spotter_until"] = time + 3.0
+	elif weapon == "arc" and evolution_id("arc") == "conductor":
+		enemy["evo_conductor_until"] = time + 3.0
+	elif weapon == "lance":
+		if evolution_id("lance") == "executioner" and _engine_priority_target(enemy):
+			var old_hits: int = int(enemy.get("evo_lance_hits", 0)) if float(enemy.get("evo_lance_until", -1.0)) >= time else 0
+			enemy["evo_lance_hits"] = mini(4, old_hits + 1)
+			enemy["evo_lance_until"] = time + 7.0
+		elif evolution_id("lance") == "lifeline" and evolution_lifeline_tick != tick:
+			evolution_lifeline_tick = tick
+			shield = minf(max_shield, shield + minf(8.0, damage * 0.08))
+	elif weapon == "seeker" and evolution_id("seeker") == "interceptor" and float(enemy.get("evo_intercept_ready", 0.0)) <= time:
+		var before: int = charges.size()
+		for charge in charges:
+			if int(charge.source) == int(enemy.id):
+				effects.append({"kind":"beam-canceled", "p":enemy.p, "x":float(charge.x), "source":int(enemy.id), "reason":"interceptor", "life":1.0, "max_life":1.0, "born":tick})
+		charges = charges.filter(func(charge): return int(charge.source) != int(enemy.id))
+		beams_cancelled += before - charges.size()
+		if before > charges.size():
+			enemy["evo_intercept_ready"] = time + 7.0
+			enemy["fire"] = maxf(float(enemy.get("fire", 0.0)), 0.70)
+			_log("INTERCEPTOR - seeker canceled a charged attack")
+
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
@@ -2635,6 +2772,30 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
 				_damage_enemy(part, amount, weapon)
 				return
+	# Each rank-5 evolution has a meaningful mechanical tradeoff. Per-enemy
+	# marks are stored on the enemy dictionary, so save/restore is exact.
+	if weapon == "pulse" and evolution_id("pulse") == "duelist":
+		var hits: int = int(enemy.get("evo_duelist_hits", 0)) if float(enemy.get("evo_duelist_until", -1.0)) >= time else 0
+		amount *= 1.0 + 0.05 * float(mini(5, hits))
+	elif weapon == "seeker":
+		if evolution_id("seeker") == "breacher" and _engine_priority_target(enemy):
+			amount *= 1.22 if enemy.kind == "boss_module" else 1.15
+	elif weapon == "arc" and evolution_id("arc") == "tempest" and not _engine_priority_target(enemy):
+		amount *= 1.14
+	elif weapon == "lance":
+		if evolution_id("lance") == "lifeline":
+			amount *= 0.88
+		elif evolution_id("lance") == "executioner" and _engine_priority_target(enemy):
+			var stacks: int = int(enemy.get("evo_lance_hits", 0)) if float(enemy.get("evo_lance_until", -1.0)) >= time else 0
+			amount *= 1.0 + 0.11 * float(mini(4, stacks))
+	# Marks are consumed only by another real weapon; secondary/mutation/
+	# engine damage never creates extra cross-weapon triggers.
+	if weapon in ["seeker", "arc", "lance"] and float(enemy.get("evo_spotter_until", -1.0)) >= time:
+		amount *= 1.20
+		enemy["evo_spotter_until"] = -1.0
+	if weapon in ["pulse", "seeker", "lance"] and float(enemy.get("evo_conductor_until", -1.0)) >= time:
+		amount *= 1.23
+		enemy["evo_conductor_until"] = -1.0
 	# Small, weapon-specific precursors reward deliberate investment before
 	# any three-piece signature unlock. Daily/World 1 are isolated by tier 0.
 	if weapon == "pulse" and engine_tier("execution_network") >= 1:
@@ -2642,7 +2803,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	elif weapon == "seeker" and engine_tier("missile_siege") >= 1:
 		amount *= 1.06
 		if engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy) and engine_siege_target == int(enemy.id) and engine_siege_expires >= time:
-			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0)
+			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0) + (0.04 if _has_prototype("breach_optics") and enemy.kind == "boss_module" else 0.0)
 	elif weapon == "arc" and engine_tier("storm_circuit") >= 1:
 		amount *= 1.06
 	elif weapon == "lance" and engine_tier("prism_hunter") >= 1:
@@ -2696,6 +2857,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var actual_damage: float = minf(maxf(0.0, amount), float(enemy.hp))
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
 	enemy.hp -= amount
+	if weapon in ["pulse", "seeker", "arc", "lance"]:
+		_evolution_on_weapon_hit(enemy, actual_damage, weapon)
 	if actual_damage > 0.0 and weapon in ["pulse", "seeker", "arc", "lance"] and _engine_priority_target(enemy):
 		_engine_charge_salvage(minf(0.38, actual_damage / 140.0))
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
@@ -2722,7 +2885,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if not bool(enemy.get("no_reward", false)):
 		kills += 1
 		if not str(enemy.kind).begins_with("boss") and enemy.kind != "archive_courier":
-			_engine_charge_salvage(1.0)
+			_engine_charge_salvage(1.0 + (0.20 if pilot_id == "scavenger" else 0.0) + (0.15 if _has_prototype("salvage_charter") else 0.0))
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
 	if pilot_id == "ace" and not bool(enemy.get("no_reward", false)) and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
@@ -3288,6 +3451,83 @@ func _activate_fusion(id: String, strength: float) -> void:
 	effects.append(visual)
 
 
+# One compact line on a card, not a long synergy explanation. Relevance
+# only counts an upgrade if the next actual +1/+2 pick advances a recipe.
+func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
+	var primary: String = str(spec.primary)
+	var secondary: String = str(spec.secondary)
+	var primary_rank: int = int(upgrades.get(primary, 0)) + (2 if picked == primary else 0)
+	var secondary_rank: int = int(upgrades.get(secondary, 0)) + (2 if picked == secondary else 0)
+	var third_rank: int = 0
+	if spec.has("third_any"):
+		for weapon in spec.third_any:
+			third_rank = maxi(third_rank, int(upgrades.get(str(weapon), 0)) + (2 if picked == str(weapon) else 0))
+	else:
+		var third: String = str(spec.third)
+		third_rank = int(upgrades.get(third, 0)) + (2 if picked == third and third != "wing_drones" else (1 if picked == third else 0))
+	return (1 if primary_rank >= 5 else 0) + (1 if secondary_rank >= 2 else 0) + (1 if third_rank >= 2 else 0)
+
+func engine_hint_for_pick(id: String) -> String:
+	if not _new_build_decisions():
+		return ""
+	for spec in content.get("build_engines", []):
+		if engine_tier(str(spec.id)) >= 2:
+			continue
+		var primary: String = str(spec.primary)
+		var secondary: String = str(spec.secondary)
+		if int(upgrades.get(primary, 0)) < 2 and int(upgrades.get(secondary, 0)) < 2:
+			continue
+		var before: int = _engine_recipe_progress(spec)
+		var after: int = _engine_recipe_progress(spec, id)
+		if after > before:
+			return ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
+	return ""
+
+func _engine_relevance_score(id: String) -> int:
+	if not _new_build_decisions():
+		return 0
+	var best := 0
+	for spec in content.get("build_engines", []):
+		if engine_tier(str(spec.id)) >= 3:
+			continue
+		var primary: String = str(spec.primary)
+		var secondary: String = str(spec.secondary)
+		var focus: int = int(upgrades.get(primary, 0)) + int(upgrades.get(secondary, 0))
+		if focus < 2:
+			continue
+		var third: bool = str(spec.get("third", "")) == id or (spec.has("third_any") and id in spec.third_any)
+		if id != primary and id != secondary and not third:
+			continue
+		var before: int = _engine_recipe_progress(spec)
+		var after: int = _engine_recipe_progress(spec, id)
+		if after > before:
+			best = maxi(best, 3 + before * 2 + (3 if after == 3 else 0))
+		elif int(upgrades.get(id, 0)) > 0:
+			best = maxi(best, 1 + mini(4, focus / 3))
+	return best
+
+func _inject_build_aware_offer(pool: Array) -> void:
+	# Two of every three regular mid/late flight offers, but only when the
+	# genuine eligible pool has a relevant card. Keep the other choices random.
+	if not _new_build_decisions() or level % 3 == 0 or cards.size() < 2:
+		return
+	if cards.any(func(c): return _engine_relevance_score(str(c.id)) > 0):
+		return
+	var candidates: Array = []
+	for card in pool:
+		if cards.any(func(c): return str(c.id) == str(card.id)):
+			continue
+		var weight: int = _engine_relevance_score(str(card.id))
+		for n in range(weight):
+			candidates.append(card)
+	if candidates.is_empty():
+		return
+	# Do not replace recovery, rare mutations, or a unique 4th Hangar slot.
+	var slot: int = 1 if str(cards[1].tag) not in ["RECOVERY", "MUTATION"] else 0
+	if str(cards[slot].tag) in ["RECOVERY", "MUTATION"]:
+		return
+	cards[slot] = candidates[rng.randi_range(0, candidates.size() - 1)].duplicate(true)
+
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	var mutation_pool: Array = []
@@ -3320,7 +3560,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append(pool.pop_at(index))
 	# At every even early level, show a discoverable synergy partner alongside
 	# independent upgrades. No automatic installation or extra active slot.
-	if level % 2 == 0:
+	if level % 2 == 0 and not _new_build_decisions():
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
@@ -3350,6 +3590,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 						missing_partners.append(option)
 		if not missing_partners.is_empty():
 			cards[cards.size() - 1] = missing_partners[rng.randi_range(0, missing_partners.size() - 1)]
+	_inject_build_aware_offer(pool)
 	# Rare, opt-in transformation: at a four-level milestone in later
 	# worlds, one normal card may be replaced by a matching weapon mutation.
 	# Never inject a weapon the player does not own.
@@ -3442,6 +3683,8 @@ func choose_card(index: int) -> bool:
 						shield = minf(max_shield, shield + bonus)
 		if card.tag == "ABILITY":
 			_try_fuse()
+		if card.tag == "WEAPON":
+			_queue_weapon_evolutions()
 	_log("Installed " + cards[index].name)
 	for spec in content.get("build_engines", []):
 		var engine_id: String = str(spec.id)
@@ -3475,7 +3718,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -3497,6 +3740,10 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	# Pre-overhaul suspended flights retain their original automatic fusion
+	# behavior, and no fresh evolution decision is injected mid-run.
+	if not state.has("build_choices_active"):
+		build_choices_active = false
 	# Preserve an older save's remaining uses; start stage refills at its next warp.
 	if not state.has("pilot_rerolls_left"):
 		pilot_rerolls_left = mini(rerolls_left, 1) if pilot_id == "tactician" else 0

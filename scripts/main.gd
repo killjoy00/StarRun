@@ -1657,6 +1657,55 @@ func _loadout_tap(key: String, id: String) -> void:
 # Level-up draft
 # ---------------------------------------------------------------------------
 
+# A meaningful one-time choice at rank 5 or when two invested abilities
+# can fuse. The regular combat loop is paused by the UI mode, not a timer.
+func _show_build_choice() -> void:
+	if sim.pending_build_choices.is_empty():
+		return
+	mode = "build_choice"
+	_save_run()
+	var choice: Dictionary = sim.pending_build_choices[0]
+	var id: String = str(choice.id)
+	var view := _page(0.93, true, 520.0)
+	var body: VBoxContainer = view.body
+	if str(choice.kind) == "evolution":
+		var weapon_card: Dictionary = sim.content.cards.filter(func(c): return str(c.id) == id)[0]
+		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
+		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Choose one permanent combat specialization for this flight.", 16, Kit.MUTED, true)
+		for option in sim.content.weapon_evolutions[id]:
+			_info_card(body, str(option.name), str(option.description), Kit.AMBER)
+			_ui_button(body, "Install " + str(option.name), _choose_build_decision.bind(str(option.id)), "primary", 52)
+	else:
+		var spec: Dictionary = sim.fusion_spec(id)
+		_page_header(view.top, "ABILITY PAIR READY", "Fuse or keep both?")
+		_info_card(body, "Fuse · " + str(spec.name), str(spec.description) + "\nCombines both ranks into one button and frees an ability slot.", Kit.VIOLET)
+		_ui_button(body, "Fuse · free one slot", _choose_build_decision.bind("fuse"), "primary", 54)
+		_info_card(body, "Keep separate", "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", Kit.CYAN)
+		_ui_button(body, "Keep both abilities", _choose_build_decision.bind("keep"), "secondary", 52)
+
+func _choose_build_decision(value: String) -> void:
+	if mode != "build_choice" or not sim.resolve_build_choice(value):
+		return
+	sound.play("card")
+	_save_run()
+	_resume_after_build_choice()
+
+func _resume_after_build_choice() -> void:
+	if not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+		return
+	if not sim.cards.is_empty():
+		_show_cards(false)
+		return
+	if sim.pending_levels > 0 and not sim.stage_transition_queued:
+		sim._offer_cards()
+		_show_cards(false)
+		return
+	mode = "playing"
+	_clear_overlay()
+	accumulator = -0.25
+	_save_run()
+
 func _show_cards(play_sound: bool = true) -> void:
 	mode = "cards"
 	_save_run()
@@ -1749,7 +1798,7 @@ func _draft_card(parent: Node, i: int) -> void:
 		row.add_child(Kit.core_icon(40))
 	else:
 		var badge := IconBadge.new()
-		badge.icon_id = fusion if not fusion.is_empty() else id
+		badge.icon_id = fusion if not fusion.is_empty() and not sim._new_build_decisions() else id
 		badge.custom_minimum_size = Vector2(40, 40)
 		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		row.add_child(badge)
@@ -1759,18 +1808,23 @@ func _draft_card(parent: Node, i: int) -> void:
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(info)
 	Kit.caps(info, tag_text, accent, 13)
-	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + (str(fused.name) if not fusion.is_empty() else str(card.name))
+	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + (str(fused.name) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.name))
 	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
-	Kit.label(info, str(fused.description) if not fusion.is_empty() else str(card.description), 16, Kit.TEXT, true)
+	Kit.label(info, str(fused.description) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
-		Kit.label(info, "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank], 15, Kit.VIOLET, true)
+		var fusion_note := "Unlocks %s · choose fuse or keep" % str(fused.name) if sim._new_build_decisions() else "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank]
+		Kit.label(info, fusion_note, 15, Kit.VIOLET, true)
 	elif reaches_milestone:
 		# Don't repeat distant rank descriptions on every ordinary card.
 		# Only a breakpoint reached by THIS pick needs an extra text line.
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
 			Kit.label(info, "Now: " + reward, 15, accent, true)
+	if not banish_mode and tag in ["WEAPON", "SYSTEM", "ABILITY"]:
+		var engine_hint: String = sim.engine_hint_for_pick(id)
+		if not engine_hint.is_empty():
+			Kit.label(info, engine_hint, 15, Kit.AMBER, true)
 	if current == 0 and tag in ["WEAPON", "SYSTEM"]:
 		var link: String = sim.passive_hint(id)
 		if not link.is_empty():
@@ -1800,10 +1854,13 @@ func _draft_action(action: String, index: int) -> void:
 func _choose(index: int) -> void:
 	# A short guard stops a combat tap from picking a card the instant the draft opens.
 	if mode == "cards" and draft_guard <= 0.0 and not banish_mode and sim.choose_card(index):
-		_clear_overlay()
-		mode = "playing"
-		accumulator = -0.25
-		_save_run()
+		if not sim.pending_build_choices.is_empty():
+			_show_build_choice()
+		else:
+			_clear_overlay()
+			mode = "playing"
+			accumulator = -0.25
+			_save_run()
 
 # ---------------------------------------------------------------------------
 # Pause and build
@@ -1846,6 +1903,12 @@ func _show_build() -> void:
 			var mutation: Dictionary = Catalog.mutation(str(mutation_id))
 			if not mutation.is_empty():
 				_info_card(body, str(mutation.name), str(mutation.description), Kit.VIOLET)
+	if not sim.weapon_evolutions.is_empty():
+		_section(body, "Weapon specializations")
+		for weapon in sim.weapon_evolutions:
+			for option in sim.content.weapon_evolutions.get(str(weapon), []):
+				if str(option.id) == str(sim.weapon_evolutions[weapon]):
+					_info_card(body, str(weapon).capitalize() + " · " + str(option.name), str(option.description), Kit.AMBER)
 	_section(body, "Active abilities")
 	for slot in range(Catalog.ACTIVE_SLOTS):
 		var panel := PanelContainer.new()
@@ -1886,6 +1949,18 @@ func _show_build() -> void:
 			_info_card(body, str(pairs[i].name), str(pairs[i].description), Kit.AMBER)
 		if not build_show_all and pairs.size() > 3:
 			Kit.label(body, "%d more in the full list below." % (pairs.size() - 3), 15, Kit.MUTED)
+	if sim._new_build_decisions():
+		var nearby: Array = []
+		for recipe in sim.content.get("build_engines", []):
+			if sim.engine_tier(str(recipe.id)) >= 2:
+				continue
+			var progress: int = sim._engine_recipe_progress(recipe)
+			if progress > 0:
+				nearby.append({"name":str(recipe.name), "progress":progress})
+		if not nearby.is_empty():
+			_section(body, "Builds in progress")
+			for i in range(mini(3, nearby.size())):
+				_info_card(body, str(nearby[i].name), "%d/3 components · Keep building to unlock its automatic signature." % int(nearby[i].progress), Kit.AMBER)
 	var engines: Array = sim.active_engines()
 	if not engines.is_empty():
 		_section(body, "Automatic build engines")
@@ -2454,6 +2529,10 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
 	for engine in sim.active_engines():
 		build_lines.append("Engine: " + str(engine.name) + (" [mastered]" if int(engine.tier) == 3 else ""))
+	for weapon in sim.weapon_evolutions:
+		for option in sim.content.weapon_evolutions.get(str(weapon), []):
+			if str(option.id) == str(sim.weapon_evolutions[weapon]):
+				build_lines.append("Evolution: " + str(option.name) + " (" + str(weapon) + ")")
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
@@ -2566,7 +2645,9 @@ func _resume_run() -> void:
 		_finish()
 		return
 	_start_flight()
-	if mode == "playing" and not sim.cards.is_empty():
+	if mode == "playing" and not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+	elif mode == "playing" and not sim.cards.is_empty():
 		_show_cards()
 
 ## First heavy beam is an in-flight lesson, not another preflight paragraph.
@@ -2677,6 +2758,8 @@ func _process(delta: float) -> void:
 		warp_clock += delta
 		if warp_clock >= 1.45:
 			_complete_warp()
+	if mode == "playing" and not sim.pending_build_choices.is_empty():
+		_show_build_choice()
 	if mode == "playing":
 		accumulator += minf(delta, 0.2) * game_speed
 		while accumulator >= Simulation.DT and mode == "playing":
@@ -2922,7 +3005,9 @@ func _finish_intermission_presentation() -> void:
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
-	if sim.pending_levels > 0:
+	if not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+	elif sim.pending_levels > 0:
 		sim._offer_cards()
 		_show_cards()
 

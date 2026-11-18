@@ -442,6 +442,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var kind: String = enemy.kind
 	if kind == "boss_module":
 		_draw_boss_module(enemy)
+		_draw_evolution_marks(enemy)
 		return
 	var boss := kind.begins_with("boss")
 	if kind == HiddenSector.BOSS:
@@ -562,6 +563,27 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			draw_string(ThemeDB.fallback_font, p+Vector2(-28, -44), "OFFLINE" if disrupted else "LINKED", HORIZONTAL_ALIGNMENT_LEFT, 74, 12, wing_color)
 		if enemy.hp < enemy.max_hp and elite_role != "leader":
 			_bar(Rect2(p.x-20,p.y-(44 if kind == "station" else 50),40,3),enemy.hp/enemy.max_hp,AMBER)
+	_draw_evolution_marks(enemy)
+
+# Tiny persistent marks show what the player actually built, instead of
+# doubling particle density. They remain visible in reduced FX and at 3x.
+func _draw_evolution_marks(enemy: Dictionary) -> void:
+	if not sim._new_build_decisions() or enemy.hp <= 0.0:
+		return
+	var p: Vector2 = enemy.p
+	if p.y < 0.0 or p.y > 885.0:
+		return
+	var radius := 71.0 if str(enemy.kind).begins_with("boss") else 38.0
+	if float(enemy.get("evo_spotter_until", -1.0)) > sim.time:
+		draw_arc(p, radius, PI * 0.04, PI * 0.89, 22, Color(CYAN, 0.88), 2.3, true)
+	if float(enemy.get("evo_conductor_until", -1.0)) > sim.time:
+		draw_arc(p, radius + 6.0, PI * 1.11, PI * 1.90, 22, Color("bca0ff"), 2.4, true)
+	if int(enemy.id) == sim.engine_siege_target and sim.engine_siege_stacks >= 2 and sim.engine_siege_expires > sim.time:
+		draw_arc(p, radius + 10.0, PI * 0.94, PI * 1.06, 10, Color(AMBER, 0.95), 3.0, true)
+	if int(enemy.get("evo_lance_hits", 0)) > 0 and float(enemy.get("evo_lance_until", -1.0)) > sim.time:
+		for i in range(mini(4, int(enemy.evo_lance_hits))):
+			var axis: float = TAU * float(i) / 4.0
+			draw_arc(p, radius + 13.0, axis, axis + 0.16, 5, Color("edd5ff"), 3.0, true)
 
 func _draw_boss_module(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
