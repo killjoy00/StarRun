@@ -6,10 +6,12 @@ const BOSS_AT := 105.0
 const BOSS := "boss_warden"
 const ATTACKS := ["lock", "lattice", "collapse"]
 const PHASE_FLOORS := [0.68, 0.34, 0.07]
-# The original high-Hangar Custodian collapsed in 4–15 seconds. Three real
-# counterplay cycles now require surviving distinct attack patterns instead
-# of instantly burning from one health threshold to the next.
-const PHASE_REARM_SECONDS := 16.0
+# Three readable attack phases remain mandatory, but crossing a health
+# threshold queues the next telegraph promptly. No 16-second invulnerable
+# delay: surviving its projectile pressure and timing interrupts are the test.
+const PHASE_TRANSITION_SECONDS := 0.85
+const PHASE_SURGE_SHOTS := [0, 9, 13]
+const PHASE_SURGE_DAMAGE := 5.0
 const SEALED_DAMAGE_FACTOR := 0.18
 const COUNTER_EXPOSURE_SECONDS := 4.2
 const UNANSWERED_EXPOSURE_SECONDS := 1.8
