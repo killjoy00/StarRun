@@ -1673,12 +1673,12 @@ func _show_build_choice() -> void:
 		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
 		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Choose one permanent combat specialization for this flight.", 16, Kit.MUTED, true)
 		for option in sim.content.weapon_evolutions[id]:
-			_info_card(body, str(option.name), str(option.description), Kit.AMBER)
+			_info_card(body, str(option.name) + "  ·  " + str(option.get("role", "")), str(option.description), Kit.AMBER)
 			_ui_button(body, "Install " + str(option.name), _choose_build_decision.bind(str(option.id)), "primary", 52)
 	else:
 		var spec: Dictionary = sim.fusion_spec(id)
 		_page_header(view.top, "ABILITY PAIR READY", "Fuse or keep both?")
-		_info_card(body, "Fuse · " + str(spec.name), str(spec.description) + "\nCombines both ranks into one button and frees an ability slot.", Kit.VIOLET)
+		_info_card(body, "Fuse · " + str(spec.name), str(spec.description) + "\nBoth rank-5 abilities become a new rank-1 fusion. Frees one slot.", Kit.VIOLET)
 		_ui_button(body, "Fuse · free one slot", _choose_build_decision.bind("fuse"), "primary", 54)
 		_info_card(body, "Keep separate", "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", Kit.CYAN)
 		_ui_button(body, "Keep both abilities", _choose_build_decision.bind("keep"), "secondary", 52)
@@ -2518,6 +2518,12 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 ".join(unlocked), Kit.CYAN)
 		_ui_button(body, "View all achievements", _show_achievements, "secondary", 48)
 	_tiles(body, [["Kills", str(sim.kills)], ["Stages", "%d/%d" % [sim.stage_clears, sim.stage_count()]], ["Abilities used", str(sim.ability_uses)]])
+	var impact_rows: Array = sim.build_impact_rows(2)
+	if not impact_rows.is_empty():
+		var impact_lines := PackedStringArray()
+		for impact in impact_rows:
+			impact_lines.append("%s · %s" % [str(impact.name), str(impact.detail)])
+		_info_card(body, "Your build at work", "\n".join(impact_lines), Kit.CYAN)
 	var build_lines := PackedStringArray()
 	for slot in sim.active_slots:
 		var fusion: Dictionary = sim.fusion_spec(str(slot))
