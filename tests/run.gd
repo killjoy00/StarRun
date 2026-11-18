@@ -540,6 +540,16 @@ func _test_world1_mutations_and_merchant() -> void:
 	var daily := Sim.new(61110)
 	daily.daily_day = "2026-11-17"
 	check(other_modes.world1_opening_phase().is_empty() and daily.world1_opening_phase().is_empty(), "Opening warning sequence does not alter Hard, Insane or Daily")
+	var disposable := Sim.new(61110)
+	disposable.time = 1.5
+	var rng_before_scout: int = disposable.rng.state
+	disposable._spawn_opening_scout_screen()
+	check(disposable.enemies.size() == 2 and disposable.enemies.all(func(e): return bool(e.get("opening_scout",false)) and int(e.xp) == 0), "First scout contact is two real non-farming enemies")
+	check(disposable.rng.state == rng_before_scout, "Opening scripted scouts do not consume real combat or draft randomness")
+	var hull_before_scout: float = disposable.hull
+	disposable.time += 4.0
+	disposable._update_enemies()
+	check(disposable.enemies.is_empty() and is_equal_approx(disposable.hull,hull_before_scout), "Scouts retreat without escaping into the ship or starving slow guns of XP")
 	var presentation := Sim.new(61110)
 	for frame in range(60 * 26):
 		if not presentation.cards.is_empty():

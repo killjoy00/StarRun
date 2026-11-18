@@ -1253,9 +1253,10 @@ func _spawn_opening_scout_screen() -> void:
 		scout["opening_scout"] = true
 		scout["pressure_wing"] = true
 		scout["xp"] = 0
-		scout["max_hp"] *= 1.70 if phase < 2 else 1.35
+		scout["max_hp"] *= 0.85 if phase < 2 else 0.70
+		scout["opening_scout_expires"] = time + 3.8
 		scout.hp = scout.max_hp
-		scout.fire = 6.0 if phase == 0 else (2.6 if phase == 1 else 1.8)
+		scout.fire = 4.5 if phase == 0 else (3.2 if phase == 1 else 2.5)
 	if count > 0:
 		_log("SCOUT SWEEP - unregistered contacts" if phase < 2 else "ESCORTS INBOUND - prepare for the strike")
 
@@ -1533,6 +1534,12 @@ func _update_enemies() -> void:
 	var minions: Array = []
 	for enemy in enemies:
 		if enemy.hp <= 0:
+			continue
+		# Visual scouts peel away on schedule. They cannot soak automatic
+		# fire for an entire wave, escape to inflict hazard damage, or
+		# starve low-DPS Bulwark/Haven starters of normal enemy XP.
+		if bool(enemy.get("opening_scout", false)) and time >= float(enemy.get("opening_scout_expires", 999999.0)):
+			enemy.hp = -1.0
 			continue
 		var kind: String = enemy.kind
 		if kind == "boss_module":
