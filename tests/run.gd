@@ -208,11 +208,13 @@ func _test_hidden_archive() -> void:
 	check(arrival.tick == tick_before and arrival.dismiss_secret_intro(), "Arrival cutscene pauses combat and resumes once")
 	arrival._spawn_boss()
 	var boss_checkpoint := arrival.snapshot()
+	var pristine_boss_checkpoint: Dictionary = boss_checkpoint.duplicate(true)
 	sim = Sim.new()
 	check(sim.restore(boss_checkpoint) and sim.secret_intro_pending and sim.dismiss_secret_intro(), "Boss introduction restores in a frozen state")
 	var core: Dictionary = sim._boss_core()
 	sim._damage_enemy(core, 9999999.0, "nova")
 	check(not sim.stage_transition_queued and is_equal_approx(core.hp, core.max_hp * sector.PHASE_FLOORS[0]), "Opening shield floor guarantees the first telegraph")
+	check(boss_checkpoint == pristine_boss_checkpoint, "Restoring and damaging a boss never mutates the saved checkpoint")
 	check(core.max_hp >= 480000.0, "The Custodian is substantially tougher than the original 228k health baseline")
 	# A guarded core can be worn down but cannot be rapidly melted without
 	# its telegraphed exposed windows. The same weapon and amount isolate the
@@ -240,7 +242,8 @@ func _test_hidden_archive() -> void:
 	check(is_equal_approx(arrival.archive_exposed_until - arrival.time, sector.COUNTER_EXPOSURE_SECONDS), "Countered lock opens a short, earned vulnerability")
 	arrival._update_archive_attack()
 	check(arrival.archive_phase == 1, "The second phase begins after the opening shield breaks")
-	check(arrival.archive_next_attack - arrival.time >= sector.PHASE_REARM_SECONDS - 0.01, "Phase one now requires surviving a full shield-rearm combat interval")
+	check(arrival.archive_next_attack - arrival.time > 0.0 and arrival.archive_next_attack - arrival.time <= sector.PHASE_TRANSITION_SECONDS + 0.01, "Damaging a phase threshold promptly starts the next telegraph without forced wait")
+	check(arrival.bullets.size() >= int(sector.PHASE_SURGE_SHOTS[1]), "Phase transition launches a real dodgeable Custodian surge")
 	var phase_checkpoint := Sim.new()
 	check(phase_checkpoint.restore(arrival.snapshot()) and is_equal_approx(phase_checkpoint.archive_next_attack, arrival.archive_next_attack) and phase_checkpoint.archive_phase == 1, "Interphase timer and shield save and resume exactly")
 	arrival.time = arrival.archive_next_attack
