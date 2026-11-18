@@ -39,6 +39,8 @@ var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
 var next_pressure_wave_at := 8.0
+# Redistribute normal Worlds 2-4 arrivals: no additional spawn slots or XP.
+var spawn_rhythm_slot := 0
 var pressure_waves := 0
 var opening_scout_wave := 0
 var boss_attack_pattern := "sweep"
@@ -51,6 +53,8 @@ var ship_id := "vanguard"
 var pilot_id := "rookie"
 var artifact_id := "standard"
 var mutations: Array = []
+# Only presentation; suppress repeated automatic-weapon mutation highlights.
+var mutation_feedback_next_tick := 0
 var lance_refund_ready := false
 # In-flight traveling merchant. Explicitly enabled by the regular-flight UI:
 # Daily, existing simulation probes and historical saves are unchanged.
@@ -377,7 +381,9 @@ func step() -> void:
 		_spawn_enemy()
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		next_spawn = time + pace * _spawn_rhythm_factor() / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		if _uses_spawn_rhythm():
+			spawn_rhythm_slot += 1
 	if _regular_world1_opening() and not boss_spawned:
 		_spawn_opening_scout_screen()
 	if _regular_world1_opening() and not boss_spawned and time >= next_pressure_wave_at:
@@ -1132,6 +1138,19 @@ func _spawn_archive_patrol() -> void:
 		enemies[-1]["archive_relay"] = leader
 		enemies[-1].fire = 3.4
 
+# Every sixteen existing spawn opportunities keep exactly the same total
+# scheduled spacing: 6 * .70 + 2 * .90 + 8 * 1.25 = 16.
+# The first part gives a satisfying surge; the later stretch lets built
+# weapons clear the remaining screen. Crowd caps and boss clocks still win.
+func _uses_spawn_rhythm() -> bool:
+	return stage in [2, 3, 4] and daily_day.is_empty() and not secret_entered and not boss_spawned
+
+func _spawn_rhythm_factor() -> float:
+	if not _uses_spawn_rhythm():
+		return 1.0
+	var slot: int = spawn_rhythm_slot % 16
+	return 0.70 if slot < 6 else (0.90 if slot < 8 else 1.25)
+
 func _spawn_enemy() -> void:
 	if secret_entered:
 		if enemies.size() < 15:
@@ -1557,6 +1576,7 @@ func _advance_late_boss_phase(core: Dictionary) -> void:
 	late_boss_phase += 1
 	_spawn_late_boss_objectives(core)
 	_late_boss_phase_surge(core)
+	effects.append({"kind":"boss-phase-break", "p":core.p, "phase":late_boss_phase + 1, "life":1.0, "max_life":1.0, "born":tick})
 	_log("%s · PHASE %d/3 · %s" % [str(stage_spec().boss_name).to_upper(), late_boss_phase + 1, boss_phase_label()])
 
 func advance_stage() -> bool:
@@ -1599,6 +1619,7 @@ func advance_stage() -> bool:
 	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	encounter_index = 0
 	encounter_queue.clear()
+	spawn_rhythm_slot = 0
 	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
 	next_pressure_wave_at = time + 8.0
 	pressure_waves = 0
@@ -1901,6 +1922,7 @@ func _update_archive_attack() -> void:
 		return
 	if not core.is_empty() and archive_phase < 2 and archive_phase_released and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
 		archive_phase += 1
+		effects.append({"kind":"boss-phase-break", "p":core.p, "phase":archive_phase + 1, "life":1.0, "max_life":1.0, "born":tick})
 		archive_phase_released = false
 		# The shield hardens between phases. Players must survive the next
 		# pattern instead of ending every phase within a single burst.
@@ -2545,6 +2567,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if not bool(enemy.get("no_reward", false)):
 		hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
+		effects.append({"kind":"boss-module-break", "p":enemy.p, "role":str(enemy.get("role", "module")), "life":0.85, "max_life":0.85, "born":tick})
 		if not bool(enemy.get("no_reward", false)):
 			bonus_cores += int(meta.module_salvage)
 		if boss_spawned and stage in [3, 4]:
@@ -3233,7 +3256,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
