@@ -55,6 +55,7 @@ func _run() -> void:
 	_test_elite_squad_counterplay()
 	_test_ship_pilot_identity_tuning()
 	_test_roguelike_variation()
+	_test_world1_mutations_and_merchant()
 	_test_world1_density_and_pilot_identities()
 	_test_rival_captain_campaign()
 	var seeds := 24
@@ -402,6 +403,170 @@ func _test_world1_density_and_pilot_identities() -> void:
 	for key in ["ace_chain","ace_chain_left","hunter_target_id","hunter_mark_left","hunter_mark_cooldown","tactician_counter_used"]:
 		old.erase(key)
 	check(Sim.new().restore(old), "Historical 1.3 saves remain compatible with new optional pilot fields")
+
+func _test_world1_mutations_and_merchant() -> void:
+	var types := {}
+	for mutation in Catalog.MUTATIONS:
+		var weapon: String = str(mutation.requires)
+		types[weapon] = int(types.get(weapon,0)) + 1
+	check(Catalog.MUTATIONS.size() == 8 and types == {"pulse":2,"seeker":2,"arc":2,"lance":2}, "Each of four automatic weapons has exactly two distinct rare mutations")
+	var opener := Sim.new(61110)
+	check(opener.world1_opening_phase() == "scouts", "World 1 introduces scouts before a dangerous wave")
+	for moment in [[9.0,"warning"],[14.0,"formation"],[19.0,"recovery"],[25.0,"counterattack"],[31.0,""]]:
+		opener.time = float(moment[0])
+		check(opener.world1_opening_phase() == str(moment[1]), "World 1 first 30 seconds has a deliberate named beat")
+	var other_modes := Sim.new(61110, {}, "vanguard", "rookie", "hard")
+	var daily := Sim.new(61110)
+	daily.daily_day = "2026-11-17"
+	check(other_modes.world1_opening_phase().is_empty() and daily.world1_opening_phase().is_empty(), "Opening warning sequence does not alter Hard, Insane or Daily")
+	var gap := Sim.new(61111)
+	gap.tick = 600
+	gap.time = gap.tick * Sim.DT
+	gap.next_spawn = gap.time
+	var gap_before: int = gap.enemies.size()
+	gap.step()
+	check(gap.enemies.size() == gap_before and gap.next_spawn >= 19.0, "Early warning/formation holds ordinary spawns during a brief readable gap")
+	var bank := Sim.new(61112)
+	check(bank._install_mutation("ricochet_pulse"), "Bank Shot installs only on owned Pulse weapon")
+	bank._add_enemy("drone",Vector2(230,310))
+	bank._add_enemy("drone",Vector2(295,310))
+	for enemy in bank.enemies:
+		enemy.hp = 1000.0
+		enemy.max_hp = 1000.0
+	bank.shots = [{"p":Vector2(230,310),"v":Vector2.ZERO,"damage":20.0,"weapon":"pulse","target":-1,"pierce":0,"last_enemy":-1}]
+	bank._update_shots()
+	check(bank.enemies[0].hp < 1000.0 and bank.enemies[1].hp < 1000.0 and bank.effects.any(func(e): return e.kind == "arc"), "Bank Shot creates a real secondary hit without self-rebouncing")
+	var siege := Sim.new(61113)
+	check(siege._install_mutation("breach_seeker"), "Siege Torpedoes are available for Seeker ownership")
+	siege._add_enemy("drone",Vector2(230,310))
+	siege._add_enemy("drone",Vector2(300,310))
+	for enemy in siege.enemies:
+		enemy.hp = 1000.0
+		enemy.max_hp = 1000.0
+	siege.shots = [{"p":Vector2(230,310),"v":Vector2.ZERO,"damage":20.0,"weapon":"seeker","target":int(siege.enemies[0].id)}]
+	siege._update_shots()
+	check(siege.enemies[1].hp < 1000.0 and siege.effects.any(func(e): return e.kind == "ion-burst"), "Siege Torpedoes splash damage onto real nearby enemies")
+	var boss: Dictionary = {"id":999,"kind":"boss","p":Vector2(270,160),"hp":1000.0,"max_hp":1000.0}
+	siege._damage_enemy(boss,20.0,"seeker")
+	check(boss.hp <= 975.0, "Siege Torpedoes also deal their promised boss damage")
+	var static_coil := Sim.new(61114, {}, "arcwing")
+	check(static_coil._install_mutation("grounding_arc"), "Static Lock requires a live Arc Coil")
+	static_coil._add_enemy("gunship",Vector2(270,330))
+	var marked: Dictionary = static_coil.enemies[0]
+	marked.hp = 1000.0
+	marked.max_hp = 1000.0
+	marked.fire = 0.2
+	static_coil.charges.append({"source":int(marked.id),"x":270.0,"remaining":1.0,"duration":1.8,"damage":20.0})
+	static_coil._update_weapons()
+	check(marked.fire >= 1.80 and static_coil.charges.is_empty() and static_coil.beams_cancelled == 1, "Static Lock stalls the real target and disrupts its telegraphed beam")
+	var prism_echo := Sim.new(61115)
+	prism_echo.upgrades.lance = 1
+	check(prism_echo._install_mutation("refracting_lance"), "Prism Echo is installable on Lance")
+	prism_echo._add_enemy("gunship",Vector2(270,330))
+	prism_echo._add_enemy("gunship",Vector2(390,330))
+	for enemy in prism_echo.enemies:
+		enemy.hp = 1000.0
+		enemy.max_hp = 1000.0
+	prism_echo._update_weapons()
+	check(prism_echo.enemies[1].hp < 1000.0 and prism_echo.effects.filter(func(e): return e.kind == "lance").size() >= 2, "Prism Echo refracts an actual second beam off-axis")
+	var capacitor := Sim.new(61116)
+	capacitor.upgrades.lance = 1
+	check(capacitor._install_mutation("capacitor_lance"), "Capacitor Lance requires an installed Lance")
+	capacitor._add_enemy("gunship",Vector2(270,330))
+	capacitor.enemies[0].hp = 1.0
+	capacitor.enemies[0].max_hp = 1.0
+	capacitor._update_weapons()
+	check(capacitor.lance_timer <= 1.76 and not capacitor.lance_refund_ready, "Capacitor Lance refunds cooldown on real Lance kills once per firing cycle")
+	var mut_bad := Sim.new(61117, {}, "vanguard", "rookie", "normal", "drone_armada")
+	check(not mut_bad._install_mutation("capacitor_lance"), "Drone Armada never receives unusable automatic-gun mutations")
+	var old := opener.snapshot()
+	for key in ["lance_refund_ready","merchant_enabled","merchant_state","merchant_offers","merchant_selected","merchant_next_at","merchant_seen_stages","merchant_visits","merchant_trade_count","merchant_pact_power","merchant_trade_log"]:
+		old.erase(key)
+	check(Sim.new().restore(old), "Pre-merchant 1.3 checkpoints restore safely without optional fields")
+	check(not Sim.new(61120).merchant_enabled, "Balance fixtures do not enable merchant encounters implicitly")
+	check(not daily.enable_merchant(), "Daily cannot opt in to merchant purchases or dialogue")
+	var visitor := Sim.new(61121)
+	check(visitor.enable_merchant(), "An ordinary player-controlled flight can enable traveling merchants")
+	visitor.stage = 2
+	visitor.stage_start = 10.0
+	visitor.time = 82.0
+	visitor.merchant_next_at = 80.0
+	check(visitor._try_merchant_signal() and visitor.merchant_state == "signal", "A merchant hails from a real mid-flight event outside boss combat")
+	check(visitor.merchant_visits == 1 and visitor.merchant_seen_stages == [2] and visitor.merchant_offers.size() >= 2, "One seeded visit has a bounded, persistent inventory")
+	var signal: Dictionary = visitor.snapshot()
+	var restored := Sim.new()
+	check(restored.restore(signal) and restored.snapshot() == signal, "The merchant's inventory and signal survive exact save/resume")
+	var stopped_tick: int = visitor.tick
+	visitor.step()
+	check(visitor.tick == stopped_tick, "Combat is truly frozen during a merchant hail")
+	check(visitor.merchant_hail() and visitor.merchant_state == "shop", "The player can explicitly hail rather than automatically visit a shop")
+	var mutation_offer: Dictionary = visitor.merchant_offers.filter(func(o): return str(o.id).begins_with("mutation:"))[0]
+	check(visitor.merchant_preview(str(mutation_offer.id)) and visitor.merchant_state == "confirm", "No sacrifice happens until a second affirmative tap")
+	var before_shield: float = visitor.max_shield
+	var before_hull: float = visitor.max_hull
+	check(visitor.mutations.is_empty() and is_equal_approx(visitor.max_shield,before_shield), "Preview is reversible and has no economic side effects")
+	var confirmed: Dictionary = visitor.snapshot()
+	check(Sim.new().restore(confirmed), "A pending irreversible offer resumes at confirmation without redrawing inventory")
+	check(visitor.merchant_accept() and visitor.merchant_trade_count == 1 and visitor.mutations.size() == 1 and visitor.merchant_state.is_empty(), "A confirmed exotic trade modifies the existing run exactly once")
+	check(visitor.max_hull < before_hull or visitor.max_shield < before_shield, "Merchant mutation always charges its explicit hull/shield sacrifice")
+	check(not visitor.merchant_accept() and not visitor._try_merchant_signal(), "Completed merchant trades cannot repeat or reroll the same stage")
+	var declined := Sim.new(61122)
+	declined.enable_merchant()
+	declined.stage = 3
+	declined.time = 88.0
+	declined.merchant_next_at = 85.0
+	check(declined._try_merchant_signal() and declined.merchant_leave() and not declined._try_merchant_signal(), "Declining a merchant costs nothing and cannot be rerolled")
+	var pact := Sim.new(61123)
+	pact.enable_merchant()
+	pact.stage = 2
+	pact.time = 80.0
+	pact.merchant_next_at = 79.0
+	pact._try_merchant_signal()
+	pact.merchant_hail()
+	var damage_before: float = pact.weapon_power()
+	var shield_before: float = pact.max_shield
+	check(pact.merchant_preview("pact") and pact.merchant_accept(), "Merchant's offensive hull pact has a two-step confirmation")
+	check(is_equal_approx(pact.max_shield,shield_before*0.78) and pact.weapon_power() > damage_before * 1.34, "The hull pact makes a genuine flight-only damage-for-shield tradeoff")
+	var sell := Sim.new(61124)
+	sell.enable_merchant()
+	sell.stage = 2
+	sell.time = 90.0
+	sell.merchant_next_at = 89.0
+	sell._try_merchant_signal()
+	sell.merchant_hail()
+	var bank_hull: float = sell.max_hull
+	check(sell.merchant_preview("sell_hull") and sell.merchant_accept() and sell.choice_cores == 16 and sell.max_hull < bank_hull, "Wreckage contract banks exactly sixteen Cores for a real loss of hull capacity")
+	var repair := Sim.new(61125)
+	repair.enable_merchant()
+	repair.stage = 2
+	repair.time = 90.0
+	repair.merchant_next_at = 89.0
+	repair.choice_cores = 8
+	repair.hull = 10.0
+	repair.shield = 0.0
+	repair._try_merchant_signal()
+	repair.merchant_hail()
+	check(repair.merchant_preview("repair") and repair.merchant_accept() and repair.choice_cores == 0 and repair.hull > 10.0, "Field Salvage consumes legitimately earned Cores and repairs actual damage")
+	var exchange := Sim.new(61126)
+	exchange.active_slots.append("nova")
+	exchange.upgrades.nova = 4
+	exchange.enable_merchant()
+	exchange.stage = 2
+	exchange.time = 90.0
+	exchange.merchant_next_at = 89.0
+	exchange._try_merchant_signal()
+	exchange.merchant_hail()
+	check(exchange.merchant_preview("exchange:nova:emp") and exchange.merchant_accept(), "The market can swap an invested non-signature active for an unusual alternative")
+	check("emp" in exchange.active_slots and "nova" not in exchange.active_slots and exchange.upgrades.nova == 0 and exchange.upgrades.emp == 1, "Active exchange consumes the old ranks and does not create a fifth ability slot")
+	var saved_trade: Dictionary = exchange.snapshot()
+	check(Sim.new().restore(saved_trade) and exchange.merchant_trade_count == 1, "Completed merchant transactions are durable and cannot double-apply")
+	var disabled := Sim.new(61127)
+	disabled.daily_day = "2026-11-17"
+	disabled.merchant_enabled = true
+	disabled.stage = 2
+	disabled.time = 95.0
+	disabled.merchant_next_at = 85.0
+	check(not disabled._try_merchant_signal(), "Even corrupted enabling flags cannot spawn a merchant in Daily")
 
 func _test_roguelike_variation() -> void:
 	var standard := Sim.new(444)
