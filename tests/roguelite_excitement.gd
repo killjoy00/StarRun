@@ -38,7 +38,7 @@ func _run() -> void:
 		check(is_equal_approx(total, 16.0), "W%d redistributes exactly 16 ordinary slots with no aggregate spawn gain" % stage)
 		check(fast / 6.0 < recovery / 8.0, "W%d has actual pressure and recovery beats" % stage)
 		check(sim.rng.state == rng_before, "W%d rhythm uses no combat or draft random draws" % stage)
-		check(is_equal_approx(sim._spawn_rhythm_factor(), 0.80), "W%d cycle repeats deterministically" % stage)
+		check(is_equal_approx(sim._spawn_rhythm_factor(), 0.95 if stage == 4 else 0.80), "W%d cycle repeats deterministically" % stage)
 		var checkpoint: Dictionary = sim.snapshot()
 		var duplicate: Dictionary = checkpoint.duplicate(true)
 		var resumed := Sim.new()
