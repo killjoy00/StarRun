@@ -16,6 +16,24 @@ func check(condition: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 
+# Regression fixtures must genuinely clear any new boss objectives. One
+# injected core hit would skip intermissions only with the former mechanics.
+# Real gameplay and autosimulation do not use this helper.
+func _defeat_boss_fixture(sim: RefCounted) -> void:
+	if sim.stage not in [3,4] or not sim.boss_spawned:
+		var ordinary: Dictionary = sim._boss_core()
+		if not ordinary.is_empty():
+			sim._damage_enemy(ordinary, 999999999.0, "nova")
+		return
+	for _phase in range(3):
+		var parts: Array = sim.enemies.filter(func(e): return e.kind == "boss_module" and e.hp > 0.0)
+		for part in parts:
+			sim._damage_enemy(part, 999999999.0, "nova")
+		var core: Dictionary = sim._boss_core()
+		if core.is_empty() or sim.stage_transition_queued:
+			break
+		sim._damage_enemy(core, 999999999.0, "nova")
+
 func _run() -> void:
 	_test_course()
 	_test_defenses()
@@ -1852,10 +1870,8 @@ func _test_four_stage_campaign() -> void:
 		check(sim.enemies.size() == (1 if stage_number == 1 else 3) and sim.enemies[0].kind == boss_kinds[stage_number - 1], "Each stage must have a distinct boss with modules after Stage 1")
 		check(sim.enemies[0].max_hp > health, "Later bosses must require stronger builds")
 		health = sim.enemies[0].max_hp
-		# This tests transitions, not a fixed damage budget: remove the boss parts first.
-		for part in sim.enemies:
-			if part.kind == "boss_module": sim._damage_enemy(part, part.hp * 2.0, "pulse")
-		sim._damage_enemy(sim.enemies[0], sim.enemies[0].hp * 2.0, "pulse")
+		# Visit all genuine part gates without timing waits or bypass flags.
+		_defeat_boss_fixture(sim)
 		check(sim.stage_clears == stage_number and sim.stage_transition_queued and not sim.ended, "Each boss must freeze before the player acknowledges victory")
 		var paused: Dictionary = sim.snapshot()
 		sim.step()
@@ -2055,7 +2071,7 @@ func _test_prototype_and_route_choices() -> void:
 	baseline_boss.stage = 3
 	baseline_boss._spawn_boss()
 	check(risk.enemies[0].max_hp > baseline_boss.enemies[0].max_hp and risk.enemies[1].max_hp > baseline_boss.enemies[1].max_hp, "High-risk contracts must increase both boss core and module durability")
-	risk._damage_enemy(risk.enemies[0], 1000000.0, "pulse")
+	_defeat_boss_fixture(risk)
 	check(risk.bounty_earned == 90 and risk.bonus_cores >= 90, "Bounties must pay only when the risked next-stage boss is beaten")
 	var clock := Sim.new(890)
 	clock.stage = 2
@@ -2108,7 +2124,7 @@ func _test_route_prototype_balance_grid() -> void:
 					var sim := Sim.new(41023, hangar, "vanguard", "rookie", difficulty)
 					sim.stage = world - 1
 					sim._spawn_boss()
-					sim._damage_enemy(sim.enemies[0], 10000000.0, "pulse")
+					_defeat_boss_fixture(sim)
 					check(sim.stage_transition_queued and sim.begin_intermission(), "Warp setup must clear a real intermission checkpoint")
 					check(sim.choose_prototype(0) and sim.choose_route(route) and sim.advance_stage(), "Warp choices must advance to world %d on %s / %s / %s" % [world, difficulty, hangar_style, route])
 					check(sim.stage == world and sim.route_choice == route, "Selected route must persist into the intended world")
@@ -2484,7 +2500,7 @@ func _test_stage_rerolls_and_shield_breaks() -> void:
 				sim = resumed
 				sim.cards.clear()
 				sim._spawn_boss()
-				sim._damage_enemy(sim.enemies[0], 9999999.0, "pulse")
+				_defeat_boss_fixture(sim)
 				if stage_number < 4:
 					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Rerolls refill through the real boss/intermission transition")
 					var allowance: int = sim.rerolls_left
@@ -2495,7 +2511,7 @@ func _test_stage_rerolls_and_shield_breaks() -> void:
 	check(unused.rerolls_left == 2 and unused.pilot_rerolls_left == 1, "Use renewable stage rerolls before the pilot reserve")
 	unused.cards.clear()
 	unused._spawn_boss()
-	unused._damage_enemy(unused.enemies[0], 9999999.0, "pulse")
+	_defeat_boss_fixture(unused)
 	unused._enter_stage_two()
 	check(unused.rerolls_left == 3 and unused.pilot_rerolls_left == 1, "Unused stage uses do not accumulate; unused pilot reserve remains")
 	var legacy := unused.snapshot()
