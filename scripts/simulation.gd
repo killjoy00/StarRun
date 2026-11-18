@@ -579,8 +579,17 @@ func _install_mutation(id: String) -> bool:
 		return false
 	mutations.append(id)
 	upgrades[id] = 1
+	effects.append({"kind":"mutation-installed", "mutation":id, "p":ship_position(), "life":1.15, "max_life":1.15, "born":tick})
 	_log("WEAPON MUTATED - " + str(spec.name))
 	return true
+
+# A rare mutation looks special when it actually does something, not simply
+# while it is installed. The highlight never changes damage or combat RNG.
+func _mutation_feedback(id: String, position: Vector2) -> void:
+	if tick < mutation_feedback_next_tick:
+		return
+	mutation_feedback_next_tick = tick + 90
+	effects.append({"kind":"mutation-proc", "mutation":id, "p":position, "life":0.82, "max_life":0.82, "born":tick})
 
 func _apply_mutation_cost(id: String) -> void:
 	var item: Dictionary = Catalog.mutation(id)
@@ -2159,6 +2168,7 @@ func _update_weapons() -> void:
 				charges = charges.filter(func(charge): return int(charge.source) != int(target.id))
 				beams_cancelled += canceled - charges.size()
 				effects.append({"kind":"timed-counter", "p":target.p, "life":0.55, "max_life":0.55, "born":tick})
+				_mutation_feedback("grounding_arc", target.p)
 	if upgrades.lance > 0 and lance_timer <= 0.0:
 		var target := _nearest(origin)
 		for enemy in enemies:
@@ -2184,6 +2194,7 @@ func _update_weapons() -> void:
 							if other.hp > 0.0 and int(other.id) != int(enemy.id) and Geometry2D.get_closest_point_to_segment(other.p, origin, end).distance_to(other.p) >= 32.0 and other.p.distance_squared_to(enemy.p) <= 245.0 * 245.0:
 								effects.append({"kind":"lance", "p":enemy.p, "to":other.p, "life":0.42, "max_life":0.42, "born":tick})
 								_damage_enemy(other, strike_damage * 0.35, "lance_echo")
+								_mutation_feedback("refracting_lance", enemy.p)
 								echo_used = true
 								break
 
@@ -2399,6 +2410,7 @@ func _update_shots() -> void:
 						if not jump.is_empty():
 							effects.append({"kind":"arc", "p":enemy.p, "to":jump.p, "life":0.32, "max_life":0.32, "born":tick})
 							_damage_enemy(jump, float(shot.damage) * 0.35, "pulse_echo")
+						_mutation_feedback("ricochet_pulse", enemy.p)
 					if shot.weapon == "seeker" and _has_mutation("breach_seeker"):
 						var spread := 0
 						for other in enemies:
@@ -2409,6 +2421,7 @@ func _update_shots() -> void:
 								spread += 1
 						if spread > 0:
 							effects.append({"kind":"ion-burst", "p":enemy.p, "radius":125.0, "life":0.50, "max_life":0.50, "born":tick})
+							_mutation_feedback("breach_seeker", enemy.p)
 					if shot.weapon == "seeker" and _has_mutation("split_seeker") and not bool(shot.get("shard", false)):
 						var victims: Array = []
 						for other in enemies:
@@ -2421,7 +2434,9 @@ func _update_shots() -> void:
 							spawned_shards.append({"p":start, "v":(victim.p - start).normalized() * 650.0, "damage":float(shot.damage) * 0.35, "weapon":"seeker", "target":int(victim.id), "shard":true})
 						if not victims.is_empty():
 							effects.append({"kind":"explosion", "p":enemy.p, "life":0.42, "max_life":0.42, "born":tick})
+							_mutation_feedback("split_seeker", enemy.p)
 					if shot.weapon == "pulse" and int(shot.get("pierce", 0)) > 0:
+						_mutation_feedback("piercing_pulse", enemy.p)
 						shot["pierce"] = 0
 						shot["last_enemy"] = int(enemy.id)
 						shot["damage"] = float(shot.damage) * 0.60
@@ -2503,6 +2518,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		lance_timer = maxf(0.0, lance_timer - 0.65)
 		lance_refund_ready = false
 		effects.append({"kind":"timed-counter", "p":enemy.p, "life":0.45, "max_life":0.45, "born":tick})
+		_mutation_feedback("capacitor_lance", enemy.p)
 	if bool(enemy.get("rival", false)) and rival_outcome.is_empty():
 		rival_outcome = "retired"
 		rival_retire_pending = true
@@ -2553,6 +2569,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.42, "max_life":0.42, "born":tick})
 				_damage_enemy(nearby, amount * 0.35, "nova")
 				chained += 1
+		if chained > 0:
+			_mutation_feedback("arc_reactor", enemy.p)
 	if pilot_id == "scavenger" and not bool(enemy.get("no_reward", false)) and weapon != "scrap" and kills % 12 == 0 and not str(enemy.kind).begins_with("boss"):
 		effects.append({"kind":"ion-burst", "p":enemy.p, "radius":145.0, "life":0.65, "max_life":0.65, "born":tick})
 		var jumped := 0
