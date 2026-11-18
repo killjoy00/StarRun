@@ -470,6 +470,32 @@ func _test_world1_density_and_pilot_identities() -> void:
 	director._spawn_world1_pressure()
 	check(director.enemies.size() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
 	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
+	var expiry := Sim.new(8152)
+	expiry.time = 8.0
+	expiry._spawn_world1_pressure()
+	var undamaged: float = expiry.hull
+	expiry.time = 16.1
+	expiry._update_enemies()
+	check(expiry.enemies.is_empty() and is_equal_approx(expiry.hull,undamaged), "Non-XP pressure reinforcements retreat after eight seconds without escape damage or backlog")
+	var crowded := Sim.new(8153)
+	crowded.time = 55.0
+	for index in range(6):
+		crowded._add_enemy("gunship", Vector2(100.0 + index * 60.0, 280.0))
+		crowded.enemies[-1].fire = 0.0
+	for index in range(14):
+		crowded.bullets.append({"p":Vector2(50.0 + index * 20.0,250.0), "v":Vector2.DOWN * 150.0,"damage":1.0,"kind":"chaff","source":"test"})
+	crowded._update_enemies()
+	check(crowded.bullets.size() == 14, "Crowded Normal World 1 delays further ordinary volleys while fourteen hostile shots already fly")
+	check(crowded.enemies.all(func(e): return float(e.fire) >= 0.40), "Staggering preserves real living enemies and provides a follow-up attack window")
+	var advanced := Sim.new(8154, {}, "vanguard", "rookie", "hard")
+	advanced.time = 55.0
+	for index in range(6):
+		advanced._add_enemy("gunship", Vector2(100.0 + index * 60.0,280.0))
+		advanced.enemies[-1].fire = 0.0
+	for index in range(14):
+		advanced.bullets.append({"p":Vector2(50.0 + index * 20.0,250.0), "v":Vector2.DOWN * 150.0,"damage":1.0,"kind":"chaff","source":"test"})
+	advanced._update_enemies()
+	check(advanced.bullets.size() > 14, "Hard retains its authored unthrottled projectile cadence")
 	var untouched := director.enemies.size()
 	director._spawn_world1_pressure()
 	check(director.enemies.size() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")

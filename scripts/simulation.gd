@@ -1312,6 +1312,9 @@ func _spawn_world1_pressure() -> void:
 		wing.max_hp *= 1.65
 		wing.hp = wing.max_hp
 		wing.fire = 2.20 + index * 0.20
+		# Extra director ships are non-XP presence, not permanent reinforcements.
+		# Slow automatic guns must never accumulate an endless no-reward backlog.
+		wing["pressure_expires"] = time + 8.0
 	pressure_waves += 1
 	_log("STRIKE WING REINFORCEMENTS - no additional XP")
 
@@ -1541,6 +1544,9 @@ func _update_enemies() -> void:
 		if bool(enemy.get("opening_scout", false)) and time >= float(enemy.get("opening_scout_expires", 999999.0)):
 			enemy.hp = -1.0
 			continue
+		if bool(enemy.get("pressure_wing", false)) and time >= float(enemy.get("pressure_expires", 999999.0)):
+			enemy.hp = -1.0
+			continue
 		var kind: String = enemy.kind
 		if kind == "boss_module":
 			var core: Dictionary = _boss_core()
@@ -1617,6 +1623,14 @@ func _update_enemies() -> void:
 			heavy_ready_at = time + beam_interval
 			_log("%s heavy beam charging" % kind.replace("_", " "))
 		if enemy.fire <= 0.0:
+			# A player who cannot manually steer or aim should not face a
+			# never-ending crossfire just because slow starter guns left six
+			# enemies alive. Preserve the visible formation and normal XP,
+			# but stagger ordinary volleys once 14 hostile shots already fly.
+			# Clearer before 30s (few volleys), reactive when genuinely crowded.
+			if stage == 1 and difficulty == "normal" and daily_day.is_empty() and not boss_spawned and _visible_world1_enemies() >= 5 and bullets.size() >= 14:
+				enemy.fire = 0.40
+				continue
 			# An opening salvo from a very slow turret should emerge
 			# at the top edge, not be held until deep into the playfield.
 			# This applies only to the HP-tested shooters in Worlds 2+;
