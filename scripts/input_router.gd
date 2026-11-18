@@ -11,7 +11,10 @@ static func key(host, event: InputEvent) -> void:
 			host._begin_warp()
 		host.get_viewport().set_input_as_handled()
 	elif host.mode == "playing":
-		if event.keycode == KEY_B:
+		if event.keycode == KEY_R and host.sim.signal_status == "offer":
+			host._show_signal()
+			host.get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_B:
 			host._show_build()
 			host.get_viewport().set_input_as_handled()
 		elif event.keycode == KEY_TAB:
@@ -37,6 +40,8 @@ static func gamepad(host, event: InputEvent) -> void:
 	if event is InputEventJoypadButton and event.pressed:
 		if event.button_index == JOY_BUTTON_START:
 			host._toggle_pause()
+		elif host.mode == "playing" and event.button_index == JOY_BUTTON_DPAD_UP and host.sim.signal_status == "offer":
+			host._show_signal()
 		elif host.mode == "playing":
 			var bindings := [JOY_BUTTON_A, JOY_BUTTON_X, JOY_BUTTON_Y, JOY_BUTTON_B]
 			var index: int = bindings.find(event.button_index)

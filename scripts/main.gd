@@ -12,6 +12,8 @@ const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
+const HiddenSector = preload("res://scripts/hidden_sector.gd")
+const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const RivalPortrait = preload("res://scripts/rival_portrait.gd")
 const MerchantShip = preload("res://scripts/merchant_ship.gd")
 const GameCenterBridge = preload("res://scripts/game_center_bridge.gd")
@@ -68,6 +70,8 @@ var banner_clock := 0.0
 var last_sector := ""
 var build_return_mode := "playing"
 var build_show_all := false
+var signal_button: Button
+var signal_label: Label
 var stage_clear_clock := 0.0
 var stage_clear_button: Button
 var stage_clear_secondary: Button
@@ -348,6 +352,13 @@ func _build_ui() -> void:
 	sound_button = _button(root, "Effects", _toggle_sound)
 	music_button = _button(root, "Music", _toggle_music)
 	low_fx_button = _button(root, "Glow", _toggle_fx)
+	signal_button = _button(root, "♪  UNLISTED SIGNAL", _show_signal)
+	signal_button.visible = false
+	signal_label = _label(root, "", 15, HiddenSector.MINT)
+	signal_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	signal_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	signal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	signal_label.visible = false
 	overlay = Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(overlay)
@@ -408,6 +419,12 @@ func _layout() -> void:
 	shield_caption.position = shield_meter.position + Vector2(7, 1)
 	hull_caption.size = Vector2(meter_width - 9.0, 22)
 	shield_caption.size = Vector2(meter_width - 9.0, 22)
+	var signal_width := minf(340.0, size.x - 30.0)
+	signal_button.position = Vector2((size.x - signal_width) * 0.5, field.position.y + 97.0 * scale_factor)
+	signal_button.size = Vector2(signal_width, 46.0)
+	signal_label.position = signal_button.position
+	signal_label.size = signal_button.size
+	signal_label.add_theme_stylebox_override("normal", Kit.box(Color("101f24"), HiddenSector.COLOR, 10, 1, 10, 5))
 	var controls_width := minf(size.x - 28.0, maxf(330.0, field.size.x))
 	var controls_x := (size.x - controls_width) * 0.5
 	var button_width := (controls_width - (15.0 if compact else 6.0)) / (4.0 if compact else 2.0)
@@ -503,6 +520,14 @@ func _layout() -> void:
 		_show_loadout()
 	elif mode == "build":
 		_show_build()
+	elif mode == "archive_signal":
+		_show_signal()
+	elif mode == "archive_reveal":
+		_show_archive_reveal(false)
+	elif mode == "archive_intro":
+		_show_archive_intro(false)
+	elif mode == "archive_ending":
+		_show_archive_ending(false)
 	elif mode == "stage_clear":
 		_show_stage_clear(false)
 	elif mode == "prototype":
@@ -1145,6 +1170,9 @@ func _show_achievements() -> void:
 	for item in Progress.ACHIEVEMENTS:
 		var id: String = str(item.id)
 		var is_unlocked: bool = unlocked.has(id)
+		if bool(item.get("local_only", false)) and not is_unlocked:
+			_info_card(view.body, "Unlisted achievement", "The flight recorder is waiting for a signal.", Kit.MUTED)
+			continue
 		var done: int = mini(int(item.target), Progress.progress(profile, id))
 		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
 		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
@@ -1326,6 +1354,7 @@ func _show_briefing(launch_after: bool = false) -> void:
 		["Abilities", "The four buttons under the playfield are yours. Tap one when it's ready, then it recharges."],
 		["Level up", "Upgrade both matching abilities to rank 5 to fuse them and free a slot."],
 		["Four bosses", "Clear four stages. The cores you earn buy permanent upgrades in the Hangar."],
+		["Unknown signals", "Watch for unlisted transmissions in Worlds 2–4 on regular flights. Recover any two before you defeat the Regent."],
 	]
 	for i in range(steps.size()):
 		var row := HBoxContainer.new()
@@ -1346,7 +1375,7 @@ func _show_briefing(launch_after: bool = false) -> void:
 		Kit.label(text, str(steps[i][0]), 17, Color.WHITE)
 		Kit.label(text, str(steps[i][1]), 15, Kit.MUTED, true)
 	if not _touch_first():
-		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
+		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, R opens a signal, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
 	_focus(_ui_button(box, "Launch" if briefing_launch else "Got it", _briefing_done, "primary", 56))
 
 func _briefing_done() -> void:
@@ -1896,7 +1925,128 @@ func _big_stat(parent: Node, value: String, caption: String, color: Color) -> vo
 	number.add_theme_font_override("font", Kit.font(0, 0.6))
 	Kit.caps(stack, caption, Kit.MUTED, 12)
 
+func _show_signal() -> void:
+	if mode not in ["playing", "archive_signal"] or sim.signal_status != "offer":
+		return
+	mode = "archive_signal"
+	_save_run()
+	var view := _page(1.0, true, 500.0)
+	_page_header(view.top, "Unknown frequency  ·  %d / %d signals" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS], HiddenSector.signal_name(sim.seed_value, sim.stage).capitalize())
+	Kit.label(view.top, "“If you can hear this, the Citadel is hiding a door. Recover two coordinates and we can show you where.”", 17, Kit.TEXT, true)
+	_info_card(view.body, "Tune the receiver", "Cast any ready ability when the receiver says CAST NOW. The window repeats for 52 seconds.", HiddenSector.MINT)
+	_ui_button(view.body, "Tune receiver", _choose_signal.bind("cast"), "secondary", 48)
+	_info_card(view.body, "Intercept the courier", "Shoot down the marked courier before it escapes. Your ship tracks the target automatically.", HiddenSector.COLOR)
+	_ui_button(view.body, "Intercept courier", _choose_signal.bind("courier"), "secondary", 48)
+	_focus(_ui_button(reading_footer, "Ignore signal", _choose_signal.bind("ignore"), "ghost", 50, true))
+
+func _choose_signal(action: String) -> void:
+	if mode != "archive_signal" or not sim.choose_signal(action):
+		return
+	mode = "playing"
+	accumulator = 0.0
+	_clear_overlay()
+	_save_run()
+
+func _archive_art(parent: Node, scene: String) -> void:
+	var art := ArchiveIllustration.new()
+	art.scene = scene
+	art.reduced = bool(profile.reduced)
+	art.custom_minimum_size.y = 195.0 if get_viewport_rect().size.y < 740.0 else 256.0
+	parent.add_child(art)
+
+func _show_archive_reveal(reset_clock: bool = true) -> void:
+	mode = "archive_reveal"
+	_save_run()
+	var view := _page(1.0, true, 560.0)
+	_page_header(view.top, "Campaign cleared  ·  Signal found", "A door in the dark")
+	_archive_art(view.body, "gate")
+	Kit.label(view.body, "“The Regent is down. Look beyond the wreckage. That light has been waiting for you.”", 18, Kit.TEXT, true)
+	Kit.label(view.body, "The Silent Archive is a tougher final sector. Your four-world victory and Cores are secured. Enter with your current build and a fresh shield.", 16, Kit.MUTED, true)
+	var finish_button := _ui_button(reading_footer, "Finish campaign", _finish_at_citadel, "primary", 52, true)
+	_ui_button(reading_footer, "Play Endless", _continue_endless, "secondary", 52, true)
+	_ui_button(view.bottom, "Enter the Silent Archive", _enter_archive, "amber", 52)
+	_focus(finish_button)
+	if reset_clock:
+		sound.play("archive-signal", -6.0)
+		_haptic(110)
+
+func _finish_at_citadel() -> void:
+	if mode == "archive_reveal" and sim.can_enter_secret() and sim.advance_stage():
+		_finish()
+
+func _enter_archive() -> void:
+	if mode == "archive_reveal" and sim.enter_secret():
+		_finish_intermission_presentation()
+		_show_archive_intro()
+
+func _show_archive_intro(reset_sound: bool = true) -> void:
+	mode = "archive_intro"
+	_save_run()
+	var view := _page(1.0, true, 520.0)
+	if sim.boss_spawned:
+		_page_header(view.top, "Archive defense online", "The Last Custodian")
+		_archive_art(view.body, "boss")
+		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
+		Kit.label(view.body, "Hold an ability for the warning. Any ready active breaks the lock and opens the core to full damage.", 17, HiddenSector.MINT, true)
+	else:
+		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
+		_archive_art(view.body, "arrival")
+		Kit.label(view.body, "Two coordinates. One station. Your autopilot has a heading.", 18, Kit.TEXT, true)
+		Kit.label(view.body, "Keep a ready ability for the station's lock warnings. Destroy relay ships to scatter their escort fire.", 17, HiddenSector.MINT, true)
+	_focus(_ui_button(reading_footer, "Engage Custodian" if sim.boss_spawned else "Fly into the Archive", _resume_archive, "primary", 56, true))
+	if reset_sound:
+		sound.play("archive-boss" if sim.boss_spawned else "archive-signal", -6.0)
+		_haptic(90)
+
+func _resume_archive() -> void:
+	if mode != "archive_intro" or not sim.dismiss_secret_intro():
+		return
+	mode = "playing"
+	accumulator = 0.0
+	_clear_overlay()
+	_save_run()
+
+func _show_archive_ending(reset_sound: bool = true) -> void:
+	mode = "archive_ending"
+	_save_run()
+	var view := _page(1.0, true, 540.0)
+	_page_header(view.top, "World 5 clear  ·  Final signal", "A light left on")
+	_archive_art(view.body, "epilogue")
+	Kit.label(view.body, "The station unlocks one bay at a time. Thousands of distress calls spill into open space. Yours is the first ship to answer.", 19, Kit.TEXT, true)
+	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
+	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
+	_focus(_ui_button(reading_footer, "Complete flight", _finish_archive, "primary", 56, true))
+	if reset_sound:
+		sound.play("archive-release", -4.0)
+		_haptic(125)
+
+func _finish_archive() -> void:
+	if mode == "archive_ending" and sim.advance_stage():
+		_finish()
+
+func _update_archive_hud() -> void:
+	signal_button.visible = mode == "playing" and sim.signal_status == "offer"
+	signal_label.visible = mode == "playing" and (sim.signal_status in ["cast", "courier"] or not sim.archive_attack.is_empty())
+	if signal_label.visible:
+		var world_y := 289.0 if sim.secret_entered and sim.boss_spawned else 97.0
+		signal_label.position.y = field.position.y + world_y * scale_factor
+	if not sim.archive_attack.is_empty():
+		signal_label.text = "%s  %.1fs  ·  CAST AN ABILITY" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time)]
+		signal_label.add_theme_color_override("font_color", Kit.DANGER)
+	elif sim.signal_status == "cast":
+		signal_label.text = "CAST NOW  ·  ANY ABILITY" if sim.signal_cast_window() else "RECEIVER TUNING  ·  WAIT"
+		signal_label.add_theme_color_override("font_color", HiddenSector.MINT if sim.signal_cast_window() else Kit.TEXT)
+	elif sim.signal_status == "courier":
+		signal_label.text = "MARKED COURIER  ·  %ds" % ceili(sim.signal_until - sim.time)
+		signal_label.add_theme_color_override("font_color", HiddenSector.COLOR)
+
 func _show_stage_clear(reset_clock: bool = true) -> void:
+	if sim.can_enter_secret():
+		_show_archive_reveal(reset_clock)
+		return
+	if sim.secret_entered:
+		_show_archive_ending(reset_clock)
+		return
 	stage_clear_secondary = null # Never keep a freed Endless button across ceremonies.
 	if reset_clock:
 		stage_clear_clock = 0.0
@@ -2171,7 +2321,12 @@ func _show_results() -> void:
 	var view := _page(1.0, true, 540.0)
 	var body: VBoxContainer = view.body
 	var qualifier: String = "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
-	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], "Victory" if sim.won else "Ship destroyed")
+	var title := "Victory" if sim.won else "Ship destroyed"
+	if sim.secret_entered:
+		title = "Open Frequency" if sim.won else "Signal lost"
+	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], title)
+	if sim.secret_entered and not sim.won:
+		Kit.label(view.top, "The Citadel victory and campaign Cores are secured.", 16, HiddenSector.MINT, true)
 	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
 	if not result_rival_news.is_empty():
 		var recent: Dictionary = result_rival_news.get("rival", {})
@@ -2352,8 +2507,11 @@ func _resume_run() -> void:
 	if not sim.restore(state):
 		_new_run()
 		return
+	if sim.ended and sim.secret_entered:
+		_finish()
+		return
 	_start_flight()
-	if not sim.cards.is_empty():
+	if mode == "playing" and not sim.cards.is_empty():
 		_show_cards()
 
 ## First heavy beam is an in-flight lesson, not another preflight paragraph.
@@ -2416,6 +2574,8 @@ func _start_flight() -> void:
 		_show_rival_retired()
 	elif sim.rival_intro_pending:
 		_show_rival_intro()
+	elif sim.secret_intro_pending:
+		_show_archive_intro()
 	elif sim.merchant_state == "signal":
 		_show_merchant_signal()
 	elif sim.merchant_state == "shop":
@@ -2457,8 +2617,15 @@ func _process(delta: float) -> void:
 	if mode == "playing":
 		accumulator += minf(delta, 0.2) * game_speed
 		while accumulator >= Simulation.DT and mode == "playing":
+			var previous_signal: String = sim.signal_status
+			var previous_attack: String = sim.archive_attack
 			sim.step()
 			accumulator -= Simulation.DT
+			if previous_signal != sim.signal_status:
+				_archive_signal_feedback()
+			if previous_attack.is_empty() and not sim.archive_attack.is_empty():
+				sound.play("archive-boss", -10.0)
+				_haptic(45)
 			_opening_first30_beat()
 			if sim.ended:
 				_finish()
@@ -2466,6 +2633,8 @@ func _process(delta: float) -> void:
 				_show_rival_retired()
 			elif sim.rival_intro_pending:
 				_show_rival_intro()
+			elif sim.secret_intro_pending:
+				_show_archive_intro()
 			elif sim.merchant_state == "signal":
 				_show_merchant_signal()
 			elif sim.stage_transition_queued:
@@ -2520,14 +2689,37 @@ func _process(delta: float) -> void:
 
 func _update_hud() -> void:
 	CombatHud.refresh(self)
+	_update_archive_hud()
+
+func _archive_signal_feedback() -> void:
+	if sim.signal_status == "offer":
+		banner_text = "UNLISTED SIGNAL · CHECK RECEIVER"
+		banner_clock = 4.0
+		sound.play("archive-signal")
+	elif sim.signal_status == "received":
+		banner_text = "%d / %d COORDINATES RECOVERED" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS]
+		banner_clock = 4.0
+		_save_run()
+		sound.play("archive-release", -10.0)
+	elif sim.signal_status == "missed":
+		banner_text = "SIGNAL LOST"
+		banner_clock = 3.0
+		_save_run()
 
 func _activate_slot(slot: int) -> void:
 	if slot >= 0 and slot < sim.active_slots.size():
 		_activate(str(sim.active_slots[slot]))
 
 func _activate(id: String) -> void:
+	var old_signal: String = sim.signal_status
+	var old_attack: String = sim.archive_attack
 	if mode == "playing" and sim.activate(id):
 		_haptic(38)
+		if old_signal != sim.signal_status:
+			_archive_signal_feedback()
+		if not old_attack.is_empty() and sim.archive_attack.is_empty():
+			_save_run()
+			sound.play("archive-release", -12.0)
 		sound.play_ability(id)
 		if not sim.cards.is_empty():
 			_show_cards()
@@ -2550,6 +2742,13 @@ func _toggle_pause() -> void:
 func _continue_endless() -> void:
 	if not sim.daily_day.is_empty():
 		return # Daily scores end at World 4; no endless farming.
+	if mode == "archive_reveal" and sim.enable_endless():
+		_save_run()
+		mode = "warp"
+		warp_clock = 0.0
+		_clear_overlay()
+		sound.play("start", -7.0)
+		return
 	if mode != "stage_clear" or stage_clear_clock < 1.2 or not sim.enable_endless():
 		return
 	_save_run()
@@ -2606,6 +2805,9 @@ func _finish_intermission() -> void:
 	if not sim.advance_stage():
 		_show_route_choice()
 		return
+	_finish_intermission_presentation()
+
+func _finish_intermission_presentation() -> void:
 	mode = "playing"
 	_clear_overlay()
 	accumulator = 0.0
@@ -2620,6 +2822,8 @@ func _finish_intermission() -> void:
 
 func _finish() -> void:
 	mode = "results"
+	if sim.secret_entered:
+		services.write_atomic(Services.RUN, sim.snapshot())
 	# A crash between the rival's defeat and the result panel must still
 	# retire their dossier exactly once.
 	if sim.rival_outcome == "retired":
@@ -2633,8 +2837,8 @@ func _finish() -> void:
 	result_daily_best = int(settlement.best_score)
 	result_new_best = bool(settlement.new_best)
 	result_rival_news = settlement.get("rival_news", {})
-	_save_profile()
-	services.delete_run()
+	if _save_profile():
+		services.delete_run()
 	_show_results()
 	for id in result_awards:
 		var item: Dictionary = Progress.achievement(str(id))
@@ -2697,10 +2901,12 @@ func _refresh_panel() -> void:
 	elif mode == "paused":
 		_show_pause()
 
-func _save_profile() -> void:
-	if not services.write_atomic(Services.PROFILE, profile):
-		banner_text = "Save unavailable on this device"
-		banner_clock = 5.0
+func _save_profile() -> bool:
+	if services.write_atomic(Services.PROFILE, profile):
+		return true
+	banner_text = "Save unavailable on this device"
+	banner_clock = 5.0
+	return false
 
 func _save_run() -> void:
 	if sim != null and not sim.ended:

@@ -21,7 +21,9 @@ const SCREENS := [
 	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
-	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear"
+	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
+	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
+	"archive-boss-intro", "archive-boss-lock", "archive-ending"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
@@ -54,6 +56,7 @@ func _run() -> void:
 			scene.banish_mode = false
 			scene.stage_clear_clock = 2.0
 			_prepare(scene, screen)
+			scene.world._process(0.0)
 			scene._update_hud()
 			scene._process(0.0)
 			# Capture the final frame after the 150ms sheet slide, not the dim fade-in.
@@ -222,4 +225,53 @@ func _prepare(scene, screen: String) -> void:
 			scene.sim.stage = 5
 			scene.sim.stage_clears = 5
 			scene.sim.stage_transition_queued = true
+			scene._show_stage_clear(false)
+
+		"archive-signal":
+			scene.sim.stage = 2
+			scene.sim.signal_status = "offer"
+			scene.sim.signal_until = 195.0
+			scene.mode = "playing"
+			scene._show_signal()
+		"archive-reveal", "archive-arrival", "archive-patrol", "archive-boss-intro", "archive-boss-lock", "archive-ending":
+			scene.sim.stage = 4
+			scene.sim.stage_clears = 4
+			scene.sim.time = 1100.0
+			scene.sim.tick = 66000
+			scene.sim.level = 63
+			scene.sim.upgrades.nova = 5
+			scene.sim.upgrades.capacitor = 4
+			scene.sim.active_slots.append_array(["nova", "capacitor"])
+			scene.sim.signal_count = 2
+			scene.sim.stage_transition_queued = true
+			scene._show_stage_clear(false)
+			if screen == "archive-reveal":
+				return
+			scene._enter_archive()
+			if screen == "archive-arrival":
+				return
+			scene._resume_archive()
+			if screen == "archive-patrol":
+				scene.sim.time += 28.0
+				scene.sim._spawn_archive_patrol()
+				for enemy in scene.sim.enemies:
+					enemy.p.y += 350.0
+				scene.sim.archive_attack = "lock"
+				scene.sim.archive_attack_x = 190.0
+				scene.sim.archive_attack_until = scene.sim.time + 1.4
+				return
+			scene.sim.time = scene.sim.stage_start + 105.0
+			scene.sim._spawn_boss()
+			scene._show_archive_intro(false)
+			if screen == "archive-boss-intro":
+				return
+			scene._resume_archive()
+			if screen == "archive-boss-lock":
+				scene.sim.time = scene.sim.archive_next_attack
+				scene.sim.archive_phase = 2
+				scene.sim._update_archive_attack()
+				return
+			scene.sim.archive_phase = 2
+			scene.sim.archive_phase_released = true
+			scene.sim._damage_enemy(scene.sim._boss_core(), 9999999.0, "nova")
 			scene._show_stage_clear(false)

@@ -7,6 +7,20 @@ const SAVE_VERSION := 1
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
 const Catalog = preload("res://scripts/catalog.gd")
+const HiddenSector = preload("res://scripts/hidden_sector.gd")
+var signal_count := 0
+var signal_status := "" # "", "offer", "cast", "courier", "received", "missed"
+var signal_until := 0.0
+var secret_entered := false
+var secret_intro_pending := false
+var secret_payout := 0
+var archive_next_attack := 0.0
+var archive_attack_until := 0.0
+var archive_exposed_until := 0.0
+var archive_phase := 0
+var archive_phase_released := false
+var archive_attack := ""
+var archive_attack_x := 0.0
 var content: Dictionary
 var rng := RandomNumberGenerator.new()
 var seed_value := 1
@@ -289,7 +303,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
-	if ended or stage_transition_queued or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
+	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
 	tick += 1
 	time = tick * DT
@@ -342,8 +356,11 @@ func step() -> void:
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
-	if not boss_spawned and time - stage_start >= float(content.boss_at):
+	_update_signal()
+	if not boss_spawned and time - stage_start >= (HiddenSector.BOSS_AT if secret_entered else float(content.boss_at)):
 		_spawn_boss()
+		if secret_intro_pending:
+			return
 	if time >= next_spawn and not boss_spawned:
 		var stage_time := time - stage_start
 		# Scouts → warning → strike wing → recovery → counterattack.
@@ -360,17 +377,21 @@ func step() -> void:
 	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
 		_spawn_world1_pressure()
 		next_pressure_wave_at = time + 7.5
-	if time >= next_hazard and not boss_spawned:
+	if not secret_entered and time >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = time + rng.randf_range(15.0, 23.0)
 	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and time >= merchant_next_at:
 		_try_merchant_signal()
 	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at:
 		_try_spawn_rival()
-	if time >= next_encounter_at and not boss_spawned:
+	if not secret_entered and time >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
 		next_encounter_at = time + (35.0 + float((seed_value + encounter_index * 11) % 9) if stage == 1 and difficulty == "normal" else 66.0 + float((seed_value + encounter_index * 11) % 23))
 	_update_enemies()
+	if secret_entered:
+		_update_archive_attack()
+		if ended:
+			return
 	_update_charges()
 	_update_support()
 	_update_weapons()
@@ -471,6 +492,8 @@ func opener_boss_enrage() -> float:
 	return 1.0 + minf(6.0, elapsed / (25.0 if difficulty == "hard" else 20.0))
 
 func stage_spec() -> Dictionary:
+	if secret_entered:
+		return HiddenSector.SPEC
 	if stage <= int(content.stage_count):
 		return content.stages[clampi(stage - 1, 0, content.stages.size() - 1)]
 	if int(endless_stage_spec.get("_stage", -1)) != stage:
@@ -500,10 +523,12 @@ func stage_name() -> String:
 	return str(stage_spec().name)
 
 func stage_count() -> int:
+	if secret_entered:
+		return HiddenSector.WORLD
 	return maxi(int(content.stage_count), stage + 1) if endless_enabled else int(content.stage_count)
 
 func enable_endless() -> bool:
-	if endless_enabled or stage != int(content.stage_count) or not stage_transition_queued or stage_clears != stage:
+	if secret_entered or endless_enabled or stage != int(content.stage_count) or not stage_transition_queued or stage_clears != stage:
 		return false
 	endless_enabled = true
 	_log("Endless unlocked: keeping the existing build")
@@ -909,13 +934,20 @@ func _alive_modules(role: String = "") -> int:
 
 func _boss_core() -> Dictionary:
 	for enemy in enemies:
-		if str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"] and enemy.hp > 0.0:
+		if _is_boss(str(enemy.kind)) and enemy.hp > 0.0:
 			return enemy
 	return {}
+
+func _is_boss(kind: String) -> bool:
+	return kind.begins_with("boss") and kind != "boss_module"
 
 func boss_phase_label() -> String:
 	if not boss_spawned:
 		return ""
+	if secret_entered:
+		if not archive_attack.is_empty():
+			return "CAST AN ABILITY TO BREAK THE LOCK"
+		return "CORE EXPOSED" if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
 	if stage == 1:
 		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
 	if stage == 2:
@@ -1003,7 +1035,82 @@ func choose_route(id: String) -> bool:
 	_log("Warp route selected: " + id)
 	return true
 
+func can_enter_secret() -> bool:
+	return daily_day.is_empty() and not endless_enabled and not secret_entered and not ended and stage == int(content.stage_count) and stage_clears == stage and stage_transition_queued and signal_count >= HiddenSector.REQUIRED_SIGNALS
+
+func _update_signal() -> void:
+	if not daily_day.is_empty() or stage not in [2, 3, 4] or signal_count >= HiddenSector.REQUIRED_SIGNALS:
+		return
+	if signal_status.is_empty() and time - stage_start >= HiddenSector.signal_time(seed_value, stage):
+		signal_until = stage_start + 195.0
+		signal_status = "offer" if time < signal_until else "missed"
+	elif signal_status in ["offer", "cast", "courier"] and time >= signal_until:
+		signal_status = "missed"
+
+func choose_signal(action: String) -> bool:
+	if not daily_day.is_empty() or ended or stage_transition_queued or signal_status != "offer" or time >= signal_until or stage not in [2, 3, 4] or endless_enabled:
+		return false
+	match action:
+		"cast":
+			signal_status = "cast"
+			signal_until = time + 52.0
+		"courier":
+			signal_status = "courier"
+			signal_until = time + 24.0
+			# A dedicated contact is seeded without touching the campaign RNG.
+			var x: float = 115.0 + float(posmod(seed_value + stage * 73, 311))
+			var hp: float = 240.0 * stage * sqrt(threat_scale())
+			enemies.append({"id":next_id, "kind":"archive_courier", "p":Vector2(x, 230), "hp":hp, "max_hp":hp, "speed":26.0, "fire":2.2, "xp":0, "phase":0.0})
+			next_id += 1
+		"ignore":
+			signal_status = "missed"
+		_:
+			return false
+	return true
+
+func signal_cast_window() -> bool:
+	return signal_status == "cast" and time < signal_until and fposmod(signal_until - time, 8.0) <= 4.0
+
+func _receive_signal() -> void:
+	signal_status = "received"
+	signal_count += 1
+	_log("ARCHIVE COORDINATES · %d/%d signals recovered" % [signal_count, HiddenSector.REQUIRED_SIGNALS])
+
+func enter_secret() -> bool:
+	if not can_enter_secret():
+		return false
+	secret_payout = payout()
+	secret_entered = true
+	intermission_step = "ready"
+	route_choice = "repair"
+	return advance_stage()
+
+func dismiss_secret_intro() -> bool:
+	if not secret_intro_pending:
+		return false
+	secret_intro_pending = false
+	return true
+
+func _spawn_archive_patrol() -> void:
+	# Destroy the relay and the flanking ships lose their coordinated burst.
+	var leader: int = next_id
+	var center := rng.randf_range(150.0, 390.0)
+	_add_enemy("archive_relay", Vector2(center, -18.0))
+	enemies[-1].fire = 3.4
+	for side in [-1, 1]:
+		_add_enemy("archive_shard", Vector2(center + side * 86.0, -40.0))
+		enemies[-1]["archive_relay"] = leader
+		enemies[-1].fire = 3.4
+
 func _spawn_enemy() -> void:
+	if secret_entered:
+		if enemies.size() < 15:
+			if encounter_index % 5 == 0:
+				_spawn_archive_patrol()
+			else:
+				_add_enemy("archive_shard", Vector2(rng.randf_range(55, 485), -35))
+			encounter_index += 1
+		return
 	if enemies.size() >= _enemy_limit():
 		return
 	# Each authored enemy ecology recurs, but endless mixes threats from later worlds.
@@ -1069,7 +1176,7 @@ func _spawn_enemy() -> void:
 	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
 
 func _add_enemy(kind: String, position: Vector2) -> void:
-	var spec: Dictionary = content.enemies[kind]
+	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
@@ -1305,6 +1412,13 @@ func _spawn_boss() -> void:
 	encounter_queue.clear()
 	boss_spawned = true
 	boss_spawn_time = time
+	if secret_entered:
+		secret_intro_pending = true
+		archive_next_attack = time + 1.6
+		archive_attack = ""
+		archive_phase = 0
+		archive_phase_released = false
+		archive_exposed_until = time + 1.6
 	# The safeguard is once per stage; spawning the boss must not recharge it.
 	enemies.clear()
 	bullets.clear()
@@ -1341,11 +1455,16 @@ func advance_stage() -> bool:
 		stage_transition_queued = false
 		ended = true
 		won = true
-		_log("The Citadel has fallen - full run complete")
+		_log("The Archive is free · secret route complete" if secret_entered else "The Citadel has fallen - full run complete")
 		return true
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	signal_status = ""
+	signal_until = 0.0
+	if secret_entered:
+		archive_next_attack = time + 24.0
+		secret_intro_pending = true
 	if artifact_id == "arsenal_roulette":
 		# Move existing ranks, rather than gifting or destroying upgrades.
 		var before: Array = [int(upgrades.pulse), int(upgrades.seeker), int(upgrades.arc), int(upgrades.lance)]
@@ -1397,7 +1516,8 @@ func advance_stage() -> bool:
 	next_spawn = time + 1.5
 	next_hazard = time + 15.0
 	heavy_ready_at = time + 10.0
-	pending_levels += 1 + (1 if route_choice == "bounty" else 0)
+	if not secret_entered:
+		pending_levels += 1 + (1 if route_choice == "bounty" else 0)
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	return true
 
@@ -1421,6 +1541,14 @@ func _update_enemies() -> void:
 				enemy.hp = -1.0
 			else:
 				enemy.p = core.p + enemy.offset
+			continue
+		if kind == HiddenSector.BOSS:
+			enemy.p.x = 270.0 + sin((time - boss_spawn_time) * 0.68) * 99.0
+			enemy.p.y = 154.0 + cos((time - boss_spawn_time) * 0.52) * 16.0
+			_archive_index_fire(enemy)
+			continue
+		if HiddenSector.ENEMIES.has(kind):
+			_update_archive_enemy(enemy, pace)
 			continue
 		if kind.begins_with("boss"):
 			enemy.p.x = 270.0 + sin(time * (0.7 + stage * 0.16)) * (100.0 + stage * 9.0)
@@ -1598,6 +1726,89 @@ func _update_enemies() -> void:
 				enemies[-1]["rival_escort"] = true
 				enemies[-1]["xp"] = 0
 
+func _update_archive_enemy(enemy: Dictionary, pace: float) -> void:
+	var kind: String = enemy.kind
+	var age: float = time - stage_start
+	enemy.p.y += enemy.speed * DT * pace
+	if kind == "archive_shard":
+		enemy.p.x = clampf(enemy.p.x + sin(age * 4.2 + enemy.phase) * 65.0 * DT * pace, 32.0, 508.0)
+	if enemy.p.y > 885.0 or (kind == "archive_courier" and (signal_status != "courier" or time >= signal_until)):
+		enemy.hp = -1.0
+		return
+	enemy.fire -= DT * pace
+	if enemy.fire > 0.0 or enemy.p.y < 10.0 or emp_left > 0.0 or jammer_left > 0.0:
+		return
+	enemy.fire = float(HiddenSector.ENEMIES[kind].interval)
+	var linked: bool = kind == "archive_relay"
+	if kind == "archive_shard" and enemy.has("archive_relay"):
+		linked = enemies.any(func(relay): return int(relay.id) == int(enemy.archive_relay) and relay.hp > 0.0)
+	var direction: Vector2 = (ship_position(time + 1.9) - enemy.p).normalized()
+	var count := 3 if linked else 1
+	for i in range(count):
+		bullets.append({"p":enemy.p, "v":direction.rotated((i - (count - 1) * 0.5) * 0.17) * 245.0, "damage":2.5 * threat_scale(), "kind":"chaff", "source":kind})
+
+func _archive_index_fire(core: Dictionary) -> void:
+	core.fire -= DT
+	if core.fire > 0.0 or jammer_left > 0.0 or emp_left > 0.0:
+		return
+	core.fire = [3.45, 2.9, 2.55][archive_phase]
+	var aim := ship_position(time + 2.35)
+	for side in [-1, 1]:
+		var origin: Vector2 = core.p + Vector2(side * 66.0, 12.0)
+		var direction := (aim - origin).normalized()
+		for i in range(3 + archive_phase):
+			var angle: float = (float(i) - (2.0 + archive_phase) * 0.5) * 0.11
+			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":3.9 * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+
+func _update_archive_attack() -> void:
+	var core := _boss_core() if boss_spawned else {}
+	if boss_spawned and core.is_empty():
+		return
+	if not archive_attack.is_empty():
+		if time >= archive_attack_until:
+			_resolve_archive_attack(core)
+		return
+	if not core.is_empty() and archive_phase < 2 and archive_phase_released and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
+		archive_phase += 1
+		archive_phase_released = false
+		archive_next_attack = minf(archive_next_attack, time + 1.35)
+	if time < archive_next_attack:
+		return
+	archive_attack = HiddenSector.ATTACKS[archive_phase] if boss_spawned else "lock"
+	archive_attack_until = time + (3.2 if archive_phase == 2 else 3.6)
+	archive_attack_x = ship_position(archive_attack_until).x
+	_log("ARCHIVE " + archive_attack.to_upper() + " charging · any active ability breaks the lock")
+
+func _resolve_archive_attack(core: Dictionary) -> void:
+	var origin: Vector2 = core.get("p", Vector2(270, 165))
+	var attack := archive_attack
+	archive_attack = ""
+	archive_phase_released = true
+	archive_next_attack = time + (16.0 if not boss_spawned else (7.5 if archive_phase == 2 else 10.0))
+	archive_exposed_until = time + 3.0
+	if attack != "lattice":
+		effects.append({"kind":"beam", "p":Vector2(archive_attack_x, 0), "life":0.32, "max_life":0.32, "born":tick})
+		beams_fired += 1
+		if absf(ship_position().x - archive_attack_x) < 38.0:
+			_hit((67.0 if attack == "collapse" else (51.0 if boss_spawned else 27.0)) * threat_scale(), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
+	if attack in ["lattice", "collapse"]:
+		var count := 13 if attack == "lattice" else 7
+		for side in [-1, 1]:
+			var source := origin + Vector2(side * 115.0, 18.0)
+			var dir: Vector2 = (ship_position(time + 2.0) - source).normalized()
+			for i in range(count):
+				var offset := (i - (count - 1) * 0.5) * 0.15
+				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":5.0 * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+
+func _counter_archive_attack() -> void:
+	archive_attack = ""
+	archive_phase_released = true
+	archive_next_attack = time + (16.0 if not boss_spawned else 9.0)
+	archive_exposed_until = time + 6.0
+	beams_cancelled += 1
+	effects.append({"kind":"ion-burst", "p":ship_position(), "radius":215.0, "life":0.75, "max_life":0.75, "born":tick})
+	_log("RESONANCE BROKEN · weapons have a clear shot")
+
 func _update_charges() -> void:
 	for charge in charges:
 		charge.remaining -= DT
@@ -1664,7 +1875,7 @@ func _update_support() -> void:
 			for candidate in enemies:
 				if float(candidate.hp) <= 0.0 or candidate.p.y < -5.0 or candidate.kind == "boulder":
 					continue
-				if candidate.kind in ["gunship","sniper","missile_bomber","shieldguard","carrier","ion_frigate","storm_weaver","slag_bomber","void_lancer","boss_module","boss","boss2","boss3","boss4"] or str(candidate.get("elite_role","")) == "leader":
+				if candidate.kind in ["gunship","sniper","missile_bomber","shieldguard","carrier","ion_frigate","storm_weaver","slag_bomber","void_lancer","boss_module","boss","boss2","boss3","boss4",HiddenSector.BOSS,"archive_relay"] or str(candidate.get("elite_role","")) == "leader":
 					priority = candidate
 					break
 			if not priority.is_empty():
@@ -1902,8 +2113,10 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 	for enemy in enemies:
 		if enemy.hp > 0.0 and enemy.id not in excluded:
 			var d: float = origin.distance_squared_to(enemy.p)
-			if enemy.kind == "boss_module":
+			if enemy.kind == "boss_module" or enemy.kind == "archive_courier":
 				d *= 0.22
+			elif enemy.kind == "archive_relay":
+				d *= 0.58
 			elif pilot_id == "hunter" and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
 				d *= 0.14
 			elif str(enemy.get("elite_role", "")) == "leader":
@@ -2095,6 +2308,12 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.28
 	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0) + (0.08 if weapon == "lance" and passive_link_active("lance_sight") else 0.0)):
 		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
+	if enemy.kind == HiddenSector.BOSS:
+		if time >= archive_exposed_until:
+			amount *= 0.46
+		if archive_phase < 2 or not archive_phase_released:
+			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
+			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
 	enemy.hp -= amount
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
@@ -2108,6 +2327,11 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		rival_outcome = "retired"
 		rival_retire_pending = true
 		_log("RIVAL DEFEATED - " + str(rival_record.get("name", "Captain")))
+	if enemy.kind == "archive_courier":
+		if signal_status == "courier" and time < signal_until:
+			_receive_signal()
+		effects.append({"kind":"explosion", "p":enemy.p, "life":0.5, "max_life":0.5, "born":tick})
+		return
 	kills += 1
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
@@ -2180,10 +2404,10 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				disrupted += 1
 		effects.append({"kind":"elite-broken", "p":enemy.p, "source":squad_id, "life":1.25, "max_life":1.25, "born":tick})
 		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
-	if salvage_left > 0.0 and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)):
+	if salvage_left > 0.0 and not secret_entered and enemy.kind != "archive_courier" and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)):
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
 	# Boss components are targets, but only the core can end a stage or pay a contract.
-	var is_boss: bool = str(enemy.kind) in ["boss", "boss2", "boss3", "boss4"]
+	var is_boss := _is_boss(str(enemy.kind))
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
 	var before := charges.size()
 	for charge in charges:
@@ -2204,7 +2428,10 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		for i in range(2):
 			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
 	if is_boss:
-		if hull > max_hull * 0.60:
+		if secret_entered:
+			archive_attack = ""
+			bullets.clear()
+		if not secret_entered and hull > max_hull * 0.60:
 			bonus_cores += int(meta.clean_clear) * 3
 		if stage_risk > 1.0:
 			var reward: int = 30 * stage
@@ -2321,9 +2548,13 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		_log("Emergency field deployed")
 
 func activate(ability: String) -> bool:
-	if ended or stage_transition_queued or not intermission_step.is_empty() or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
+	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
+	if signal_cast_window():
+		_receive_signal()
+	if secret_entered and not archive_attack.is_empty():
+		_counter_archive_attack()
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
 	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
 	if not stage_casts.has(ability):
@@ -2817,6 +3048,8 @@ func _log(message: String) -> void:
 		events.pop_front()
 
 func payout() -> int:
+	if secret_entered:
+		return secret_payout
 	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
@@ -2831,6 +3064,8 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
+	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
+		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
