@@ -182,6 +182,43 @@ func _run() -> void:
 		"debrief includes actual engine damage, never unrelated escort damage")
 	check(Sim.new(990001).build_impact_rows(2).is_empty(),
 		"debrief does not claim progress for engines that never triggered")
+	# Relevance text must describe the best actual completion, not merely
+	# the first recipe in JSON order.
+	var hints := Sim.new(990002)
+	hints.stage = 2
+	hints.upgrades.pulse = 5
+	hints.upgrades.lance = 5
+	hints.upgrades.opening_salvo = 2
+	check(hints.engine_hint_for_pick("targeting").begins_with("Completes Prism Hunter"),
+		"a completed Prism Hunter overrides a weaker Execution Network hint")
+	# A zero-damage follow-up must not erase a pending cross-weapon mark.
+	var spotter := Sim.new(990003)
+	spotter.stage = 2
+	spotter.upgrades.pulse = 5
+	spotter.weapon_evolutions.pulse = "spotter"
+	var spot_target: Dictionary = _enemy(spotter)
+	spotter._damage_enemy(spot_target, 20.0, "pulse")
+	var mark_until: float = float(spot_target.evo_spotter_until)
+	spotter._damage_enemy(spot_target, 0.0, "seeker")
+	check(float(spot_target.evo_spotter_until) == mark_until,
+		"Spotter mark survives zero-damage hits, including sealed phases")
+	var hp_before: float = spot_target.hp
+	spotter._damage_enemy(spot_target, 20.0, "seeker")
+	check(float(spot_target.hp) < hp_before - 20.1 and float(spot_target.evo_spotter_until) < 0.0,
+		"Spotter mark pays out once when the next weapon actually deals damage")
+	var conductor := Sim.new(990004)
+	conductor.stage = 2
+	conductor.upgrades.arc = 5
+	conductor.weapon_evolutions.arc = "conductor"
+	var charged: Dictionary = _enemy(conductor)
+	conductor._damage_enemy(charged, 20.0, "arc")
+	var charged_until: float = float(charged.evo_conductor_until)
+	conductor._damage_enemy(charged, 0.0, "pulse")
+	check(float(charged.evo_conductor_until) == charged_until,
+		"Conductor charge survives a zero-damage pulse")
+	conductor._damage_enemy(charged, 20.0, "pulse")
+	check(float(charged.evo_conductor_until) < 0.0,
+		"Conductor charge is consumed by a real cross-weapon follow-up")
 	print("BUILD_PAYOFF_MATRIX_RESULT %d checks, %d failures" % [checks, failures])
 	print("BUILD_PAYOFF_MATRIX_COUNTS ", JSON.stringify({
 		"ships":ships.size(), "stages":[2, 3, 4],
