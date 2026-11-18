@@ -84,6 +84,24 @@ func _run() -> void:
 		scene._resume_run()
 		check(scene.sim.merchant_trade_count == last_trade and scene.sim.signal_status == "courier"
 			and scene.mode == "playing", "Restart preserves ongoing courier chase and no duplicate market trade")
+	# An expired or superseded offer must not trap a resumed flight in a
+	# modal whose choose_signal() action would now be rejected.
+	var cleared := Sim.new(61829)
+	cleared.stage = 2
+	cleared.stage_clears = 2
+	cleared.stage_transition_queued = true
+	cleared.signal_status = "offer"
+	cleared.signal_until = cleared.time + 40.0
+	scene.sim = cleared
+	scene._start_flight()
+	check(scene.mode == "stage_clear", "A completed boss takes precedence over a stale, now-unselectable coordinate offer")
+	var expired := Sim.new(61830)
+	expired.stage = 2
+	expired.signal_status = "offer"
+	expired.signal_until = expired.time - 1.0
+	scene.sim = expired
+	scene._start_flight()
+	check(scene.mode == "playing", "An expired coordinate offer cannot open an unanswerable modal on restart")
 	scene.queue_free()
 	await process_frame
 	print("EVENT_OVERLAY_RESULT %d checks, %d failures" % [checks, failures])
