@@ -1,0 +1,87 @@
+name: Build evolutions and synergy balance
+on:
+  pull_request:
+    paths:
+      - 'data/content.json'
+      - 'scripts/simulation.gd'
+      - 'scripts/main.gd'
+      - 'scripts/playfield.gd'
+      - 'tests/build_synergy_overhaul.gd'
+      - '.github/workflows/build-synergy-overhaul.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  choice-contract:
+    name: Eight evolutions, fusion consent, engine-aware drafts and saved hands
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Strict Godot compile for simulation and choice UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/simulation.gd scripts/main.gd scripts/playfield.gd tests/build_synergy_overhaul.gd; do
+            godot --headless --path . --check-only --script "$script"
+          done
+      - name: Test actual mechanics, decisions, Daily, old saves and draft pool integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/build_synergy_overhaul.gd 2>&1 | tee /tmp/build-overhaul-contracts.log
+          grep -Eq '^BUILD_OVERHAUL_RESULT [0-9]+ checks, 0 failures$' /tmp/build-overhaul-contracts.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|BUILD_OVERHAUL: ' /tmp/build-overhaul-contracts.log; then
+            exit 1
+          fi
+      - name: Preserve choice and mechanics evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-build-overhaul-contracts
+          path: /tmp/build-overhaul-contracts.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  no-cast-identity:
+    name: Natural no-cast build / ${{ matrix.ship }} / ${{ matrix.pilot }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { ship: kestrel, pilot: ace, difficulty: normal, build: focused }
+          - { ship: wraith, pilot: hunter, difficulty: normal, build: focused }
+          - { ship: arcwing, pilot: tactician, difficulty: normal, build: focused }
+          - { ship: bulwark, pilot: engineer, difficulty: hard, build: shielded }
+          - { ship: haven, pilot: scavenger, difficulty: normal, build: shielded }
+          - { ship: vanguard, pilot: rookie, difficulty: insane, build: baseline }
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Measure real-seed zero-cast draft/build progression
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- --ship=${{ matrix.ship }} --pilot=${{ matrix.pilot }} --difficulty=${{ matrix.difficulty }} --hangar=mid --build=${{ matrix.build }} --strategy=never --seeds=2 --stage-limit=3 --trace 2>&1 | tee /tmp/build-no-cast.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Invalid balance' /tmp/build-no-cast.log; then
+            exit 1
+          fi
+      - name: Preserve matched-seed results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-no-cast-${{ matrix.ship }}-${{ matrix.pilot }}
+          path: /tmp/build-no-cast.log
+          if-no-files-found: ignore
+          retention-days: 14
