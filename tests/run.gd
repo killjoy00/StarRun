@@ -1906,49 +1906,84 @@ func _test_boss_components_and_phases() -> void:
 	var furnace := Sim.new(2345)
 	furnace.stage = 3
 	furnace._spawn_boss()
-	var core: Dictionary = furnace.enemies[0]
+	var core: Dictionary = furnace._boss_core()
 	var sealed_hp: float = core.hp
-	furnace._damage_enemy(core, 100.0, "pulse")
+	furnace._damage_enemy(core, 100.0, "nova")
 	var sealed_damage: float = sealed_hp - core.hp
-	furnace.time = furnace.boss_spawn_time + 10.0
-	var exposed_hp: float = core.hp
-	furnace._damage_enemy(core, 100.0, "pulse")
-	var exposed_damage: float = exposed_hp - core.hp
-	check(exposed_damage > sealed_damage * 3.0, "Foundry boss must alternate between heavily armored and exposed core phases")
-	for vent in furnace.enemies:
-		if vent.kind == "boss_module" and vent.role == "vent":
-			furnace._damage_enemy(vent, 100000.0, "pulse")
-	furnace.time = furnace.boss_spawn_time
-	var open_hp: float = core.hp
-	furnace._damage_enemy(core, 100.0, "pulse")
-	check(furnace._alive_modules("vent") == 0 and open_hp - core.hp >= 99.0, "Destroying both vents must permanently expose the Crucible core")
-	check(not furnace.stage_transition_queued and furnace.stage_clears == 0, "Destroying cooling vents must not clear the Foundry before the core dies")
+	furnace.time = furnace.boss_spawn_time + 20.0
+	var still_sealed_hp: float = core.hp
+	furnace._damage_enemy(core, 100.0, "nova")
+	check(sealed_damage > 0.0 and sealed_damage < 40.0 and is_equal_approx(still_sealed_hp - core.hp, sealed_damage), "Crucible armor is driven by actual vents, not a nine-second clock")
+	var redirect_hp: float = core.hp
+	var first_vent: Dictionary = furnace.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "vent")[0]
+	var vent_hp: float = first_vent.hp
+	furnace._damage_enemy(core, 1000.0, "pulse")
+	check(is_equal_approx(core.hp, redirect_hp) and first_vent.hp < vent_hp, "Automatic weapons hit visible cooling objectives instead of wasting shots on the broad core")
+	furnace._damage_enemy(core, 99999999.0, "nova")
+	check(is_equal_approx(core.hp / core.max_hp, 0.65) and furnace.late_boss_phase == 0 and not furnace.stage_transition_queued, "Massive Crucible overkill cannot skip the opening cooling vents")
+	var first_vents: Array = furnace.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "vent" and e.hp > 0.0)
+	for vent in first_vents:
+		furnace._damage_enemy(vent, 99999999.0, "nova")
+	check(furnace.late_boss_phase == 1 and furnace._alive_modules("vent") == 2 and furnace.boss_phase_label().contains("NEW COOLING VENTS"), "First threshold spawns two targetable vents immediately")
+	check(furnace.bullets.filter(func(b): return str(b.source) == "boss3" and b.kind == "heat").size() == 7, "Crucible phase transition actually fires a heat surge")
+	var furnace_save: Dictionary = furnace.snapshot()
+	var furnace_original: Dictionary = furnace_save.duplicate(true)
+	var furnace_resume := Sim.new()
+	check(furnace_resume.restore(furnace_save) and furnace_resume.late_boss_phase == 1 and furnace_resume._alive_modules("vent") == 2, "Crucible phase modules and progress survive checkpoint")
+	var second_vents: Array = furnace_resume.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "vent" and e.hp > 0.0)
+	var no_reward_kills: int = furnace_resume.kills
+	var no_reward_cores: int = furnace_resume.bonus_cores
+	for vent in second_vents:
+		furnace_resume._damage_enemy(vent, 99999999.0, "nova")
+	check(furnace_resume.kills == no_reward_kills and furnace_resume.bonus_cores == no_reward_cores, "New Crucible vents never mint additional kill payouts or module Cores")
+	furnace_resume._damage_enemy(furnace_resume._boss_core(), 99999999.0, "nova")
+	check(furnace_resume.late_boss_phase == 2 and furnace_resume._alive_modules("vent") == 1 and is_equal_approx(float(furnace_resume._boss_core().hp / furnace_resume._boss_core().max_hp), 0.30), "30% Crucible threshold reveals the last targetable vent")
+	furnace_resume._damage_enemy(furnace_resume._boss_core(), 99999999.0, "nova")
+	check(not furnace_resume.stage_transition_queued and furnace_resume._boss_core().hp > 0.0, "Even extreme final-phase damage cannot bypass the last glowing cooling vent")
+	var last_vents: Array = furnace_resume.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "vent" and e.hp > 0.0)
+	for vent in last_vents:
+		furnace_resume._damage_enemy(vent, 99999999.0, "nova")
+	furnace_resume._damage_enemy(furnace_resume._boss_core(), 99999999.0, "nova")
+	check(furnace_resume.stage_transition_queued and furnace_resume.stage_clears == 3, "Crucible can be killed instantly after final vent destruction, without forced waiting")
+	check(furnace_save == furnace_original, "Crucible checkpoint remains immutable while its restored run changes phases")
 	var void_boss := Sim.new(3456)
 	void_boss.stage = 4
 	void_boss._spawn_boss()
-	var regent: Dictionary = void_boss.enemies[0]
+	var regent: Dictionary = void_boss._boss_core()
 	var shielded_hp: float = regent.hp
-	void_boss._damage_enemy(regent, 100.0, "pulse")
-	check(shielded_hp - regent.hp < 40.0, "Shield pylons must protect the Void Regent core")
+	void_boss._damage_enemy(regent, 100.0, "nova")
+	check(shielded_hp - regent.hp < 40.0, "Shield pylons protect the Regent before the modules are destroyed")
 	void_boss.heavy_ready_at = 0.0
 	void_boss._update_enemies()
-	check(void_boss.charges.size() == 2, "Both pylons must sustain two heavy attack lanes")
-	for pylon in void_boss.enemies:
-		if pylon.kind == "boss_module" and pylon.role == "pylon":
-			void_boss._damage_enemy(pylon, 100000.0, "pulse")
-	check(void_boss._alive_modules("pylon") == 0, "Void shield pylons must be destructible")
-	check(not void_boss.stage_transition_queued and void_boss.stage_clears == 0, "Destroying shield pylons must not clear the Citadel before the core dies")
-	void_boss.charges.clear()
-	void_boss.heavy_ready_at = 0.0
-	void_boss._update_enemies()
-	check(void_boss.charges.size() == 1, "Destroying pylons must change the heavy beam pattern")
-	regent.hp = regent.max_hp * 0.30
-	check(void_boss.boss_phase_label() == "FINAL ONSLAUGHT", "Final boss must reveal an enraged low-health phase")
+	check(void_boss.charges.size() == 2, "Both pylons still sustain two telegraphed heavy attack lanes")
+	void_boss._damage_enemy(regent, 99999999.0, "nova")
+	check(void_boss.late_boss_phase == 0 and is_equal_approx(regent.hp / regent.max_hp, 0.65), "Enormous Regent burst cannot bypass the first shield configuration")
+	var initial_pylons: Array = void_boss.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "pylon" and e.hp > 0.0)
+	for pylon in initial_pylons:
+		void_boss._damage_enemy(pylon, 99999999.0, "nova")
+	check(void_boss.late_boss_phase == 1 and void_boss._alive_modules("pylon") == 2 and void_boss.boss_phase_label().contains("RECONFIGURED"), "At 65%, two new Regent pylons appear immediately")
+	check(void_boss.bullets.filter(func(b): return str(b.source) == "boss4" and b.kind == "void").size() == 9, "Regent phase transition fires a real void surge")
+	var regent_save: Dictionary = void_boss.snapshot()
+	var regent_original: Dictionary = regent_save.duplicate(true)
+	var resumed_regent := Sim.new()
+	check(resumed_regent.restore(regent_save) and resumed_regent.late_boss_phase == 1 and resumed_regent._alive_modules("pylon") == 2, "Reconfigured Regent pylons resume exactly from a checkpoint")
+	var second_pylons: Array = resumed_regent.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "pylon" and e.hp > 0.0)
+	var regent_kills: int = resumed_regent.kills
+	var regent_cores: int = resumed_regent.bonus_cores
+	for pylon in second_pylons:
+		resumed_regent._damage_enemy(pylon, 99999999.0, "nova")
+	check(resumed_regent.kills == regent_kills and resumed_regent.bonus_cores == regent_cores, "Reconfigured Regent pylons cannot award bonus kills or Cores")
+	check(resumed_regent._nearest(Vector2(270, 790)).kind == "boss4", "After the pylons break, auto-targeting returns to the Regent core")
+	resumed_regent._damage_enemy(resumed_regent._boss_core(), 99999999.0, "nova")
+	check(resumed_regent.late_boss_phase == 2 and resumed_regent.boss_phase_label() == "FINAL ONSLAUGHT" and resumed_regent._alive_modules("pylon") == 0, "35% immediately triggers the final unshielded Regent onslaught")
+	check(resumed_regent.bullets.filter(func(b): return str(b.source) == "boss4" and b.kind == "void").size() >= 18, "Final Regent phase adds a second onslaught volley, not just a label")
+	resumed_regent._damage_enemy(resumed_regent._boss_core(), 99999999.0, "nova")
+	check(resumed_regent.stage_transition_queued and resumed_regent.stage_clears == 4, "Regent falls as soon as the final objective is cleared, with no invulnerability timer")
+	check(regent_save == regent_original, "Regent save snapshot remains unchanged by a later phase and victory")
 	var baseline := Sim.new(3456)
 	baseline.stage = 4
 	baseline._spawn_boss()
-	check(baseline._nearest(Vector2(270, 790)).kind == "boss_module", "Autopilot targeting must prioritize intact boss parts without player aiming")
-	check(void_boss._nearest(Vector2(270, 790)).kind == "boss4", "After destroying pylons auto-aim must return to the Regent core")
+	check(baseline._nearest(Vector2(270, 790)).kind == "boss_module", "Auto-targeting prioritizes intact Regent pylons without manual aiming")
 
 func _test_synergy_tradeoffs() -> void:
 	var base := Sim.new(555)
