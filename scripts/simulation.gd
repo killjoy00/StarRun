@@ -882,6 +882,8 @@ func fusion_target(id: String) -> String:
 	var after_pick := mini(10, current + (1 if current == 0 else 2))
 	for fusion in content.fusions:
 		if id in fusion.parts:
+			if _new_build_decisions() and str(fusion.id) in fusion_declined:
+				continue
 			var other: String = str(fusion.parts[1]) if str(fusion.parts[0]) == id else str(fusion.parts[0])
 			if id in active_slots and other in active_slots and after_pick >= FUSION_RANK and int(upgrades[other]) >= FUSION_RANK:
 				return str(fusion.id)
@@ -958,6 +960,17 @@ func resolve_build_choice(value: String) -> bool:
 	else:
 		return false
 	pending_build_choices.pop_front()
+	# Two eligible fusion recipes can share a component. Accepting one
+	# consumes it; stale overlapping offers must not block resume or bots.
+	var valid: Array = []
+	for other_choice in pending_build_choices:
+		if str(other_choice.kind) == "fusion":
+			if _fusion_is_eligible(str(other_choice.id)) and str(other_choice.id) not in fusion_declined:
+				valid.append(other_choice)
+		elif str(other_choice.kind) == "evolution":
+			if not weapon_evolutions.has(str(other_choice.id)) and int(upgrades.get(str(other_choice.id), 0)) >= 5:
+				valid.append(other_choice)
+	pending_build_choices = valid
 	return true
 
 # Noninteractive simulation clients use a reproducible default when the next
@@ -2736,7 +2749,6 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 			evolution_lifeline_tick = tick
 			shield = minf(max_shield, shield + minf(8.0, damage * 0.08))
 	elif weapon == "seeker" and evolution_id("seeker") == "interceptor" and float(enemy.get("evo_intercept_ready", 0.0)) <= time:
-		enemy["evo_intercept_ready"] = time + 7.0
 		var before: int = charges.size()
 		for charge in charges:
 			if int(charge.source) == int(enemy.id):
@@ -2744,7 +2756,8 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 		charges = charges.filter(func(charge): return int(charge.source) != int(enemy.id))
 		beams_cancelled += before - charges.size()
 		if before > charges.size():
-			enemy.fire = maxf(float(enemy.fire), 0.70)
+			enemy["evo_intercept_ready"] = time + 7.0
+			enemy["fire"] = maxf(float(enemy.get("fire", 0.0)), 0.70)
 			_log("INTERCEPTOR - seeker canceled a charged attack")
 
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
