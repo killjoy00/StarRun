@@ -212,7 +212,22 @@ func _test_hidden_archive() -> void:
 	check(sim.restore(boss_checkpoint) and sim.secret_intro_pending and sim.dismiss_secret_intro(), "Boss introduction restores in a frozen state")
 	var core: Dictionary = sim._boss_core()
 	sim._damage_enemy(core, 9999999.0, "nova")
-	check(not sim.stage_transition_queued and is_equal_approx(core.hp, core.max_hp * 0.68), "Opening shield floor guarantees the first telegraph")
+	check(not sim.stage_transition_queued and is_equal_approx(core.hp, core.max_hp * sector.PHASE_FLOORS[0]), "Opening shield floor guarantees the first telegraph")
+	check(core.max_hp >= 480000.0, "The Custodian is substantially tougher than the original 228k health baseline")
+	# A guarded core can be worn down but cannot be rapidly melted without
+	# its telegraphed exposed windows. The same weapon and amount isolate the
+	# resilience from critical-hit/draft behavior.
+	var guard := Sim.new()
+	var open_core := Sim.new()
+	check(guard.restore(boss_checkpoint) and open_core.restore(boss_checkpoint), "Custodian damage comparison restores the same boss")
+	guard.archive_exposed_until = guard.time - 1.0
+	open_core.archive_exposed_until = open_core.time + 2.0
+	var guard_hp: float = guard._boss_core().hp
+	guard._damage_enemy(guard._boss_core(), 10000.0, "nova")
+	open_core._damage_enemy(open_core._boss_core(), 10000.0, "nova")
+	var sealed_damage: float = guard_hp - float(guard._boss_core().hp)
+	var exposed_damage: float = guard_hp - float(open_core._boss_core().hp)
+	check(is_equal_approx(sealed_damage / exposed_damage, sector.SEALED_DAMAGE_FACTOR), "Closed core absorbs significantly more damage than an interrupted seal")
 	sim.time = sim.archive_next_attack
 	sim._update_archive_attack()
 	check(sim.archive_attack == "lock" and sim.archive_attack_until - sim.time >= 3.0, "The Custodian visibly winds up its opening charge")
@@ -220,20 +235,32 @@ func _test_hidden_archive() -> void:
 	check(arrival.restore(sim.snapshot()) and arrival.archive_attack == "lock", "Live lock and its countdown restore")
 	arrival.cooldowns.aegis = 0.0
 	check(arrival.activate("aegis") and arrival.archive_attack.is_empty() and arrival.archive_exposed_until > arrival.time, "Any active counters the lock and exposes the core")
+	check(is_equal_approx(arrival.archive_exposed_until - arrival.time, sector.COUNTER_EXPOSURE_SECONDS), "Countered lock opens a short, earned vulnerability")
 	arrival._update_archive_attack()
 	check(arrival.archive_phase == 1, "The second phase begins after the opening shield breaks")
+	check(arrival.archive_next_attack - arrival.time >= sector.PHASE_REARM_SECONDS - 0.01, "Phase one now requires surviving a full shield-rearm combat interval")
+	var phase_checkpoint := Sim.new()
+	check(phase_checkpoint.restore(arrival.snapshot()) and is_equal_approx(phase_checkpoint.archive_next_attack, arrival.archive_next_attack) and phase_checkpoint.archive_phase == 1, "Interphase timer and shield save and resume exactly")
 	arrival.time = arrival.archive_next_attack
 	arrival._update_archive_attack()
 	check(arrival.archive_attack == "lattice", "Second phase telegraphs converging projectile fire")
 	arrival.time = arrival.archive_attack_until
 	arrival._update_archive_attack()
-	check(arrival.bullets.size() == 26, "Unanswered lattice fires both projectile fans")
+	check(arrival.bullets.size() == 2 * sector.LATTICE_PROJECTILES_PER_SIDE, "Unanswered lattice fires both strengthened projectile fans")
+	check(is_equal_approx(arrival.archive_exposed_until - arrival.time, sector.UNANSWERED_EXPOSURE_SECONDS), "Missing a telegraph produces a shorter opening than a counter")
 	core = arrival._boss_core()
 	arrival._damage_enemy(core, 9999999.0, "nova")
 	arrival._update_archive_attack()
 	arrival.time = arrival.archive_next_attack
 	arrival._update_archive_attack()
 	check(arrival.archive_phase == 2 and arrival.archive_attack == "collapse", "Final phase telegraphs the combined attack")
+	check(arrival.archive_next_attack <= arrival.time, "Final-phase scheduled telegraph is actively underway")
+	var missed := Sim.new()
+	check(missed.restore(arrival.snapshot()), "Active final collapse warning survives checkpoint")
+	var prior_fired: int = missed.beams_fired
+	missed.time = missed.archive_attack_until
+	missed._update_archive_attack()
+	check(missed.beams_fired == prior_fired + 1 and missed.bullets.size() == 2 * sector.COLLAPSE_PROJECTILES_PER_SIDE, "Missed final warning fires an aimed heavy beam and two projectile fans")
 	arrival._damage_enemy(core, 9999999.0, "nova")
 	check(not arrival.stage_transition_queued and core.hp > 0.0, "Finisher damage cannot bypass the final phase")
 	arrival.cooldowns.aegis = 0.0
