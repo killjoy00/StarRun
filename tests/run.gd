@@ -219,7 +219,9 @@ func _test_hidden_archive() -> void:
 	# resilience from critical-hit/draft behavior.
 	var guard := Sim.new()
 	var open_core := Sim.new()
-	check(guard.restore(boss_checkpoint) and open_core.restore(boss_checkpoint), "Custodian damage comparison restores the same boss")
+	# Restore assigns live array/dictionary references. Each counterfactual
+	# must own a deep copy or damage to the first ship changes the second.
+	check(guard.restore(boss_checkpoint.duplicate(true)) and open_core.restore(boss_checkpoint.duplicate(true)), "Custodian damage comparison restores isolated boss state")
 	guard.archive_exposed_until = guard.time - 1.0
 	open_core.archive_exposed_until = open_core.time + 2.0
 	var guard_hp: float = guard._boss_core().hp
@@ -256,11 +258,12 @@ func _test_hidden_archive() -> void:
 	check(arrival.archive_phase == 2 and arrival.archive_attack == "collapse", "Final phase telegraphs the combined attack")
 	check(arrival.archive_next_attack <= arrival.time, "Final-phase scheduled telegraph is actively underway")
 	var missed := Sim.new()
-	check(missed.restore(arrival.snapshot()), "Active final collapse warning survives checkpoint")
+	check(missed.restore(arrival.snapshot().duplicate(true)), "Active final collapse warning survives checkpoint")
+	var bullets_before: int = missed.bullets.size()
 	var prior_fired: int = missed.beams_fired
 	missed.time = missed.archive_attack_until
 	missed._update_archive_attack()
-	check(missed.beams_fired == prior_fired + 1 and missed.bullets.size() == 2 * sector.COLLAPSE_PROJECTILES_PER_SIDE, "Missed final warning fires an aimed heavy beam and two projectile fans")
+	check(missed.beams_fired == prior_fired + 1 and missed.bullets.size() - bullets_before == 2 * sector.COLLAPSE_PROJECTILES_PER_SIDE, "Missed final warning adds an aimed heavy beam and two projectile fans without clearing older bullets")
 	arrival._damage_enemy(core, 9999999.0, "nova")
 	check(not arrival.stage_transition_queued and core.hp > 0.0, "Finisher damage cannot bypass the final phase")
 	arrival.cooldowns.aegis = 0.0
