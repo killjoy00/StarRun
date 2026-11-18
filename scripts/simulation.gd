@@ -42,7 +42,7 @@ var merchant_enabled := false
 var merchant_state := "" # "", "signal", "shop", "confirm"
 var merchant_offers: Array = []
 var merchant_selected := ""
-var merchant_next_at := INF
+var merchant_next_at := 1000000000.0
 var merchant_seen_stages: Array = []
 var merchant_visits := 0
 var merchant_trade_count := 0
@@ -562,7 +562,7 @@ func enable_merchant() -> bool:
 	return true
 
 func _schedule_merchant() -> void:
-	merchant_next_at = INF
+	merchant_next_at = 1000000000.0
 	if not merchant_enabled or not daily_day.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages:
 		return
 	# Independent seed math; never touch combat/draft RNG to decide visits.
@@ -604,7 +604,7 @@ func _try_merchant_signal() -> bool:
 	merchant_offers = _make_merchant_offers()
 	merchant_seen_stages.append(stage)
 	merchant_visits += 1
-	merchant_next_at = INF
+	merchant_next_at = 1000000000.0
 	merchant_selected = ""
 	merchant_state = "signal"
 	_log("UNREGISTERED MERCHANT - ship hailing at the edge of the convoy")
