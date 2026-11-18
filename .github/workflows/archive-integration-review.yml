@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   secret_route:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'review/silent-archive-')
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'review/silent-archive-') || startsWith(github.head_ref, 'balance/harder-silent-archive-')
     name: Archive / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -48,7 +48,7 @@ jobs:
           for offset in 1 2; do
             godot --headless --path . --script tests/archive_campaign.gd -- \
               --ship="$SHIP" --pilot=rookie --difficulty="$DIFFICULTY" \
-              --hangar="$HANGAR" --seed-offset="$offset" --matched \
+              --hangar="$HANGAR" --seed-offset="$offset" --matched --min-boss-seconds=30 \
               2>&1 | tee "review/archive-$offset.log"
             if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "review/archive-$offset.log"; then
               echo "::error::Archive runtime error at offset $offset"
