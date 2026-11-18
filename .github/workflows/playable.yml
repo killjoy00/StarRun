@@ -174,7 +174,7 @@ jobs:
         run: |
           set -o pipefail
           godot --headless --path . --script tests/archive_campaign.gd -- \
-            --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win \
+            --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win --min-boss-seconds=30 \
             2>&1 | tee /tmp/starrun-complete-archive.log
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-archive.log; then
             exit 1
