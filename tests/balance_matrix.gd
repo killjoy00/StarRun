@@ -592,6 +592,7 @@ func _stage_report(sim: RefCounted, status: String) -> Dictionary:
 		"shield_focus_rank":int(sim.upgrades.get("shield_focus",0)),
 		"kills":int(sim.kills), "boss_spawned":bool(sim.boss_spawned),
 		"boss_hp_remaining":snappedf(boss_hp,0.1),"modules_alive":modules_alive,
+		"late_boss_phase":int(sim.late_boss_phase) if sim.stage in [3,4] and sim.boss_spawned else -1,
 		"prototypes":sim.prototypes.duplicate(), "route":sim.route_choice, "upgrades":levels,
 		"abilities":sim.active_slots.duplicate(), "damage_taken":sim.damage_taken.duplicate(),
 		"damage_dealt":sim.damage_dealt.duplicate(), "events":tail_events
