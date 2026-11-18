@@ -116,6 +116,9 @@ var heat_left := 0.0
 var gravity_left := 0.0
 var last_boss_position := Vector2(270, 135)
 var boss_spawn_time := 0.0
+# The regular World 3/4 bosses advance by damage and targetable objectives,
+# never by a hidden timer. This state survives save / resume.
+var late_boss_phase := 0
 var prototypes: Array = []
 var capacity_milestones: Array = [] # Tracks one-time rank 5/10 hull and shield increases.
 var prototype_offers: Array = []
@@ -964,14 +967,15 @@ func boss_phase_label() -> String:
 	if stage == 2:
 		return "LAUNCH BAYS ONLINE" if _alive_modules("launch_bay") > 0 else "LAUNCH BAYS DESTROYED"
 	if stage == 3:
-		if _alive_modules("vent") == 0:
-			return "CORE EXPOSED - VENTS DESTROYED"
-		return "CORE EXPOSED" if floori((time - boss_spawn_time) / 9.0) % 2 == 1 else "FURNACE SEALED - TARGET VENTS"
+		if _alive_modules("vent") > 0:
+			return ["FURNACE SEALED - TARGET VENTS", "RESEALED - NEW COOLING VENTS", "FINAL OVERHEAT - BREAK THE VENT"][late_boss_phase]
+		return ["CORE EXPOSED - PUSH TO 65%", "CORE EXPOSED - PUSH TO 30%", "CORE EXPOSED - FINISH IT"][late_boss_phase]
 	if stage == 4:
+		if late_boss_phase == 2:
+			return "FINAL ONSLAUGHT"
 		if _alive_modules("pylon") > 0:
-			return "SHIELD PYLONS ACTIVE"
-		var core: Dictionary = _boss_core()
-		return "FINAL ONSLAUGHT" if not core.is_empty() and float(core.hp) / float(core.max_hp) < 0.35 else "CORE SHIELD DOWN"
+			return "SHIELD PYLONS ACTIVE" if late_boss_phase == 0 else "RECONFIGURED - TARGET PYLONS"
+		return "CORE SHIELD DOWN - PUSH TO 65%" if late_boss_phase == 0 else "CORE SHIELD DOWN - PUSH TO 35%"
 	return ""
 
 func begin_intermission() -> bool:
@@ -1431,6 +1435,7 @@ func _spawn_hazard() -> void:
 
 func _spawn_boss() -> void:
 	encounter_queue.clear()
+	late_boss_phase = 0
 	boss_spawned = true
 	boss_spawn_time = time
 	if secret_entered:
@@ -1468,6 +1473,71 @@ func _spawn_boss() -> void:
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
+
+func _late_boss_objective_role() -> String:
+	return "vent" if stage == 3 else "pylon"
+
+func _late_boss_floor(core: Dictionary) -> float:
+	# Thresholds reject only overkill that would bypass visible mechanics.
+	# Reaching them and breaking actual modules triggers the next phase now.
+	if stage == 3:
+		if late_boss_phase == 0:
+			return float(core.max_hp) * 0.65
+		if late_boss_phase == 1:
+			return float(core.max_hp) * 0.30
+		return float(core.max_hp) * 0.06 if _alive_modules("vent") > 0 else 0.0
+	if late_boss_phase == 0:
+		return float(core.max_hp) * 0.65
+	if late_boss_phase == 1:
+		return float(core.max_hp) * 0.35
+	return 0.0
+
+func _spawn_late_boss_objectives(core: Dictionary) -> void:
+	# Use the existing part art and HP. Respawned components are real targets
+	# but award no kills, XP, module bounty or additional Cores.
+	var role := _late_boss_objective_role()
+	var templates: Array = content.boss_modules.get(str(core.kind), [])
+	if templates.is_empty():
+		return
+	var blueprint: Dictionary = templates[0]
+	var positions: Array[Vector2] = []
+	if stage == 3:
+		positions = [Vector2(-76.0, 52.0), Vector2(76.0, 52.0)] if late_boss_phase == 1 else [Vector2(0.0, 74.0)]
+	elif late_boss_phase == 1:
+		positions = [Vector2(-92.0, 38.0), Vector2(92.0, 38.0)]
+	var hp: float = float(blueprint.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * enemy_health_multiplier() * boss_health_pressure()
+	for offset in positions:
+		var name: String = "Reconfigured Cooling Vent" if role == "vent" else "Reconfigured Shield Pylon"
+		enemies.append({"id":next_id, "kind":"boss_module", "role":role, "name":name,
+			"parent":int(core.id), "offset":offset, "p":core.p + offset,
+			"hp":hp, "max_hp":hp, "speed":0.0, "fire":999999.0, "xp":0,
+			"phase":0.0, "phase_objective":true, "no_reward":true})
+		next_id += 1
+
+func _late_boss_phase_surge(core: Dictionary) -> void:
+	# Immediate dodgeable attack, no fixed invulnerability or pacing wait.
+	var count: int = 7 if stage == 3 else 9
+	var aim: Vector2 = ship_position(time + 1.4)
+	var direction: Vector2 = (aim - core.p).normalized()
+	for i in range(count):
+		var angle: float = (float(i) - float(count - 1) * 0.5) * 0.16
+		bullets.append({"p":core.p, "v":direction.rotated(angle) * 240.0,
+			"damage":3.6 * threat_scale() * boss_projectile_damage_multiplier(),
+			"kind":"heat" if stage == 3 else "void", "source":str(core.kind)})
+	effects.append({"kind":"ion-burst", "p":core.p, "radius":135.0,
+		"life":0.72, "max_life":0.72, "born":tick})
+
+func _advance_late_boss_phase(core: Dictionary) -> void:
+	if not boss_spawned or secret_entered or stage not in [3, 4] or core.is_empty() or float(core.hp) <= 0.0 or late_boss_phase >= 2:
+		return
+	if _alive_modules(_late_boss_objective_role()) > 0:
+		return
+	if float(core.hp) > _late_boss_floor(core) + 0.01:
+		return
+	late_boss_phase += 1
+	_spawn_late_boss_objectives(core)
+	_late_boss_phase_surge(core)
+	_log("%s · PHASE %d/3 · %s" % [str(stage_spec().boss_name).to_upper(), late_boss_phase + 1, boss_phase_label()])
 
 func advance_stage() -> bool:
 	if not stage_transition_queued or stage_clears != stage:
