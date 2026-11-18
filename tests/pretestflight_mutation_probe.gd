@@ -70,7 +70,8 @@ func _prepare_world2(seed: int, ship: String) -> Dictionary:
 
 func _test_world2(checkpoint: Dictionary, ship: String, seed: int, mutation_id: String) -> Dictionary:
 	var sim := Sim.new()
-	var fault := not sim.restore(checkpoint)
+	# Each restore must own its arrays; otherwise the previous mutation leaks into the next case.
+	var fault := not sim.restore(checkpoint.duplicate(true))
 	var name := mutation_id if not mutation_id.is_empty() else "unmutated"
 	if fault:
 		return {"ship":ship,"seed":seed,"mutation":name,"fault":true,"kills":0,"damage_taken":0,"cleared_world2":false}
