@@ -2281,7 +2281,7 @@ func _surface_pending_flight_choice() -> void:
 		_show_rival_retired()
 	elif sim.rival_intro_pending:
 		_show_rival_intro()
-	elif sim.signal_status == "offer":
+	elif sim.signal_status == "offer" and not sim.stage_transition_queued and not sim.ended and sim.time < sim.signal_until:
 		_show_signal()
 	elif not sim.cards.is_empty():
 		_show_cards()
@@ -2623,7 +2623,7 @@ func _start_flight() -> void:
 		_show_merchant_confirm()
 	elif sim.merchant_state == "receipt":
 		_show_merchant_receipt()
-	elif sim.signal_status == "offer":
+	elif sim.signal_status == "offer" and not sim.stage_transition_queued and not sim.ended and sim.time < sim.signal_until:
 		_show_signal()
 	elif sim.stage_transition_queued:
 		match sim.intermission_step:
