@@ -1947,6 +1947,9 @@ func _test_boss_components_and_phases() -> void:
 	var furnace_resume := Sim.new()
 	check(furnace_resume.restore(furnace_save) and furnace_resume.late_boss_phase == 1 and furnace_resume._alive_modules("vent") == 2, "Crucible phase modules and progress survive checkpoint")
 	var second_vents: Array = furnace_resume.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "vent" and e.hp > 0.0)
+	# Catch incidental Salvage and module-bounty rewards, not just XP.
+	furnace_resume.salvage_left = 10.0
+	furnace_resume.meta.module_salvage = 3
 	var no_reward_kills: int = furnace_resume.kills
 	var no_reward_cores: int = furnace_resume.bonus_cores
 	for vent in second_vents:
@@ -1984,6 +1987,8 @@ func _test_boss_components_and_phases() -> void:
 	var resumed_regent := Sim.new()
 	check(resumed_regent.restore(regent_save) and resumed_regent.late_boss_phase == 1 and resumed_regent._alive_modules("pylon") == 2, "Reconfigured Regent pylons resume exactly from a checkpoint")
 	var second_pylons: Array = resumed_regent.enemies.filter(func(e): return e.kind == "boss_module" and e.role == "pylon" and e.hp > 0.0)
+	resumed_regent.salvage_left = 10.0
+	resumed_regent.meta.module_salvage = 3
 	var regent_kills: int = resumed_regent.kills
 	var regent_cores: int = resumed_regent.bonus_cores
 	for pylon in second_pylons:
