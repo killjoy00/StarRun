@@ -1262,6 +1262,7 @@ func _dismiss_rival_stinger() -> void:
 	rival_stinger_clock = 0.0
 	accumulator = 0.0
 	_save_run()
+	_surface_pending_flight_choice()
 
 func _set_artifact(id: String) -> void:
 	if str(Catalog.artifact(id).id) != id:
@@ -2260,16 +2261,30 @@ func _merchant_leave() -> void:
 func _merchant_resume() -> void:
 	if mode not in ["merchant_signal","merchant_shop","merchant_confirm","merchant_receipt"]:
 		return
-	if not sim.merchant_state.is_empty():
+	if sim.merchant_state == "receipt":
+		sim.merchant_acknowledge_receipt()
+	elif not sim.merchant_state.is_empty():
 		sim.merchant_leave()
 	mode = "playing"
 	_clear_overlay()
 	accumulator = 0.0
 	_save_run()
-	if not sim.cards.is_empty():
-		_show_cards()
+	_surface_pending_flight_choice()
+
+func _surface_pending_flight_choice() -> void:
+	# Overlay transitions have priority over a timer that only advances
+	# while actual gameplay runs. No competing event is silently discarded
+	# by closing a Quartermaster or Rival Captain panel.
+	if mode != "playing":
+		return
+	if sim.rival_retire_pending:
+		_show_rival_retired()
 	elif sim.rival_intro_pending:
 		_show_rival_intro()
+	elif sim.signal_status == "offer":
+		_show_signal()
+	elif not sim.cards.is_empty():
+		_show_cards()
 
 func _show_prototypes() -> void:
 	mode = "prototype"
@@ -2606,6 +2621,10 @@ func _start_flight() -> void:
 		_show_merchant_shop()
 	elif sim.merchant_state == "confirm":
 		_show_merchant_confirm()
+	elif sim.merchant_state == "receipt":
+		_show_merchant_receipt()
+	elif sim.signal_status == "offer":
+		_show_signal()
 	elif sim.stage_transition_queued:
 		match sim.intermission_step:
 			"prototype": _show_prototypes()
@@ -2661,6 +2680,8 @@ func _process(delta: float) -> void:
 				_show_archive_intro()
 			elif sim.merchant_state == "signal":
 				_show_merchant_signal()
+			elif sim.merchant_state == "receipt":
+				_show_merchant_receipt()
 			elif sim.stage_transition_queued:
 				_show_stage_clear()
 			elif not sim.cards.is_empty():
