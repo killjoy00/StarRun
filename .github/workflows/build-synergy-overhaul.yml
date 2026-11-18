@@ -7,6 +7,7 @@ on:
       - 'scripts/main.gd'
       - 'scripts/playfield.gd'
       - 'tests/build_synergy_overhaul.gd'
+      - 'tests/build_payoff_matrix.gd'
       - '.github/workflows/build-synergy-overhaul.yml'
   workflow_dispatch:
 
@@ -85,3 +86,34 @@ jobs:
           path: /tmp/build-no-cast.log
           if-no-files-found: ignore
           retention-days: 14
+
+  payoff-matrix:
+    name: Six-ship Worlds 2-4 evolution and engine payoff matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Strict compile for matched payoff fixture
+        run: godot --headless --path . --check-only --script tests/build_payoff_matrix.gd
+      - name: Compare eight evolutions and six engines across six ships and three worlds
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/build_payoff_matrix.gd 2>&1 | tee /tmp/build-payoff-matrix.log
+          grep -Eq '^BUILD_PAYOFF_MATRIX_RESULT [0-9]+ checks, 0 failures$' /tmp/build-payoff-matrix.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|PAYOFF_MATRIX: ' /tmp/build-payoff-matrix.log; then
+            exit 1
+          fi
+          grep 'BUILD_PAYOFF_MATRIX_COUNTS ' /tmp/build-payoff-matrix.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep per-ship, world and variant differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-build-payoff-matrix
+          path: /tmp/build-payoff-matrix.log
+          if-no-files-found: ignore
+          retention-days: 21

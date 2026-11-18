@@ -56,6 +56,8 @@ var weapon_evolutions: Dictionary = {}
 var pending_build_choices: Array = []
 var fusion_declined: Array = []
 var evolution_lifeline_tick := -1
+# Visual feedback is rate-limited per specialization; no combat/draft RNG used.
+var evolution_cue_next_tick: Dictionary = {}
 var ship_id := "vanguard"
 var pilot_id := "rookie"
 var artifact_id := "standard"
@@ -1041,8 +1043,50 @@ func active_engines() -> Array:
 			result.append(copy)
 	return result
 
+# A debrief is a report of *observed* build behavior, not a fabricated
+# rating. Escort damage has other sources, so only count its launch events.
+func build_impact_rows(max_rows: int = 2) -> Array:
+	var labels := {
+		"execution_network": ["precision volley", "precision volleys"],
+		"missile_siege": ["breach opened", "breaches opened"],
+		"storm_circuit": ["storm discharge", "storm discharges"],
+		"prism_hunter": ["focus strike", "focus strikes"],
+		"fortress_reactor": ["counterbattery shot", "counterbattery shots"],
+		"salvage_carrier": ["support sortie", "support sorties"]
+	}
+	var damage_sources := {
+		"execution_network": "engine_execution",
+		"storm_circuit": "engine_storm",
+		"prism_hunter": "engine_prism",
+		"fortress_reactor": "engine_fortress"
+	}
+	var rows: Array = []
+	for spec in content.get("build_engines", []):
+		var id: String = str(spec.id)
+		var count: int = int(engine_procs.get(id, 0))
+		if count <= 0:
+			continue
+		var forms: Array = labels.get(id, ["trigger", "triggers"])
+		var detail: String = "%d %s" % [count, str(forms[0 if count == 1 else 1])]
+		var source: String = str(damage_sources.get(id, ""))
+		if not source.is_empty():
+			var dealt: int = roundi(float(damage_dealt.get(source, 0.0)))
+			if dealt > 0:
+				detail += " · %d direct damage" % dealt
+		rows.append({"id":id, "name":str(spec.name), "detail":detail, "triggers":count})
+	# This is a frequency recap, not a claim that the largest count is
+	# strongest. Break ties by stable ID so save/replay agrees.
+	rows.sort_custom(func(a, b): return int(a.triggers) > int(b.triggers) if int(a.triggers) != int(b.triggers) else str(a.id) < str(b.id))
+	return rows.slice(0, mini(maxi(0, max_rows), rows.size()))
+
 func _engine_priority_target(enemy: Dictionary) -> bool:
 	return str(enemy.kind).begins_with("boss") or str(enemy.get("elite_role", "")) == "leader" or str(enemy.kind) == "archive_relay"
+
+func _evolution_feedback(id: String, position: Vector2) -> void:
+	if not _new_build_decisions() or tick < int(evolution_cue_next_tick.get(id, 0)):
+		return
+	evolution_cue_next_tick[id] = tick + 90
+	effects.append({"kind":"evolution-proc", "evolution":id, "p":position, "life":0.75, "max_life":0.75, "born":tick})
 
 func _engine_cue(id: String, online: bool, position: Vector2) -> void:
 	effects.append({"kind":"engine-online" if online else "engine-proc", "engine":id, "p":position, "life":0.90 if online else 0.65, "max_life":0.90 if online else 0.65, "born":tick})
@@ -2736,6 +2780,8 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 				var old_hits: int = int(enemy.get("evo_duelist_hits", 0)) if float(enemy.get("evo_duelist_until", -1.0)) >= time else 0
 				enemy["evo_duelist_hits"] = mini(5, old_hits + 1)
 				enemy["evo_duelist_until"] = time + 3.0
+				if old_hits >= 2:
+					_evolution_feedback("duelist", enemy.p)
 			"spotter":
 				enemy["evo_spotter_until"] = time + 3.0
 	elif weapon == "arc" and evolution_id("arc") == "conductor":
@@ -2745,9 +2791,14 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 			var old_hits: int = int(enemy.get("evo_lance_hits", 0)) if float(enemy.get("evo_lance_until", -1.0)) >= time else 0
 			enemy["evo_lance_hits"] = mini(4, old_hits + 1)
 			enemy["evo_lance_until"] = time + 7.0
+			if old_hits >= 2:
+				_evolution_feedback("executioner", enemy.p)
 		elif evolution_id("lance") == "lifeline" and evolution_lifeline_tick != tick:
 			evolution_lifeline_tick = tick
+			var old_shield: float = shield
 			shield = minf(max_shield, shield + minf(8.0, damage * 0.08))
+			if shield > old_shield + 0.001:
+				_evolution_feedback("lifeline", ship_position())
 	elif weapon == "seeker" and evolution_id("seeker") == "interceptor" and float(enemy.get("evo_intercept_ready", 0.0)) <= time:
 		var before: int = charges.size()
 		for charge in charges:
@@ -2759,6 +2810,7 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 			enemy["evo_intercept_ready"] = time + 7.0
 			enemy["fire"] = maxf(float(enemy.get("fire", 0.0)), 0.70)
 			_log("INTERCEPTOR - seeker canceled a charged attack")
+			_evolution_feedback("interceptor", enemy.p)
 
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
@@ -2790,12 +2842,12 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			amount *= 1.0 + 0.11 * float(mini(4, stacks))
 	# Marks are consumed only by another real weapon; secondary/mutation/
 	# engine damage never creates extra cross-weapon triggers.
-	if weapon in ["seeker", "arc", "lance"] and float(enemy.get("evo_spotter_until", -1.0)) >= time:
+	var spotter_triggered: bool = weapon in ["seeker", "arc", "lance"] and float(enemy.get("evo_spotter_until", -1.0)) >= time
+	var conductor_triggered: bool = weapon in ["pulse", "seeker", "lance"] and float(enemy.get("evo_conductor_until", -1.0)) >= time
+	if spotter_triggered:
 		amount *= 1.20
-		enemy["evo_spotter_until"] = -1.0
-	if weapon in ["pulse", "seeker", "lance"] and float(enemy.get("evo_conductor_until", -1.0)) >= time:
+	if conductor_triggered:
 		amount *= 1.23
-		enemy["evo_conductor_until"] = -1.0
 	# Small, weapon-specific precursors reward deliberate investment before
 	# any three-piece signature unlock. Daily/World 1 are isolated by tier 0.
 	if weapon == "pulse" and engine_tier("execution_network") >= 1:
@@ -2855,6 +2907,18 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
 	var actual_damage: float = minf(maxf(0.0, amount), float(enemy.hp))
+	# Do not consume a cross-weapon mark on a sealed boss phase or zero-hit.
+	if actual_damage > 0.01:
+		if spotter_triggered:
+			enemy["evo_spotter_until"] = -1.0
+			_evolution_feedback("spotter", enemy.p)
+		if conductor_triggered:
+			enemy["evo_conductor_until"] = -1.0
+			_evolution_feedback("conductor", enemy.p)
+		if weapon == "seeker" and evolution_id("seeker") == "breacher" and _engine_priority_target(enemy):
+			_evolution_feedback("breacher", enemy.p)
+		elif weapon == "arc" and evolution_id("arc") == "tempest" and not _engine_priority_target(enemy):
+			_evolution_feedback("tempest", enemy.p)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
 	enemy.hp -= amount
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
@@ -3470,6 +3534,8 @@ func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
 func engine_hint_for_pick(id: String) -> String:
 	if not _new_build_decisions():
 		return ""
+	var best_progress := -1
+	var best_hint := ""
 	for spec in content.get("build_engines", []):
 		if engine_tier(str(spec.id)) >= 2:
 			continue
@@ -3479,9 +3545,12 @@ func engine_hint_for_pick(id: String) -> String:
 			continue
 		var before: int = _engine_recipe_progress(spec)
 		var after: int = _engine_recipe_progress(spec, id)
-		if after > before:
-			return ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
-	return ""
+		# A genuinely completed engine outranks a 2/3 partial recipe.
+		# Ties keep the authored recipe order; no extra card text or RNG.
+		if after > before and after > best_progress:
+			best_progress = after
+			best_hint = ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
+	return best_hint
 
 func _engine_relevance_score(id: String) -> int:
 	if not _new_build_decisions():
@@ -3718,7 +3787,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
