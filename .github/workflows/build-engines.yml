@@ -1,0 +1,50 @@
+name: Six automatic build engines
+on:
+  pull_request:
+    paths:
+      - 'data/content.json'
+      - 'scripts/simulation.gd'
+      - 'scripts/main.gd'
+      - 'scripts/playfield.gd'
+      - 'tests/build_engines.gd'
+      - '.github/workflows/build-engines.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine-contracts:
+    name: Rank gates, actual damage, Daily isolation and zero-cast save contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Strict compile including the engine contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/simulation.gd scripts/main.gd scripts/playfield.gd tests/build_engines.gd; do
+            godot --headless --path . --check-only --script "$script"
+          done
+      - name: Six engines, real target damage, recursion guards, saved state and Daily isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/build_engines.gd 2>&1 | tee /tmp/starrun-engine-contracts.log
+          grep -Eq '^BUILD_ENGINE_RESULT [0-9]+ checks, 0 failures$' /tmp/starrun-engine-contracts.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|BUILD_ENGINE: ' /tmp/starrun-engine-contracts.log; then
+            exit 1
+          fi
+      - name: Save engine test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-build-engines
+          path: /tmp/starrun-engine-contracts.log
+          if-no-files-found: ignore
+          retention-days: 14

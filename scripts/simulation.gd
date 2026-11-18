@@ -79,6 +79,23 @@ var hunter_mark_left := 0.0
 var hunter_mark_cooldown := 0.0
 var tactician_counter_used := false
 var pilot_procs := {"ace":0, "hunter":0, "tactician":0, "engineer":0, "scavenger":0}
+# Engine state is deliberately deterministic and saved alongside normal combat.
+# Automatic engine damage cannot recursively trigger other engine procs.
+var engine_execution_target := -1
+var engine_execution_hits := 0
+var engine_execution_ready_tick := 0
+var engine_siege_target := -1
+var engine_siege_stacks := 0
+var engine_siege_expires := 0.0
+var engine_storm_marks: Array = []
+var engine_storm_ready_tick := 0
+var engine_prism_target := -1
+var engine_prism_hits := 0
+var engine_prism_ready_tick := 0
+var engine_fortress_charge := 0.0
+var engine_salvage_charge := 0.0
+var engine_salvage_ready_tick := 0
+var engine_procs: Dictionary = {"execution_network":0, "missile_siege":0, "storm_circuit":0, "prism_hunter":0, "fortress_reactor":0, "salvage_carrier":0}
 # A rival is explicitly configured by the regular-flight UI. Plain Sim.new()
 # and all Dailies are rival-free, keeping old balance fixtures comparable.
 var rival_record: Dictionary = {}
@@ -352,6 +369,7 @@ func step() -> void:
 	if rank_at("repair_bots", 5): repair_rate += 0.35
 	if rank_at("repair_bots", 10): repair_rate += 0.70
 	if passive_link_active("field_recovery"): repair_rate *= 1.40
+	if engine_tier("salvage_carrier") >= 1: repair_rate *= 1.06
 	hull = minf(max_hull, hull + repair_rate * DT)
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
@@ -360,6 +378,7 @@ func step() -> void:
 		if rank_at("regen", 5): recharge += 0.55 * DT
 		if rank_at("regen", 10): recharge += 1.0 * DT
 		if passive_link_active("shield_cycle"): recharge *= 1.40
+		if engine_tier("fortress_reactor") >= 1: recharge *= 1.05
 		if synergy_active("fortress"):
 			recharge *= 1.60
 		if _has_prototype("bastion_lattice"):
@@ -408,6 +427,7 @@ func step() -> void:
 			return
 	_update_charges()
 	_update_support()
+	_update_build_engines()
 	_update_weapons()
 	_update_bullets()
 	_update_shots()
@@ -883,6 +903,147 @@ func _try_fuse() -> void:
 		cooldowns[str(fusion.id)] = current_cd
 		effects.append({"kind":"fusion-formed", "fusion":str(fusion.id), "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
 		_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(fusion.name) + ". One slot freed.")
+
+# Every engine is earned in regular Worlds 2+ only. The published Daily,
+# World 1 opener, old saves and no-Hangar difficulty gates are unchanged.
+# Tier 1: primary rank 4 + secondary rank 2 (small precursor).
+# Tier 2: primary rank 5 + secondary and third rank 2 (new behavior).
+# Tier 3: primary rank 8 + secondary and third rank 5 (mastery).
+func engine_tier(id: String) -> int:
+	if not daily_day.is_empty() or stage < 2 or artifact_id == "drone_armada":
+		return 0
+	for spec in content.get("build_engines", []):
+		if str(spec.id) != id:
+			continue
+		var primary_rank: int = int(upgrades.get(str(spec.primary), 0))
+		var secondary_rank: int = int(upgrades.get(str(spec.secondary), 0))
+		if primary_rank < 4 or secondary_rank < 2:
+			return 0
+		var third_rank: int = int(upgrades.get(str(spec.get("third", "")), 0))
+		if spec.has("third_any"):
+			third_rank = 0
+			for weapon in spec.third_any:
+				third_rank = maxi(third_rank, int(upgrades.get(str(weapon), 0)))
+		if primary_rank < 5 or third_rank < 2:
+			return 1
+		if primary_rank >= 8 and secondary_rank >= 5 and third_rank >= 5:
+			return 3
+		return 2
+	return 0
+
+func active_engines() -> Array:
+	var result: Array = []
+	for spec in content.get("build_engines", []):
+		var tier: int = engine_tier(str(spec.id))
+		if tier >= 2:
+			var copy: Dictionary = spec.duplicate(true)
+			copy["tier"] = tier
+			result.append(copy)
+	return result
+
+func _engine_priority_target(enemy: Dictionary) -> bool:
+	return str(enemy.kind).begins_with("boss") or str(enemy.get("elite_role", "")) == "leader" or str(enemy.kind) == "archive_relay"
+
+func _engine_cue(id: String, online: bool, position: Vector2) -> void:
+	effects.append({"kind":"engine-online" if online else "engine-proc", "engine":id, "p":position, "life":0.90 if online else 0.65, "max_life":0.90 if online else 0.65, "born":tick})
+
+func _engine_charge_salvage(amount: float) -> void:
+	if engine_tier("salvage_carrier") >= 2:
+		engine_salvage_charge = minf(8.0, engine_salvage_charge + amount)
+
+# Damage has already applied and the target is still alive. Only actual
+# Pulse/Seeker/Arc/Lance impacts can charge an engine; engine-sourced followups
+# and fusions never feed back into these mechanics.
+func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> void:
+	if amount <= 0.01:
+		return
+	var id: int = int(enemy.id)
+	if weapon == "pulse" and engine_tier("execution_network") >= 2:
+		if engine_execution_target != id:
+			engine_execution_target = id
+			engine_execution_hits = 0
+		engine_execution_hits += 1
+		var tier: int = engine_tier("execution_network")
+		if engine_execution_hits >= (3 if tier == 3 else 5) and tick >= engine_execution_ready_tick:
+			engine_execution_hits = 0
+			engine_execution_ready_tick = tick + (36 if tier == 3 else 55)
+			engine_procs.execution_network += 1
+			_engine_cue("execution_network", false, enemy.p)
+			_damage_enemy(enemy, minf(1600.0, amount * (2.0 if tier == 3 else 1.4)), "engine_execution")
+	elif weapon == "seeker" and engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy):
+		if engine_siege_target != id or engine_siege_expires < time:
+			engine_siege_target = id
+			engine_siege_stacks = 0
+		engine_siege_stacks = mini(3, engine_siege_stacks + 1)
+		engine_siege_expires = time + 5.0
+		if engine_siege_stacks == 2:
+			engine_procs.missile_siege += 1
+			_engine_cue("missile_siege", false, enemy.p)
+	elif weapon == "arc" and engine_tier("storm_circuit") >= 2:
+		engine_storm_marks = engine_storm_marks.filter(func(mark): return float(mark.expires) > time and int(mark.id) != id)
+		engine_storm_marks.append({"id":id, "expires":time + 4.0})
+		while engine_storm_marks.size() > 6:
+			engine_storm_marks.pop_front()
+	if weapon in ["pulse", "seeker", "lance"] and engine_tier("storm_circuit") >= 2 and tick >= engine_storm_ready_tick:
+		for mark in engine_storm_marks:
+			if int(mark.id) != id or float(mark.expires) <= time:
+				continue
+			engine_storm_marks.erase(mark)
+			var tier: int = engine_tier("storm_circuit")
+			engine_storm_ready_tick = tick + (32 if tier == 3 else 52)
+			engine_procs.storm_circuit += 1
+			_engine_cue("storm_circuit", false, enemy.p)
+			_damage_enemy(enemy, minf(900.0, amount * (0.95 if tier == 3 else 0.65)), "engine_storm")
+			var jumped := 0
+			for nearby in enemies:
+				if jumped >= (2 if tier == 3 else 1):
+					break
+				if float(nearby.hp) > 0.0 and int(nearby.id) != id and nearby.p.distance_squared_to(enemy.p) <= 180.0 * 180.0:
+					effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.28, "max_life":0.28, "born":tick})
+					_damage_enemy(nearby, minf(600.0, amount * 0.35), "engine_storm")
+					jumped += 1
+			break
+	if weapon == "lance" and engine_tier("prism_hunter") >= 2 and _engine_priority_target(enemy):
+		if engine_prism_target != id:
+			engine_prism_target = id
+			engine_prism_hits = 0
+		engine_prism_hits += 1
+		var tier: int = engine_tier("prism_hunter")
+		if engine_prism_hits >= (2 if tier == 3 else 3) and tick >= engine_prism_ready_tick:
+			engine_prism_hits = 0
+			engine_prism_ready_tick = tick + 90
+			engine_procs.prism_hunter += 1
+			_engine_cue("prism_hunter", false, enemy.p)
+			_damage_enemy(enemy, minf(2200.0, amount * (1.50 if tier == 3 else 1.10)), "engine_prism")
+
+# Both fortress and salvage fire themselves. No extra combat button or
+# ability casts; bounded tick budgets and no extra XP/kill duplication.
+func _update_build_engines() -> void:
+	var tier: int = engine_tier("fortress_reactor")
+	if tier >= 2 and shield_offline <= 0.0 and max_shield > 0.0 and shield >= max_shield * 0.75:
+		engine_fortress_charge = minf(9.0, engine_fortress_charge + DT)
+		var threshold := 6.0 if tier == 3 else 8.0
+		if engine_fortress_charge >= threshold:
+			var target: Dictionary = _nearest(ship_position())
+			if not target.is_empty():
+				engine_fortress_charge = 0.0
+				engine_procs.fortress_reactor += 1
+				_engine_cue("fortress_reactor", false, ship_position())
+				_damage_enemy(target, minf(500.0, (65.0 if tier == 3 else 42.0) * weapon_power() * (1.0 + float(stage - 1) * 0.30)), "engine_fortress")
+	else:
+		engine_fortress_charge = 0.0
+	if engine_tier("salvage_carrier") >= 2 and engine_salvage_charge >= 6.0 and tick >= engine_salvage_ready_tick and shots.size() < 498:
+		var target: Dictionary = _nearest(ship_position())
+		if not target.is_empty():
+			engine_salvage_charge -= 6.0
+			engine_salvage_ready_tick = tick + 65
+			engine_procs.salvage_carrier += 1
+			_engine_cue("salvage_carrier", false, ship_position())
+			var origin: Vector2 = ship_position()
+			for n in range(2 if engine_tier("salvage_carrier") == 3 else 1):
+				var p: Vector2 = origin + Vector2(-26.0 if n == 0 else 26.0, -10.0)
+				shots.append({"p":p, "v":(target.p - p).normalized() * 690.0, "damage":minf(280.0, 26.0 * weapon_power() * (1.0 + float(stage - 1) * 0.25)), "weapon":"escort", "target":int(target.id), "homing":true})
+			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5))
 
 func active_passive_links() -> Array:
 	var pairs: Array = []
@@ -1632,6 +1793,16 @@ func advance_stage() -> bool:
 	encounter_index = 0
 	encounter_queue.clear()
 	spawn_rhythm_slot = 0
+	# Local target locks cannot track enemies across a warp.
+	engine_execution_target = -1
+	engine_execution_hits = 0
+	engine_siege_target = -1
+	engine_siege_stacks = 0
+	engine_storm_marks.clear()
+	engine_prism_target = -1
+	engine_prism_hits = 0
+	engine_fortress_charge = 0.0
+	engine_salvage_charge = 0.0
 	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
 	next_pressure_wave_at = time + 8.0
 	pressure_waves = 0
@@ -2464,6 +2635,18 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
 				_damage_enemy(part, amount, weapon)
 				return
+	# Small, weapon-specific precursors reward deliberate investment before
+	# any three-piece signature unlock. Daily/World 1 are isolated by tier 0.
+	if weapon == "pulse" and engine_tier("execution_network") >= 1:
+		amount *= 1.06
+	elif weapon == "seeker" and engine_tier("missile_siege") >= 1:
+		amount *= 1.06
+		if engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy) and engine_siege_target == int(enemy.id) and engine_siege_expires >= time:
+			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0)
+	elif weapon == "arc" and engine_tier("storm_circuit") >= 1:
+		amount *= 1.06
+	elif weapon == "lance" and engine_tier("prism_hunter") >= 1:
+		amount *= 1.06
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
@@ -2510,10 +2693,15 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
-	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
+	var actual_damage: float = minf(maxf(0.0, amount), float(enemy.hp))
+	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
 	enemy.hp -= amount
+	if actual_damage > 0.0 and weapon in ["pulse", "seeker", "arc", "lance"] and _engine_priority_target(enemy):
+		_engine_charge_salvage(minf(0.38, actual_damage / 140.0))
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
 	if enemy.hp > 0:
+		if weapon in ["pulse", "seeker", "arc", "lance"]:
+			_engine_on_weapon_hit(enemy, actual_damage, weapon)
 		if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"]:
 			_advance_late_boss_phase(enemy)
 		return
@@ -2533,6 +2721,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		return
 	if not bool(enemy.get("no_reward", false)):
 		kills += 1
+		if not str(enemy.kind).begins_with("boss") and enemy.kind != "archive_courier":
+			_engine_charge_salvage(1.0)
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
 	if pilot_id == "ace" and not bool(enemy.get("no_reward", false)) and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
@@ -3210,6 +3400,9 @@ func choose_card(index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	var id: String = cards[index].id
+	var engine_before: Dictionary = {}
+	for spec in content.get("build_engines", []):
+		engine_before[str(spec.id)] = engine_tier(str(spec.id))
 	if not fused_into(id).is_empty():
 		return false
 	if id == "repair":
@@ -3250,6 +3443,11 @@ func choose_card(index: int) -> bool:
 		if card.tag == "ABILITY":
 			_try_fuse()
 	_log("Installed " + cards[index].name)
+	for spec in content.get("build_engines", []):
+		var engine_id: String = str(spec.id)
+		if int(engine_before.get(engine_id, 0)) < 2 and engine_tier(engine_id) >= 2:
+			_engine_cue(engine_id, true, ship_position())
+			_log(str(spec.name).to_upper() + " ONLINE - automatic signature armed")
 	cards.clear()
 	return true
 
@@ -3277,7 +3475,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -3291,7 +3489,7 @@ func restore(state: Dictionary) -> bool:
 			# The checkpoint is reusable data, not live simulation state. Never
 			# borrow its arrays/dictionaries: mutating a restored boss, bullet,
 			# reward or merchant could otherwise mutate the original checkpoint.
-			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs"]:
+			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs", "engine_procs"]:
 				var merged: Dictionary = get(key).duplicate(true)
 				merged.merge(state[key].duplicate(true), true)
 				set(key, merged)

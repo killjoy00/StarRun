@@ -1886,6 +1886,13 @@ func _show_build() -> void:
 			_info_card(body, str(pairs[i].name), str(pairs[i].description), Kit.AMBER)
 		if not build_show_all and pairs.size() > 3:
 			Kit.label(body, "%d more in the full list below." % (pairs.size() - 3), 15, Kit.MUTED)
+	var engines: Array = sim.active_engines()
+	if not engines.is_empty():
+		_section(body, "Automatic build engines")
+		for i in range(engines.size() if build_show_all else mini(3, engines.size())):
+			var engine: Dictionary = engines[i]
+			var rank_label := "MASTERED" if int(engine.tier) == 3 else "ONLINE"
+			_info_card(body, str(engine.name) + " · " + rank_label, str(engine.description), Kit.CYAN)
 	var combos: Array = sim.active_synergies()
 	if not combos.is_empty():
 		_section(body, "Build bonuses")
@@ -2445,6 +2452,8 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 		build_lines.append("Pair: " + str(link.name))
 	for combo in sim.active_synergies():
 		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
+	for engine in sim.active_engines():
+		build_lines.append("Engine: " + str(engine.name) + (" [mastered]" if int(engine.tier) == 3 else ""))
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
@@ -2759,7 +2768,7 @@ func _play_spectacle_cues(delta: float) -> void:
 	var priority := 0
 	for effect in sim.effects:
 		var kind: String = str(effect.kind)
-		if kind not in ["mutation-installed", "boss-module-break", "boss-phase-break"]:
+		if kind not in ["mutation-installed", "boss-module-break", "boss-phase-break", "engine-online"]:
 			continue
 		var key := "%s:%d:%d:%d" % [kind, int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y))]
 		if spectacle_audio_seen.has(key):
@@ -2768,7 +2777,7 @@ func _play_spectacle_cues(delta: float) -> void:
 		spectacle_audio_order.append(key)
 		if spectacle_audio_order.size() > 96:
 			spectacle_audio_seen.erase(spectacle_audio_order.pop_front())
-		priority = maxi(priority, 3 if kind == "boss-phase-break" else (2 if kind == "mutation-installed" else 1))
+		priority = maxi(priority, 3 if kind == "boss-phase-break" else (2 if kind in ["mutation-installed", "engine-online"] else 1))
 	if priority == 0 or spectacle_audio_wait > 0.0:
 		return
 	if priority == 3:
