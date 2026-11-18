@@ -58,6 +58,7 @@ func _run() -> void:
 	_test_world1_mutations_and_merchant()
 	_test_world1_density_and_pilot_identities()
 	_test_rival_captain_campaign()
+	_test_daily_world1_isolation()
 	_test_hidden_archive()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
@@ -84,6 +85,55 @@ func _run() -> void:
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
+
+func _test_daily_world1_isolation() -> void:
+	# PR #46's regular-flight pressure director and PR #50's opener must
+	# not change the fixed Daily challenge. Daily is marked after Sim.new()
+	# and still needs its original first-formation time before the first tick.
+	for seed in [810010, 810049, 810178]:
+		var regular := Sim.new(seed)
+		var daily := Sim.new(seed)
+		daily.daily_day = "2026-11-17"
+		daily.daily_attempt = 1
+		check(regular._enemy_limit() == 11 and daily._enemy_limit() == 20,
+			"New regular World 1 crowd cap never changes the historical Daily cap")
+		check(regular._regular_world1_opening() and not daily._regular_world1_opening(),
+			"Daily cannot opt into the normal flight's scripted opening")
+		check(regular.next_encounter_at < 17.0,
+			"New 12–16 second encounter remains available to ordinary Normal flights")
+		daily.step()
+		var expected_first := 55.0 + float(seed % 23)
+		check(is_equal_approx(daily.next_encounter_at, expected_first),
+			"Daily starts with its original seed-based 55–77 second encounter")
+		var loops := 0
+		while daily.time < 21.0 and not daily.ended and loops < 3000:
+			loops += 1
+			if not daily.cards.is_empty():
+				daily.choose_card(0)
+			else:
+				daily.step()
+		check(not daily.ended and daily.time >= 21.0,
+			"Daily control can advance through the first 21 seconds")
+		check(daily.pressure_waves == 0 and daily.opening_scout_wave == 0
+			and daily.enemies.all(func(e): return not bool(e.get("pressure_wing",false)) and not bool(e.get("strike_wing",false))),
+			"Daily receives neither presence-director reinforcements nor scripted opener ships")
+		check(daily.encounter_index == 0 and is_equal_approx(daily.next_encounter_at, expected_first),
+			"Regular World 1 strike-wing clock never accelerates Daily encounters")
+		var saved: Dictionary = daily.snapshot()
+		var restored := Sim.new()
+		check(restored.restore(saved) and restored.next_encounter_at == expected_first
+			and restored.pressure_waves == 0 and restored._enemy_limit() == 20,
+			"Resumed Daily retains its original pressure, cap and first encounter")
+		# The original World 1 formation queues three natural enemies,
+		# rather than adding an immediate no-reward strike wing.
+		daily.enemies.clear()
+		daily._spawn_encounter()
+		check(daily.encounter_queue.size() == 3 and daily.enemies.is_empty(),
+			"Daily keeps the original queued formation rather than the regular strike wing")
+		daily._spawn_world1_pressure()
+		daily._spawn_world1_strike_wing()
+		check(daily.enemies.is_empty() and daily.pressure_waves == 0,
+			"Direct calls cannot leak regular-flight pressure enemies into Daily")
 
 func _test_hidden_archive() -> void:
 	var sector := preload("res://scripts/hidden_sector.gd")
