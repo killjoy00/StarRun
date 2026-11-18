@@ -362,16 +362,13 @@ func step() -> void:
 		if secret_intro_pending:
 			return
 	if time >= next_spawn and not boss_spawned:
+		# Keep the genuine XP-bearing spawn cadence intact. The separate
+		# short-lived visual scout contacts create opening beats without
+		# starving slower ships or shifting the entire late-world build.
+		_spawn_enemy()
 		var stage_time := time - stage_start
-		# Scouts → warning → strike wing → recovery → counterattack.
-		# Delay only 11–13s pre-wing: a long gap starved early XP and
-		# changed genuine later-world survivability. Keep builds viable.
-		if stage == 1 and difficulty == "normal" and daily_day.is_empty() and stage_time >= 11.0 and stage_time < 13.0:
-			next_spawn = stage_start + 13.0
-		else:
-			_spawn_enemy()
-			var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-			next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
+		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	if stage == 1 and difficulty == "normal" and daily_day.is_empty() and not boss_spawned:
 		_spawn_opening_scout_screen()
 	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:

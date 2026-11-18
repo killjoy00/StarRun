@@ -576,7 +576,7 @@ func _test_world1_mutations_and_merchant() -> void:
 	gap.next_spawn = gap.time
 	var gap_before: int = gap.enemies.size()
 	gap.step()
-	check(gap.enemies.size() == gap_before and gap.next_spawn >= 13.0, "A short pre-wing warning delays only a single ordinary spawn")
+	check(gap.enemies.size() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
 	var bank := Sim.new(61112)
 	check(bank._install_mutation("ricochet_pulse"), "Bank Shot installs only on owned Pulse weapon")
 	bank._add_enemy("drone",Vector2(230,310))

@@ -6,10 +6,10 @@ Normal World 1 uses five purposeful beats:
 - 0–8s: a few scouts, to establish the ordinary weapons and targeting.
 - 8–12s: a warning banner and audible incoming-formation cue.
 - 12–18s: three attackable strike-wing enemies enter from different lanes.
-- 18–21s: a presentation recovery beat while normal enemy pressure resumes after a short 11–13s pre-wing pause.
+- 18–21s: a brief presentation recovery beat; ordinary XP-bearing enemy spawns remain active throughout to protect build development.
 - 21–30s: counterattack; the existing bounded screen-presence director resumes.
 
-The wing consumes future ordinary spawn slots rather than giving free kill XP. Slower ships retain an on-screen crowd cap. Hard, Insane and Daily do not receive this timing change.
+The wing consumes future ordinary spawn slots rather than giving free kill XP. Four additional short-lived, attackable scout passes grant no XP and retreat automatically, so slow ships are not forced to farm extra enemies or miss regular upgrade opportunities. Slower ships retain an on-screen crowd cap. Hard, Insane and Daily do not receive these extra contacts.
 
 ## Exactly two distinct mutations for each weapon
 
