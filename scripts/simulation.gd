@@ -345,10 +345,11 @@ func step() -> void:
 		_spawn_boss()
 	if time >= next_spawn and not boss_spawned:
 		var stage_time := time - stage_start
-		# Scout contact → visible warning → coordinated wing → brief breathing
-		# space → counterattack. No enemy/XP spawning during the scripted gap.
-		if stage == 1 and difficulty == "normal" and stage_time >= 10.0 and stage_time < 19.0:
-			next_spawn = stage_start + 19.0
+		# Scouts → warning → strike wing → recovery → counterattack.
+		# Delay only 11–13s pre-wing: a long gap starved early XP and
+		# changed genuine later-world survivability. Keep builds viable.
+		if stage == 1 and difficulty == "normal" and stage_time >= 11.0 and stage_time < 13.0:
+			next_spawn = stage_start + 13.0
 		else:
 			_spawn_enemy()
 			var pace := maxf(0.55, 1.65 - stage_time / 260.0)

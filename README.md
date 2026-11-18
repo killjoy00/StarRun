@@ -38,7 +38,7 @@ See [roguelike variation implementation](docs/ROGUELIKE_VARIATION.md). Version r
 
 ## Deliberate World 1 opener, eight mutations, and traveling Quartermaster
 
-Normal World 1 now starts with a recognizable rhythm: scouts from 0–8s, warning at 8–12s, a coordinated three-ship strike wing at 12–18s, a brief breathing window at 18–21s, then a counterattack to 30s. Hard/Insane and fixed-seed Daily opening schedules remain unchanged. CI compares actual, empty-Hangar 30-second fights against the previous source for all six ships and verifies natural World 1 outcomes.
+Normal World 1 now starts with a recognizable rhythm: scouts from 0–8s, warning at 8–12s, a coordinated three-ship strike wing at 12–18s, a recovery beat at 18–21s, then a counterattack to 30s. Hard/Insane and fixed-seed Daily opening schedules remain unchanged. CI compares actual, empty-Hangar 30-second fights against the previous source for all six ships and verifies natural World 1 outcomes.
 
 Two rare transformations are available for each automatic weapon. Pulse: Ghost Rounds and Bank Shot. Seeker: Hydra Warheads and Siege Torpedoes. Arc: Chain Reactor and Static Lock. Lance: Prism Echo and Capacitor Lance. The existing one-mutation-per-flight and owned-weapon requirements are retained.
 

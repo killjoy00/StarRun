@@ -420,12 +420,12 @@ func _test_world1_mutations_and_merchant() -> void:
 	daily.daily_day = "2026-11-17"
 	check(other_modes.world1_opening_phase().is_empty() and daily.world1_opening_phase().is_empty(), "Opening warning sequence does not alter Hard, Insane or Daily")
 	var gap := Sim.new(61111)
-	gap.tick = 600
+	gap.tick = 660
 	gap.time = gap.tick * Sim.DT
 	gap.next_spawn = gap.time
 	var gap_before: int = gap.enemies.size()
 	gap.step()
-	check(gap.enemies.size() == gap_before and gap.next_spawn >= 19.0, "Early warning/formation holds ordinary spawns during a brief readable gap")
+	check(gap.enemies.size() == gap_before and gap.next_spawn >= 13.0, "A short pre-wing warning delays only a single ordinary spawn")
 	var bank := Sim.new(61112)
 	check(bank._install_mutation("ricochet_pulse"), "Bank Shot installs only on owned Pulse weapon")
 	bank._add_enemy("drone",Vector2(230,310))
