@@ -97,15 +97,15 @@ func _process(delta: float) -> void:
 				if seen_elite_break_order.size() > 64:
 					seen_elite_break_ids.erase(seen_elite_break_order.pop_front())
 				elite_break_feedback.append({"p":effect.p, "remaining":1.05, "duration":1.05})
-		if effect.kind in ["mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc"]:
-			var key := "%s:%d:%d:%d:%s:%s" % [str(effect.kind), int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y)), str(effect.get("mutation", "")), str(effect.get("role", ""))]
+		if effect.kind in ["mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc"]:
+			var key := "%s:%d:%d:%d:%s:%s:%s" % [str(effect.kind), int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y)), str(effect.get("mutation", "")), str(effect.get("role", "")), str(effect.get("evolution", ""))]
 			if not seen_spectacle_ids.has(key):
 				seen_spectacle_ids[key] = true
 				seen_spectacle_order.append(key)
 				if seen_spectacle_order.size() > 96:
 					seen_spectacle_ids.erase(seen_spectacle_order.pop_front())
-				var duration := 1.00 if effect.kind == "boss-phase-break" else (0.85 if effect.kind in ["mutation-installed", "engine-online"] else (0.68 if effect.kind == "boss-module-break" else 0.53))
-				spectacle_feedback.append({"kind":effect.kind, "p":effect.p, "mutation":str(effect.get("mutation","")), "role":str(effect.get("role","")), "engine":str(effect.get("engine","")), "phase":int(effect.get("phase",0)), "remaining":duration, "duration":duration})
+				var duration := 1.00 if effect.kind == "boss-phase-break" else (0.85 if effect.kind in ["mutation-installed", "engine-online"] else (0.72 if effect.kind == "evolution-proc" else (0.68 if effect.kind == "boss-module-break" else 0.53)))
+				spectacle_feedback.append({"kind":effect.kind, "p":effect.p, "mutation":str(effect.get("mutation","")), "role":str(effect.get("role","")), "engine":str(effect.get("engine","")), "evolution":str(effect.get("evolution","")), "phase":int(effect.get("phase",0)), "remaining":duration, "duration":duration})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -174,7 +174,7 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc"]:
 			_draw_effect(effect)
 	_draw_spectacle_feedback()
 	if formation_clock > 0.0:
@@ -838,6 +838,25 @@ func _draw_spectacle_feedback() -> void:
 					draw_line(p + axis * (ring - 9.0), p + axis * (ring + 11.0), Color(tint, alpha * 0.70), 2.2, true)
 			if kind == "engine-online":
 				draw_string(ThemeDB.fallback_font, p + Vector2(-86.0, -84.0), "ENGINE ONLINE", HORIZONTAL_ALIGNMENT_LEFT, 174, 17, Color(tint, alpha))
+		elif kind == "evolution-proc":
+			# A restrained, legible payoff cue: one ring and one short label.
+			# At 3x the animation uses real seconds, not accelerated simulation.
+			var evolution: String = str(cue.get("evolution", ""))
+			var labels := {
+				"duelist":"FOCUS", "spotter":"MARK HIT", "breacher":"BREACH",
+				"interceptor":"INTERRUPT", "conductor":"ARC CHARGE",
+				"tempest":"SWARM", "executioner":"EXECUTE", "lifeline":"SHIELD +"
+			}
+			var tint := CYAN if evolution in ["duelist", "spotter", "lifeline"] else (AMBER if evolution in ["breacher", "interceptor"] else Color("c4a4ff"))
+			var ring := 26.0 + age * 32.0
+			draw_arc(p, ring, 0.0, TAU, 32, Color(tint, alpha * 0.85), 2.6, true)
+			if not bool(profile.get("reduced", false)):
+				for i in range(3):
+					var axis := Vector2.from_angle(TAU * float(i) / 3.0 + age * 0.5)
+					draw_line(p + axis * (ring - 7.0), p + axis * (ring + 8.0), Color(tint, alpha * 0.70), 2.0, true)
+			var position := Vector2(clampf(p.x - 63.0, 7.0, 400.0), clampf(p.y - 55.0, 25.0, 866.0))
+			draw_rect(Rect2(position.x - 3.0, position.y - 17.0, 136.0, 22.0), Color("101b2a", alpha * 0.84))
+			draw_string(ThemeDB.fallback_font, position, str(labels.get(evolution, "BUILD HIT")), HORIZONTAL_ALIGNMENT_LEFT, 128, 15, Color(tint, alpha))
 		elif kind == "boss-module-break":
 			var role: String = str(cue.role).replace("_", " ").to_upper()
 			var ring := 39.0 + age * 50.0
