@@ -438,9 +438,10 @@ func boss_health_pressure() -> float:
 	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
 
 func boss_projectile_damage_multiplier() -> float:
-	# Boss rounds and missiles hurt a little more on higher difficulties.
-	# Heavy beams keep their original telegraphed damage and duration.
-	return {"normal": 1.0, "hard": 1.05, "insane": 1.12}[difficulty]
+	# Boss-only threat. Applies to all five bosses' volleys, missiles,
+	# stage-three slag and clearly warned heavy beams; no new enemy XP,
+	# extra spawn count or faster warning timers.
+	return {"normal": 1.85, "hard": 1.95, "insane": 2.05}[difficulty]
 
 func is_pressure_shooter(kind: String) -> bool:
 	# This group shoots ordinary projectile patterns, not additional
@@ -1610,6 +1611,8 @@ func _update_enemies() -> void:
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
+			if kind.begins_with("boss"):
+				damage *= boss_projectile_damage_multiplier()
 			# Late World 1 beam pressure is answerable by Aegis/EMP/Nova/Jammer.
 			# This changes damage, not XP or the visible charge warning.
 			if stage == 1 and time - stage_start >= 110.0:
@@ -1747,7 +1750,7 @@ func _update_enemies() -> void:
 						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0), "kind":"ordnance", "hp":12.0, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 				if kind == "boss3" and boss_phase_label().begins_with("FURNACE SEALED"):
 					for i in range(2):
-						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
+						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale() * boss_projectile_damage_multiplier(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 		if enemy.p.y > 885:
 			if bool(enemy.get("rival", false)) and rival_outcome.is_empty():
 				rival_outcome = "escaped"
@@ -1796,7 +1799,7 @@ func _archive_index_fire(core: Dictionary) -> void:
 		var count: int = int(HiddenSector.VOLLEY_COUNTS[archive_phase])
 		for i in range(count):
 			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.11
-			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _update_archive_attack() -> void:
 	var core := _boss_core() if boss_spawned else {}
@@ -1811,8 +1814,16 @@ func _update_archive_attack() -> void:
 		archive_phase_released = false
 		# The shield hardens between phases. Players must survive the next
 		# pattern instead of ending every phase within a single burst.
-		archive_next_attack = maxf(archive_next_attack, time + HiddenSector.PHASE_REARM_SECONDS)
-		_log("CUSTODIAN PHASE %d/3 · core seal recharging" % (archive_phase + 1))
+		archive_next_attack = time + HiddenSector.PHASE_TRANSITION_SECONDS
+		# A brief visible phase surge creates actual dodging pressure instead
+		# of waiting behind an invulnerable timer. It has no XP or Core reward.
+		var count: int = int(HiddenSector.PHASE_SURGE_SHOTS[archive_phase])
+		var direction: Vector2 = (ship_position(time + 1.4) - core.p).normalized()
+		for i in range(count):
+			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.14
+			bullets.append({"p":core.p, "v":direction.rotated(angle) * 290.0, "damage":HiddenSector.PHASE_SURGE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
+		effects.append({"kind":"ion-burst", "p":core.p, "radius":115.0, "life":0.70, "max_life":0.70, "born":tick})
+		_log("CUSTODIAN PHASE %d/3 · core shifts · incoming surge" % (archive_phase + 1))
 	if time < archive_next_attack:
 		return
 	archive_attack = HiddenSector.ATTACKS[archive_phase] if boss_spawned else "lock"
@@ -1832,7 +1843,7 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 		effects.append({"kind":"beam", "p":Vector2(archive_attack_x, 0), "life":0.32, "max_life":0.32, "born":tick})
 		beams_fired += 1
 		if absf(ship_position().x - archive_attack_x) < 38.0:
-			_hit((HiddenSector.COLLAPSE_BEAM_DAMAGE if attack == "collapse" else (HiddenSector.LOCK_BEAM_DAMAGE if boss_spawned else 27.0)) * threat_scale(), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
+			_hit((HiddenSector.COLLAPSE_BEAM_DAMAGE if attack == "collapse" else (HiddenSector.LOCK_BEAM_DAMAGE if boss_spawned else 27.0)) * threat_scale() * (boss_projectile_damage_multiplier() if boss_spawned else 1.0), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
 	if attack in ["lattice", "collapse"]:
 		var count: int = HiddenSector.LATTICE_PROJECTILES_PER_SIDE if attack == "lattice" else HiddenSector.COLLAPSE_PROJECTILES_PER_SIDE
 		for side in [-1, 1]:
@@ -1840,7 +1851,7 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 			var dir: Vector2 = (ship_position(time + 2.0) - source).normalized()
 			for i in range(count):
 				var offset := (i - (count - 1) * 0.5) * 0.15
-				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _counter_archive_attack() -> void:
 	archive_attack = ""
