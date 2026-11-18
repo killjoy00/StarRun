@@ -1657,6 +1657,55 @@ func _loadout_tap(key: String, id: String) -> void:
 # Level-up draft
 # ---------------------------------------------------------------------------
 
+# A meaningful one-time choice at rank 5 or when two invested abilities
+# can fuse. The regular combat loop is paused by the UI mode, not a timer.
+func _show_build_choice() -> void:
+	if sim.pending_build_choices.is_empty():
+		return
+	mode = "build_choice"
+	_save_run()
+	var choice: Dictionary = sim.pending_build_choices[0]
+	var id: String = str(choice.id)
+	var view := _page(0.93, true, 520.0)
+	var body: VBoxContainer = view.body
+	if str(choice.kind) == "evolution":
+		var weapon_card: Dictionary = sim.content.cards.filter(func(c): return str(c.id) == id)[0]
+		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
+		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Choose one permanent combat specialization for this flight.", 16, Kit.MUTED, true)
+		for option in sim.content.weapon_evolutions[id]:
+			_info_card(body, str(option.name), str(option.description), Kit.AMBER)
+			_ui_button(body, "Install " + str(option.name), _choose_build_decision.bind(str(option.id)), "primary", 52)
+	else:
+		var spec: Dictionary = sim.fusion_spec(id)
+		_page_header(view.top, "ABILITY PAIR READY", "Fuse or keep both?")
+		_info_card(body, "Fuse · " + str(spec.name), str(spec.description) + "\nCombines both ranks into one button and frees an ability slot.", Kit.VIOLET)
+		_ui_button(body, "Fuse · free one slot", _choose_build_decision.bind("fuse"), "primary", 54)
+		_info_card(body, "Keep separate", "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", Kit.CYAN)
+		_ui_button(body, "Keep both abilities", _choose_build_decision.bind("keep"), "secondary", 52)
+
+func _choose_build_decision(value: String) -> void:
+	if mode != "build_choice" or not sim.resolve_build_choice(value):
+		return
+	sound.play("card")
+	_save_run()
+	_resume_after_build_choice()
+
+func _resume_after_build_choice() -> void:
+	if not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+		return
+	if not sim.cards.is_empty():
+		_show_cards(false)
+		return
+	if sim.pending_levels > 0 and not sim.stage_transition_queued:
+		sim._offer_cards()
+		_show_cards(false)
+		return
+	mode = "playing"
+	_clear_overlay()
+	accumulator = -0.25
+	_save_run()
+
 func _show_cards(play_sound: bool = true) -> void:
 	mode = "cards"
 	_save_run()
@@ -1800,10 +1849,13 @@ func _draft_action(action: String, index: int) -> void:
 func _choose(index: int) -> void:
 	# A short guard stops a combat tap from picking a card the instant the draft opens.
 	if mode == "cards" and draft_guard <= 0.0 and not banish_mode and sim.choose_card(index):
-		_clear_overlay()
-		mode = "playing"
-		accumulator = -0.25
-		_save_run()
+		if not sim.pending_build_choices.is_empty():
+			_show_build_choice()
+		else:
+			_clear_overlay()
+			mode = "playing"
+			accumulator = -0.25
+			_save_run()
 
 # ---------------------------------------------------------------------------
 # Pause and build
@@ -2566,7 +2618,9 @@ func _resume_run() -> void:
 		_finish()
 		return
 	_start_flight()
-	if mode == "playing" and not sim.cards.is_empty():
+	if mode == "playing" and not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+	elif mode == "playing" and not sim.cards.is_empty():
 		_show_cards()
 
 ## First heavy beam is an in-flight lesson, not another preflight paragraph.
@@ -2677,6 +2731,8 @@ func _process(delta: float) -> void:
 		warp_clock += delta
 		if warp_clock >= 1.45:
 			_complete_warp()
+	if mode == "playing" and not sim.pending_build_choices.is_empty():
+		_show_build_choice()
 	if mode == "playing":
 		accumulator += minf(delta, 0.2) * game_speed
 		while accumulator >= Simulation.DT and mode == "playing":
@@ -2922,7 +2978,9 @@ func _finish_intermission_presentation() -> void:
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
-	if sim.pending_levels > 0:
+	if not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+	elif sim.pending_levels > 0:
 		sim._offer_cards()
 		_show_cards()
 
