@@ -1949,6 +1949,18 @@ func _show_build() -> void:
 			_info_card(body, str(pairs[i].name), str(pairs[i].description), Kit.AMBER)
 		if not build_show_all and pairs.size() > 3:
 			Kit.label(body, "%d more in the full list below." % (pairs.size() - 3), 15, Kit.MUTED)
+	if sim._new_build_decisions():
+		var nearby: Array = []
+		for recipe in sim.content.get("build_engines", []):
+			if sim.engine_tier(str(recipe.id)) >= 2:
+				continue
+			var progress: int = sim._engine_recipe_progress(recipe)
+			if progress > 0:
+				nearby.append({"name":str(recipe.name), "progress":progress})
+		if not nearby.is_empty():
+			_section(body, "Builds in progress")
+			for i in range(mini(3, nearby.size())):
+				_info_card(body, str(nearby[i].name), "%d/3 components · Keep building to unlock its automatic signature." % int(nearby[i].progress), Kit.AMBER)
 	var engines: Array = sim.active_engines()
 	if not engines.is_empty():
 		_section(body, "Automatic build engines")
