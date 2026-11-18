@@ -1798,7 +1798,7 @@ func _draft_card(parent: Node, i: int) -> void:
 		row.add_child(Kit.core_icon(40))
 	else:
 		var badge := IconBadge.new()
-		badge.icon_id = fusion if not fusion.is_empty() else id
+		badge.icon_id = fusion if not fusion.is_empty() and not sim._new_build_decisions() else id
 		badge.custom_minimum_size = Vector2(40, 40)
 		badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		row.add_child(badge)
@@ -1808,18 +1808,23 @@ func _draft_card(parent: Node, i: int) -> void:
 	info.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	row.add_child(info)
 	Kit.caps(info, tag_text, accent, 13)
-	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + (str(fused.name) if not fusion.is_empty() else str(card.name))
+	var name_text := ("%d  " % (i + 1) if not _touch_first() else "") + (str(fused.name) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.name))
 	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
-	Kit.label(info, str(fused.description) if not fusion.is_empty() else str(card.description), 16, Kit.TEXT, true)
+	Kit.label(info, str(fused.description) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
-		Kit.label(info, "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank], 15, Kit.VIOLET, true)
+		var fusion_note := "Unlocks %s · choose fuse or keep" % str(fused.name) if sim._new_build_decisions() else "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank]
+		Kit.label(info, fusion_note, 15, Kit.VIOLET, true)
 	elif reaches_milestone:
 		# Don't repeat distant rank descriptions on every ordinary card.
 		# Only a breakpoint reached by THIS pick needs an extra text line.
 		var reward := str(card.get("rank5" if milestone == 5 else "rank10", ""))
 		if not reward.is_empty():
 			Kit.label(info, "Now: " + reward, 15, accent, true)
+	if not banish_mode and tag in ["WEAPON", "SYSTEM", "ABILITY"]:
+		var engine_hint: String = sim.engine_hint_for_pick(id)
+		if not engine_hint.is_empty():
+			Kit.label(info, engine_hint, 15, Kit.AMBER, true)
 	if current == 0 and tag in ["WEAPON", "SYSTEM"]:
 		var link: String = sim.passive_hint(id)
 		if not link.is_empty():
@@ -1898,6 +1903,12 @@ func _show_build() -> void:
 			var mutation: Dictionary = Catalog.mutation(str(mutation_id))
 			if not mutation.is_empty():
 				_info_card(body, str(mutation.name), str(mutation.description), Kit.VIOLET)
+	if not sim.weapon_evolutions.is_empty():
+		_section(body, "Weapon specializations")
+		for weapon in sim.weapon_evolutions:
+			for option in sim.content.weapon_evolutions.get(str(weapon), []):
+				if str(option.id) == str(sim.weapon_evolutions[weapon]):
+					_info_card(body, str(weapon).capitalize() + " · " + str(option.name), str(option.description), Kit.AMBER)
 	_section(body, "Active abilities")
 	for slot in range(Catalog.ACTIVE_SLOTS):
 		var panel := PanelContainer.new()
@@ -2506,6 +2517,10 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
 	for engine in sim.active_engines():
 		build_lines.append("Engine: " + str(engine.name) + (" [mastered]" if int(engine.tier) == 3 else ""))
+	for weapon in sim.weapon_evolutions:
+		for option in sim.content.weapon_evolutions.get(str(weapon), []):
+			if str(option.id) == str(sim.weapon_evolutions[weapon]):
+				build_lines.append("Evolution: " + str(option.name) + " (" + str(weapon) + ")")
 	for id in sim.prototypes:
 		var spec: Dictionary = sim.prototype_spec(str(id))
 		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
