@@ -91,7 +91,8 @@ func _run() -> void:
 	custodian.stage = Hidden.WORLD
 	custodian._spawn_boss()
 	custodian.archive_phase_released = true
-	custodian._boss_core().hp = custodian._boss_core().max_hp * Hidden.PHASE_FLOORS[0]
+	var custodian_core: Dictionary = custodian._boss_core()
+	custodian_core.hp = custodian_core.max_hp * Hidden.PHASE_FLOORS[0]
 	custodian._update_archive_attack()
 	check(custodian.archive_phase == 1 and _count_fx(custodian, "boss-phase-break") == 1,
 		"Custodian actual phase progress has the same non-blocking celebration")
