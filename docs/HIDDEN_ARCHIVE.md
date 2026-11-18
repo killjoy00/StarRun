@@ -16,7 +16,7 @@ Relay patrols lose their coordinated volleys when the relay falls. The Archive's
 
 ```sh
 godot --headless --script tests/archive_campaign.gd -- \
-  --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win --min-boss-seconds=30
+  --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win
 ```
 
 Omit the ship, pilot, and difficulty filters to exercise the full matrix. Matched runs compare timing with immediate cooldown use from the same World 4 clear, with the same ship, pilot, draft, and seed. The playable workflow captures the signal choice, reveal, arrival, patrol, Custodian introduction and lock, and epilogue in the three viewport sizes.
