@@ -25,8 +25,15 @@ func _draw() -> void:
 		draw_line(Vector2(0, y), Vector2(size.x, y), Color(Archive.MINT, row * 0.18), 1.0)
 	for i in range(-6, 7):
 		draw_line(origin + Vector2(i * 10.0, 4.0), Vector2(origin.x + i * size.x / 5.0, size.y), Color(Archive.MINT, 0.16), 1.0, true)
-	var accent := Archive.MINT if scene == "epilogue" else Archive.COLOR
+	var accent := Archive.MINT if scene in ["arrival", "epilogue"] else Archive.COLOR
 	var radius := minf(size.y * 0.38, size.x * 0.29)
+	if scene == "arrival":
+		radius *= 1.14
+		for i in range(26):
+			var direction := Vector2.from_angle(i * 2.39996)
+			var distance := fposmod(i * 15.13 + elapsed * 94.0, size.x * 0.55)
+			var start := origin + direction * distance
+			draw_line(start, start + direction * (5.0 + distance * 0.08), Color(accent, clampf(distance / radius - 0.40, 0.0, 0.34)), 1.25, true)
 	for i in range(6):
 		draw_circle(origin, radius * (1.19 - i * 0.13), Color(accent, 0.038))
 	if scene == "boss":

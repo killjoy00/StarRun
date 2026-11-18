@@ -55,6 +55,7 @@ func _run() -> void:
 			scene.banish_mode = false
 			scene.stage_clear_clock = 2.0
 			_prepare(scene, screen)
+			scene.world._process(0.0)
 			scene._update_hud()
 			scene._process(0.0)
 			# Capture the final frame after the 150ms sheet slide, not the dim fade-in.
@@ -206,6 +207,12 @@ func _prepare(scene, screen: String) -> void:
 		"archive-reveal", "archive-arrival", "archive-patrol", "archive-boss-intro", "archive-boss-lock", "archive-ending":
 			scene.sim.stage = 4
 			scene.sim.stage_clears = 4
+			scene.sim.time = 1100.0
+			scene.sim.tick = 66000
+			scene.sim.level = 63
+			scene.sim.upgrades.nova = 5
+			scene.sim.upgrades.capacitor = 4
+			scene.sim.active_slots.append_array(["nova", "capacitor"])
 			scene.sim.signal_count = 2
 			scene.sim.stage_transition_queued = true
 			scene._show_stage_clear(false)
@@ -216,14 +223,15 @@ func _prepare(scene, screen: String) -> void:
 				return
 			scene._resume_archive()
 			if screen == "archive-patrol":
-				scene.sim.time = 28.0
+				scene.sim.time += 28.0
 				scene.sim._spawn_archive_patrol()
 				for enemy in scene.sim.enemies:
 					enemy.p.y += 350.0
 				scene.sim.archive_attack = "lock"
 				scene.sim.archive_attack_x = 190.0
-				scene.sim.archive_attack_until = 29.4
+				scene.sim.archive_attack_until = scene.sim.time + 1.4
 				return
+			scene.sim.time = scene.sim.stage_start + 105.0
 			scene.sim._spawn_boss()
 			scene._show_archive_intro(false)
 			if screen == "archive-boss-intro":

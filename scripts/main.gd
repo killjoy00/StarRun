@@ -1948,7 +1948,7 @@ func _show_archive_reveal(reset_clock: bool = true) -> void:
 	mode = "archive_reveal"
 	_save_run()
 	var view := _page(1.0, true, 560.0)
-	_page_header(view.top, "Campaign cleared  ·  Unknown transmission", "A door in the dark")
+	_page_header(view.top, "Campaign cleared  ·  Signal found", "A door in the dark")
 	_archive_art(view.body, "gate")
 	Kit.label(view.body, "“The Regent is down. Look beyond the wreckage. That light has been waiting for you.”", 18, Kit.TEXT, true)
 	Kit.label(view.body, "The Silent Archive is a tougher final sector. Your four-world victory and Cores are secured. Enter with your current build and a fresh shield.", 16, Kit.MUTED, true)
@@ -1980,7 +1980,7 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		Kit.label(view.body, "Hold an ability for the warning. Any ready active breaks the lock and opens the core to full damage.", 17, HiddenSector.MINT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
-		_archive_art(view.body, "gate")
+		_archive_art(view.body, "arrival")
 		Kit.label(view.body, "Two coordinates. One station. Your autopilot has a heading.", 18, Kit.TEXT, true)
 		Kit.label(view.body, "Keep a ready ability for the station's lock warnings. Destroy relay ships to scatter their escort fire.", 17, HiddenSector.MINT, true)
 	_focus(_ui_button(reading_footer, "Engage Custodian" if sim.boss_spawned else "Fly into the Archive", _resume_archive, "primary", 56, true))
@@ -2000,7 +2000,7 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 	mode = "archive_ending"
 	_save_run()
 	var view := _page(1.0, true, 540.0)
-	_page_header(view.top, "World 5 clear  ·  Incoming transmission", "A light left on")
+	_page_header(view.top, "World 5 clear  ·  Final signal", "A light left on")
 	_archive_art(view.body, "epilogue")
 	Kit.label(view.body, "The station unlocks one bay at a time. Thousands of distress calls spill into open space. Yours is the first ship to answer.", 19, Kit.TEXT, true)
 	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
@@ -2017,6 +2017,9 @@ func _finish_archive() -> void:
 func _update_archive_hud() -> void:
 	signal_button.visible = mode == "playing" and sim.signal_status == "offer"
 	signal_label.visible = mode == "playing" and (sim.signal_status in ["cast", "courier"] or not sim.archive_attack.is_empty())
+	if signal_label.visible:
+		var world_y := 289.0 if sim.secret_entered and sim.boss_spawned else 97.0
+		signal_label.position.y = field.position.y + world_y * scale_factor
 	if not sim.archive_attack.is_empty():
 		signal_label.text = "%s  %.1fs  ·  CAST AN ABILITY" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time)]
 		signal_label.add_theme_color_override("font_color", Kit.DANGER)
