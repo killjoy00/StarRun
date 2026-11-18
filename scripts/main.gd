@@ -2126,15 +2126,17 @@ func _merchant_identity(parent: Node) -> void:
 	plate.add_child(row)
 	var ship_picture := MerchantShip.new()
 	ship_picture.name = "MerchantHailPortrait"
-	ship_picture.custom_minimum_size = Vector2(112,122)
+	# A narrower insignia is intentional on 375-point phones. Otherwise the
+	# freighter's row forces the whole scroll panel beyond the right edge.
+	ship_picture.custom_minimum_size = Vector2(84,96) if _compact_ui() else Vector2(112,122)
 	row.add_child(ship_picture)
 	var words := VBoxContainer.new()
 	words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	words.add_theme_constant_override("separation", 5)
 	row.add_child(words)
-	Kit.caps(words, "?  UNREGISTERED FREIGHTER", Kit.AMBER, 13)
-	Kit.label(words, "The Quartermaster", 22, Kit.TEXT, true)
-	Kit.label(words, "No questions. No returns.", 16, Kit.MUTED, true)
+	Kit.caps(words, "?  UNKNOWN SHIP", Kit.AMBER, 12)
+	Kit.label(words, "The Quartermaster", 20 if _compact_ui() else 22, Kit.TEXT, true)
+	Kit.label(words, "No questions. No returns.", 15, Kit.MUTED, true)
 
 func _show_merchant_signal() -> void:
 	if sim.merchant_state != "signal":
@@ -2144,10 +2146,10 @@ func _show_merchant_signal() -> void:
 	var view := _page(0.97, true, 510.0)
 	_page_header(view.top, "!  INCOMING HAIL  ·  WORLD %d" % sim.stage, "A private offer")
 	_merchant_identity(view.body)
-	Kit.label(view.body, "A freighter has slipped out of formation. They will trade unusual hardware, but every deal has a price. Your flight is paused while you decide.", 16, Kit.TEXT, true)
+	Kit.label(view.body, "An unregistered freighter is offering unusual hardware. Every deal has a price. Combat is paused while you decide.", 16, Kit.TEXT, true)
 	Kit.label(view.body, "Hail them, or ignore the signal. No steering or combat time required.", 15, Kit.MUTED, true)
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
-	_focus(_ui_button(reading_footer, "Open the channel", _merchant_hail, "primary", 58, true))
+	_focus(_ui_button(reading_footer, "Hail freighter", _merchant_hail, "primary", 58, true))
 	_ui_button(reading_footer, "Ignore signal", _merchant_leave, "secondary", 58, true)
 	sound.play("warning")
 
@@ -2203,7 +2205,7 @@ func _show_merchant_confirm() -> void:
 		_gain_cost(view.body, str(offer.gain), str(offer.cost))
 	Kit.label(view.body, "This changes the rest of this flight. Nothing is paid or changed until you confirm.", 16, Kit.MUTED, true)
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
-	var accept := _ui_button(reading_footer, "Accept irreversible trade", _merchant_accept, "primary", 55, true)
+	var accept := _ui_button(reading_footer, "Accept trade", _merchant_accept, "primary", 55, true)
 	accept.disabled = not sim.merchant_can_afford(sim.merchant_selected)
 	_focus(accept)
 	_ui_button(reading_footer, "Back to offers", _merchant_back, "secondary", 55, true)
@@ -2221,14 +2223,25 @@ func _merchant_accept() -> void:
 	sound.play("card")
 	_show_merchant_receipt()
 
+func _merchant_trade_name(id: String) -> String:
+	match id:
+		"pact": return "Hot Reactor"
+		"repair": return "Field Salvage"
+		"sell_hull": return "Wreckage Contract"
+	if id.begins_with("mutation:"):
+		return str(Catalog.mutation(id.trim_prefix("mutation:")).get("name","Exotic modification"))
+	if id.begins_with("exchange:"):
+		return "Ability Exchange"
+	return "Merchant transaction"
+
 func _show_merchant_receipt() -> void:
 	mode = "merchant_receipt"
 	_save_run()
 	var view := _page(0.97, true, 490.0)
 	_page_header(view.top, "TRANSACTION COMPLETE", "Deal made")
 	_merchant_identity(view.body)
-	Kit.label(view.body, "The modification is installed. Your sacrifice lasts for this flight. The freighter is already gone.", 17, Kit.TEXT, true)
-	Kit.label(view.body, "Recorded trade: " + (str(sim.merchant_trade_log[-1]) if not sim.merchant_trade_log.is_empty() else "Unknown"), 14, Kit.MUTED, true)
+	Kit.label(view.body, "Deal complete. Payment and consequences apply for this flight. The freighter is already gone.", 17, Kit.TEXT, true)
+	Kit.label(view.body, "Received: " + (_merchant_trade_name(str(sim.merchant_trade_log[-1])) if not sim.merchant_trade_log.is_empty() else "Unknown"), 16, Kit.CYAN, true)
 	_focus(_ui_button(reading_footer, "Back to the flight", _merchant_resume, "primary", 58, true))
 
 func _merchant_leave() -> void:
@@ -2410,7 +2423,10 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 	for id in sim.mutations:
 		build_lines.append("Mutation: " + str(Catalog.mutation(str(id)).name))
 	if sim.merchant_trade_count > 0:
-		build_lines.append("Merchant: " + ", ".join(PackedStringArray(sim.merchant_trade_log)))
+		var deal_names := PackedStringArray()
+		for deal_id in sim.merchant_trade_log:
+			deal_names.append(_merchant_trade_name(str(deal_id)))
+		build_lines.append("Merchant: " + ", ".join(deal_names))
 	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
 	if sim.bounty_earned > 0:
 		_info_card(body, "Bounty contracts", "%d base cores from bounty runs." % sim.bounty_earned, Kit.AMBER)

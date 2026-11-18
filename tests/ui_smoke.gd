@@ -38,6 +38,14 @@ func _unwrapped_long_label(node: Node) -> bool:
 			return true
 	return false
 
+func _merchant_panels_within_screen(parent: Node, screen_width: float) -> bool:
+	for panel in parent.find_children("*","PanelContainer",true,false):
+		if panel is Control:
+			var rect: Rect2 = panel.get_global_rect()
+			if rect.position.x < 7.0 or rect.end.x > screen_width - 7.0:
+				return false
+	return true
+
 func _contains_text(node: Node, phrase: String) -> bool:
 	if node is Label and str(node.text).contains(phrase):
 		return true
@@ -209,22 +217,22 @@ func _run() -> void:
 		await process_frame
 		var quartermaster: Control = scene.overlay.find_child("MerchantHailPortrait", true, false)
 		check(scene.mode == "merchant_signal" and quartermaster != null and quartermaster.size.x >= 100.0 and _contains_text(scene.overlay, "Open the channel"), "Merchant signal displays bespoke ship art and an explicit hail decision")
-		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Merchant hail fits iPhone safe area")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and _merchant_panels_within_screen(scene.overlay, logical.x), "Merchant hail portrait and bordered cards fit both edges of the phone")
 		scene._merchant_hail()
 		await process_frame
 		check(scene.mode == "merchant_shop" and _contains_text(scene.overlay, "Quartermaster") and _contains_text(scene.overlay, "Leave without a deal"), "Market displays real offers, an exit and no forced purchase")
-		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100, "Five merchant offers scroll on narrow phones")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100 and _merchant_panels_within_screen(scene.overlay, logical.x), "Merchant trade cards scroll without horizontal clipping on narrow phones")
 		var starting_shield: float = merchant.max_shield
 		scene._merchant_preview("pact")
 		await process_frame
-		check(scene.mode == "merchant_confirm" and _contains_text(scene.overlay, "Confirm this trade") and is_equal_approx(merchant.max_shield,starting_shield), "Trade preview is an actual separate irreversible-cost confirmation")
+		check(scene.mode == "merchant_confirm" and _contains_text(scene.overlay, "Confirm this trade") and is_equal_approx(merchant.max_shield,starting_shield) and _merchant_panels_within_screen(scene.overlay,logical.x), "Confirmation keeps the irreversible cost visible and the content on screen")
 		scene._merchant_back()
 		check(scene.mode == "merchant_shop" and is_equal_approx(merchant.max_shield,starting_shield), "Declining confirmation has no effect")
 		scene._merchant_preview("pact")
 		scene._merchant_accept()
 		await process_frame
 		check(scene.mode == "merchant_receipt" and merchant.merchant_trade_count == 1 and merchant.max_shield < starting_shield, "Accepting a deal charges exactly once and displays a receipt")
-		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Merchant receipt fits small phones")
+		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and _merchant_panels_within_screen(scene.overlay,logical.x), "Merchant receipt fits narrow phones without truncating deal details")
 		scene._merchant_resume()
 		check(scene.mode == "playing" and merchant.merchant_state.is_empty(), "Returning from the merchant unpauses gameplay")
 		scene.sim = previous_sim

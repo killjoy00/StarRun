@@ -122,6 +122,7 @@ func _prepare(scene, screen: String) -> void:
 				scene.sim._spawn_world1_strike_wing()
 			scene.mode = "playing"
 			scene._clear_overlay()
+			scene.last_sector = scene._sector_name(scene.sim.time)
 			scene.banner_text = "!  HOSTILE FORMATION INBOUND" if screen == "opening-warning" else "STRIKE WING  ·  THREE-SHIP ATTACK"
 			scene.banner_clock = 4.0
 		"merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt":
