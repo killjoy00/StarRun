@@ -1818,7 +1818,7 @@ func _update_enemies() -> void:
 					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
 					for i in range(volley):
 						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0), "kind":"ordnance", "hp":12.0, "source":"rival" if bool(enemy.get("rival", false)) else kind})
-				if kind == "boss3" and boss_phase_label().begins_with("FURNACE SEALED"):
+				if kind == "boss3" and _alive_modules("vent") > 0:
 					for i in range(2):
 						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale() * boss_projectile_damage_multiplier(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 		if enemy.p.y > 885:
@@ -2237,7 +2237,9 @@ func _nearest(origin: Vector2, excluded: Array = []) -> Dictionary:
 		if enemy.hp > 0.0 and enemy.id not in excluded:
 			var d: float = origin.distance_squared_to(enemy.p)
 			if enemy.kind == "boss_module" or enemy.kind == "archive_courier":
-				d *= 0.22
+				# World 3/4 weak points must remain the automatic-weapons'
+				# highest-priority targets while their shields are active.
+				d *= 0.09 if enemy.kind == "boss_module" and boss_spawned and stage in [3, 4] else 0.22
 			elif enemy.kind == "archive_relay":
 				d *= 0.58
 			elif pilot_id == "hunter" and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
@@ -2393,6 +2395,15 @@ func _update_shots() -> void:
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
+	# No manual aiming: the boss core's broad collision area can intercept
+	# a shot intended for a visible weak point. Route automatic shots to
+	# that part instead of wasting them against the seal.
+	if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"] and weapon in ["pulse", "seeker", "arc", "lance", "barrage", "pulse_echo", "seeker_blast", "lance_echo"]:
+		for part in enemies:
+			if part.kind == "boss_module" and part.hp > 0.0 and str(part.role) == _late_boss_objective_role():
+				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
+				_damage_enemy(part, amount, weapon)
+				return
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
@@ -2425,12 +2436,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 0.90
 	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
 		amount *= 0.85
-	if enemy.kind == "boss3" and _alive_modules("vent") > 0 and boss_phase_label().begins_with("FURNACE SEALED"):
-		amount *= 0.28
+	if enemy.kind == "boss3" and _alive_modules("vent") > 0:
+		amount *= 0.28 if _alive_modules("vent") > 1 else 0.58
 	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
-		amount *= 0.28
+		amount *= 0.28 if _alive_modules("pylon") > 1 else 0.58
 	if upgrades.targeting > 0 and weapon in ["pulse", "seeker", "arc", "lance"] and rng.randf() < (upgrades.targeting * 0.05 + (0.05 if weapon == "pulse" and passive_link_active("smart_pulse") else 0.0) + (0.08 if weapon == "lance" and passive_link_active("lance_sight") else 0.0)):
 		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
+	if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"]:
+		amount = minf(amount, maxf(0.0, float(enemy.hp) - _late_boss_floor(enemy)))
 	if enemy.kind == HiddenSector.BOSS:
 		if time >= archive_exposed_until:
 			amount *= HiddenSector.SEALED_DAMAGE_FACTOR
@@ -2441,6 +2454,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	enemy.hp -= amount
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
 	if enemy.hp > 0:
+		if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"]:
+			_advance_late_boss_phase(enemy)
 		return
 	if weapon == "lance" and _has_mutation("capacitor_lance") and lance_refund_ready:
 		lance_timer = maxf(0.0, lance_timer - 0.65)
@@ -2455,7 +2470,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			_receive_signal()
 		effects.append({"kind":"explosion", "p":enemy.p, "life":0.5, "max_life":0.5, "born":tick})
 		return
-	kills += 1
+	if not bool(enemy.get("no_reward", false)):
+		kills += 1
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
 	if pilot_id == "ace" and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
@@ -2508,7 +2524,10 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("SCRAP STORM - salvaged wreckage discharged")
 	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
-		bonus_cores += int(meta.module_salvage)
+		if not bool(enemy.get("no_reward", false)):
+			bonus_cores += int(meta.module_salvage)
+		if boss_spawned and stage in [3, 4]:
+			_advance_late_boss_phase(_boss_core())
 		_log(str(enemy.name) + " destroyed - " + boss_phase_label())
 	if str(enemy.get("elite_role", "")) == "leader":
 		# Escorts should lose their buff even if the leader dies before all
@@ -3193,7 +3212,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
