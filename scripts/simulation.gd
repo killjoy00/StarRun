@@ -25,6 +25,7 @@ var encounter_queue: Array = []
 var next_encounter_at := 50.0
 var next_pressure_wave_at := 8.0
 var pressure_waves := 0
+var opening_scout_wave := 0
 var boss_attack_pattern := "sweep"
 var cooldown_totals: Dictionary = {}
 var stage_start := 0.0
@@ -348,12 +349,14 @@ func step() -> void:
 		# Scouts → warning → strike wing → recovery → counterattack.
 		# Delay only 11–13s pre-wing: a long gap starved early XP and
 		# changed genuine later-world survivability. Keep builds viable.
-		if stage == 1 and difficulty == "normal" and stage_time >= 11.0 and stage_time < 13.0:
+		if stage == 1 and difficulty == "normal" and daily_day.is_empty() and stage_time >= 11.0 and stage_time < 13.0:
 			next_spawn = stage_start + 13.0
 		else:
 			_spawn_enemy()
 			var pace := maxf(0.55, 1.65 - stage_time / 260.0)
 			next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+	if stage == 1 and difficulty == "normal" and daily_day.is_empty() and not boss_spawned:
+		_spawn_opening_scout_screen()
 	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
 		_spawn_world1_pressure()
 		next_pressure_wave_at = time + 7.5
@@ -1121,6 +1124,33 @@ func _spawn_encounter() -> void:
 		_log("ELITE FORMATION - destroy the marked leader to disrupt escorts")
 	else:
 		encounter_queue = formation.duplicate()
+
+func _spawn_opening_scout_screen() -> void:
+	# A deliberate series of early, attackable contact groups. They grant
+	# no XP and leave the combat/draft RNG unchanged. Their first shots have
+	# a long lead-in so fragile starters see threats before being punished.
+	var times := [1.5, 5.5, 9.0, 21.5]
+	if opening_scout_wave >= times.size() or time - stage_start < float(times[opening_scout_wave]):
+		return
+	var phase: int = opening_scout_wave
+	opening_scout_wave += 1
+	var count: int = mini(2, maxi(0, mini(_enemy_limit() - enemies.size(), 3 - _visible_world1_enemies())))
+	for index in range(count):
+		var enemy_type := "drone" if (phase + index) % 3 == 0 else ("interceptor" if phase != 3 else "gunship")
+		var x: float = 135.0 if index == 0 else 405.0
+		var y: float = 95.0 if phase < 2 else 120.0
+		var rng_before: int = rng.state
+		_add_enemy(enemy_type, Vector2(x, y + float(index) * 32.0))
+		rng.state = rng_before
+		var scout: Dictionary = enemies[-1]
+		scout["opening_scout"] = true
+		scout["pressure_wing"] = true
+		scout["xp"] = 0
+		scout["max_hp"] *= 1.70 if phase < 2 else 1.35
+		scout.hp = scout.max_hp
+		scout.fire = 6.0 if phase == 0 else (2.6 if phase == 1 else 1.8)
+	if count > 0:
+		_log("SCOUT SWEEP - unregistered contacts" if phase < 2 else "ESCORTS INBOUND - prepare for the strike")
 
 func _spawn_world1_strike_wing() -> void:
 	# Three enemies ARRIVE TOGETHER instead of in widely separated singles.
@@ -2801,7 +2831,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

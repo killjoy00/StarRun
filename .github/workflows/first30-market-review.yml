@@ -48,6 +48,7 @@ jobs:
           done
           python3 tools/report_first30.py review/before-normal.log review/after-normal.log > review/summary.md
           cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+          cat review/summary.md
           for difficulty in hard insane; do
             godot --headless --path . --script tests/world1_first30_playtest.gd -- \
               --ship=${{ matrix.ship }} --difficulty="$difficulty" --seeds=2 --seed-offset=21 \

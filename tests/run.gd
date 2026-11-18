@@ -419,9 +419,24 @@ func _test_world1_mutations_and_merchant() -> void:
 	var daily := Sim.new(61110)
 	daily.daily_day = "2026-11-17"
 	check(other_modes.world1_opening_phase().is_empty() and daily.world1_opening_phase().is_empty(), "Opening warning sequence does not alter Hard, Insane or Daily")
+	var presentation := Sim.new(61110)
+	for frame in range(60 * 26):
+		if not presentation.cards.is_empty():
+			presentation.choose_card(0)
+		presentation.step()
+	check(presentation.opening_scout_wave == 4, "All four scout / response beats are dispatched by real World 1 simulation ticks")
+	check(presentation.events.any(func(e): return str(e.message).contains("SCOUT SWEEP")), "Opening scout contacts spawn attackable actual enemies, not only a HUD banner")
+	var daily_unchanged := Sim.new(61111)
+	daily_unchanged.daily_day = "2026-11-17"
+	for frame in range(60 * 11):
+		if not daily_unchanged.cards.is_empty():
+			daily_unchanged.choose_card(0)
+		daily_unchanged.step()
+	check(daily_unchanged.opening_scout_wave == 0, "Existing Daily World 1 receives no scripted scout packs")
 	var gap := Sim.new(61111)
 	gap.tick = 660
 	gap.time = gap.tick * Sim.DT
+	gap.opening_scout_wave = 4
 	gap.next_spawn = gap.time
 	var gap_before: int = gap.enemies.size()
 	gap.step()
