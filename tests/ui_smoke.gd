@@ -531,6 +531,40 @@ func _run() -> void:
 		check(scene.mode == "results" and scene.profile.achievements.has("open_frequency"), "Debrief awards the permanent record")
 		check(scene.services.read_save(scene.Services.RUN).is_empty(), "Settled Archive run cannot be resumed again")
 
+	# Test the real mobile decision panel and persistence, not merely the
+	# simulation's logical option IDs. Combat must stay paused in this mode.
+	for dimensions in [Vector2i(375, 667), Vector2i(390, 844)]:
+		root.size = dimensions
+		await process_frame
+		scene.sim = Sim.new(99100 + dimensions.x)
+		scene.sim.stage = 2
+		scene.sim.upgrades.pulse = 5
+		scene.sim._queue_weapon_evolutions()
+		scene.mode = "playing"
+		scene._layout()
+		scene._show_build_choice()
+		await process_frame
+		check(scene.mode == "build_choice" and scene.sim.pending_build_choices.size() == 1, "Rank-5 mobile evolution choice pauses combat")
+		check(_contains_text(scene.overlay, "Duelist") and _contains_text(scene.overlay, "Spotter"), "Both evolution paths and their descriptions are visible on real mobile UI")
+		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Evolution panel fits narrow-phone safe area")
+		var snapshot: Dictionary = scene.services.read_save(scene.Services.RUN)
+		check(snapshot.has("pending_build_choices") and snapshot.pending_build_choices.size() == 1, "An unanswered evolution choice is checkpointed before interaction")
+		scene._resume_run()
+		check(scene.mode == "build_choice" and scene.sim.pending_build_choices.size() == 1, "Restart shows the identical unanswered decision, not an auto-pick")
+		scene._choose_build_decision("spotter")
+		check(scene.mode == "playing" and scene.sim.weapon_evolutions.pulse == "spotter", "Choosing Spotter installs it and resumes the actual flight")
+		check(scene.services.read_save(scene.Services.RUN).weapon_evolutions.pulse == "spotter", "Chosen evolution persists in storage")
+		scene.sim = Sim.new(99200 + dimensions.x)
+		scene.sim.stage = 2
+		scene.sim.active_slots = ["aegis", "nova"]
+		scene.sim.upgrades.aegis = 5
+		scene.sim.upgrades.nova = 5
+		scene.sim._try_fuse()
+		scene._show_build_choice()
+		await process_frame
+		check(scene.mode == "build_choice" and _contains_text(scene.overlay, "Fuse") and _contains_text(scene.overlay, "Keep both"), "Mobile fusion panel presents two explicit strategies")
+		scene._choose_build_decision("keep")
+		check(scene.mode == "playing" and scene.sim.active_slots == ["aegis", "nova"], "Mobile Keep choice preserves two distinct buttons")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame
