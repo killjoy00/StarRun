@@ -3534,6 +3534,8 @@ func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
 func engine_hint_for_pick(id: String) -> String:
 	if not _new_build_decisions():
 		return ""
+	var best_progress := -1
+	var best_hint := ""
 	for spec in content.get("build_engines", []):
 		if engine_tier(str(spec.id)) >= 2:
 			continue
@@ -3543,9 +3545,12 @@ func engine_hint_for_pick(id: String) -> String:
 			continue
 		var before: int = _engine_recipe_progress(spec)
 		var after: int = _engine_recipe_progress(spec, id)
-		if after > before:
-			return ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
-	return ""
+		# A genuinely completed engine outranks a 2/3 partial recipe.
+		# Ties keep the authored recipe order; no extra card text or RNG.
+		if after > before and after > best_progress:
+			best_progress = after
+			best_hint = ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
+	return best_hint
 
 func _engine_relevance_score(id: String) -> int:
 	if not _new_build_decisions():
