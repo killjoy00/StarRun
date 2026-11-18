@@ -388,7 +388,9 @@ func step() -> void:
 		next_hazard = time + rng.randf_range(15.0, 23.0)
 	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and time >= merchant_next_at:
 		_try_merchant_signal()
-	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at:
+	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at and merchant_state.is_empty() and signal_status not in ["offer", "cast", "courier"]:
+		# A live decision/coordinate countdown wins over an incoming rival.
+		# The rival clock stays due and is retried when the interaction clears.
 		_try_spawn_rival()
 	if not secret_entered and time >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
