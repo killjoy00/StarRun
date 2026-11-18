@@ -2271,6 +2271,8 @@ func _test_shieldstorm_and_full_hull_focus() -> void:
 	defender.stage = 2
 	defender.route_choice = "repair"
 	_fuse_pair(defender, defender.fusion_spec("shieldstorm"))
+	check(defender.pending_build_choices.size() == 1 and str(defender.pending_build_choices[0].id) == "shieldstorm", "New regular runs offer Shieldstorm as a conscious fusion choice")
+	check(defender.resolve_build_choice("fuse"), "Explicitly choosing Shieldstorm installs the fusion")
 	check(defender.active_slots == ["shieldstorm"] and defender._source_active("aegis") and defender._source_active("flak"), "Shieldstorm fuses rank-5 Aegis and Flak into one active")
 	defender.shield = 2.0
 	defender.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
@@ -2304,6 +2306,7 @@ func _test_shieldstorm_and_full_hull_focus() -> void:
 	var cast := Sim.new(7705)
 	cast.stage = 2
 	_fuse_pair(cast, cast.fusion_spec("shieldstorm"))
+	check(cast.resolve_build_choice("fuse"), "A separate late-world run can elect Shieldstorm for its active ability")
 	cast.shield = 5.0
 	cast.shield_offline = 4.0
 	cast.bullets = [{"p":Vector2(270,300), "v":Vector2(0,20), "kind":"chaff", "damage":5.0, "source":"test"}]
