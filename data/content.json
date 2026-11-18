@@ -1064,11 +1064,13 @@
       {
         "id": "duelist",
         "name": "Duelist",
+        "role": "Focused damage",
         "description": "Repeated Pulse hits on the same target ramp up damage, capped at five stacks."
       },
       {
         "id": "spotter",
         "name": "Spotter",
+        "role": "Cross-weapon setup",
         "description": "Pulse marks targets for bonus hits from Seeker, Arc or Lance."
       }
     ],
@@ -1076,11 +1078,13 @@
       {
         "id": "breacher",
         "name": "Breacher",
+        "role": "Boss & module damage",
         "description": "Seekers specialize in bosses, exposed modules and elite leaders."
       },
       {
         "id": "interceptor",
         "name": "Interceptor",
+        "role": "Beam interruption",
         "description": "Seeker hits periodically interrupt a target's charged beam and delay its fire."
       }
     ],
@@ -1088,11 +1092,13 @@
       {
         "id": "conductor",
         "name": "Conductor",
+        "role": "Cross-weapon burst",
         "description": "Arc charges targets for cross-weapon bonus damage, separate from Storm Circuit."
       },
       {
         "id": "tempest",
         "name": "Tempest",
+        "role": "Swarm clearing",
         "description": "Arc chains to one more enemy and deals bonus swarm damage."
       }
     ],
@@ -1100,11 +1106,13 @@
       {
         "id": "executioner",
         "name": "Executioner",
+        "role": "Priority-target focus",
         "description": "Repeated Lance hits on priority targets build a focused damage bonus."
       },
       {
         "id": "lifeline",
         "name": "Lifeline",
+        "role": "Shield sustain, less damage",
         "description": "Lance sacrifices some damage to restore shields on genuine hits, once per firing cycle."
       }
     ]
