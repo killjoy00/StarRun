@@ -984,7 +984,7 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 		engine_storm_marks.append({"id":id, "expires":time + 4.0})
 		while engine_storm_marks.size() > 6:
 			engine_storm_marks.pop_front()
-	elif weapon in ["pulse", "seeker", "lance"] and engine_tier("storm_circuit") >= 2 and tick >= engine_storm_ready_tick:
+	if weapon in ["pulse", "seeker", "lance"] and engine_tier("storm_circuit") >= 2 and tick >= engine_storm_ready_tick:
 		for mark in engine_storm_marks:
 			if int(mark.id) != id or float(mark.expires) <= time:
 				continue
@@ -1003,7 +1003,7 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 					_damage_enemy(nearby, minf(600.0, amount * 0.35), "engine_storm")
 					jumped += 1
 			break
-	elif weapon == "lance" and engine_tier("prism_hunter") >= 2 and _engine_priority_target(enemy):
+	if weapon == "lance" and engine_tier("prism_hunter") >= 2 and _engine_priority_target(enemy):
 		if engine_prism_target != id:
 			engine_prism_target = id
 			engine_prism_hits = 0
@@ -2635,6 +2635,18 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
 				_damage_enemy(part, amount, weapon)
 				return
+	# Small, weapon-specific precursors reward deliberate investment before
+	# any three-piece signature unlock. Daily/World 1 are isolated by tier 0.
+	if weapon == "pulse" and engine_tier("execution_network") >= 1:
+		amount *= 1.06
+	elif weapon == "seeker" and engine_tier("missile_siege") >= 1:
+		amount *= 1.06
+		if engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy) and engine_siege_target == int(enemy.id) and engine_siege_expires >= time:
+			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0)
+	elif weapon == "arc" and engine_tier("storm_circuit") >= 1:
+		amount *= 1.06
+	elif weapon == "lance" and engine_tier("prism_hunter") >= 1:
+		amount *= 1.06
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
@@ -2681,10 +2693,15 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
-	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + minf(amount, enemy.hp)
+	var actual_damage: float = minf(maxf(0.0, amount), float(enemy.hp))
+	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
 	enemy.hp -= amount
+	if actual_damage > 0.0 and weapon in ["pulse", "seeker", "arc", "lance"] and _engine_priority_target(enemy):
+		_engine_charge_salvage(minf(0.38, actual_damage / 140.0))
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
 	if enemy.hp > 0:
+		if weapon in ["pulse", "seeker", "arc", "lance"]:
+			_engine_on_weapon_hit(enemy, actual_damage, weapon)
 		if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"]:
 			_advance_late_boss_phase(enemy)
 		return
@@ -2704,6 +2721,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		return
 	if not bool(enemy.get("no_reward", false)):
 		kills += 1
+		if not str(enemy.kind).begins_with("boss") and enemy.kind != "archive_courier":
+			_engine_charge_salvage(1.0)
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
 	if pilot_id == "ace" and not bool(enemy.get("no_reward", false)) and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
@@ -3381,6 +3400,9 @@ func choose_card(index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	var id: String = cards[index].id
+	var engine_before: Dictionary = {}
+	for spec in content.get("build_engines", []):
+		engine_before[str(spec.id)] = engine_tier(str(spec.id))
 	if not fused_into(id).is_empty():
 		return false
 	if id == "repair":
@@ -3421,6 +3443,11 @@ func choose_card(index: int) -> bool:
 		if card.tag == "ABILITY":
 			_try_fuse()
 	_log("Installed " + cards[index].name)
+	for spec in content.get("build_engines", []):
+		var engine_id: String = str(spec.id)
+		if int(engine_before.get(engine_id, 0)) < 2 and engine_tier(engine_id) >= 2:
+			_engine_cue(engine_id, true, ship_position())
+			_log(str(spec.name).to_upper() + " ONLINE - automatic signature armed")
 	cards.clear()
 	return true
 
