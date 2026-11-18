@@ -13,6 +13,7 @@ func _run() -> void:
 	var trials := 0
 	var wins := 0
 	var failed := false
+	var minimum_boss_seconds: float = float(options.get("--min-boss-seconds", "0"))
 	for ship in Catalog.SHIPS:
 		if options.get("--ship", ship.id) != ship.id:
 			continue
@@ -38,6 +39,12 @@ func _run() -> void:
 				trials += 1
 				wins += int(result.get("won", false))
 				failed = failed or (result.has("economy_ok") and not bool(result.economy_ok))
+				if bool(result.get("won", false)):
+					var saw_all: bool = result.get("patterns", []).size() == Archive.ATTACKS.size()
+					failed = failed or not saw_all or int(result.get("max_phase", -1)) != 2
+					if float(result.get("boss_seconds", -1.0)) < minimum_boss_seconds:
+						push_error("Custodian cleared too quickly (%.1fs < %.1fs expected)" % [float(result.boss_seconds), minimum_boss_seconds])
+						failed = true
 	print("ARCHIVE MATRIX: %d / %d cleared" % [wins, trials])
 	quit(0 if trials > 0 and not failed and (not require_win or wins == trials) else 1)
 
@@ -75,11 +82,17 @@ func _fly_archive(sim: RefCounted, timed: bool) -> Dictionary:
 	var payout: int = sim.payout()
 	var fired: int = sim.beams_fired
 	var cancelled: int = sim.beams_cancelled
+	var max_phase: int = -1
+	var patterns: Array[String] = []
 	for frame in range(60 * 550):
 		if sim.ended or sim.time - sim.stage_start >= MAX_STAGE_SECONDS:
 			break
 		if sim.secret_intro_pending:
 			sim.dismiss_secret_intro()
+		if sim.boss_spawned:
+			max_phase = maxi(max_phase, sim.archive_phase)
+			if not sim.archive_attack.is_empty() and sim.archive_attack not in patterns:
+				patterns.append(sim.archive_attack)
 		if sim.stage_transition_queued:
 			sim.advance_stage()
 			break
@@ -96,6 +109,7 @@ func _fly_archive(sim: RefCounted, timed: bool) -> Dictionary:
 		sim.step()
 	return {"won":sim.won,"hull_fraction":sim.hull / sim.max_hull, "boss_seconds":sim.time - sim.boss_spawn_time if sim.boss_spawned else -1.0,
 		"interrupts":sim.beams_cancelled - cancelled, "beams_fired":sim.beams_fired - fired,
+		"max_phase":max_phase, "patterns":patterns,
 		"economy_ok":sim.payout() == payout and sim.xp == xp and sim.level == level}
 
 func _cast_one(sim: RefCounted) -> void:

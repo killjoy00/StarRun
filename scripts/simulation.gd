@@ -438,9 +438,10 @@ func boss_health_pressure() -> float:
 	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
 
 func boss_projectile_damage_multiplier() -> float:
-	# Boss rounds and missiles hurt a little more on higher difficulties.
-	# Heavy beams keep their original telegraphed damage and duration.
-	return {"normal": 1.0, "hard": 1.05, "insane": 1.12}[difficulty]
+	# Boss-only threat. Applies to all five bosses' volleys, missiles,
+	# stage-three slag and clearly warned heavy beams; no new enemy XP,
+	# extra spawn count or faster warning timers.
+	return {"normal": 1.85, "hard": 1.95, "insane": 2.05}[difficulty]
 
 func is_pressure_shooter(kind: String) -> bool:
 	# This group shoots ordinary projectile patterns, not additional
@@ -1610,6 +1611,8 @@ func _update_enemies() -> void:
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
 			var damage := (28.0 if kind in ["sniper", "void_lancer"] else (29.0 + stage * 6.0)) * threat_scale()
+			if kind.begins_with("boss"):
+				damage *= boss_projectile_damage_multiplier()
 			# Late World 1 beam pressure is answerable by Aegis/EMP/Nova/Jammer.
 			# This changes damage, not XP or the visible charge warning.
 			if stage == 1 and time - stage_start >= 110.0:
@@ -1747,7 +1750,7 @@ func _update_enemies() -> void:
 						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0), "kind":"ordnance", "hp":12.0, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 				if kind == "boss3" and boss_phase_label().begins_with("FURNACE SEALED"):
 					for i in range(2):
-						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
+						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale() * boss_projectile_damage_multiplier(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 		if enemy.p.y > 885:
 			if bool(enemy.get("rival", false)) and rival_outcome.is_empty():
 				rival_outcome = "escaped"
@@ -1788,14 +1791,15 @@ func _archive_index_fire(core: Dictionary) -> void:
 	core.fire -= DT
 	if core.fire > 0.0 or jammer_left > 0.0 or emp_left > 0.0:
 		return
-	core.fire = [3.45, 2.9, 2.55][archive_phase]
+	core.fire = HiddenSector.VOLLEY_INTERVALS[archive_phase]
 	var aim := ship_position(time + 2.35)
 	for side in [-1, 1]:
 		var origin: Vector2 = core.p + Vector2(side * 66.0, 12.0)
 		var direction := (aim - origin).normalized()
-		for i in range(3 + archive_phase):
-			var angle: float = (float(i) - (2.0 + archive_phase) * 0.5) * 0.11
-			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":3.9 * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+		var count: int = int(HiddenSector.VOLLEY_COUNTS[archive_phase])
+		for i in range(count):
+			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.11
+			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _update_archive_attack() -> void:
 	var core := _boss_core() if boss_spawned else {}
@@ -1808,11 +1812,23 @@ func _update_archive_attack() -> void:
 	if not core.is_empty() and archive_phase < 2 and archive_phase_released and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
 		archive_phase += 1
 		archive_phase_released = false
-		archive_next_attack = minf(archive_next_attack, time + 1.35)
+		# The shield hardens between phases. Players must survive the next
+		# pattern instead of ending every phase within a single burst.
+		archive_next_attack = time + HiddenSector.PHASE_TRANSITION_SECONDS
+		# A brief visible phase surge creates actual dodging pressure instead
+		# of waiting behind an invulnerable timer. It has no XP or Core reward.
+		var count: int = int(HiddenSector.PHASE_SURGE_SHOTS[archive_phase])
+		var direction: Vector2 = (ship_position(time + 1.4) - core.p).normalized()
+		for i in range(count):
+			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.14
+			bullets.append({"p":core.p, "v":direction.rotated(angle) * 290.0, "damage":HiddenSector.PHASE_SURGE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
+		effects.append({"kind":"ion-burst", "p":core.p, "radius":115.0, "life":0.70, "max_life":0.70, "born":tick})
+		_log("CUSTODIAN PHASE %d/3 · core shifts · incoming surge" % (archive_phase + 1))
 	if time < archive_next_attack:
 		return
 	archive_attack = HiddenSector.ATTACKS[archive_phase] if boss_spawned else "lock"
-	archive_attack_until = time + (3.2 if archive_phase == 2 else 3.6)
+	# Preserve a readable counter window even in the high-pressure finale.
+	archive_attack_until = time + 3.6
 	archive_attack_x = ship_position(archive_attack_until).x
 	_log("ARCHIVE " + archive_attack.to_upper() + " charging · any active ability breaks the lock")
 
@@ -1822,26 +1838,26 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else (7.5 if archive_phase == 2 else 10.0))
-	archive_exposed_until = time + 3.0
+	archive_exposed_until = time + HiddenSector.UNANSWERED_EXPOSURE_SECONDS
 	if attack != "lattice":
 		effects.append({"kind":"beam", "p":Vector2(archive_attack_x, 0), "life":0.32, "max_life":0.32, "born":tick})
 		beams_fired += 1
 		if absf(ship_position().x - archive_attack_x) < 38.0:
-			_hit((67.0 if attack == "collapse" else (51.0 if boss_spawned else 27.0)) * threat_scale(), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
+			_hit((HiddenSector.COLLAPSE_BEAM_DAMAGE if attack == "collapse" else (HiddenSector.LOCK_BEAM_DAMAGE if boss_spawned else 27.0)) * threat_scale() * (boss_projectile_damage_multiplier() if boss_spawned else 1.0), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
 	if attack in ["lattice", "collapse"]:
-		var count := 13 if attack == "lattice" else 7
+		var count: int = HiddenSector.LATTICE_PROJECTILES_PER_SIDE if attack == "lattice" else HiddenSector.COLLAPSE_PROJECTILES_PER_SIDE
 		for side in [-1, 1]:
 			var source := origin + Vector2(side * 115.0, 18.0)
 			var dir: Vector2 = (ship_position(time + 2.0) - source).normalized()
 			for i in range(count):
 				var offset := (i - (count - 1) * 0.5) * 0.15
-				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":5.0 * threat_scale(), "kind":"void", "source":HiddenSector.BOSS})
+				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _counter_archive_attack() -> void:
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else 9.0)
-	archive_exposed_until = time + 6.0
+	archive_exposed_until = time + HiddenSector.COUNTER_EXPOSURE_SECONDS
 	beams_cancelled += 1
 	effects.append({"kind":"ion-burst", "p":ship_position(), "radius":215.0, "life":0.75, "max_life":0.75, "born":tick})
 	_log("RESONANCE BROKEN · weapons have a clear shot")
@@ -2347,7 +2363,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
 	if enemy.kind == HiddenSector.BOSS:
 		if time >= archive_exposed_until:
-			amount *= 0.46
+			amount *= HiddenSector.SEALED_DAMAGE_FACTOR
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
@@ -3118,10 +3134,15 @@ func restore(state: Dictionary) -> bool:
 		return false
 	for key in state:
 		if key not in ["version", "rng"]:
+			# The checkpoint is reusable data, not live simulation state. Never
+			# borrow its arrays/dictionaries: mutating a restored boss, bullet,
+			# reward or merchant could otherwise mutate the original checkpoint.
 			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs"]:
 				var merged: Dictionary = get(key).duplicate(true)
-				merged.merge(state[key], true)
+				merged.merge(state[key].duplicate(true), true)
 				set(key, merged)
+			elif state[key] is Array or state[key] is Dictionary:
+				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
 	# Preserve an older save's remaining uses; start stage refills at its next warp.

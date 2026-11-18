@@ -1987,7 +1987,7 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		_page_header(view.top, "Archive defense online", "The Last Custodian")
 		_archive_art(view.body, "boss")
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
-		Kit.label(view.body, "Hold an ability for the warning. Any ready active breaks the lock and opens the core to full damage.", 17, HiddenSector.MINT, true)
+		Kit.label(view.body, "Three reinforced seals. Save a ready ability for each warning: counter to expose the core. Damage pushes each phase forward quickly, but the Custodian fights back with a new surge.", 17, HiddenSector.MINT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
 		_archive_art(view.body, "arrival")
@@ -2026,7 +2026,8 @@ func _finish_archive() -> void:
 
 func _update_archive_hud() -> void:
 	signal_button.visible = mode == "playing" and sim.signal_status == "offer"
-	signal_label.visible = mode == "playing" and (sim.signal_status in ["cast", "courier"] or not sim.archive_attack.is_empty())
+	var custodian_active: bool = sim.secret_entered and sim.boss_spawned and not sim.stage_transition_queued
+	signal_label.visible = mode == "playing" and (sim.signal_status in ["cast", "courier"] or not sim.archive_attack.is_empty() or custodian_active)
 	if signal_label.visible:
 		var world_y := 289.0 if sim.secret_entered and sim.boss_spawned else 97.0
 		signal_label.position.y = field.position.y + world_y * scale_factor
@@ -2039,6 +2040,13 @@ func _update_archive_hud() -> void:
 	elif sim.signal_status == "courier":
 		signal_label.text = "MARKED COURIER  ·  %ds" % ceili(sim.signal_until - sim.time)
 		signal_label.add_theme_color_override("font_color", HiddenSector.COLOR)
+	elif custodian_active:
+		if sim.time < sim.archive_exposed_until:
+			signal_label.text = "PHASE %d/3 · CORE EXPOSED" % (sim.archive_phase + 1)
+			signal_label.add_theme_color_override("font_color", HiddenSector.MINT)
+		else:
+			signal_label.text = "PHASE %d/3 · SEALED · NEXT %.0fs" % [sim.archive_phase + 1, maxf(0.0, sim.archive_next_attack - sim.time)]
+			signal_label.add_theme_color_override("font_color", HiddenSector.COLOR)
 
 func _show_stage_clear(reset_clock: bool = true) -> void:
 	if sim.can_enter_secret():

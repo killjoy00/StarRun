@@ -519,7 +519,7 @@ func _run() -> void:
 		scene._resume_archive()
 		scene.sim._spawn_boss()
 		scene._show_archive_intro(false)
-		check(_contains_text(scene.overlay, "Last Custodian") and _contains_text(scene.overlay, "Any ready active"), "Boss intro explains the counter")
+		check(_contains_text(scene.overlay, "Last Custodian") and _contains_text(scene.overlay, "Save a ready ability") and _contains_text(scene.overlay, "Three reinforced seals"), "Boss intro explains the counter")
 		scene._resume_archive()
 		scene.sim.archive_phase = 2
 		scene.sim.archive_phase_released = true
