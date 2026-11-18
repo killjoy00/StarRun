@@ -161,6 +161,39 @@ func _run() -> void:
 				boss_image.save_png(output.path_join("boss-world-%d-phase-%d-%s.png" % [stage, phase + 1, "reduced" if reduced else "full"]))
 				check(boss_image.get_size() == Vector2i(540, 960),
 					"Real World %d boss phase %d renders with reduced/full effects" % [stage, phase + 1])
+	# New visual-only cues use a real-time cache, so 3x does not turn
+	# a genuine mutation or boss destruction into a one-frame flash.
+	host.sim = Sim.new(78001)
+	host.sim.upgrades.seeker = 1
+	check(host.sim._install_mutation("split_seeker"), "Actual mutation installation starts the showcase")
+	host.sim._mutation_feedback("split_seeker", Vector2(245, 380))
+	field._process(0.01)
+	check(field.spectacle_feedback.size() == 2, "Mutation installation and actual proc each have a distinct feedback event")
+	for reduced in [false, true]:
+		host.profile.reduced = reduced
+		field.queue_redraw()
+		var mutation_preview := await _frame(viewport)
+		mutation_preview.save_png(output.path_join("mutation-hydra-%s.png" % ("reduced" if reduced else "full")))
+		check(mutation_preview.get_size() == Vector2i(540, 960), "Mutation spectacle renders in real portrait layout")
+	field._process(0.45)
+	check(field.spectacle_feedback.size() == 2, "Rare upgrade feedback survives at least 0.45 real seconds")
+	field._process(0.50)
+	check(field.spectacle_feedback.is_empty(), "Mutation spectacle expires and does not restart on a stale effect")
+	host.sim = Sim.new(78003)
+	host.sim.stage = 3
+	host.sim._spawn_boss()
+	var phase_core: Dictionary = host.sim._boss_core()
+	host.sim._damage_enemy(phase_core, 9999999.0, "nova")
+	for part in host.sim.enemies.filter(func(e): return e.kind == "boss_module" and e.hp > 0.0):
+		host.sim._damage_enemy(part, 9999999.0, "nova")
+	field._process(0.01)
+	check(field.spectacle_feedback.any(func(fx): return fx.kind == "boss-phase-break"), "Actual vent destruction opens a persistent phase cue")
+	for reduced in [false, true]:
+		host.profile.reduced = reduced
+		field.queue_redraw()
+		var phase_preview := await _frame(viewport)
+		phase_preview.save_png(output.path_join("crucible-phase-break-%s.png" % ("reduced" if reduced else "full")))
+		check(phase_preview.get_size() == Vector2i(540, 960), "Boss phase spectacle renders in both effects modes")
 	viewport.queue_free()
 	await process_frame
 	var scene := PhoneScene.new()

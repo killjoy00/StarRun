@@ -1,0 +1,97 @@
+name: Incremental roguelike excitement and build identity
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/simulation.gd'
+      - 'scripts/main.gd'
+      - 'scripts/playfield.gd'
+      - 'tests/roguelite_excitement.gd'
+      - 'tests/visual_readability.gd'
+      - '.github/workflows/roguelite-excitement.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pacing-and-spectacle:
+    name: Fixed-budget pacing, Daily isolation and real boss cues
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Strict compile for changed gameplay and visual scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for script in scripts/simulation.gd scripts/main.gd scripts/playfield.gd tests/roguelite_excitement.gd; do
+            godot --headless --path . --check-only --script "$script"
+          done
+      - name: Seeded pacing, mutation and boss presentation contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/roguelite_excitement.gd 2>&1 | tee /tmp/roguelite-excitement-contracts.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/roguelite-excitement-contracts.log; then
+            exit 1
+          fi
+      - name: Verify genuine Archive route remains completable
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/archive_campaign.gd -- --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win 2>&1 | tee /tmp/roguelite-archive-regression.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/roguelite-archive-regression.log; then
+            exit 1
+          fi
+      - name: Preserve contract logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-roguelite-contracts
+          path: |
+            /tmp/roguelite-excitement-contracts.log
+            /tmp/roguelite-archive-regression.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+  build-identity:
+    name: Chill play, ${{ matrix.ship }}, ${{ matrix.build }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, arcwing, haven]
+        build: [focused, shielded]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Real-card build comparisons with no manual ability use
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/build-identity
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --ship=${{ matrix.ship }} --difficulty=normal --hangar=mid \
+            --build=${{ matrix.build }} --strategy=never --route=adaptive \
+            --seeds=3 --stage-limit=2 --trace \
+            2>&1 | tee /tmp/build-identity/${{ matrix.ship }}-${{ matrix.build }}.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/build-identity/*.log; then
+            exit 1
+          fi
+      - name: Retain individual seeded drafts, world clears and damage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-build-${{ matrix.ship }}-${{ matrix.build }}
+          path: /tmp/build-identity
+          if-no-files-found: ignore
+          retention-days: 14
