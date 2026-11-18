@@ -7,6 +7,8 @@ on:
       - 'scripts/playfield.gd'
       - 'data/content.json'
       - 'tests/boss_phase_matrix.gd'
+      - 'tests/boss_warp_fixtures.gd'
+      - 'tests/run.gd'
       - '.github/workflows/boss-phase-review.yml'
   workflow_dispatch:
 
@@ -79,3 +81,26 @@ jobs:
           name: world34-wraith-insane-high-hangar
           path: /tmp/starrun-late-boss-high-hangar.log
           if-no-files-found: ignore
+
+  legacy_warp:
+    name: Real stage/intermission fixture compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Check legal boss part clearing preserves warp and reroll scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/boss_warp_fixtures.gd \
+            2>&1 | tee /tmp/starrun-boss-warp-fixtures.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|ERROR: (Warp|Rerolls|Each boss|Bounties)' /tmp/starrun-boss-warp-fixtures.log; then
+            echo "::error::Phase-aware campaign fixture regression failed"
+            exit 1
+          fi
+          grep -q 'BOSS_WARP_FIXTURES:' /tmp/starrun-boss-warp-fixtures.log
+          grep -q '0 failures' /tmp/starrun-boss-warp-fixtures.log
