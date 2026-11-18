@@ -1059,6 +1059,56 @@
       "description": "Run payout +25% and salvaged kills earn more cores; weapon damage -18%."
     }
   ],
+  "weapon_evolutions": {
+    "pulse": [
+      {
+        "id": "duelist",
+        "name": "Duelist",
+        "description": "Repeated Pulse hits on the same target ramp up damage, capped at five stacks."
+      },
+      {
+        "id": "spotter",
+        "name": "Spotter",
+        "description": "Pulse marks targets for bonus hits from Seeker, Arc or Lance."
+      }
+    ],
+    "seeker": [
+      {
+        "id": "breacher",
+        "name": "Breacher",
+        "description": "Seekers specialize in bosses, exposed modules and elite leaders."
+      },
+      {
+        "id": "interceptor",
+        "name": "Interceptor",
+        "description": "Seeker hits periodically interrupt a target's charged beam and delay its fire."
+      }
+    ],
+    "arc": [
+      {
+        "id": "conductor",
+        "name": "Conductor",
+        "description": "Arc charges targets for cross-weapon bonus damage, separate from Storm Circuit."
+      },
+      {
+        "id": "tempest",
+        "name": "Tempest",
+        "description": "Arc chains to one more enemy and deals bonus swarm damage."
+      }
+    ],
+    "lance": [
+      {
+        "id": "executioner",
+        "name": "Executioner",
+        "description": "Repeated Lance hits on priority targets build a focused damage bonus."
+      },
+      {
+        "id": "lifeline",
+        "name": "Lifeline",
+        "description": "Lance sacrifices some damage to restore shields on genuine hits, once per firing cycle."
+      }
+    ]
+  },
   "build_engines": [
     {
       "id": "execution_network",
