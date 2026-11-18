@@ -1,0 +1,50 @@
+name: World 3 and 4 targetable phase review
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/simulation.gd'
+      - 'scripts/playfield.gd'
+      - 'data/content.json'
+      - 'tests/boss_phase_matrix.gd'
+      - '.github/workflows/boss-phase-review.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase_matrix:
+    name: Boss phases / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Compile deterministic phase matrix
+        run: godot --headless --path . --check-only --script tests/boss_phase_matrix.gd
+      - name: Verify both bosses at Normal, Hard, Insane and no/mid/max Hangar
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/boss_phase_matrix.gd -- \
+            --ship=${{ matrix.ship }} 2>&1 | tee /tmp/starrun-boss-phases.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|LATE BOSS PHASE:' /tmp/starrun-boss-phases.log; then
+            echo "::error::World 3/4 boss phase matrix failed"
+            exit 1
+          fi
+          grep -q 'BOSS_PHASE_MATRIX 18 cells, ' /tmp/starrun-boss-phases.log
+          grep -q '0 failures' /tmp/starrun-boss-phases.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: world34-phase-${{ matrix.ship }}
+          path: /tmp/starrun-boss-phases.log
+          if-no-files-found: ignore
