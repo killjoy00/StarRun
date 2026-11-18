@@ -1059,6 +1059,60 @@
       "description": "Run payout +25% and salvaged kills earn more cores; weapon damage -18%."
     }
   ],
+  "build_engines": [
+    {
+      "id": "execution_network",
+      "name": "Execution Network",
+      "primary": "pulse",
+      "secondary": "targeting",
+      "third": "finisher",
+      "description": "Repeated Pulse hits trigger a priority-target precision volley."
+    },
+    {
+      "id": "missile_siege",
+      "name": "Missile Siege",
+      "primary": "seeker",
+      "secondary": "boss_hunter",
+      "third": "opening_salvo",
+      "description": "Seeker hits breach elite and boss defenses for escalating follow-up volleys."
+    },
+    {
+      "id": "storm_circuit",
+      "name": "Storm Circuit",
+      "primary": "arc",
+      "secondary": "autoloader",
+      "third_any": [
+        "pulse",
+        "seeker",
+        "lance"
+      ],
+      "description": "Arc hits charge enemies for automatic cross-weapon discharges."
+    },
+    {
+      "id": "prism_hunter",
+      "name": "Prism Hunter",
+      "primary": "lance",
+      "secondary": "targeting",
+      "third": "opening_salvo",
+      "description": "Repeated Lance hits focus on one target for a heavy precision strike."
+    },
+    {
+      "id": "fortress_reactor",
+      "name": "Fortress Reactor",
+      "primary": "shield",
+      "secondary": "regen",
+      "third": "shield_focus",
+      "description": "High shields power an automatic defensive counterbattery."
+    },
+    {
+      "id": "salvage_carrier",
+      "name": "Salvage Carrier",
+      "primary": "harvester",
+      "secondary": "repair_bots",
+      "third": "wing_drones",
+      "description": "Kills and sustained boss pressure charge self-firing repair escorts."
+    }
+  ],
   "boss_modules": {
     "boss2": [
       {
