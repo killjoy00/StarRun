@@ -487,12 +487,22 @@ func _draw_enemy(enemy: Dictionary) -> void:
 				draw_line(Vector2(side*8,-15),Vector2(side*35,28),Color("76fff2"),3)
 		if boss:
 			_glow(Vector2(0,-18),14 + sin(visual_time*4)*2,Color(tint,0.3))
+			# Real module shields remain readable even with reduced effects.
+			# The player's guns prioritize the visibly glowing weak points.
+			if kind in ["boss3", "boss4"] and sim._alive_modules("vent" if kind == "boss3" else "pylon") > 0:
+				var shield_color := Color("ffb065") if kind == "boss3" else Color("b8a0ff")
+				draw_arc(Vector2.ZERO, 104.0, 0.0, TAU, 56, Color(shield_color, 0.78), 3.3, true)
+				for side in [-1, 1]:
+					draw_line(Vector2(side*61,-82), Vector2(side*90,-43), Color(shield_color, 0.85), 3.0, true)
 		draw_set_transform(Vector2.ZERO)
 	if boss:
 		draw_rect(Rect2(65,11,410,82),Color(0.03,0.035,0.05,0.86))
 		_bar(Rect2(80,21,380,7),enemy.hp/enemy.max_hp,AMBER)
 		draw_string(ThemeDB.fallback_font, Vector2(80,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
-		draw_string(ThemeDB.fallback_font, Vector2(80,78), sim.boss_phase_label(), HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
+		var phase_label: String = sim.boss_phase_label()
+		if kind in ["boss3", "boss4"]:
+			phase_label = "PHASE %d/3 · %s" % [sim.late_boss_phase + 1, phase_label]
+		draw_string(ThemeDB.fallback_font, Vector2(80,78), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
 	else:
 		var elite_role: String = str(enemy.get("elite_role", ""))
 		# Normal World 1 strike wings share a cyan chevron, distinct from
@@ -553,6 +563,12 @@ func _draw_boss_module(enemy: Dictionary) -> void:
 		draw_arc(Vector2.ZERO,34,visual_time,visual_time+PI*1.4,35,Color(tint,0.7),2,true)
 	draw_set_transform(Vector2.ZERO)
 	draw_arc(p, 36, 0, TAU, 42, Color(tint, 0.48), 1.7, true)
+	if bool(enemy.get("phase_objective", false)):
+		# Reconfigured modules are unmistakable objectives, not respawned
+		# decoration. Keep the marker static when reduced effects are on.
+		draw_arc(p, 43, 0.0, TAU, 48, Color(tint, 0.93), 3.2, true)
+		draw_string(ThemeDB.fallback_font, p + Vector2(-36, -51),
+			"VENT" if role == "vent" else "PYLON", HORIZONTAL_ALIGNMENT_CENTER, 72, 13, tint)
 	_bar(Rect2(p.x-31,p.y+43,62,5),enemy.hp/enemy.max_hp,tint)
 	# Every module is a real auto-targeted enemy, not a decorative weak point.
 
