@@ -11,9 +11,14 @@ const ARTIFACTS := [
 ]
 # One extraordinary weapon transformation at a time; can be drafted or bought from a black market.
 const MUTATIONS := [
-	{"id":"piercing_pulse", "requires":"pulse", "name":"Ghost Rounds", "description":"Pulse bolts punch through the first enemy and carry 60% damage into a second target.", "market_cost":"Sell 25% of maximum shield capacity."},
-	{"id":"split_seeker", "requires":"seeker", "name":"Hydra Warheads", "description":"Seeker impacts launch up to three miniature homing missiles at other enemies.", "market_cost":"Sell 20% of maximum hull capacity."},
-	{"id":"arc_reactor", "requires":"arc", "name":"Chain Reactor", "description":"Arc Coil kills release a lightning burst that jumps to two nearby threats.", "market_cost":"Sell 15% of maximum hull and shield capacity."},
+	{"id":"piercing_pulse", "requires":"pulse", "name":"Ghost Rounds", "description":"Pulse bolts punch through the first enemy and carry 60% damage into a second target.", "market_cost":"Sell 25% of maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.75},
+	{"id":"ricochet_pulse", "requires":"pulse", "name":"Bank Shot", "description":"Pulse hits jump a 35%-strength energy bolt to one nearby enemy.", "market_cost":"Sell 20% maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.80},
+	{"id":"split_seeker", "requires":"seeker", "name":"Hydra Warheads", "description":"Seeker impacts launch up to three miniature homing missiles at other enemies.", "market_cost":"Sell 20% of maximum hull capacity.", "hull_factor":0.80, "shield_factor":1.0},
+	{"id":"breach_seeker", "requires":"seeker", "name":"Siege Torpedoes", "description":"Seeker strikes boss cores 25% harder and splash 25% damage onto two nearby enemies.", "market_cost":"Sell 18% maximum hull capacity.", "hull_factor":0.82, "shield_factor":1.0},
+	{"id":"arc_reactor", "requires":"arc", "name":"Chain Reactor", "description":"Arc Coil kills release a lightning burst that jumps to two nearby threats.", "market_cost":"Sell 15% of maximum hull and shield capacity.", "hull_factor":0.85, "shield_factor":0.85},
+	{"id":"grounding_arc", "requires":"arc", "name":"Static Lock", "description":"Arc lightning stalls enemy firing by 1.8s and cancels a target's charging heavy beam.", "market_cost":"Sell 20% maximum hull capacity.", "hull_factor":0.80, "shield_factor":1.0},
+	{"id":"refracting_lance", "requires":"lance", "name":"Prism Echo", "description":"Lance impacts refract a second 35%-damage beam to a nearby off-axis target.", "market_cost":"Sell 15% of hull and shield capacity.", "hull_factor":0.85, "shield_factor":0.85},
+	{"id":"capacitor_lance", "requires":"lance", "name":"Capacitor Lance", "description":"The first Lance kill each firing cycle refunds 0.65 seconds of its cooldown.", "market_cost":"Sell 25% maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.75},
 ]
 const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
 const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine"]

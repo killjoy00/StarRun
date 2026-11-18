@@ -20,7 +20,8 @@ const SCREENS := [
 	"ships", "pilots", "combat-1", "combat-4",
 	"cards", "cards-banish", "cards-maxed", "paused", "build",
 	"stage-clear", "prototypes", "route",
-	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
+	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
+	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
 	"archive-boss-intro", "archive-boss-lock", "archive-ending"
 ]
@@ -114,6 +115,35 @@ func _prepare(scene, screen: String) -> void:
 				# Don't re-create the same captain as both active and archived.
 				scene.profile.rival_active = {}
 				scene._show_rival_journal()
+		"opening-warning", "opening-strike":
+			scene.sim.tick = 540 if screen == "opening-warning" else 840
+			scene.sim.time = scene.sim.tick * Sim.DT
+			if screen == "opening-strike":
+				scene.sim._spawn_world1_strike_wing()
+			scene.mode = "playing"
+			scene._clear_overlay()
+			scene.last_sector = scene._sector_name(scene.sim.time)
+			scene.banner_text = "!  HOSTILE FORMATION INBOUND" if screen == "opening-warning" else "STRIKE WING  ·  THREE-SHIP ATTACK"
+			scene.banner_clock = 4.0
+		"merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt":
+			scene.sim.enable_merchant()
+			scene.sim.stage = 2
+			scene.sim.time = 80.0
+			scene.sim.merchant_next_at = 70.0
+			scene.sim._try_merchant_signal()
+			if screen == "merchant-signal":
+				scene._show_merchant_signal()
+			else:
+				scene.sim.merchant_hail()
+				if screen == "merchant-shop":
+					scene._show_merchant_shop()
+				else:
+					scene.sim.merchant_preview("pact")
+					if screen == "merchant-confirm":
+						scene._show_merchant_confirm()
+					else:
+						scene.sim.merchant_accept()
+						scene._show_merchant_receipt()
 		"settings":
 			scene.mode = "menu"
 			# Apple App Review evidence: native UI rendered at the exact

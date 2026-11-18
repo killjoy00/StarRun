@@ -1,0 +1,70 @@
+name: World 1 opening playtest and market audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: first30-market-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  first30:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/world1-opening-')
+    name: Empty Hangar first 30 seconds / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Matched-seed 30-second opening and full World 1 playtest
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASELINE="$RUNNER_TEMP/starrun-opening-before"
+          git worktree add --detach "$BASELINE" bcd841ec8a86f5d91178de9bd4c21954d2c790c5
+          cp tests/world1_first30_playtest.gd "$BASELINE/tests/world1_first30_playtest.gd"
+          godot --headless --path . --editor --import --quit
+          godot --headless --path "$BASELINE" --editor --import --quit
+          mkdir -p review
+          for revision in before after; do
+            root="$GITHUB_WORKSPACE"
+            if [[ "$revision" == before ]]; then root="$BASELINE"; fi
+            godot --headless --path "$root" --script "$root/tests/world1_first30_playtest.gd" -- \
+              --ship=${{ matrix.ship }} --difficulty=normal --seeds=4 --seed-offset=21 \
+              2>&1 | tee "review/$revision-normal.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "review/$revision-normal.log"; then exit 1; fi
+          done
+          python3 tools/report_first30.py review/before-normal.log review/after-normal.log > review/summary.md
+          cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+          cat review/summary.md
+          for difficulty in hard insane; do
+            godot --headless --path . --script tests/world1_first30_playtest.gd -- \
+              --ship=${{ matrix.ship }} --difficulty="$difficulty" --seeds=2 --seed-offset=21 \
+              2>&1 | tee "review/$difficulty.log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "review/$difficulty.log"; then exit 1; fi
+          done
+          godot --headless --path . --script tests/world1_presence_probe.gd -- \
+            --ship=${{ matrix.ship }} --difficulty=normal --seeds=1 --seed-offset=21 \
+            2>&1 | tee review/full-world1.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' review/full-world1.log; then exit 1; fi
+          grep 'WORLD1_PROBE ' review/full-world1.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve gameplay receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first30-playtest-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
