@@ -568,6 +568,11 @@ func _test_world1_mutations_and_merchant() -> void:
 	gap.tick = 660
 	gap.time = gap.tick * Sim.DT
 	gap.opening_scout_wave = 4
+	# Isolate the one scripted ordinary-spawn pause from independent,
+	# already-due pressure wings and hazard/encounter timers.
+	gap.next_pressure_wave_at = 999999.0
+	gap.next_encounter_at = 999999.0
+	gap.next_hazard = 999999.0
 	gap.next_spawn = gap.time
 	var gap_before: int = gap.enemies.size()
 	gap.step()

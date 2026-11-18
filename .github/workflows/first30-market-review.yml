@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           BASELINE="$RUNNER_TEMP/starrun-opening-before"
-          git worktree add --detach "$BASELINE" 5f678c0823c275c33ac2a24f1bcba453b433b2a4
+          git worktree add --detach "$BASELINE" bcd841ec8a86f5d91178de9bd4c21954d2c790c5
           cp tests/world1_first30_playtest.gd "$BASELINE/tests/world1_first30_playtest.gd"
           godot --headless --path . --editor --import --quit
           godot --headless --path "$BASELINE" --editor --import --quit
