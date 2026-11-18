@@ -493,9 +493,9 @@ func _test_world1_mutations_and_merchant() -> void:
 	visitor.merchant_next_at = 80.0
 	check(visitor._try_merchant_signal() and visitor.merchant_state == "signal", "A merchant hails from a real mid-flight event outside boss combat")
 	check(visitor.merchant_visits == 1 and visitor.merchant_seen_stages == [2] and visitor.merchant_offers.size() >= 2, "One seeded visit has a bounded, persistent inventory")
-	var signal: Dictionary = visitor.snapshot()
+	var merchant_signal_save: Dictionary = visitor.snapshot()
 	var restored := Sim.new()
-	check(restored.restore(signal) and restored.snapshot() == signal, "The merchant's inventory and signal survive exact save/resume")
+	check(restored.restore(merchant_signal_save) and restored.snapshot() == merchant_signal_save, "The merchant's inventory and signal survive exact save/resume")
 	var stopped_tick: int = visitor.tick
 	visitor.step()
 	check(visitor.tick == stopped_tick, "Combat is truly frozen during a merchant hail")
