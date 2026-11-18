@@ -611,7 +611,7 @@ func _test_roguelike_variation() -> void:
 		candidate._offer_cards(false)
 		if candidate.cards.any(func(c): return str(c.tag) == "MUTATION"):
 			rare_found = true
-			check(candidate.cards.any(func(c): return str(c.id) in ["piercing_pulse", "split_seeker"]), "Only mutations for owned weapons are offered")
+			check(candidate.cards.any(func(c): return str(Catalog.mutation(str(c.id)).get("requires","")) in ["pulse","seeker"]), "Only mutations for actually owned weapons are offered")
 			break
 	check(rare_found, "Rare transformations must be obtainable in later-world drafts across multiple seeds")
 	var pulse := Sim.new(447)
