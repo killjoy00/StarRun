@@ -335,6 +335,8 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
 func step() -> void:
+	if not pending_build_choices.is_empty():
+		_auto_resolve_build_choices()
 	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
 	# The Daily UTC day is assigned after Sim.new(). Restore its original
@@ -1849,6 +1851,8 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	_queue_weapon_evolutions()
+	_try_fuse()
 	signal_status = ""
 	signal_until = 0.0
 	if secret_entered:
@@ -3527,6 +3531,8 @@ func choose_card(index: int) -> bool:
 						shield = minf(max_shield, shield + bonus)
 		if card.tag == "ABILITY":
 			_try_fuse()
+		if card.tag == "WEAPON":
+			_queue_weapon_evolutions()
 	_log("Installed " + cards[index].name)
 	for spec in content.get("build_engines", []):
 		var engine_id: String = str(spec.id)
@@ -3560,7 +3566,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -3582,6 +3588,10 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	# Pre-overhaul suspended flights retain their original automatic fusion
+	# behavior, and no fresh evolution decision is injected mid-run.
+	if not state.has("build_choices_active"):
+		build_choices_active = false
 	# Preserve an older save's remaining uses; start stage refills at its next warp.
 	if not state.has("pilot_rerolls_left"):
 		pilot_rerolls_left = mini(rerolls_left, 1) if pilot_id == "tactician" else 0
