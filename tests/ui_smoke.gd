@@ -546,7 +546,8 @@ func _run() -> void:
 		await process_frame
 		check(scene.mode == "build_choice" and scene.sim.pending_build_choices.size() == 1, "Rank-5 mobile evolution choice pauses combat")
 		check(_contains_text(scene.overlay, "Duelist") and _contains_text(scene.overlay, "Spotter"), "Both evolution paths and their descriptions are visible on real mobile UI")
-		check(_contains_text(scene.overlay, "Focused damage") and _contains_text(scene.overlay, "Cross-weapon setup"), "Both compact specialization roles fit the phone evolution choice")
+		# Kit.caps renders card headings as uppercase on actual devices.
+		check(_contains_text(scene.overlay, "FOCUSED DAMAGE") and _contains_text(scene.overlay, "CROSS-WEAPON SETUP"), "Both compact specialization roles fit the phone evolution choice")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Evolution panel fits narrow-phone safe area")
 		var snapshot: Dictionary = scene.services.read_save(scene.Services.RUN)
 		check(snapshot.has("pending_build_choices") and snapshot.pending_build_choices.size() == 1, "An unanswered evolution choice is checkpointed before interaction")
@@ -573,7 +574,7 @@ func _run() -> void:
 		scene.sim.damage_dealt.engine_storm = 218.0
 		scene._show_results()
 		await process_frame
-		check(_contains_text(scene.overlay, "Your build at work") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
+		check(_contains_text(scene.overlay, "YOUR BUILD AT WORK") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
 		check(_contains_text(scene.overlay, "218 direct damage"), "Debrief displays measured engine damage and does not invent a damage multiplier")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Build-impact debrief stays inside narrow-phone safe area")
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
