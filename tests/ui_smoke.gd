@@ -216,7 +216,7 @@ func _run() -> void:
 		scene._show_merchant_signal()
 		await process_frame
 		var quartermaster: Control = scene.overlay.find_child("MerchantHailPortrait", true, false)
-		check(scene.mode == "merchant_signal" and quartermaster != null and quartermaster.size.x >= 100.0 and _contains_text(scene.overlay, "Open the channel"), "Merchant signal displays bespoke ship art and an explicit hail decision")
+		check(scene.mode == "merchant_signal" and quartermaster != null and quartermaster.size.x >= 100.0 and _contains_text(scene.overlay, "Hail freighter"), "Merchant signal displays bespoke ship art and an explicit hail decision")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and _merchant_panels_within_screen(scene.overlay, logical.x), "Merchant hail portrait and bordered cards fit both edges of the phone")
 		scene._merchant_hail()
 		await process_frame
