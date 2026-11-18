@@ -66,10 +66,14 @@ func _case(ship_id: String, difficulty: String, hangar_style: String, stage: int
 	var pristine: Dictionary = checkpoint.duplicate(true)
 	var restored := Sim.new()
 	_check(restored.restore(checkpoint) and restored.late_boss_phase == 1 and restored._alive_modules(role) == 2, heading + " new phase survives save/resume")
+	# Reconfigured parts must stay reward-neutral even with Salvage active and
+	# the Hangar module-salvage perk purchased. Otherwise new phases mint Cores.
+	restored.salvage_left = 10.0
+	restored.meta.module_salvage = 3
 	var kills: int = restored.kills
 	var cores: int = restored.bonus_cores
 	_destroy_parts(restored, role)
-	_check(restored.kills == kills and restored.bonus_cores == cores, heading + " reconfigured modules yield no duplicate XP/Core rewards")
+	_check(restored.kills == kills and restored.bonus_cores == cores, heading + " reconfigured modules yield no duplicate kills or Cores, even with Salvage active")
 	_check(restored._nearest(restored.ship_position()).kind == str(core.kind), heading + " auto-target returns to open core")
 	restored._damage_enemy(restored._boss_core(), 999999999.0, "nova")
 	_check(restored.late_boss_phase == 2 and not restored.stage_transition_queued and restored.time == beginning, heading + " last phase starts from 30%/35% damage, not a timer")
