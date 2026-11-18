@@ -3436,6 +3436,83 @@ func _activate_fusion(id: String, strength: float) -> void:
 	effects.append(visual)
 
 
+# One compact line on a card, not a long synergy explanation. Relevance
+# only counts an upgrade if the next actual +1/+2 pick advances a recipe.
+func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
+	var primary: String = str(spec.primary)
+	var secondary: String = str(spec.secondary)
+	var primary_rank: int = int(upgrades.get(primary, 0)) + (2 if picked == primary else 0)
+	var secondary_rank: int = int(upgrades.get(secondary, 0)) + (2 if picked == secondary else 0)
+	var third_rank: int = 0
+	if spec.has("third_any"):
+		for weapon in spec.third_any:
+			third_rank = maxi(third_rank, int(upgrades.get(str(weapon), 0)) + (2 if picked == str(weapon) else 0))
+	else:
+		var third: String = str(spec.third)
+		third_rank = int(upgrades.get(third, 0)) + (2 if picked == third and third != "wing_drones" else (1 if picked == third else 0))
+	return (1 if primary_rank >= 5 else 0) + (1 if secondary_rank >= 2 else 0) + (1 if third_rank >= 2 else 0)
+
+func engine_hint_for_pick(id: String) -> String:
+	if not _new_build_decisions():
+		return ""
+	for spec in content.get("build_engines", []):
+		if engine_tier(str(spec.id)) >= 2:
+			continue
+		var primary: String = str(spec.primary)
+		var secondary: String = str(spec.secondary)
+		if int(upgrades.get(primary, 0)) < 2 and int(upgrades.get(secondary, 0)) < 2:
+			continue
+		var before: int = _engine_recipe_progress(spec)
+		var after: int = _engine_recipe_progress(spec, id)
+		if after > before:
+			return ("Completes " if after == 3 else "") + str(spec.name) + (" · %d/3" % after if after < 3 else "")
+	return ""
+
+func _engine_relevance_score(id: String) -> int:
+	if not _new_build_decisions():
+		return 0
+	var best := 0
+	for spec in content.get("build_engines", []):
+		if engine_tier(str(spec.id)) >= 3:
+			continue
+		var primary: String = str(spec.primary)
+		var secondary: String = str(spec.secondary)
+		var focus: int = int(upgrades.get(primary, 0)) + int(upgrades.get(secondary, 0))
+		if focus < 2:
+			continue
+		var third: bool = str(spec.get("third", "")) == id or (spec.has("third_any") and id in spec.third_any)
+		if id != primary and id != secondary and not third:
+			continue
+		var before: int = _engine_recipe_progress(spec)
+		var after: int = _engine_recipe_progress(spec, id)
+		if after > before:
+			best = maxi(best, 3 + before * 2 + (3 if after == 3 else 0))
+		elif int(upgrades.get(id, 0)) > 0:
+			best = maxi(best, 1 + mini(4, focus / 3))
+	return best
+
+func _inject_build_aware_offer(pool: Array) -> void:
+	# Two of every three regular mid/late flight offers, but only when the
+	# genuine eligible pool has a relevant card. Keep the other choices random.
+	if not _new_build_decisions() or level % 3 == 0 or cards.size() < 2:
+		return
+	if cards.any(func(c): return _engine_relevance_score(str(c.id)) > 0):
+		return
+	var candidates: Array = []
+	for card in pool:
+		if cards.any(func(c): return str(c.id) == str(card.id)):
+			continue
+		var weight: int = _engine_relevance_score(str(card.id))
+		for n in range(weight):
+			candidates.append(card)
+	if candidates.is_empty():
+		return
+	# Do not replace recovery, rare mutations, or a unique 4th Hangar slot.
+	var slot: int = 1 if str(cards[1].tag) not in ["RECOVERY", "MUTATION"] else 0
+	if str(cards[slot].tag) in ["RECOVERY", "MUTATION"]:
+		return
+	cards[slot] = candidates[rng.randi_range(0, candidates.size() - 1)].duplicate(true)
+
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
 	var mutation_pool: Array = []
@@ -3468,7 +3545,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append(pool.pop_at(index))
 	# At every even early level, show a discoverable synergy partner alongside
 	# independent upgrades. No automatic installation or extra active slot.
-	if level % 2 == 0:
+	if level % 2 == 0 and not _new_build_decisions():
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
@@ -3498,6 +3575,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 						missing_partners.append(option)
 		if not missing_partners.is_empty():
 			cards[cards.size() - 1] = missing_partners[rng.randi_range(0, missing_partners.size() - 1)]
+	_inject_build_aware_offer(pool)
 	# Rare, opt-in transformation: at a four-level milestone in later
 	# worlds, one normal card may be replaced by a matching weapon mutation.
 	# Never inject a weapon the player does not own.
