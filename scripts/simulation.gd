@@ -306,6 +306,11 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 func step() -> void:
 	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
+	# The Daily UTC day is assigned after Sim.new(). Restore its original
+	# first-formation clock before the first combat tick, rather than the
+	# 12-second regular-flight opener introduced in PR #46.
+	if tick == 0 and stage == 1 and difficulty == "normal" and not daily_day.is_empty():
+		next_encounter_at = 55.0 + float(seed_value % 23)
 	tick += 1
 	time = tick * DT
 	for key in cooldowns:
@@ -370,9 +375,9 @@ func step() -> void:
 		var stage_time := time - stage_start
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
 		next_spawn = time + pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
-	if stage == 1 and difficulty == "normal" and daily_day.is_empty() and not boss_spawned:
+	if _regular_world1_opening() and not boss_spawned:
 		_spawn_opening_scout_screen()
-	if stage == 1 and difficulty == "normal" and not boss_spawned and time >= next_pressure_wave_at:
+	if _regular_world1_opening() and not boss_spawned and time >= next_pressure_wave_at:
 		_spawn_world1_pressure()
 		next_pressure_wave_at = time + 7.5
 	if not secret_entered and time >= next_hazard and not boss_spawned:
@@ -384,7 +389,7 @@ func step() -> void:
 		_try_spawn_rival()
 	if not secret_entered and time >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
-		next_encounter_at = time + (35.0 + float((seed_value + encounter_index * 11) % 9) if stage == 1 and difficulty == "normal" else 66.0 + float((seed_value + encounter_index * 11) % 23))
+		next_encounter_at = time + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
 	_update_enemies()
 	if secret_entered:
 		_update_archive_attack()
@@ -541,10 +546,15 @@ func claim_endless() -> bool:
 	_log("Endless victory claimed after world %d" % stage)
 	return true
 
+func _regular_world1_opening() -> bool:
+	# Daily keeps its historical World 1 timing, encounter formation and
+	# crowd limit. Hidden sectors and Endless never use the new opener.
+	return stage == 1 and difficulty == "normal" and daily_day.is_empty()
+
 func _enemy_limit() -> int:
-	# Normal World 1 spawns a more visible crowd, but never allows endless
-	# accumulated squads to flatten slow, defensive starting ships.
-	if stage == 1 and difficulty == "normal":
+	# Normal regular World 1 has a bounded crowd; Dailies retain the
+	# original 20-enemy limit used by the fixed UTC challenge.
+	if _regular_world1_opening():
 		return 11
 	return mini(55, 20 + (stage - 1) * 5)
 
@@ -1197,7 +1207,7 @@ func _elite_leader_active(wing: Dictionary) -> bool:
 func _spawn_encounter() -> void:
 	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
-	if stage == 1 and difficulty == "normal":
+	if _regular_world1_opening():
 		# If slow guns are already holding a crowded screen, do not pile
 		# another formation on top of it just to hit a clock.
 		if _visible_world1_enemies() < 3:
@@ -1233,6 +1243,8 @@ func _spawn_encounter() -> void:
 		encounter_queue = formation.duplicate()
 
 func _spawn_opening_scout_screen() -> void:
+	if not _regular_world1_opening():
+		return
 	# A deliberate series of early, attackable contact groups. They grant
 	# no XP and leave the combat/draft RNG unchanged. Their first shots have
 	# a long lead-in so fragile starters see threats before being punished.
@@ -1261,6 +1273,8 @@ func _spawn_opening_scout_screen() -> void:
 		_log("SCOUT SWEEP - unregistered contacts" if phase < 2 else "ESCORTS INBOUND - prepare for the strike")
 
 func _spawn_world1_strike_wing() -> void:
+	if not _regular_world1_opening():
+		return
 	# Three enemies ARRIVE TOGETHER instead of in widely separated singles.
 	# Advance the next ordinary spawn by three slots: no three extra XP-bearing
 	# kills on top of the regular wave schedule, no change to Hard/Insane.
@@ -1295,6 +1309,8 @@ func _visible_world1_enemies() -> int:
 	return visible
 
 func _spawn_world1_pressure() -> void:
+	if not _regular_world1_opening():
+		return
 	# The opening director fills EMPTY space, not low ship statistics.
 	# Extra pressure ships are genuine, attackable enemies, but do not
 	# grant XP or turn strong early builds into an endless upgrade fountain.
