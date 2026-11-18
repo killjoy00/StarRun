@@ -1502,9 +1502,14 @@ func _spawn_late_boss_objectives(core: Dictionary) -> void:
 	var blueprint: Dictionary = templates[0]
 	var positions: Array[Vector2] = []
 	if stage == 3:
-		positions = [Vector2(-76.0, 52.0), Vector2(76.0, 52.0)] if late_boss_phase == 1 else [Vector2(0.0, 74.0)]
+		if late_boss_phase == 1:
+			positions.append(Vector2(-76.0, 52.0))
+			positions.append(Vector2(76.0, 52.0))
+		else:
+			positions.append(Vector2(0.0, 74.0))
 	elif late_boss_phase == 1:
-		positions = [Vector2(-92.0, 38.0), Vector2(92.0, 38.0)]
+		positions.append(Vector2(-92.0, 38.0))
+		positions.append(Vector2(92.0, 38.0))
 	var hp: float = float(blueprint.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * enemy_health_multiplier() * boss_health_pressure()
 	for offset in positions:
 		var name: String = "Reconfigured Cooling Vent" if role == "vent" else "Reconfigured Shield Pylon"
