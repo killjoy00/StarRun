@@ -1,0 +1,31 @@
+name: Boss attack and phase safety
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  boss_pressure:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'balance/harder-silent-archive-')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: Assert significant damage on five bosses, no forced rearm, reusable checkpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/boss_pressure_smoke.gd 2>&1 | tee /tmp/boss-pressure.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|BOSS_PRESSURE: ' /tmp/boss-pressure.log; then
+            echo "::error::Boss pressure regression failed"
+            exit 1
+          fi
+          grep -q 'BOSS_PRESSURE_RESULT' /tmp/boss-pressure.log
