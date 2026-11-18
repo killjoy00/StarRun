@@ -2479,7 +2479,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		kills += 1
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
-	if pilot_id == "ace" and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
+	if pilot_id == "ace" and not bool(enemy.get("no_reward", false)) and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
 		ace_chain = ace_chain + 1 if ace_chain_left > 0.0 else 1
 		ace_chain_left = 6.0
 		if ace_chain >= 3:
@@ -2498,7 +2498,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				_log("PRECISION CROSSFIRE - Ace volley")
 	# Hunter's hunted target pays off with an immediate shield recovery and
 	# frees the lock for the next threat; the next mark is not instantaneous.
-	if pilot_id == "hunter" and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
+	if pilot_id == "hunter" and not bool(enemy.get("no_reward", false)) and int(enemy.id) == hunter_target_id and hunter_mark_left > 0.0:
 		shield = minf(max_shield, shield + 10.0)
 		hunter_target_id = -1
 		hunter_mark_left = 0.0
@@ -2516,7 +2516,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.42, "max_life":0.42, "born":tick})
 				_damage_enemy(nearby, amount * 0.35, "nova")
 				chained += 1
-	if pilot_id == "scavenger" and weapon != "scrap" and kills % 12 == 0 and not str(enemy.kind).begins_with("boss"):
+	if pilot_id == "scavenger" and not bool(enemy.get("no_reward", false)) and weapon != "scrap" and kills % 12 == 0 and not str(enemy.kind).begins_with("boss"):
 		effects.append({"kind":"ion-burst", "p":enemy.p, "radius":145.0, "life":0.65, "max_life":0.65, "born":tick})
 		var jumped := 0
 		for nearby in enemies:
@@ -2527,7 +2527,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				jumped += 1
 		pilot_procs.scavenger += 1
 		_log("SCRAP STORM - salvaged wreckage discharged")
-	hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
+	if not bool(enemy.get("no_reward", false)):
+		hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
 		if not bool(enemy.get("no_reward", false)):
 			bonus_cores += int(meta.module_salvage)
@@ -2551,7 +2552,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				disrupted += 1
 		effects.append({"kind":"elite-broken", "p":enemy.p, "source":squad_id, "life":1.25, "max_life":1.25, "born":tick})
 		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
-	if salvage_left > 0.0 and not secret_entered and enemy.kind != "archive_courier" and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)):
+	if salvage_left > 0.0 and not bool(enemy.get("no_reward", false)) and not secret_entered and enemy.kind != "archive_courier" and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)):
 		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
 	# Boss components are targets, but only the core can end a stage or pay a contract.
 	var is_boss := _is_boss(str(enemy.kind))
