@@ -3134,10 +3134,15 @@ func restore(state: Dictionary) -> bool:
 		return false
 	for key in state:
 		if key not in ["version", "rng"]:
+			# The checkpoint is reusable data, not live simulation state. Never
+			# borrow its arrays/dictionaries: mutating a restored boss, bullet,
+			# reward or merchant could otherwise mutate the original checkpoint.
 			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs"]:
 				var merged: Dictionary = get(key).duplicate(true)
-				merged.merge(state[key], true)
+				merged.merge(state[key].duplicate(true), true)
 				set(key, merged)
+			elif state[key] is Array or state[key] is Dictionary:
+				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
 	# Preserve an older save's remaining uses; start stage refills at its next warp.
