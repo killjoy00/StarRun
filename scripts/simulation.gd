@@ -2417,7 +2417,7 @@ func _update_weapons() -> void:
 		arc_timer = 1.7
 		var visited: Array = []
 		var start := origin
-		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0)):
+		for chain in range(2 + int(upgrades.arc) / 2 + (1 if rank_at("arc", 5) else 0) + (2 if rank_at("arc", 10) else 0) + (1 if passive_link_active("arc_feed") else 0) + (1 if evolution_id("arc") == "tempest" else 0)):
 			var target := _nearest(start, visited)
 			if target.is_empty() or start.distance_to(target.p) > 640:
 				break
@@ -2712,6 +2712,39 @@ func _update_shots() -> void:
 	shots = shots.filter(func(s): return s.p.y > -100 and s.p.y < HEIGHT and s.p.x > -50 and s.p.x < WIDTH + 50)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 
+func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) -> void:
+	if damage <= 0.01:
+		return
+	if weapon == "pulse":
+		match evolution_id("pulse"):
+			"duelist":
+				var old_hits: int = int(enemy.get("evo_duelist_hits", 0)) if float(enemy.get("evo_duelist_until", -1.0)) >= time else 0
+				enemy["evo_duelist_hits"] = mini(5, old_hits + 1)
+				enemy["evo_duelist_until"] = time + 3.0
+			"spotter":
+				enemy["evo_spotter_until"] = time + 3.0
+	elif weapon == "arc" and evolution_id("arc") == "conductor":
+		enemy["evo_conductor_until"] = time + 3.0
+	elif weapon == "lance":
+		if evolution_id("lance") == "executioner" and _engine_priority_target(enemy):
+			var old_hits: int = int(enemy.get("evo_lance_hits", 0)) if float(enemy.get("evo_lance_until", -1.0)) >= time else 0
+			enemy["evo_lance_hits"] = mini(4, old_hits + 1)
+			enemy["evo_lance_until"] = time + 7.0
+		elif evolution_id("lance") == "lifeline" and evolution_lifeline_tick != tick:
+			evolution_lifeline_tick = tick
+			shield = minf(max_shield, shield + minf(8.0, damage * 0.08))
+	elif weapon == "seeker" and evolution_id("seeker") == "interceptor" and float(enemy.get("evo_intercept_ready", 0.0)) <= time:
+		enemy["evo_intercept_ready"] = time + 7.0
+		var before: int = charges.size()
+		for charge in charges:
+			if int(charge.source) == int(enemy.id):
+				effects.append({"kind":"beam-canceled", "p":enemy.p, "x":float(charge.x), "source":int(enemy.id), "reason":"interceptor", "life":1.0, "max_life":1.0, "born":tick})
+		charges = charges.filter(func(charge): return int(charge.source) != int(enemy.id))
+		beams_cancelled += before - charges.size()
+		if before > charges.size():
+			enemy.fire = maxf(float(enemy.fire), 0.70)
+			_log("INTERCEPTOR - seeker canceled a charged attack")
+
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
@@ -2724,6 +2757,30 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
 				_damage_enemy(part, amount, weapon)
 				return
+	# Each rank-5 evolution has a meaningful mechanical tradeoff. Per-enemy
+	# marks are stored on the enemy dictionary, so save/restore is exact.
+	if weapon == "pulse" and evolution_id("pulse") == "duelist":
+		var hits: int = int(enemy.get("evo_duelist_hits", 0)) if float(enemy.get("evo_duelist_until", -1.0)) >= time else 0
+		amount *= 1.0 + 0.05 * float(mini(5, hits))
+	elif weapon == "seeker":
+		if evolution_id("seeker") == "breacher" and _engine_priority_target(enemy):
+			amount *= 1.22 if enemy.kind == "boss_module" else 1.15
+	elif weapon == "arc" and evolution_id("arc") == "tempest" and not _engine_priority_target(enemy):
+		amount *= 1.14
+	elif weapon == "lance":
+		if evolution_id("lance") == "lifeline":
+			amount *= 0.88
+		elif evolution_id("lance") == "executioner" and _engine_priority_target(enemy):
+			var stacks: int = int(enemy.get("evo_lance_hits", 0)) if float(enemy.get("evo_lance_until", -1.0)) >= time else 0
+			amount *= 1.0 + 0.11 * float(mini(4, stacks))
+	# Marks are consumed only by another real weapon; secondary/mutation/
+	# engine damage never creates extra cross-weapon triggers.
+	if weapon in ["seeker", "arc", "lance"] and float(enemy.get("evo_spotter_until", -1.0)) >= time:
+		amount *= 1.20
+		enemy["evo_spotter_until"] = -1.0
+	if weapon in ["pulse", "seeker", "lance"] and float(enemy.get("evo_conductor_until", -1.0)) >= time:
+		amount *= 1.23
+		enemy["evo_conductor_until"] = -1.0
 	# Small, weapon-specific precursors reward deliberate investment before
 	# any three-piece signature unlock. Daily/World 1 are isolated by tier 0.
 	if weapon == "pulse" and engine_tier("execution_network") >= 1:
@@ -2785,6 +2842,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	var actual_damage: float = minf(maxf(0.0, amount), float(enemy.hp))
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
 	enemy.hp -= amount
+	if weapon in ["pulse", "seeker", "arc", "lance"]:
+		_evolution_on_weapon_hit(enemy, actual_damage, weapon)
 	if actual_damage > 0.0 and weapon in ["pulse", "seeker", "arc", "lance"] and _engine_priority_target(enemy):
 		_engine_charge_salvage(minf(0.38, actual_damage / 140.0))
 	effects.append({"kind": "impact", "p": enemy.p, "life": 0.16, "max_life": 0.16, "born": tick})
