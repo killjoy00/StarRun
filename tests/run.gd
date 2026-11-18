@@ -57,6 +57,7 @@ func _run() -> void:
 	_test_roguelike_variation()
 	_test_world1_density_and_pilot_identities()
 	_test_rival_captain_campaign()
+	_test_hidden_archive()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -82,6 +83,126 @@ func _run() -> void:
 	print("BALANCE ", JSON.stringify(results))
 	print("RESULT: %d assertions, %d failures" % [assertions, failures])
 	quit(1 if failures > 0 else 0)
+
+func _test_hidden_archive() -> void:
+	var sector := preload("res://scripts/hidden_sector.gd")
+	var sim := Sim.new(5407)
+	var daily := Sim.new(5407)
+	daily.daily_day = "2026-11-17"
+	for flight in [sim, daily]:
+		flight.stage = 2
+		flight.tick = roundi(sector.signal_time(5407, 2) * 60) - 1
+		flight.time = flight.tick * Sim.DT
+		flight.step()
+	check(sim.signal_status == "offer" and daily.signal_status.is_empty(), "Seeded signal starts in an ordinary campaign and never appears in a Daily")
+	check(sim.rng.state == daily.rng.state and sim.enemies == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
+	check(not daily.choose_signal("cast") and not sim.can_enter_secret(), "No Daily interaction or premature Archive entry")
+	var legacy := sim.snapshot()
+	for key in legacy.keys():
+		if str(key).begins_with("signal_") or str(key).begins_with("secret_") or str(key).begins_with("archive_"):
+			legacy.erase(key)
+	var restored := Sim.new()
+	check(restored.restore(legacy) and restored.signal_count == 0 and not restored.secret_entered and restored.stage_count() == 4, "Legacy 1.3 flights use the existing four-world route")
+	check(sim.choose_signal("cast") and not sim.choose_signal("courier"), "One receiver choice per sector")
+	check(restored.restore(sim.snapshot()), "Save the armed receiver")
+	restored.time += 5.0
+	check(restored.activate("aegis") and restored.signal_count == 0, "Casting on the wrong beat does not recover the signal")
+	check(sim.activate("aegis") and sim.signal_count == 1 and sim.signal_status == "received", "A ready active on the beat recovers exactly one coordinate")
+	check(not sim.choose_signal("cast"), "A recovered signal cannot be repeated")
+	sim.stage = 3
+	sim.signal_status = "offer"
+	sim.signal_until = sim.time + 100.0
+	check(sim.choose_signal("courier"), "A marked courier can be selected in a different world")
+	var courier_xp: float = sim.xp
+	var courier_cores: int = sim.bonus_cores
+	check(restored.restore(sim.snapshot()) and restored.signal_status == "courier", "Courier survives a checkpoint")
+	restored.salvage_left = 5.0
+	restored._damage_enemy(restored.enemies[-1], 99999.0, "nova")
+	check(restored.signal_count == 2 and restored.xp == courier_xp and restored.bonus_cores == courier_cores, "A real courier defeat recovers the second coordinate without XP or Cores")
+	sim = restored
+	sim.stage = 4
+	sim.stage_clears = 4
+	sim.stage_transition_queued = true
+	check(sim.can_enter_secret() and sim.stage_count() == 4, "Archive is an explicit option after the Regent")
+	var decision := sim.snapshot()
+	var denied := Sim.new()
+	denied.restore(decision)
+	denied.signal_count = 1
+	check(not denied.enter_secret() and denied.advance_stage() and denied.won, "One coordinate leaves the normal campaign victory available")
+	var normal := Sim.new()
+	normal.restore(decision)
+	check(normal.advance_stage() and normal.won and not normal.secret_entered and normal.stage == 4, "Finish campaign still ends at World 4 after discovery")
+	var endless := Sim.new()
+	endless.restore(decision)
+	check(endless.enable_endless() and not endless.enter_secret() and endless.begin_intermission(), "Endless remains a separate route")
+	endless.choose_prototype(0)
+	endless.choose_route("repair")
+	check(endless.advance_stage() and endless.stage == 5 and str(endless.stage_spec().id) == "endless_5", "Endless World 5 retains its original ecology")
+	daily.stage = 4
+	daily.stage_clears = 4
+	daily.stage_transition_queued = true
+	daily.signal_count = 2
+	check(not daily.enter_secret() and daily.advance_stage() and daily.won and daily.stage == 4, "Daily ends at World 4 even if secret counters are present")
+	var rival_source := Sim.new(751)
+	rival_source.last_killing_source = "gunship"
+	var captain: Dictionary = Rivals._generated(rival_source, 1, 1)
+	sim.rival_record = captain
+	sim.rival_outcome = "retired"
+	var promised_cores: int = sim.payout()
+	check(sim.enter_secret() and not sim.enter_secret() and sim.stage == 5 and not sim.endless_enabled, "Entering the Archive is explicit and atomic")
+	var arrival := Sim.new()
+	check(arrival.restore(sim.snapshot()) and arrival.secret_intro_pending and arrival.payout() == promised_cores, "Archive arrival and campaign payout persist")
+	var tick_before: int = arrival.tick
+	arrival.step()
+	check(arrival.tick == tick_before and arrival.dismiss_secret_intro(), "Arrival cutscene pauses combat and resumes once")
+	arrival._spawn_boss()
+	var boss_checkpoint := arrival.snapshot()
+	sim = Sim.new()
+	check(sim.restore(boss_checkpoint) and sim.secret_intro_pending and sim.dismiss_secret_intro(), "Boss introduction restores in a frozen state")
+	var core: Dictionary = sim._boss_core()
+	sim._damage_enemy(core, 9999999.0, "nova")
+	check(not sim.stage_transition_queued and is_equal_approx(core.hp, core.max_hp * 0.68), "Opening shield floor guarantees the first telegraph")
+	sim.time = sim.archive_next_attack
+	sim._update_archive_attack()
+	check(sim.archive_attack == "lock" and sim.archive_attack_until - sim.time >= 3.0, "The Custodian visibly winds up its opening charge")
+	arrival = Sim.new()
+	check(arrival.restore(sim.snapshot()) and arrival.archive_attack == "lock", "Live lock and its countdown restore")
+	arrival.cooldowns.aegis = 0.0
+	check(arrival.activate("aegis") and arrival.archive_attack.is_empty() and arrival.archive_exposed_until > arrival.time, "Any active counters the lock and exposes the core")
+	arrival._update_archive_attack()
+	check(arrival.archive_phase == 1, "The second phase begins after the opening shield breaks")
+	arrival.time = arrival.archive_next_attack
+	arrival._update_archive_attack()
+	check(arrival.archive_attack == "lattice", "Second phase telegraphs converging projectile fire")
+	arrival.time = arrival.archive_attack_until
+	arrival._update_archive_attack()
+	check(arrival.bullets.size() == 26, "Unanswered lattice fires both projectile fans")
+	core = arrival._boss_core()
+	arrival._damage_enemy(core, 9999999.0, "nova")
+	arrival._update_archive_attack()
+	arrival.time = arrival.archive_next_attack
+	arrival._update_archive_attack()
+	check(arrival.archive_phase == 2 and arrival.archive_attack == "collapse", "Final phase telegraphs the combined attack")
+	arrival._damage_enemy(core, 9999999.0, "nova")
+	check(not arrival.stage_transition_queued and core.hp > 0.0, "Finisher damage cannot bypass the final phase")
+	arrival.cooldowns.aegis = 0.0
+	arrival.activate("aegis")
+	arrival._damage_enemy(core, 9999999.0, "nova")
+	check(arrival.stage_transition_queued and arrival.stage_clears == 5 and arrival.payout() == promised_cores, "Defeating the Custodian opens the epilogue without extra Cores")
+	var finish := Sim.new()
+	check(finish.restore(arrival.snapshot()) and finish.advance_stage() and finish.ended and finish.won and not finish.advance_stage(), "Epilogue checkpoint settles only once")
+	var profile := {"cores":0, "rival_active":captain}
+	var award: Dictionary = Progress.settle(profile, finish)
+	check("open_frequency" in award.awarded and profile.cores == promised_cores and profile.rival_trophies.size() == 1, "Local Archive award and Rival trophy can coexist")
+	check(Progress.settle(profile, finish).earned == 0 and Progress.progress(profile, "endless_six") == 4, "Settlement cannot repeat or inflate Endless progress")
+	var lost := Sim.new()
+	lost.restore(decision)
+	lost.enter_secret()
+	lost.ended = true
+	lost.last_killing_source = sector.BOSS
+	var failed_profile := {"cores":0}
+	var failed: Dictionary = Progress.settle(failed_profile, lost)
+	check(failed.earned == promised_cores and "open_frequency" not in failed.awarded and failed_profile.achievement_stats.victories == 1 and failed_profile.rival_active.is_empty(), "An Archive loss banks campaign victory and creates no false award or rival")
 
 func _test_rival_captain_campaign() -> void:
 	var profile := {"cores":0, "runs":1}

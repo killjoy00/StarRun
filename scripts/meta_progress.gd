@@ -22,6 +22,7 @@ const ACHIEVEMENTS = [
 	{"id":"defended","name":"Nothing Gets Through","description":"Prevent 500 damage in a single flight.","category":"TACTICS","target":500},
 	{"id":"daily_first","name":"Clockwork Pilot","description":"Finish a daily challenge.","category":"DAILY","target":1},
 	{"id":"daily_seven","name":"Regular Orbit","description":"Finish a challenge on seven different UTC dates.","category":"DAILY","target":7},
+	{"id":"open_frequency","name":"Open Frequency","description":"Leave the Archive gate open.","category":"DISCOVERY","target":1,"local_only":true},
 	{"id":"endless_six","name":"Beyond the Chart","description":"Clear World 6 in endless mode.","category":"ENDLESS","target":6},
 ]
 
@@ -62,7 +63,7 @@ static func prepare(profile: Dictionary) -> void:
 		"finished_runs":0, "max_world_clears":0, "victories":0,
 		"hard_wins":0, "insane_wins":0, "victory_ships":[],
 		"fusion_runs":0, "max_prototypes":0, "max_beams_cancelled":0,
-		"max_damage_prevented":0, "daily_days":[], "max_world_any":0
+		"max_damage_prevented":0, "daily_days":[], "max_world_any":0, "archive_cleared":false
 	}
 	var old: Variant = profile.get("achievement_stats", {})
 	if old is Dictionary:
@@ -109,6 +110,8 @@ static func progress(profile: Dictionary, id: String) -> int:
 		"daily_first","daily_seven":
 			var dates: Array = stats.get("daily_days",[])
 			return dates.size()
+		"open_frequency":
+			return int(bool(stats.get("archive_cleared",false)))
 		"endless_six":
 			return int(stats.get("max_world_any",0))
 	return 0
@@ -151,14 +154,18 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	profile.cores = int(profile.get("cores",0)) + earned
 	var stats: Dictionary = profile.achievement_stats
 	stats.finished_runs = int(stats.finished_runs) + 1
-	stats.max_world_clears = maxi(int(stats.max_world_clears),int(sim.stage_clears))
-	stats.max_world_any = maxi(int(stats.max_world_any),int(sim.stage_clears))
+	var secret: bool = sim.secret_entered and not daily
+	var worlds: int = mini(int(sim.stage_clears), 4) if secret else int(sim.stage_clears)
+	stats.max_world_clears = maxi(int(stats.max_world_clears), worlds)
+	stats.max_world_any = maxi(int(stats.max_world_any), worlds)
+	if secret and bool(sim.won) and int(sim.stage_clears) == 5:
+		stats.archive_cleared = true
 	stats.max_prototypes = maxi(int(stats.max_prototypes),int(sim.prototypes.size()))
 	stats.max_beams_cancelled = maxi(int(stats.max_beams_cancelled),int(sim.beams_cancelled))
 	stats.max_damage_prevented = maxi(int(stats.max_damage_prevented),roundi(float(sim.prevented)))
 	if sim.active_slots.any(func(slot): return not sim.fusion_spec(str(slot)).is_empty()):
 		stats.fusion_runs = int(stats.fusion_runs) + 1
-	if bool(sim.won):
+	if bool(sim.won) or (secret and worlds == 4):
 		stats.victories = int(stats.victories) + 1
 		if str(sim.difficulty) == "hard":
 			stats.hard_wins = int(stats.hard_wins) + 1

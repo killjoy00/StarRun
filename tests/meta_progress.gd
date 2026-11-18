@@ -120,9 +120,9 @@ func _run() -> void:
 		gc_points += int(entry.points)
 		identifiers[str(entry.id)] = true
 		check(int(entry.points) <= 100 and int(entry.points) > 0, "Apple achievement must be worth between 1 and 100 points")
-	check(gc_points <= 1000 and gc_manifest.achievements.size() == Progress.ACHIEVEMENTS.size(), "Apple's 1000-point cap and achievement count are respected")
+	check(gc_points <= 1000 and gc_manifest.achievements.size() == Progress.ACHIEVEMENTS.filter(func(item): return not item.get("local_only", false)).size(), "Apple's 1000-point cap and achievement count are respected")
 	for achievement in Progress.ACHIEVEMENTS:
-		check(identifiers.has(str(achievement.id)), "Every local achievement has a matching Apple Game Center identifier")
+		check(identifiers.has(str(achievement.id)) != bool(achievement.get("local_only", false)), "Only Game Center achievements have an Apple identifier")
 	var fresh := {"cores":0,"runs":0,"last_paid_run":-1}
 	Progress.prepare(fresh)
 	check(fresh.achievements.is_empty() and Progress.progress(fresh,"daily_first") == 0, "New profiles start with locked, not accidentally awarded, achievements")
