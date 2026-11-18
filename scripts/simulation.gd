@@ -1051,17 +1051,18 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 			engine_execution_hits = 0
 		engine_execution_hits += 1
 		var tier: int = engine_tier("execution_network")
-		if engine_execution_hits >= (3 if tier == 3 else 5) and tick >= engine_execution_ready_tick:
+		var needed: int = maxi(3, (3 if tier == 3 else 5) - (1 if pilot_id == "ace" else 0) - (1 if _source_active("overdrive") else 0))
+		if engine_execution_hits >= needed and tick >= engine_execution_ready_tick:
 			engine_execution_hits = 0
 			engine_execution_ready_tick = tick + (36 if tier == 3 else 55)
 			engine_procs.execution_network += 1
 			_engine_cue("execution_network", false, enemy.p)
-			_damage_enemy(enemy, minf(1600.0, amount * (2.0 if tier == 3 else 1.4)), "engine_execution")
+			_damage_enemy(enemy, minf(1600.0, amount * (2.0 if tier == 3 else 1.4) * (1.10 if _has_prototype("volatile_core") else 1.0)), "engine_execution")
 	elif weapon == "seeker" and engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy):
 		if engine_siege_target != id or engine_siege_expires < time:
 			engine_siege_target = id
 			engine_siege_stacks = 0
-		engine_siege_stacks = mini(3, engine_siege_stacks + 1)
+		engine_siege_stacks = mini(3, engine_siege_stacks + (2 if pilot_id == "hunter" else 1))
 		engine_siege_expires = time + 5.0
 		if engine_siege_stacks == 2:
 			engine_procs.missile_siege += 1
@@ -1077,13 +1078,13 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 				continue
 			engine_storm_marks.erase(mark)
 			var tier: int = engine_tier("storm_circuit")
-			engine_storm_ready_tick = tick + (32 if tier == 3 else 52)
+			engine_storm_ready_tick = tick + (32 if tier == 3 else (46 if pilot_id == "tactician" or _has_prototype("null_harmonics") else 52))
 			engine_procs.storm_circuit += 1
 			_engine_cue("storm_circuit", false, enemy.p)
 			_damage_enemy(enemy, minf(900.0, amount * (0.95 if tier == 3 else 0.65)), "engine_storm")
 			var jumped := 0
 			for nearby in enemies:
-				if jumped >= (2 if tier == 3 else 1):
+				if jumped >= (2 if tier == 3 or ship_id == "arcwing" else 1):
 					break
 				if float(nearby.hp) > 0.0 and int(nearby.id) != id and nearby.p.distance_squared_to(enemy.p) <= 180.0 * 180.0:
 					effects.append({"kind":"arc", "p":enemy.p, "to":nearby.p, "life":0.28, "max_life":0.28, "born":tick})
@@ -1101,7 +1102,7 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 			engine_prism_ready_tick = tick + 90
 			engine_procs.prism_hunter += 1
 			_engine_cue("prism_hunter", false, enemy.p)
-			_damage_enemy(enemy, minf(2200.0, amount * (1.50 if tier == 3 else 1.10)), "engine_prism")
+			_damage_enemy(enemy, minf(2200.0, amount * (1.50 if tier == 3 else 1.10) * (1.10 if _source_active("focus") else 1.0)), "engine_prism")
 
 # Both fortress and salvage fire themselves. No extra combat button or
 # ability casts; bounded tick budgets and no extra XP/kill duplication.
@@ -1110,13 +1111,14 @@ func _update_build_engines() -> void:
 	if tier >= 2 and shield_offline <= 0.0 and max_shield > 0.0 and shield >= max_shield * 0.75:
 		engine_fortress_charge = minf(9.0, engine_fortress_charge + DT)
 		var threshold := 6.0 if tier == 3 else 8.0
+		threshold -= (0.70 if pilot_id == "engineer" else 0.0) + (0.40 if _source_active("aegis") else 0.0) + (0.35 if route_choice == "repair" else 0.0)
 		if engine_fortress_charge >= threshold:
 			var target: Dictionary = _nearest(ship_position())
 			if not target.is_empty():
 				engine_fortress_charge = 0.0
 				engine_procs.fortress_reactor += 1
 				_engine_cue("fortress_reactor", false, ship_position())
-				_damage_enemy(target, minf(500.0, (65.0 if tier == 3 else 42.0) * weapon_power() * (1.0 + float(stage - 1) * 0.30)), "engine_fortress")
+				_damage_enemy(target, minf(500.0, (65.0 if tier == 3 else 42.0) * weapon_power() * (1.0 + float(stage - 1) * 0.30) * (1.18 if _has_prototype("bastion_lattice") else 1.0)), "engine_fortress")
 	else:
 		engine_fortress_charge = 0.0
 	if engine_tier("salvage_carrier") >= 2 and engine_salvage_charge >= 6.0 and tick >= engine_salvage_ready_tick and shots.size() < 498:
@@ -1130,7 +1132,7 @@ func _update_build_engines() -> void:
 			for n in range(2 if engine_tier("salvage_carrier") == 3 else 1):
 				var p: Vector2 = origin + Vector2(-26.0 if n == 0 else 26.0, -10.0)
 				shots.append({"p":p, "v":(target.p - p).normalized() * 690.0, "damage":minf(280.0, 26.0 * weapon_power() * (1.0 + float(stage - 1) * 0.25)), "weapon":"escort", "target":int(target.id), "homing":true})
-			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5))
+			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5) + (0.5 if pilot_id == "engineer" else 0.0))
 
 func active_passive_links() -> Array:
 	var pairs: Array = []
@@ -2788,7 +2790,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	elif weapon == "seeker" and engine_tier("missile_siege") >= 1:
 		amount *= 1.06
 		if engine_tier("missile_siege") >= 2 and _engine_priority_target(enemy) and engine_siege_target == int(enemy.id) and engine_siege_expires >= time:
-			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0)
+			amount *= 1.0 + 0.14 * float(engine_siege_stacks) + (0.06 if engine_tier("missile_siege") == 3 else 0.0) + (0.04 if _has_prototype("breach_optics") and enemy.kind == "boss_module" else 0.0)
 	elif weapon == "arc" and engine_tier("storm_circuit") >= 1:
 		amount *= 1.06
 	elif weapon == "lance" and engine_tier("prism_hunter") >= 1:
@@ -2870,7 +2872,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if not bool(enemy.get("no_reward", false)):
 		kills += 1
 		if not str(enemy.kind).begins_with("boss") and enemy.kind != "archive_courier":
-			_engine_charge_salvage(1.0)
+			_engine_charge_salvage(1.0 + (0.20 if pilot_id == "scavenger" else 0.0) + (0.15 if _has_prototype("salvage_charter") else 0.0))
 	# Ace rewards rapid, accurate auto-weapon kills with a visible crossfire
 	# from the destruction point. The shots cannot trigger the combo again.
 	if pilot_id == "ace" and not bool(enemy.get("no_reward", false)) and weapon in ["pulse", "seeker", "arc", "lance"] and not str(enemy.kind).begins_with("boss"):
