@@ -1987,7 +1987,7 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		_page_header(view.top, "Archive defense online", "The Last Custodian")
 		_archive_art(view.body, "boss")
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
-		Kit.label(view.body, "Three reinforced seals. Save a ready ability for each warning: countering exposes the core, but the next phase takes time to unlock. Expect sustained fire between locks.", 17, HiddenSector.MINT, true)
+		Kit.label(view.body, "Three reinforced seals. Save a ready ability for each warning: counter to expose the core. Damage pushes each phase forward quickly, but the Custodian fights back with a new surge.", 17, HiddenSector.MINT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
 		_archive_art(view.body, "arrival")
