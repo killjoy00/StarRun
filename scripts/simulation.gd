@@ -1148,7 +1148,7 @@ func _spawn_archive_patrol() -> void:
 		enemies[-1].fire = 3.4
 
 # Every sixteen existing spawn opportunities keep exactly the same total
-# scheduled spacing: 6 * .70 + 2 * .90 + 8 * 1.25 = 16.
+# scheduled spacing: 6 * .80 + 2 * .90 + 8 * 1.175 = 16.
 # The first part gives a satisfying surge; the later stretch lets built
 # weapons clear the remaining screen. Crowd caps and boss clocks still win.
 func _uses_spawn_rhythm() -> bool:
@@ -1158,7 +1158,7 @@ func _spawn_rhythm_factor() -> float:
 	if not _uses_spawn_rhythm():
 		return 1.0
 	var slot: int = spawn_rhythm_slot % 16
-	return 0.70 if slot < 6 else (0.90 if slot < 8 else 1.25)
+	return 0.80 if slot < 6 else (0.90 if slot < 8 else 1.175)
 
 func _spawn_enemy() -> void:
 	if secret_entered:

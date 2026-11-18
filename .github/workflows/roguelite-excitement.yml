@@ -40,12 +40,24 @@ jobs:
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/roguelite-excitement-contracts.log; then
             exit 1
           fi
+      - name: Verify genuine Archive route remains completable
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/archive_campaign.gd -- \\
+            --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win \\
+            2>&1 | tee /tmp/roguelite-archive-regression.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/roguelite-archive-regression.log; then
+            exit 1
+          fi
       - name: Preserve contract logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: StarRun-roguelite-contracts
-          path: /tmp/roguelite-excitement-contracts.log
+          path: |
+            /tmp/roguelite-excitement-contracts.log
+            /tmp/roguelite-archive-regression.log
           if-no-files-found: ignore
           retention-days: 14
 

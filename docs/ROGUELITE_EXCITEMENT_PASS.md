@@ -4,7 +4,7 @@ Star/Run is a **build-first, incremental roguelike**. Your choices of ships, pil
 
 ## 1. Encounter pacing: let strong builds look strong
 
-Ordinary Worlds 2–4 non-Daily arrivals now alternate between a **surge of existing spawn opportunities** and a **recovery stretch**. The six fastest slots run at 70% of normal spacing, the next two at 90%, and the following eight at 125%. Those sixteen intervals sum to exactly sixteen old intervals. The result should feel more like **challenge → payoff → room to breathe**, without mandatory waiting or artificially empty screens.
+Ordinary Worlds 2–4 non-Daily arrivals now alternate between a **surge of existing spawn opportunities** and a **recovery stretch**. The six faster slots run at 80% of normal spacing, the next two at 90%, and the following eight at 117.5%. Those sixteen intervals sum to exactly sixteen old intervals. The result should feel more like **challenge → payoff → room to breathe**, without mandatory waiting or artificially empty screens.
 
 - No new enemies, XP, Cores, enemy HP, damage, elite affixes, hazards or boss gates.
 - The same crowd limit, formation queue and per-slot RNG govern enemies.
