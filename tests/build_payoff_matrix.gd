@@ -136,12 +136,14 @@ func _engine_cell(ship: String, stage: int, id: String, seed: int) -> void:
 		check(sim.shots.any(func(s): return str(s.weapon) == "escort"), "Salvage generates real support shots")
 	else:
 		check(float(target.hp) < float(target.max_hp), "%s W%d %s affects a real enemy" % [ship, stage, id])
+	var sources := {
+		"execution_network":"engine_execution", "storm_circuit":"engine_storm",
+		"prism_hunter":"engine_prism", "fortress_reactor":"engine_fortress"
+	}
+	var source: String = str(sources.get(id, ""))
 	print("PAYOFF_ENGINE ", JSON.stringify({
 		"ship":ship, "stage":stage, "engine":id, "procs":count,
-		"direct_damage":snappedf(float(sim.damage_dealt.get({
-			"execution_network":"engine_execution", "storm_circuit":"engine_storm",
-			"prism_hunter":"engine_prism", "fortress_reactor":"engine_fortress"
-		}.get(id, ""), 0.0)), 0.1)
+		"direct_damage":snappedf(float(sim.damage_dealt.get(source, 0.0)), 0.1)
 	}))
 
 func _run() -> void:
