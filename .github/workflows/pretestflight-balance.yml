@@ -1,0 +1,118 @@
+name: StarRun 1.3 pre-TestFlight balance audit
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pretestflight-balance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  world1:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/pretestflight-balance-')
+    name: World 1 multi-seed / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Compare empty/mid Hangar, draft policies and difficulty
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          for spec in baseline:none:normal:12 focused:none:normal:12 focused:mid:normal:6 focused:mid:hard:4 focused:max:insane:4; do
+            IFS=: read -r build hangar difficulty seeds <<< "$spec"
+            log="review/$build-$hangar-$difficulty.log"
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --ship=${{ matrix.ship }} --pilot=rookie \
+              --difficulty="$difficulty" --hangar="$hangar" --build="$build" \
+              --strategy=timed --route=adaptive --stage-limit=1 \
+              --seeds="$seeds" --seed-offset=71 --density --trace 2>&1 | tee "$log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "$log"; then exit 1; fi
+          done
+          echo "## World 1 - ${{ matrix.ship }}" >> "$GITHUB_STEP_SUMMARY"
+          echo 'Real combat, naturally offered cards; no fixed bot-win target.' >> "$GITHUB_STEP_SUMMARY"
+          grep '^BALANCE_MATRIX ' review/*.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve per-seed diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretestflight-world1-${{ matrix.ship }}
+          path: review/
+          retention-days: 21
+          if-no-files-found: ignore
+
+  merchant:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/pretestflight-balance-')
+    name: Quartermaster natural flights / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Seeded mid-Hangar merchant hails, declines and trades
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          godot --headless --path . --script tests/pretestflight_market_probe.gd -- \
+            --ship=${{ matrix.ship }} --seeds=8 --seed-offset=71 2>&1 | tee review/market.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' review/market.log; then exit 1; fi
+          echo "## Quartermaster - ${{ matrix.ship }}" >> "$GITHUB_STEP_SUMMARY"
+          grep '^MARKET_PROBE_SUMMARY ' review/market.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve transaction and flight receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretestflight-market-${{ matrix.ship }}
+          path: review/
+          retention-days: 21
+          if-no-files-found: ignore
+
+  mutations:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'feature/pretestflight-balance-')
+    name: Eight mutation comparisons / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, wraith, arcwing]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Compare mutation vs baseline from identical World 2 checkpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --editor --import --quit
+          mkdir -p review
+          godot --headless --path . --script tests/pretestflight_mutation_probe.gd -- \
+            --ship=${{ matrix.ship }} --seeds=4 --seed-offset=91 2>&1 | tee review/mutations.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' review/mutations.log; then exit 1; fi
+          echo "## All paid mutations - ${{ matrix.ship }}" >> "$GITHUB_STEP_SUMMARY"
+          grep '^MUTATION_PROBE_SUMMARY ' review/mutations.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve matched mutation receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretestflight-mutations-${{ matrix.ship }}
+          path: review/
+          retention-days: 21
+          if-no-files-found: ignore
