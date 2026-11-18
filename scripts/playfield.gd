@@ -41,6 +41,11 @@ var seen_beam_cancel_order: Array = []
 var elite_break_feedback: Array = []
 var seen_elite_break_ids := {}
 var seen_elite_break_order: Array = []
+# Brief real-time spectacle cues remain visible at 3x, independently of
+# fixed-step simulation; these never cover enemy projectiles or hitboxes.
+var spectacle_feedback: Array = []
+var seen_spectacle_ids := {}
+var seen_spectacle_order: Array = []
 
 func _process(delta: float) -> void:
 	if host == null or host.sim == null:
@@ -59,6 +64,9 @@ func _process(delta: float) -> void:
 		elite_break_feedback.clear()
 		seen_elite_break_ids.clear()
 		seen_elite_break_order.clear()
+		spectacle_feedback.clear()
+		seen_spectacle_ids.clear()
+		seen_spectacle_order.clear()
 	if host.mode == "playing":
 		shield_break_clock = maxf(0.0, shield_break_clock - delta)
 		formation_clock = maxf(0.0, formation_clock - delta)
@@ -68,6 +76,10 @@ func _process(delta: float) -> void:
 		for feedback in elite_break_feedback:
 			feedback.remaining = float(feedback.remaining) - delta
 		elite_break_feedback = elite_break_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
+	if host.mode in ["playing", "stage_clear", "warp"]:
+		for cue in spectacle_feedback:
+			cue.remaining = float(cue.remaining) - delta
+		spectacle_feedback = spectacle_feedback.filter(func(fx): return float(fx.remaining) > 0.0)
 	for effect in host.sim.effects:
 		if effect.kind == "beam-canceled":
 			var cue_id := "%d:%d:%d" % [int(effect.born), int(effect.source), roundi(float(effect.x))]
@@ -85,6 +97,15 @@ func _process(delta: float) -> void:
 				if seen_elite_break_order.size() > 64:
 					seen_elite_break_ids.erase(seen_elite_break_order.pop_front())
 				elite_break_feedback.append({"p":effect.p, "remaining":1.05, "duration":1.05})
+		if effect.kind in ["mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break"]:
+			var key := "%s:%d:%d:%d:%s:%s" % [str(effect.kind), int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y)), str(effect.get("mutation", "")), str(effect.get("role", ""))]
+			if not seen_spectacle_ids.has(key):
+				seen_spectacle_ids[key] = true
+				seen_spectacle_order.append(key)
+				if seen_spectacle_order.size() > 96:
+					seen_spectacle_ids.erase(seen_spectacle_order.pop_front())
+				var duration := 1.00 if effect.kind == "boss-phase-break" else (0.85 if effect.kind == "mutation-installed" else (0.68 if effect.kind == "boss-module-break" else 0.53))
+				spectacle_feedback.append({"kind":effect.kind, "p":effect.p, "mutation":str(effect.get("mutation","")), "role":str(effect.get("role","")), "phase":int(effect.get("phase",0)), "remaining":duration, "duration":duration})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -153,8 +174,9 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break"]:
 			_draw_effect(effect)
+	_draw_spectacle_feedback()
 	if formation_clock > 0.0:
 		_draw_fusion_formed(formation, formation_clock/1.2, 1.0-formation_clock/1.2)
 	for effect in sim.effects:
@@ -759,6 +781,45 @@ func _draw_elite_break_feedback() -> void:
 		var label_pos := Vector2(clampf(p.x - 88.0, 8.0, 345.0), clampf(p.y - 73.0, 29.0, 876.0))
 		draw_rect(Rect2(label_pos.x - 4.0, label_pos.y - 22.0, 193.0, 29.0), Color("09222c", alpha * 0.90))
 		draw_string(ThemeDB.fallback_font, label_pos, "FORMATION BROKEN", HORIZONTAL_ALIGNMENT_LEFT, 185, 17, Color(CYAN, alpha))
+
+# Presentation only: color and geometry distinguish the four weapon families.
+# Reduced-effects mode retains one ring and a short label, without a flash.
+func _draw_spectacle_feedback() -> void:
+	for cue in spectacle_feedback:
+		var alpha: float = clampf(float(cue.remaining) / float(cue.duration), 0.0, 1.0)
+		var age: float = 1.0 - alpha
+		var p: Vector2 = cue.p
+		if p.y < -15.0 or p.y > 890.0:
+			continue
+		var kind: String = str(cue.kind)
+		if kind in ["mutation-installed", "mutation-proc"]:
+			var id: String = str(cue.mutation)
+			var family := "pulse" if id in ["piercing_pulse", "ricochet_pulse"] else ("seeker" if id in ["split_seeker", "breach_seeker"] else ("arc" if id in ["arc_reactor", "grounding_arc"] else "lance"))
+			var tint := CYAN if family == "pulse" else (AMBER if family == "seeker" else (Color("bc9eff") if family == "arc" else Color("f1e8ff")))
+			var size := 42.0 + age * (44.0 if kind == "mutation-installed" else 28.0)
+			draw_arc(p, size, 0, TAU, 40, Color(tint, alpha * 0.90), 2.8, true)
+			if not bool(profile.get("reduced", false)):
+				for i in range(4 if kind == "mutation-installed" else 3):
+					var v := Vector2.from_angle(TAU * float(i) / (4.0 if kind == "mutation-installed" else 3.0) + age * 0.3)
+					var reach := 18.0 if family == "seeker" else (33.0 if family == "lance" else 22.0)
+					draw_line(p + v * (size - 8.0), p + v * (size + reach), Color(tint, alpha * 0.75), 2.2, true)
+			if kind == "mutation-installed":
+				draw_string(ThemeDB.fallback_font, p + Vector2(-94.0, -96.0), "MUTATION ONLINE", HORIZONTAL_ALIGNMENT_LEFT, 188, 17, Color(tint, alpha))
+		elif kind == "boss-module-break":
+			var role: String = str(cue.role).replace("_", " ").to_upper()
+			var ring := 39.0 + age * 50.0
+			draw_arc(p, ring, 0, TAU, 48, Color(AMBER, alpha * 0.90), 3.2, true)
+			if not bool(profile.get("reduced", false)):
+				for i in range(6):
+					var v := Vector2.from_angle(TAU * float(i) / 6.0)
+					draw_line(p + v * (ring - 6.0), p + v * (ring + 17.0), Color(AMBER, alpha * 0.76), 2.0, true)
+			draw_string(ThemeDB.fallback_font, p + Vector2(-74.0, -67.0), role + " DOWN", HORIZONTAL_ALIGNMENT_LEFT, 164, 16, Color(AMBER, alpha))
+		elif kind == "boss-phase-break":
+			var ring := 65.0 + age * 85.0
+			draw_arc(p, ring, 0, TAU, 64, Color(CYAN, alpha * 0.95), 3.5, true)
+			if not bool(profile.get("reduced", false)):
+				draw_arc(p, ring * 0.68, PI * 0.15, PI * 1.8, 48, Color(AMBER, alpha * 0.68), 3.0, true)
+			draw_string(ThemeDB.fallback_font, p + Vector2(-70.0, -98.0), "PHASE %d / 3" % int(cue.phase), HORIZONTAL_ALIGNMENT_LEFT, 145, 19, Color(CYAN, alpha))
 
 func _draw_shield_feedback(ship: Vector2) -> void:
 	# Presentation uses real time so the break remains visible even at 3x speed.
