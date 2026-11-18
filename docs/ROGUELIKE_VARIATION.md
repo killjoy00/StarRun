@@ -25,6 +25,12 @@ Approved directions: #2 weapon mutations, #3 pilot gameplay identities, #5 black
 - **Scavenger:** every twelfth defeated enemy triggers a scrap explosion, damaging up to two nearby enemies. Scrap-caused kills cannot recursively trigger it. Original experience and Core bonuses remain.
 - Follow-up: distinctive mechanics for the remaining four pilots, animations, balancing and human playtesting.
 
+## Follow-up — two mutations per weapon and a separate in-flight merchant
+
+A follow-up extends the original three transformations to eight: two per Pulse, Seeker, Arc and Lance. The original post-boss Prototype mutation offer remains, and the Quartermaster now adds a separate, genuinely optional mid-flight merchant encounter in Worlds 2 and 3. Inventories and prices are deterministic, stored in checkpoints, and charged only after separate confirmation. The merchant is not enabled for Daily or existing headless balance fixtures.
+
+See [Opening and Quartermaster implementation](OPENING_MUTATIONS_MERCHANT.md).
+
 ## Deferred ideas
 - **Hidden sectors and alternate endings (#8):** requires discoverable clues and a new secret encounter route, new boss/ending content, safe checkpoints and clear opt-in. Separate issue.
 - **Recurring rival captain (#10):** requires persistently named nemesis identity, death/kill history, enemy capabilities, a return encounter, payout/retirement rules, privacy-preserving local saves and artwork. Separate issue.

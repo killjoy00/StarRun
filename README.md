@@ -36,6 +36,16 @@ Regular flights now have three optional **Artifact** rule sets: Glass Fleet, Ars
 
 See [roguelike variation implementation](docs/ROGUELIKE_VARIATION.md). Version remains **1.3**; this work is not signed for TestFlight or submitted to the App Store.
 
+## Deliberate World 1 opener, eight mutations, and traveling Quartermaster
+
+Normal World 1 now starts with a recognizable rhythm: scouts from 0–8s, warning at 8–12s, a coordinated three-ship strike wing at 12–18s, a brief breathing window at 18–21s, then a counterattack to 30s. Hard/Insane and fixed-seed Daily opening schedules remain unchanged. CI compares actual, empty-Hangar 30-second fights against the previous source for all six ships and verifies natural World 1 outcomes.
+
+Two rare transformations are available for each automatic weapon. Pulse: Ghost Rounds and Bank Shot. Seeker: Hydra Warheads and Siege Torpedoes. Arc: Chain Reactor and Static Lock. Lance: Prism Echo and Capacitor Lance. The existing one-mutation-per-flight and owned-weapon requirements are retained.
+
+An illustrated Quartermaster freighter may hail in ordinary Worlds 2–3. Players can ignore the signal, or examine optional exotic mutations, shield-for-offense pacts, ability exchanges, and repair or salvage trades. Every sacrifice is shown again on a separate confirmation screen. Offers, transaction receipts, and merchant history survive checkpoints; Daily never uses the merchant.
+
+More detail: [Opening, mutations and merchant](docs/OPENING_MUTATIONS_MERCHANT.md). Apple version remains 1.3; no signed TestFlight submission is included.
+
 ## Persistent rival captains
 
 A real named enemy attack can create a **locally saved rival captain** when the ship is destroyed in an ordinary flight. After a different completed flight, the captain may return (seed-deterministic chance) as a recognizable attackable ship with a distinctive signature tactic. The game freezes briefly for a **RIVAL SIGHTED!** warning featuring an original seeded helmet portrait and large exclamation badge, and displays a second reveal when the captain is defeated.
