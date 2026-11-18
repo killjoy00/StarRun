@@ -636,6 +636,21 @@ func _test_world1_mutations_and_merchant() -> void:
 	check(Sim.new().restore(old), "Pre-merchant 1.3 checkpoints restore safely without optional fields")
 	check(not Sim.new(61120).merchant_enabled, "Balance fixtures do not enable merchant encounters implicitly")
 	check(not daily.enable_merchant(), "Daily cannot opt in to merchant purchases or dialogue")
+	var daily_catalog := Sim.new(61120)
+	daily_catalog.daily_day = "2026-11-17"
+	daily_catalog.stage = 2
+	daily_catalog.level = 8
+	check(not daily_catalog._install_mutation("ricochet_pulse") and not daily_catalog._install_mutation("breach_seeker"), "New mutation variants cannot shift existing Daily weapon scoring")
+	check(daily_catalog._market_offers().all(func(o): return str(o.id) in Sim.DAILY_ORIGINAL_MUTATIONS), "Daily post-boss market preserves its original mutation pool")
+	var daily_only_original := true
+	for n in range(24):
+		var daily_seed := Sim.new(61180+n)
+		daily_seed.daily_day = "2026-11-17"
+		daily_seed.stage = 2
+		daily_seed.level = 8
+		daily_seed._offer_cards(false)
+		daily_only_original = daily_only_original and daily_seed.cards.all(func(c): return str(c.tag) != "MUTATION" or str(c.id) in Sim.DAILY_ORIGINAL_MUTATIONS)
+	check(daily_only_original, "Every seeded Daily draft retains the old three-variant mutation availability")
 	var visitor := Sim.new(61121)
 	check(visitor.enable_merchant(), "An ordinary player-controlled flight can enable traveling merchants")
 	visitor.stage = 2

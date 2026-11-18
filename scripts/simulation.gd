@@ -4,6 +4,7 @@ const DT := 1.0 / 60.0
 const WIDTH := 540.0
 const HEIGHT := 960.0
 const SAVE_VERSION := 1
+const DAILY_ORIGINAL_MUTATIONS := ["piercing_pulse", "split_seeker", "arc_reactor"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
 const Catalog = preload("res://scripts/catalog.gd")
@@ -552,7 +553,7 @@ func _has_mutation(id: String) -> bool:
 
 func _install_mutation(id: String) -> bool:
 	var spec: Dictionary = Catalog.mutation(id)
-	if spec.is_empty() or not mutations.is_empty() or int(upgrades.get(str(spec.requires), 0)) <= 0 or artifact_id == "drone_armada":
+	if spec.is_empty() or not mutations.is_empty() or int(upgrades.get(str(spec.requires), 0)) <= 0 or artifact_id == "drone_armada" or (not daily_day.is_empty() and id not in DAILY_ORIGINAL_MUTATIONS):
 		return false
 	mutations.append(id)
 	upgrades[id] = 1
@@ -740,6 +741,8 @@ func _market_offers() -> Array:
 		return []
 	var offers: Array = []
 	for mutation in Catalog.MUTATIONS:
+		if not daily_day.is_empty() and str(mutation.id) not in DAILY_ORIGINAL_MUTATIONS:
+			continue
 		if int(upgrades.get(str(mutation.requires), 0)) > 0:
 			offers.append(mutation)
 	return offers
@@ -2902,6 +2905,10 @@ func _offer_cards(consume_level: bool = true) -> void:
 		if stage < int(card.get("min_stage", 1)):
 			continue
 		if card.tag == "MUTATION":
+			# A Daily seed must not gain new draft options partway through its
+			# UTC day when the app updates. Keep the original 3-card pool.
+			if not daily_day.is_empty() and str(card.id) not in DAILY_ORIGINAL_MUTATIONS:
+				continue
 			var spec: Dictionary = Catalog.mutation(str(card.id))
 			if mutations.is_empty() and artifact_id != "drone_armada" and int(upgrades.get(str(spec.requires), 0)) > 0 and int(upgrades.get(str(card.id), 0)) == 0 and card.id not in banished:
 				mutation_pool.append(card.duplicate(true))
