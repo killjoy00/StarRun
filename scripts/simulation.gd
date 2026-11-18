@@ -55,7 +55,7 @@ var lance_refund_ready := false
 # In-flight traveling merchant. Explicitly enabled by the regular-flight UI:
 # Daily, existing simulation probes and historical saves are unchanged.
 var merchant_enabled := false
-var merchant_state := "" # "", "signal", "shop", "confirm"
+var merchant_state := "" # "", "signal", "shop", "confirm", "receipt"
 var merchant_offers: Array = []
 var merchant_selected := ""
 var merchant_next_at := 1000000000.0
@@ -388,7 +388,9 @@ func step() -> void:
 		next_hazard = time + rng.randf_range(15.0, 23.0)
 	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and time >= merchant_next_at:
 		_try_merchant_signal()
-	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at:
+	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at and merchant_state.is_empty() and signal_status not in ["offer", "cast", "courier"]:
+		# A live decision/coordinate countdown wins over an incoming rival.
+		# The rival clock stays due and is retried when the interaction clears.
 		_try_spawn_rival()
 	if not secret_entered and time >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
@@ -639,6 +641,10 @@ func _make_merchant_offers() -> Array:
 func _try_merchant_signal() -> bool:
 	if not merchant_enabled or not daily_day.is_empty() or not merchant_state.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages or boss_spawned or time < merchant_next_at:
 		return false
+	# Never interrupt a countdown or cover another required decision. Keep
+	# merchant_next_at pending so the hail can happen once the event clears.
+	if signal_status in ["offer", "cast", "courier"] or rival_intro_pending or rival_retire_pending or secret_intro_pending or not cards.is_empty():
+		return false
 	# Don't stack a trading interlude on a nemesis, heavy warning, or boss.
 	if enemies.size() >= _enemy_limit() - 7 or not charges.is_empty() or enemies.any(func(e): return bool(e.get("rival", false))):
 		return false
@@ -735,10 +741,19 @@ func merchant_accept() -> bool:
 				return false
 	merchant_trade_count += 1
 	merchant_trade_log.append(chosen)
-	merchant_state = ""
+	# Preserve the confirmation receipt as a saveable, paused interaction.
+	# Leaving and returning to the app must show the completed trade, not
+	# silently resume combat or permit a second payment.
+	merchant_state = "receipt"
 	merchant_selected = ""
 	merchant_offers.clear()
 	_log("MERCHANT TRADE COMPLETE - " + chosen)
+	return true
+
+func merchant_acknowledge_receipt() -> bool:
+	if merchant_state != "receipt":
+		return false
+	merchant_state = ""
 	return true
 
 func merchant_leave() -> bool:

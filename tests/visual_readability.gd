@@ -130,6 +130,37 @@ func _run() -> void:
 	check(field.elite_break_feedback.size() == 1, "Formation cue survives 0.5 real seconds even when combat runs at 3x")
 	field._process(0.65)
 	check(field.elite_break_feedback.is_empty(), "Formation cue expires after a full real-time hold without retriggering")
+	# Capture REAL boss HUD, shield modules and active warning layers across
+	# all three phases, at both reduced- and full-effects settings.
+	# These files are visual review inputs, not evidence of finger reaction.
+	for stage in [3, 4, 5]:
+		host.sim = Sim.new(75000 + stage)
+		host.sim.stage = stage
+		host.sim.secret_entered = stage == 5
+		host.sim._spawn_boss()
+		for phase in range(3):
+			if stage in [3, 4] and phase > 0:
+				var core: Dictionary = host.sim._boss_core()
+				host.sim._damage_enemy(core, 9999999.0, "nova")
+				var parts: Array = host.sim.enemies.filter(func(e): return e.kind == "boss_module" and e.hp > 0.0)
+				for part in parts:
+					host.sim._damage_enemy(part, 9999999.0, "nova")
+			if stage == 5:
+				host.sim.archive_phase = phase
+				host.sim.archive_attack = ""
+				host.sim.archive_next_attack = host.sim.time
+				host.sim._update_archive_attack()
+			else:
+				host.sim.charges.clear()
+				host.sim.heavy_ready_at = host.sim.time
+				host.sim._update_enemies()
+			for reduced in [false, true]:
+				host.profile.reduced = reduced
+				field.queue_redraw()
+				var boss_image := await _frame(viewport)
+				boss_image.save_png(output.path_join("boss-world-%d-phase-%d-%s.png" % [stage, phase + 1, "reduced" if reduced else "full"]))
+				check(boss_image.get_size() == Vector2i(540, 960),
+					"Real World %d boss phase %d renders with reduced/full effects" % [stage, phase + 1])
 	viewport.queue_free()
 	await process_frame
 	var scene := PhoneScene.new()

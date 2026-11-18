@@ -1,0 +1,181 @@
+name: iPhone release reliability and gameplay audit
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/game_center_bridge.gd'
+      - 'scripts/simulation.gd'
+      - 'scripts/main.gd'
+      - 'tests/game_center_contract.gd'
+      - 'tests/reliability_matrix.gd'
+      - 'tests/event_overlay_smoke.gd'
+      - 'tests/warning_window_audit.gd'
+      - 'tests/pretestflight_market_probe.gd'
+      - 'tests/visual_readability.gd'
+      - '.github/workflows/reliability-audit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    name: Game Center, saves, overlays and warning timing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: Check new scripts compile strictly
+        shell: bash
+        run: |
+          set -euo pipefail
+          for test in tests/game_center_contract.gd tests/reliability_matrix.gd tests/event_overlay_smoke.gd tests/warning_window_audit.gd; do
+            godot --headless --path . --check-only --script "$test"
+          done
+      - name: Mock Apple Game Center service and check ID manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review
+          godot --headless --path . --script tests/game_center_contract.gd 2>&1 | tee review/game-center.log
+          ! grep -Eq '^.*(SCRIPT ERROR:|GAME_CENTER_CONTRACT: )' review/game-center.log
+          grep -Eq 'GAME_CENTER_CONTRACT_RESULT [0-9]+ checks, 0 failures' review/game-center.log
+      - name: Stress app restart and overlapping gameplay encounters
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/reliability_matrix.gd 2>&1 | tee review/save-and-events.log
+          ! grep -Eq '^.*(SCRIPT ERROR:|RELIABILITY_MATRIX: )' review/save-and-events.log
+          grep -Eq 'RELIABILITY_MATRIX_RESULT [0-9]+ checks, 0 failures' review/save-and-events.log
+      - name: Simulate actual phone modal overlays and receipt restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/event_overlay_smoke.gd 2>&1 | tee review/overlay.log
+          ! grep -Eq '^.*(SCRIPT ERROR:|EVENT_OVERLAY: )' review/overlay.log
+          grep -Eq 'EVENT_OVERLAY_RESULT [0-9]+ checks, 0 failures' review/overlay.log
+      - name: Record charged-attack warning time at 1x and 3x
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/warning_window_audit.gd 2>&1 | tee review/warnings.log
+          ! grep -Eq '^.*(SCRIPT ERROR:|WARNING_WINDOW_AUDIT: )' review/warnings.log
+          grep -Eq 'WARNING_WINDOW_AUDIT_RESULT [0-9]+ checks, 0 failures' review/warnings.log
+          grep 'WARNING_WINDOW_AUDIT_RESULT ' review/warnings.log >> "$GITHUB_STEP_SUMMARY"
+          echo 'Warning flags are for physical review; they are not automated fairness judgments.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Save reproducible contracts and warning measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-reliability-contracts-and-warnings
+          path: review/
+          if-no-files-found: ignore
+          retention-days: 30
+
+  fragile_ships:
+    name: Empty-Hangar World 1 / ${{ matrix.ship }} / ${{ matrix.difficulty }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [kestrel, arcwing, haven]
+        difficulty: [normal, hard]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: Six genuine offered-draft flights with occupancy and boss timing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --ship=${{ matrix.ship }} --difficulty=${{ matrix.difficulty }} --hangar=none \
+            --pilot=rookie --build=focused --strategy=timed --route=adaptive \
+            --stage-limit=1 --seeds=6 --seed-offset=71 --density --trace \
+            2>&1 | tee review/world1.log
+          ! grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:' review/world1.log
+          grep -q 'BALANCE_MATRIX_SUMMARY ' review/world1.log
+          grep 'BALANCE_MATRIX ' review/world1.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep actual flight samples
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fragile-world1-${{ matrix.ship }}-${{ matrix.difficulty }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  quartermaster:
+    name: Quartermaster matched-seed trades / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [kestrel, arcwing]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: Decline vs reactor vs mutation, real encounters and exact costs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review
+          godot --headless --path . --script tests/pretestflight_market_probe.gd -- \
+            --ship=${{ matrix.ship }} --seeds=3 --seed-offset=71 2>&1 | tee review/market.log
+          ! grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:' review/market.log
+          grep -q 'MARKET_PROBE_SUMMARY ' review/market.log
+          grep 'MARKET_PROBE_SUMMARY ' review/market.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep per-seed merchant outcomes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quartermaster-${{ matrix.ship }}-reliability
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore
+
+  mutations:
+    name: Paid mutation comparisons / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, arcwing]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: Eight actual-cost mutations vs restored unchanged control
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p review
+          godot --headless --path . --script tests/pretestflight_mutation_probe.gd -- \
+            --ship=${{ matrix.ship }} --seeds=2 --seed-offset=91 2>&1 | tee review/mutations.log
+          ! grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:' review/mutations.log
+          grep -q 'MUTATION_PROBE_SUMMARY ' review/mutations.log
+          grep 'MUTATION_PROBE_SUMMARY ' review/mutations.log >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep matched baseline and mutation branches
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-reliability-${{ matrix.ship }}
+          path: review/
+          retention-days: 30
+          if-no-files-found: ignore

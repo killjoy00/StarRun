@@ -79,7 +79,7 @@ func _trial(seed: int, ship: String, policy: String) -> Dictionary:
 					fault = true
 					break
 				accepted_ids.append(pending_trade)
-				if sim.merchant_trade_count != accepted_ids.size() or not sim.merchant_state.is_empty():
+				if sim.merchant_trade_count != accepted_ids.size() or sim.merchant_state != "receipt" or not sim.merchant_acknowledge_receipt():
 					fault = true
 					break
 			continue

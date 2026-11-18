@@ -15,6 +15,8 @@ var request_score := -1
 var last_error := ""
 var profile: Dictionary
 var save_callback: Callable
+# Tests can inject a UTC day without changing the production system clock.
+var utc_day_override := ""
 
 func initialize(player_profile: Dictionary, save_profile: Callable) -> void:
 	profile = player_profile
@@ -23,15 +25,30 @@ func initialize(player_profile: Dictionary, save_profile: Callable) -> void:
 		profile.game_center_synced = {}
 	if not profile.has("game_center_synced"):
 		profile.game_center_synced = {}
-	if not Engine.has_singleton("GameCenterKit"):
-		return
-	service = Engine.get_singleton("GameCenterKit")
+	if Engine.has_singleton("GameCenterKit"):
+		_bind_service(Engine.get_singleton("GameCenterKit"))
+
+func _bind_service(client: Object) -> void:
+	service = client
 	service.authenticated.connect(_on_auth)
 	service.score_submitted.connect(_on_score)
 	service.achievement_reported.connect(_on_achievement)
 	service.panel_failed.connect(_on_panel_failed)
 	service.set_access_point_visible(false) # Menus own the navigation.
 	service.authenticate()
+
+func attach_test_service(client: Object) -> void:
+	# Test seam only; production always obtains the iOS singleton above.
+	_bind_service(client)
+
+func _today() -> String:
+	return utc_day_override if not utc_day_override.is_empty() else Progress.utc_day()
+
+func _cloud_achievement(id: String) -> bool:
+	for achievement in Progress.ACHIEVEMENTS:
+		if str(achievement.id) == id:
+			return not bool(achievement.get("local_only", false))
+	return false
 
 func available() -> bool:
 	return service != null and signed_in
@@ -54,6 +71,12 @@ func show_achievements() -> bool:
 func _on_auth(ok: bool, error: String) -> void:
 	signed_in = ok
 	last_error = "" if ok else error
+	if not ok:
+		# A logout while a native request is pending must not permanently
+		# wedge synchronization. Ignore any late acknowledgements afterward.
+		busy = false
+		request_id = ""
+		request_score = -1
 	state_changed.emit()
 	if ok:
 		sync()
@@ -63,7 +86,7 @@ func sync() -> void:
 		return
 	# Never post a stale suspended Daily into the next day's recurring board.
 	# Current UTC is authoritative. Keep older results in local history only.
-	var day := Progress.utc_day()
+	var day := _today()
 	var records: Dictionary = profile.get("daily_records",{})
 	var record: Dictionary = records.get(day,{})
 	var score: int = int(record.get("best_score",-1))
@@ -77,6 +100,10 @@ func sync() -> void:
 	var awards: Dictionary = profile.get("achievements",{})
 	for key in awards:
 		var id: String = str(key)
+		# Secret/local-only milestones have no Apple resource. Never let a
+		# permanently failing unknown identifier block later real awards.
+		if not _cloud_achievement(id):
+			continue
 		var ack := "achievement_"+id
 		if not bool(synced.get(ack,false)):
 			busy = true
@@ -87,34 +114,39 @@ func sync() -> void:
 	state_changed.emit()
 
 func _on_score(ok: bool, leaderboard: String, error: String) -> void:
-	if request_id.begins_with("score_") and leaderboard == BOARD:
-		if ok:
-			var synced: Dictionary = profile.game_center_synced
-			synced[request_id] = maxi(int(synced.get(request_id,-1)),request_score)
-			_save()
-		else:
-			last_error = error
-		busy = false
-		request_id = ""
-		request_score = -1
-		state_changed.emit()
-		# Do not spin on network errors; retry on next session or next result.
-		if ok:
-			sync()
+	if not busy or not request_id.begins_with("score_") or leaderboard != BOARD:
+		return # Duplicate, unrelated or late native callbacks cannot erase an active request.
+	if ok:
+		var synced: Dictionary = profile.game_center_synced
+		synced[request_id] = maxi(int(synced.get(request_id,-1)),request_score)
+		last_error = ""
+		_save()
+	else:
+		last_error = error
+	busy = false
+	request_id = ""
+	request_score = -1
+	state_changed.emit()
+	# A failed network request stays unsynced and retries on a later sync.
+	if ok:
+		sync()
 
 func _on_achievement(ok: bool, achievement_id: String, error: String) -> void:
 	var expected: String = "com.rsm.starrun." + request_id.trim_prefix("achievement_")
-	if request_id.begins_with("achievement_") and achievement_id == expected:
-		if ok:
-			profile.game_center_synced[request_id] = true
-			_save()
-		else:
-			last_error = error
-		busy = false
-		request_id = ""
-		state_changed.emit()
-		if ok:
-			sync()
+	if not busy or not request_id.begins_with("achievement_") or achievement_id != expected:
+		return # A stale award callback must not release another pending request.
+	if ok:
+		profile.game_center_synced[request_id] = true
+		last_error = ""
+		_save()
+	else:
+		last_error = error
+	busy = false
+	request_id = ""
+	request_score = -1
+	state_changed.emit()
+	if ok:
+		sync()
 
 func _on_panel_failed(_panel: String, error: String) -> void:
 	last_error = error
