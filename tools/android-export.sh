@@ -65,11 +65,30 @@ if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$work/import.log" "$wo
   exit 1
 fi
 
+# Godot generates a Gradle Android project from the pinned 4.6.3 source
+# template. Patch the actual source manifest before export: requesting a
+# portrait orientation otherwise IMPLICITLY requires portrait screen hardware
+# and Play Console rejects the release on non-portrait devices.
+godot --headless --path . --install-android-build-template 2>&1 | tee "$work/install-template.log"
+test -s android/build/src/main/AndroidManifest.xml
+python3 tools/android-orientation-manifest.py patch android/build/src/main/AndroidManifest.xml
+
 mkdir -p build/android
-godot --headless --path . --install-android-build-template --export-release Android \
+godot --headless --path . --export-release Android \
   build/android/StarRun.aab 2>&1 | tee "$work/export.log"
 test -s build/android/StarRun.aab
 unzip -tq build/android/StarRun.aab
 unzip -Z -1 build/android/StarRun.aab | grep -Fqx 'base/manifest/AndroidManifest.xml'
 jarsigner -verify build/android/StarRun.aab
-echo "Built signed Star/Run Android App Bundle for com.rsm.starrun"
+
+# Always inspect the COMPILED manifest in the .aab, not just the template,
+# since Play evaluates the compiled merged manifest when filtering devices.
+bundletool_version="1.18.3"
+bundletool="$work/bundletool-all-$bundletool_version.jar"
+curl --fail --location --retry 3 \
+  "https://github.com/google/bundletool/releases/download/$bundletool_version/bundletool-all-$bundletool_version.jar" \
+  -o "$bundletool"
+java -jar "$bundletool" dump manifest --bundle=build/android/StarRun.aab --module=base \
+  > "$work/compiled-AndroidManifest.xml"
+python3 tools/android-orientation-manifest.py verify "$work/compiled-AndroidManifest.xml"
+echo "Built signed Star/Run Android App Bundle with optional portrait hardware for com.rsm.starrun"
