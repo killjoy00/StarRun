@@ -3205,6 +3205,12 @@ func _build_to_menu() -> void:
 
 
 func _loadout_tab(value: String) -> void:
+	if value not in ["Ships", "Pilots", "Artifacts"]:
+		return
+	# Switching to a shorter tab must begin at its first option, not inherit
+	# the scroll offset of an earlier long Ships or Pilots catalog.
+	if value != loadout_tab and is_instance_valid(reading_scroll):
+		reading_scroll.scroll_vertical = 0
 	loadout_tab = value
 	_show_loadout()
 
