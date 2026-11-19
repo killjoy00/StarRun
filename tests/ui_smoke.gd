@@ -580,7 +580,7 @@ func _run() -> void:
 		# Kit.caps renders card headings as uppercase on actual devices.
 		check(_contains_text(scene.overlay, "FOCUSED DAMAGE") and _contains_text(scene.overlay, "CROSS-WEAPON SETUP"), "Both compact specialization roles fit the phone evolution choice")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Evolution panel fits narrow-phone safe area")
-		check(_choice_panels_within_screen(scene.overlay, float(dimensions.x)), "Evolution option cards preserve 24pt phone gutters")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Evolution option cards preserve 24pt phone gutters")
 		var snapshot: Dictionary = scene.services.read_save(scene.Services.RUN)
 		check(snapshot.has("pending_build_choices") and snapshot.pending_build_choices.size() == 1, "An unanswered evolution choice is checkpointed before interaction")
 		scene._resume_run()
@@ -597,7 +597,7 @@ func _run() -> void:
 		scene._show_build_choice()
 		await process_frame
 		check(scene.mode == "build_choice" and _contains_text(scene.overlay, "Fuse") and _contains_text(scene.overlay, "Keep both"), "Mobile fusion panel presents two explicit strategies")
-		check(_choice_panels_within_screen(scene.overlay, float(dimensions.x)), "Fusion choice cards stay away from phone edges")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Fusion choice cards stay away from phone edges")
 		scene._choose_build_decision("keep")
 		check(scene.mode == "playing" and scene.sim.active_slots == ["aegis", "nova"], "Mobile Keep choice preserves two distinct buttons")
 		# Debrief reports actual engine activity, not an unsupported power score.
@@ -622,7 +622,7 @@ func _run() -> void:
 		scene._show_prototypes()
 		await process_frame
 		check(scene.card_buttons.size() == 3, "World transition offers exactly three Prototype choices")
-		check(_choice_panels_within_screen(scene.overlay, float(dimensions.x)), "All three Prototype cards fit the screen horizontally")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "All three Prototype cards fit the screen horizontally")
 		var last_prototype: Control = scene.overlay.find_child("PrototypeChoice2", true, false)
 		check(last_prototype != null, "The third Prototype option must exist in the scrolling region")
 		if last_prototype != null:
@@ -633,7 +633,7 @@ func _run() -> void:
 		scene._choose_prototype(0)
 		await process_frame
 		check(scene.mode == "route", "Choosing a Prototype still opens the next-world route choice")
-		check(_choice_panels_within_screen(scene.overlay, float(dimensions.x)), "All three Route cards fit the screen horizontally")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "All three Route cards fit the screen horizontally")
 		var last_route: Control = scene.overlay.find_child("RouteChoiceBounty", true, false)
 		check(last_route != null, "The third Route must exist in the scrolling region")
 		if last_route != null:
