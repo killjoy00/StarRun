@@ -1,0 +1,83 @@
+name: Android Play AAB build
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'export_presets.cfg'
+      - 'project.godot'
+      - 'assets/**'
+      - 'data/**'
+      - 'scenes/**'
+      - 'scripts/**'
+      - 'tools/android-export.sh'
+      - 'tools/generate-android-icon.gd'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'export_presets.cfg'
+      - 'project.godot'
+      - 'assets/**'
+      - 'data/**'
+      - 'scenes/**'
+      - 'scripts/**'
+      - 'tools/android-export.sh'
+      - 'tools/generate-android-icon.gd'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: android-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Godot 4.6.3 Android 16 bundle (CI key only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install Android 16 SDK and Godot 4.6 NDK dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager --install 'platform-tools' 'platforms;android-36' 'build-tools;36.0.0' 'cmdline-tools;latest' 'ndk;28.1.13356709' 'cmake;3.10.2.4988404'
+      - name: Install pinned Godot
+        run: bash tools/install-godot.sh
+      - name: Export signed AAB with disposable test signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          keytool -genkeypair -noprompt -alias ci-only \
+            -keystore "$RUNNER_TEMP/starrun-ci-only.p12" -storetype PKCS12 \
+            -storepass ci-only-password -keypass ci-only-password \
+            -keyalg RSA -keysize 3072 -validity 3650 \
+            -dname 'CN=StarRun CI Temporary Test Key'
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/starrun-ci-only.p12"
+          export GODOT_ANDROID_KEYSTORE_RELEASE_USER=ci-only
+          export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=ci-only-password
+          bash tools/android-export.sh
+      - name: Verify package identity, API floor and signed bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s build/android/StarRun.aab
+          grep -Fq 'gradle_build/target_sdk="36"' export_presets.cfg
+          grep -Fq 'package/unique_name="com.rsm.starrun"' export_presets.cfg
+          unzip -tq build/android/StarRun.aab
+          jarsigner -verify build/android/StarRun.aab
+          test -s assets/android-icon.png
+      - name: Preserve Android candidate (NOT upload-key signed)
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-Android-CI-test-key-only
+          path: |
+            build/android/StarRun.aab
+            assets/android-icon.png
+          if-no-files-found: error
+          retention-days: 14
