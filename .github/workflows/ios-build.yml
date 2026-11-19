@@ -51,6 +51,10 @@ jobs:
           app=$(find "$RUNNER_TEMP/StarRunDerivedData/Build/Products/Release-iphoneos" -name '*.app' -type d -print -quit)
           test -n "$app"
           test -f "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest:UISceneConfigurations:UIWindowSceneSessionRoleApplication' "$app/Info.plist" >/dev/null || {
+            echo "::error::Godot iOS binary lacks the UIWindowScene configuration required on iOS 27"
+            exit 1
+          }
           actual_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
           test "$actual_id" = com.rsm.starrun
           echo "Built unsigned iPhone app: $app ($actual_id)"
