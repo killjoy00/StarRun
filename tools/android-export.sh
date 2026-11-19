@@ -65,12 +65,22 @@ if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$work/import.log" "$wo
   exit 1
 fi
 
-# Godot generates a Gradle Android project from the pinned 4.6.3 source
-# template. Patch the actual source manifest before export: requesting a
-# portrait orientation otherwise IMPLICITLY requires portrait screen hardware
-# and Play Console rejects the release on non-portrait devices.
-godot --headless --path . --install-android-build-template 2>&1 | tee "$work/install-template.log"
+# Install the exact official Godot 4.6.3 Gradle source template into the
+# Android build tree. The Godot CLI --install-android-build-template flag MUST
+# be combined with an export, so that flag would build before we could patch
+# the manifest. Match Godot ExportTemplateManager's installation layout:
+# android/.build_version = Godot version, sources under android/build.
+# This directory is generated in CI, never committed to the repository.
+mkdir -p android/build
+printf '%s\n' "$version.stable" > android/.build_version
+unzip -oq "$template_dir/android_source.zip" -d android/build
+touch android/build/.gdignore
+test -s android/build/build.gradle
 test -s android/build/src/main/AndroidManifest.xml
+chmod +x android/build/gradlew
+
+# Requesting portrait orientation otherwise IMPLICITLY requires portrait
+# screen hardware. Override that requirement without changing screen rotation.
 python3 tools/android-orientation-manifest.py patch android/build/src/main/AndroidManifest.xml
 
 mkdir -p build/android
