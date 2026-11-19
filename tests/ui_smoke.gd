@@ -46,6 +46,20 @@ func _merchant_panels_within_screen(parent: Node, screen_width: float) -> bool:
 				return false
 	return true
 
+# Regression guard for phone width regressions caused by intrinsic grid/chip
+# sizes. Verify the actual Godot card rectangles, not only text wrap flags.
+func _choice_panels_within_screen(parent: Node, screen_width: float) -> bool:
+	var matched := 0
+	for panel in parent.find_children("*", "PanelContainer", true, false):
+		if not (panel.name.begins_with("ArtifactOption") or panel.name.begins_with("PrototypeChoice") or panel.name.begins_with("RouteChoice") or panel.name.begins_with("EvolutionChoice") or panel.name.begins_with("FusionChoice")):
+			continue
+		matched += 1
+		var rect: Rect2 = panel.get_global_rect()
+		if rect.position.x < 21.0 or rect.end.x > screen_width - 21.0 or rect.size.x < 180.0:
+			print("CHOICE_CARD_OOB %s width=%.1f rect=%s" % [panel.name, screen_width, str(rect)])
+			return false
+	return matched > 0
+
 func _contains_text(node: Node, phrase: String) -> bool:
 	if node is Label and str(node.text).contains(phrase):
 		return true
@@ -181,6 +195,23 @@ func _run() -> void:
 		check(_contains_text(scene.overlay, "Change") and _contains_text(scene.overlay, "Play daily"), "Selecting a ship or pilot and starting a Daily must remain obvious")
 		check(_contains_text(scene.overlay, "Awards"), "Achievements must be discoverable from the title")
 		check(_contains_text(scene.overlay, "Rivals"), "A local captain journal is discoverable from the title")
+		check(scene.overlay.find_child("ArtifactStandard", true, false) == null, "Artifact buttons must not clutter the title screen")
+		scene._open_loadout("menu")
+		scene._loadout_tab("Artifacts")
+		await process_frame
+		check(scene.mode == "loadout" and _contains_text(scene.overlay, "Standard") and _contains_text(scene.overlay, "Glass Fleet") and _contains_text(scene.overlay, "Drone Armada"), "Artifacts must be discoverable beside Ships and Pilots, with full names")
+		var standard_label: Label = scene.overlay.find_child("ArtifactTitleStandard", true, false)
+		check(standard_label != null and standard_label.text == "Standard", "Standard artifact must render as a complete, independent label")
+		if standard_label != null:
+			var word_width := standard_label.get_theme_font("font").get_string_size("Standard", HORIZONTAL_ALIGNMENT_LEFT, -1, standard_label.get_theme_font_size("font_size")).x
+			check(standard_label.size.x >= word_width, "The word Standard must have enough measured width to display in full")
+		check(_choice_panels_within_screen(scene.overlay, logical.x), "Artifact cards must fit inside narrow-phone margins")
+		scene._set_artifact("glass_fleet")
+		check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half maximum hull"), "Choosing an Artifact must persist and explain its rules")
+		scene._set_artifact("standard")
+		check(str(scene.profile.artifact) == "standard", "Standard must restore ordinary flight rules")
+		scene._loadout_back()
+		check(scene.mode == "menu", "Done returns to the uncluttered title")
 		var previous_sim: RefCounted = scene.sim
 		var past := Sim.new(95800)
 		past.last_killing_source = "gunship"
@@ -549,6 +580,7 @@ func _run() -> void:
 		# Kit.caps renders card headings as uppercase on actual devices.
 		check(_contains_text(scene.overlay, "FOCUSED DAMAGE") and _contains_text(scene.overlay, "CROSS-WEAPON SETUP"), "Both compact specialization roles fit the phone evolution choice")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Evolution panel fits narrow-phone safe area")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Evolution option cards preserve 24pt phone gutters")
 		var snapshot: Dictionary = scene.services.read_save(scene.Services.RUN)
 		check(snapshot.has("pending_build_choices") and snapshot.pending_build_choices.size() == 1, "An unanswered evolution choice is checkpointed before interaction")
 		scene._resume_run()
@@ -565,6 +597,7 @@ func _run() -> void:
 		scene._show_build_choice()
 		await process_frame
 		check(scene.mode == "build_choice" and _contains_text(scene.overlay, "Fuse") and _contains_text(scene.overlay, "Keep both"), "Mobile fusion panel presents two explicit strategies")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Fusion choice cards stay away from phone edges")
 		scene._choose_build_decision("keep")
 		check(scene.mode == "playing" and scene.sim.active_slots == ["aegis", "nova"], "Mobile Keep choice preserves two distinct buttons")
 		# Debrief reports actual engine activity, not an unsupported power score.
@@ -577,6 +610,38 @@ func _run() -> void:
 		check(_contains_text(scene.overlay, "YOUR BUILD AT WORK") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
 		check(_contains_text(scene.overlay, "218 direct damage"), "Debrief displays measured engine damage and does not invent a damage multiplier")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Build-impact debrief stays inside narrow-phone safe area")
+	# World 1 -> 2: the last Prototype and Route choices must actually
+	# become reachable by scrolling on short, narrow phones. No sideways layout.
+	for dimensions in [Vector2i(360, 740), Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
+		root.size = dimensions
+		await process_frame
+		scene._layout()
+		scene.sim = Sim.new(99001 + dimensions.x)
+		scene.sim.stage_transition_queued = true
+		check(scene.sim.begin_intermission(), "Fixture enters the real World 1 -> 2 intermission")
+		scene._show_prototypes()
+		await process_frame
+		check(scene.card_buttons.size() == 3, "World transition offers exactly three Prototype choices")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "All three Prototype cards fit the screen horizontally")
+		var last_prototype: Control = scene.overlay.find_child("PrototypeChoice2", true, false)
+		check(last_prototype != null, "The third Prototype option must exist in the scrolling region")
+		if last_prototype != null:
+			scene.reading_scroll.scroll_vertical = int(scene.reading_scroll.get_v_scroll_bar().max_value)
+			await process_frame
+			await process_frame
+			check(last_prototype.get_global_rect().end.y <= scene.reading_scroll.get_global_rect().end.y + 2.0, "The third Prototype can scroll fully above the pinned footer")
+		scene._choose_prototype(0)
+		await process_frame
+		check(scene.mode == "route", "Choosing a Prototype still opens the next-world route choice")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "All three Route cards fit the screen horizontally")
+		var last_route: Control = scene.overlay.find_child("RouteChoiceBounty", true, false)
+		check(last_route != null, "The third Route must exist in the scrolling region")
+		if last_route != null:
+			scene.reading_scroll.scroll_vertical = int(scene.reading_scroll.get_v_scroll_bar().max_value)
+			await process_frame
+			await process_frame
+			check(last_route.get_global_rect().end.y <= scene.reading_scroll.get_global_rect().end.y + 2.0, "The third Route can scroll fully above the pinned footer")
+
 	print("UI RESULT: %d checks, %d failures" % [checks, failures])
 	scene.queue_free()
 	await process_frame

@@ -660,12 +660,15 @@ func _backdrop(alpha: float) -> void:
 
 ## A full screen: header on top, body in the middle, actions pinned to the bottom
 ## where a thumb reaches them.
-func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dictionary:
+func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0, phone_margin: float = 16.0) -> Dictionary:
 	_clear_overlay()
 	_backdrop(alpha)
 	var screen := get_viewport_rect().size
 	var inset := _insets()
-	var w := minf(width, screen.x - 32.0)
+	# Critical choice screens use 24pt phone gutters rather than the normal
+	# 16pt; never let text or buttons graze a screen edge.
+	var side_margin := phone_margin if _compact_ui() else 16.0
+	var w := minf(width, maxf(1.0, screen.x - side_margin * 2.0))
 	var frame := VBoxContainer.new()
 	frame.position = Vector2((screen.x - w) * 0.5, float(inset.top) + 4.0)
 	var reserved_ad_height := 64.0 if ad_banner_visible and mode in ["menu", "results"] else 0.0
@@ -1016,7 +1019,7 @@ func _show_menu() -> void:
 	Kit.label(names, "Pilot · " + _name_part(pilot.name, 0), 14, Kit.MUTED)
 	var change_button := _ui_button(loadout_row, "Change", _open_loadout.bind("menu"), "ghost", 44)
 	change_button.name = "ChangeLoadout"
-	change_button.tooltip_text = "Choose ship or pilot"
+	change_button.tooltip_text = "Choose ship, pilot, or flight artifact"
 	change_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# The Daily is the same UTC challenge and starting ship for every player.
 	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
@@ -1060,17 +1063,6 @@ func _show_menu() -> void:
 		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
-	# Optional run-rule variants stay separate from the shared Daily flight.
-	Kit.label(body, "Optional flight artifact", 14, Kit.MUTED)
-	var artifact_row := HBoxContainer.new()
-	artifact_row.add_theme_constant_override("separation", 5)
-	body.add_child(artifact_row)
-	for option in [{"id":"standard","short":"Standard"},{"id":"glass_fleet","short":"Glass"},{"id":"arsenal_roulette","short":"Shift"},{"id":"drone_armada","short":"Drones"}]:
-		var selected: bool = str(profile.get("artifact","standard")) == str(option.id)
-		var artifact_button := _ui_button(artifact_row, str(option.short), _set_artifact.bind(str(option.id)), "amber" if selected else "secondary", 44, true)
-		artifact_button.name = "Artifact" + str(option.id).to_pascal_case()
-		artifact_button.tooltip_text = str(Catalog.artifact(str(option.id)).description)
-	Kit.label(body, str(Catalog.artifact(str(profile.get("artifact","standard"))).description), 14, Kit.MUTED, true)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -1274,7 +1266,11 @@ func _set_artifact(id: String) -> void:
 		return
 	profile.artifact = id
 	_save_profile()
-	_show_menu()
+	sound.play("card")
+	# Selecting an Artifact now happens in the loadout area, not on the title.
+	# Stay on the tab so all rule descriptions remain readable.
+	loadout_tab = "Artifacts"
+	_show_loadout()
 
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
@@ -1540,16 +1536,35 @@ func _loadout_back() -> void:
 func _show_loadout() -> void:
 	var prior: int = reading_scroll.scroll_vertical if mode == "loadout" and is_instance_valid(reading_scroll) else 0
 	mode = "loadout"
-	var view := _page(1.0, true, 560.0)
-	_page_header(view.top, "Next flight", "Ships & pilots", _loadout_back, true)
-	_tabs(view.top, ["Ships", "Pilots"], loadout_tab, _loadout_tab)
+	var view := _page(1.0, true, 560.0, 24.0)
+	_page_header(view.top, "Next flight", "Flight loadout", _loadout_back, true)
+	_tabs(view.top, ["Ships", "Pilots", "Artifacts"], loadout_tab, _loadout_tab)
 	var body: VBoxContainer = view.body
-	var ships := loadout_tab == "Ships"
-	var entries: Array = Catalog.SHIPS if ships else Catalog.PILOTS
-	for entry in entries:
-		_loadout_card(body, entry, ships)
+	if loadout_tab == "Artifacts":
+		Kit.label(body, "Optional rules for regular flights. Daily Challenges always use Standard.", 16, Kit.MUTED, true)
+		for entry in Catalog.ARTIFACTS:
+			_artifact_card(body, entry)
+	else:
+		var ships := loadout_tab == "Ships"
+		var entries: Array = Catalog.SHIPS if ships else Catalog.PILOTS
+		for entry in entries:
+			_loadout_card(body, entry, ships)
 	_keep_scroll(reading_scroll, prior)
 	_focus(_ui_button(reading_footer, "Done", _loadout_back, "primary", 54, true))
+
+func _artifact_card(parent: Node, entry: Dictionary) -> void:
+	var id: String = str(entry.id)
+	var selected: bool = str(profile.get("artifact", "standard")) == id
+	var card := _tap_card(parent, _set_artifact.bind(id), Kit.AMBER, selected)
+	card.panel.name = "ArtifactOption" + id.to_pascal_case()
+	# Name and explanation occupy their own full-width rows. Never squeeze the
+	# complete word "Standard" (or long names) into four equal-width buttons.
+	Kit.caps(card.content, "SELECTED" if selected else "TAP TO SELECT", Kit.CYAN if selected else Kit.MUTED, 12)
+	var title := Kit.label(card.content, str(entry.name), 19, Color.WHITE, true)
+	title.name = "ArtifactTitle" + id.to_pascal_case()
+	title.custom_minimum_size.x = 0
+	title.add_theme_font_override("font", Kit.font(0, 0.45))
+	Kit.label(card.content, str(entry.description), 16, Kit.TEXT, true)
 
 func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 	var key := "ship" if ships else "pilot"
@@ -1666,22 +1681,43 @@ func _show_build_choice() -> void:
 	_save_run()
 	var choice: Dictionary = sim.pending_build_choices[0]
 	var id: String = str(choice.id)
-	var view := _page(0.93, true, 520.0)
+	# Decision cards should not meet the screen bezel on narrow phones.
+	var view := _page(0.93, true, 520.0, 24.0)
 	var body: VBoxContainer = view.body
+	var first_option: Button = null
 	if str(choice.kind) == "evolution":
 		var weapon_card: Dictionary = sim.content.cards.filter(func(c): return str(c.id) == id)[0]
 		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
-		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Choose one permanent combat specialization for this flight.", 16, Kit.MUTED, true)
+		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Pick a permanent specialization for this flight.", 16, Kit.MUTED, true)
 		for option in sim.content.weapon_evolutions[id]:
-			_info_card(body, str(option.name) + "  ·  " + str(option.get("role", "")), str(option.description), Kit.AMBER)
-			_ui_button(body, "Install " + str(option.name), _choose_build_decision.bind(str(option.id)), "primary", 52)
+			var card := _tap_card(body, _choose_build_decision.bind(str(option.id)), Kit.AMBER)
+			card.panel.name = "EvolutionChoice" + str(option.id).to_pascal_case()
+			Kit.caps(card.content, str(option.get("role", "")), Kit.AMBER, 12)
+			var title := Kit.label(card.content, str(option.name), 20, Color.WHITE, true)
+			title.add_theme_font_override("font", Kit.font(0, 0.45))
+			Kit.label(card.content, str(option.description), 16, Kit.TEXT, true)
+			Kit.caps(card.content, "TAP TO INSTALL", Kit.CYAN, 12)
+			if first_option == null:
+				first_option = card.button
 	else:
 		var spec: Dictionary = sim.fusion_spec(id)
 		_page_header(view.top, "ABILITY PAIR READY", "Fuse or keep both?")
-		_info_card(body, "Fuse · " + str(spec.name), str(spec.description) + "\nBoth rank-5 abilities become a new rank-1 fusion. Frees one slot.", Kit.VIOLET)
-		_ui_button(body, "Fuse · free one slot", _choose_build_decision.bind("fuse"), "primary", 54)
-		_info_card(body, "Keep separate", "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", Kit.CYAN)
-		_ui_button(body, "Keep both abilities", _choose_build_decision.bind("keep"), "secondary", 52)
+		var fusion := _tap_card(body, _choose_build_decision.bind("fuse"), Kit.VIOLET)
+		fusion.panel.name = "FusionChoiceFuse"
+		Kit.caps(fusion.content, "FUSE · FREE ONE SLOT", Kit.VIOLET, 12)
+		var fusion_title := Kit.label(fusion.content, "Fuse · " + str(spec.name), 20, Color.WHITE, true)
+		fusion_title.add_theme_font_override("font", Kit.font(0, 0.45))
+		Kit.label(fusion.content, str(spec.description) + "\nBoth rank-5 abilities become a new rank-1 fusion. Frees one slot.", 16, Kit.TEXT, true)
+		Kit.caps(fusion.content, "TAP TO FUSE", Kit.CYAN, 12)
+		first_option = fusion.button
+		var keep := _tap_card(body, _choose_build_decision.bind("keep"), Kit.CYAN)
+		keep.panel.name = "FusionChoiceKeep"
+		Kit.caps(keep.content, "KEEP SEPARATE", Kit.CYAN, 12)
+		var keep_title := Kit.label(keep.content, "Keep both abilities", 20, Color.WHITE, true)
+		keep_title.add_theme_font_override("font", Kit.font(0, 0.45))
+		Kit.label(keep.content, "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", 16, Kit.TEXT, true)
+		Kit.caps(keep.content, "TAP TO KEEP BOTH", Kit.CYAN, 12)
+	_focus(first_option)
 
 func _choose_build_decision(value: String) -> void:
 	if mode != "build_choice" or not sim.resolve_build_choice(value):
@@ -2378,21 +2414,22 @@ func _surface_pending_flight_choice() -> void:
 func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
-	var view := _page(0.95, true, 540.0)
-	_page_header(view.top, "Between stages  ·  step 1 of 2", "Prototype or black market")
-	Kit.label(view.top, "Install a prototype or accept an illegal weapon modification. You only get one; a black-market trade permanently sacrifices ship capacity.", 16, Kit.MUTED, true)
+	var view := _page(0.95, true, 540.0, 24.0)
+	_page_header(view.top, "Between worlds · step 1 of 2", "Choose a prototype")
+	# This explanation scrolls with the options rather than crowding the
+	# fixed header on a short phone.
+	Kit.label(view.body, "Install a prototype, take a risky black-market modification, or bank %d Cores. One choice per warp." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
 	for i in range(sim.prototype_offers.size()):
 		var spec: Dictionary = sim.prototype_spec(str(sim.prototype_offers[i]))
 		var illegal: bool = str(spec.role) == "ILLEGAL TRADE"
 		var card := _tap_card(view.body, _choose_prototype.bind(i), Kit.AMBER if illegal else Kit.CYAN)
+		card.panel.name = "PrototypeChoice%d" % i
 		card_buttons.append(card.button)
-		var head := HBoxContainer.new()
-		head.add_theme_constant_override("separation", 8)
-		head.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.content.add_child(head)
-		var title := Kit.label(head, str(spec.name), 19, Color.WHITE, true)
+		# Role chip and name have independent full-width lines. Side-by-side
+		# intrinsic widths used to force the final option past narrow screens.
+		Kit.caps(card.content, "BLACK MARKET" if illegal else str(spec.role), Kit.AMBER if illegal else Kit.MUTED, 12)
+		var title := Kit.label(card.content, str(spec.name), 19, Color.WHITE, true)
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
-		_chip(head, "BLACK MARKET" if illegal else str(spec.role).capitalize(), Kit.AMBER if illegal else Kit.MUTED)
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
@@ -2401,26 +2438,31 @@ func _show_prototypes() -> void:
 		_focus(card_buttons[0])
 
 func _gain_cost(parent: Node, gain: String, cost: String) -> void:
-	var grid := GridContainer.new()
-	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 10)
-	grid.add_theme_constant_override("v_separation", 4)
-	grid.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(grid)
+	# A two-column GridContainer measures the unwrapped minimum width of
+	# long benefits. It could force a whole card beyond a 375pt phone viewport.
+	# Vertical, auto-wrapping rows keep every tradeoff within the card instead.
+	var details := VBoxContainer.new()
+	details.add_theme_constant_override("separation", 8)
+	details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	details.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(details)
 	for pair in [["Gain", gain, Kit.CYAN, Kit.TEXT], ["Cost", cost, Kit.AMBER, Color("ffd9b0")]]:
-		var tag := Kit.caps(grid, str(pair[0]), pair[2], 13)
-		tag.custom_minimum_size = Vector2(44, 23)
-		tag.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		tag.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-		Kit.label(grid, str(pair[1]), 16, pair[3], true)
+		var section := VBoxContainer.new()
+		section.add_theme_constant_override("separation", 2)
+		section.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		section.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		details.add_child(section)
+		Kit.caps(section, str(pair[0]), pair[2], 12)
+		var detail := Kit.label(section, str(pair[1]), 15, pair[3], true)
+		detail.custom_minimum_size.x = 0
 
 func _show_route_choice() -> void:
 	mode = "route"
 	_save_run()
-	var view := _page(0.95, true, 540.0)
-	_page_header(view.top, "Between stages  ·  step 2 of 2", "Choose your route")
+	var view := _page(0.95, true, 540.0, 24.0)
+	_page_header(view.top, "Between worlds · step 2 of 2", "Choose your route")
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
-	Kit.label(view.top, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
+	Kit.label(view.body, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
 		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 35% less damage; +15% weapon damage above half shields; abilities recharge 15% faster next world.", "cost": "Weapon bonus drops at half shields. No extra XP or bounty.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
@@ -2428,14 +2470,11 @@ func _show_route_choice() -> void:
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
+		card.panel.name = "RouteChoice" + str(route.id).to_pascal_case()
 		card_buttons.append(card.button)
-		var head := HBoxContainer.new()
-		head.add_theme_constant_override("separation", 8)
-		head.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.content.add_child(head)
-		var title := Kit.label(head, _route_name(str(route.id)), 19, Color.WHITE, true)
+		Kit.caps(card.content, str(route.tag), route.accent, 12)
+		var title := Kit.label(card.content, _route_name(str(route.id)), 19, Color.WHITE, true)
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
-		_chip(head, str(route.tag), route.accent)
 		_gain_cost(card.content, str(route.gain), str(route.cost))
 	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
 	if not card_buttons.is_empty():
@@ -3166,6 +3205,12 @@ func _build_to_menu() -> void:
 
 
 func _loadout_tab(value: String) -> void:
+	if value not in ["Ships", "Pilots", "Artifacts"]:
+		return
+	# Switching to a shorter tab must begin at its first option, not inherit
+	# the scroll offset of an earlier long Ships or Pilots catalog.
+	if value != loadout_tab and is_instance_valid(reading_scroll):
+		reading_scroll.scroll_vertical = 0
 	loadout_tab = value
 	_show_loadout()
 
