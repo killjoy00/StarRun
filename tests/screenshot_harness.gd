@@ -17,8 +17,8 @@ const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
 	"menu", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
-	"ships", "pilots", "combat-1", "combat-4",
-	"cards", "cards-banish", "cards-maxed", "paused", "build",
+	"ships", "pilots", "artifacts", "combat-1", "combat-4",
+	"cards", "cards-banish", "cards-maxed", "evolution", "fusion", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
 	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
@@ -161,8 +161,8 @@ func _prepare(scene, screen: String) -> void:
 		"hangar-hull", "hangar-weapons", "hangar-abilities":
 			scene.hangar_category = {"hangar-hull":"Hull", "hangar-weapons":"Weapons", "hangar-abilities":"Abilities"}[screen]
 			scene._show_hangar()
-		"ships", "pilots":
-			scene.loadout_tab = "Ships" if screen == "ships" else "Pilots"
+		"ships", "pilots", "artifacts":
+			scene.loadout_tab = {"ships":"Ships", "pilots":"Pilots", "artifacts":"Artifacts"}[screen]
 			scene._show_loadout()
 		"combat-1", "combat-4":
 			scene.sim.stage = 4 if screen == "combat-4" else 1
@@ -181,6 +181,18 @@ func _prepare(scene, screen: String) -> void:
 				scene.sim.upgrades[str(card.id)] = int(card.max)
 			scene.sim._offer_cards(false)
 			scene._show_cards(false)
+		"evolution":
+			scene.sim.stage = 2
+			scene.sim.upgrades.pulse = 5
+			scene.sim._queue_weapon_evolutions()
+			scene._show_build_choice()
+		"fusion":
+			scene.sim.stage = 2
+			scene.sim.active_slots = ["aegis", "nova"]
+			scene.sim.upgrades.aegis = 5
+			scene.sim.upgrades.nova = 5
+			scene.sim._try_fuse()
+			scene._show_build_choice()
 		"paused":
 			scene._show_pause()
 		"build":
