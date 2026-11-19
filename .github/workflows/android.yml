@@ -10,6 +10,7 @@ on:
       - 'scenes/**'
       - 'scripts/**'
       - 'tools/android-export.sh'
+      - 'tools/android-orientation-manifest.py'
       - 'tools/generate-android-icon.gd'
       - '.github/workflows/android.yml'
   pull_request:
@@ -21,6 +22,7 @@ on:
       - 'scenes/**'
       - 'scripts/**'
       - 'tools/android-export.sh'
+      - 'tools/android-orientation-manifest.py'
       - 'tools/generate-android-icon.gd'
       - '.github/workflows/android.yml'
   workflow_dispatch:
@@ -74,6 +76,9 @@ jobs:
           unzip -tq build/android/StarRun.aab
           jarsigner -verify build/android/StarRun.aab
           test -s assets/android-icon.png
+          # android-export.sh independently decodes the COMPILED AAB manifest
+          # with bundletool and rejects a required portrait screen feature.
+          python3 -m py_compile tools/android-orientation-manifest.py
       - name: Preserve Android candidate (NOT upload-key signed)
         uses: actions/upload-artifact@v4
         with:

@@ -65,11 +65,40 @@ if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$work/import.log" "$wo
   exit 1
 fi
 
+# Install the exact official Godot 4.6.3 Gradle source template into the
+# Android build tree. The Godot CLI --install-android-build-template flag MUST
+# be combined with an export, so that flag would build before we could patch
+# the manifest. Match Godot ExportTemplateManager's installation layout:
+# android/.build_version = Godot version, sources under android/build.
+# This directory is generated in CI, never committed to the repository.
+mkdir -p android/build
+printf '%s\n' "$version.stable" > android/.build_version
+unzip -oq "$template_dir/android_source.zip" -d android/build
+touch android/build/.gdignore
+test -s android/build/build.gradle
+test -s android/build/src/main/AndroidManifest.xml
+chmod +x android/build/gradlew
+
+# Requesting portrait orientation otherwise IMPLICITLY requires portrait
+# screen hardware. Override that requirement without changing screen rotation.
+python3 tools/android-orientation-manifest.py patch android/build/src/main/AndroidManifest.xml
+
 mkdir -p build/android
-godot --headless --path . --install-android-build-template --export-release Android \
+godot --headless --path . --export-release Android \
   build/android/StarRun.aab 2>&1 | tee "$work/export.log"
 test -s build/android/StarRun.aab
 unzip -tq build/android/StarRun.aab
 unzip -Z -1 build/android/StarRun.aab | grep -Fqx 'base/manifest/AndroidManifest.xml'
 jarsigner -verify build/android/StarRun.aab
-echo "Built signed Star/Run Android App Bundle for com.rsm.starrun"
+
+# Always inspect the COMPILED manifest in the .aab, not just the template,
+# since Play evaluates the compiled merged manifest when filtering devices.
+bundletool_version="1.18.3"
+bundletool="$work/bundletool-all-$bundletool_version.jar"
+curl --fail --location --retry 3 \
+  "https://github.com/google/bundletool/releases/download/$bundletool_version/bundletool-all-$bundletool_version.jar" \
+  -o "$bundletool"
+java -jar "$bundletool" dump manifest --bundle=build/android/StarRun.aab --module=base \
+  > "$work/compiled-AndroidManifest.xml"
+python3 tools/android-orientation-manifest.py verify "$work/compiled-AndroidManifest.xml"
+echo "Built signed Star/Run Android App Bundle with optional portrait hardware for com.rsm.starrun"

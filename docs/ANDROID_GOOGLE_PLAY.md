@@ -20,6 +20,26 @@ Android cannot be called tested on a real phone until a physical Android device 
 been used. Rendering, touchscreen, insets, state persistence, resume/background,
 60 Hz pacing, daily date rollover and four-world boss battles need hardware checks.
 
+## Play Console portrait-hardware warning (resolved by Android v2)
+
+Godot 4.6.3 exports the game's portrait orientation. Android interprets a
+portrait-oriented activity as *implicitly requiring* portrait-capable hardware,
+which blocks Play review and filters out some devices. Orientation is a
+presentation preference, not required device hardware for Star/Run.
+
+The Android release script now installs the Godot Gradle template separately,
+adds `<uses-feature android:name="android.hardware.screen.portrait"
+android:required="false" />` to its Android manifest, and then exports the AAB.
+It decodes the **signed merged AAB manifest** using pinned Google bundletool
+1.18.3 and fails if the portrait hardware feature is not explicitly optional
+or if the activity stops requesting its original portrait layout. This is
+Android-only: no iOS/desktop configuration changes are made.
+
+The Play replacement must have a **higher versionCode than the original v1**.
+Android v2 uses versionCode 2 and user-visible versionName 1.3.1. Updating an
+already uploaded v1 AAB in place is unsupported. Before sending to review, use
+the v2 release, not the original v1.
+
 ## Automated export and signing
 
 The canonical export is `bash tools/android-export.sh` on a runner with
