@@ -1536,7 +1536,7 @@ func _loadout_back() -> void:
 func _show_loadout() -> void:
 	var prior: int = reading_scroll.scroll_vertical if mode == "loadout" and is_instance_valid(reading_scroll) else 0
 	mode = "loadout"
-	var view := _page(1.0, true, 560.0)
+	var view := _page(1.0, true, 560.0, 24.0)
 	_page_header(view.top, "Next flight", "Flight loadout", _loadout_back, true)
 	_tabs(view.top, ["Ships", "Pilots", "Artifacts"], loadout_tab, _loadout_tab)
 	var body: VBoxContainer = view.body
