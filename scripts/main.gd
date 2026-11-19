@@ -660,12 +660,15 @@ func _backdrop(alpha: float) -> void:
 
 ## A full screen: header on top, body in the middle, actions pinned to the bottom
 ## where a thumb reaches them.
-func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0) -> Dictionary:
+func _page(alpha: float = 1.0, scroll: bool = true, width: float = 520.0, phone_margin: float = 16.0) -> Dictionary:
 	_clear_overlay()
 	_backdrop(alpha)
 	var screen := get_viewport_rect().size
 	var inset := _insets()
-	var w := minf(width, screen.x - 32.0)
+	# Critical choice screens use 24pt phone gutters rather than the normal
+	# 16pt; never let text or buttons graze a screen edge.
+	var side_margin := phone_margin if _compact_ui() else 16.0
+	var w := minf(width, maxf(1.0, screen.x - side_margin * 2.0))
 	var frame := VBoxContainer.new()
 	frame.position = Vector2((screen.x - w) * 0.5, float(inset.top) + 4.0)
 	var reserved_ad_height := 64.0 if ad_banner_visible and mode in ["menu", "results"] else 0.0
@@ -1016,7 +1019,7 @@ func _show_menu() -> void:
 	Kit.label(names, "Pilot · " + _name_part(pilot.name, 0), 14, Kit.MUTED)
 	var change_button := _ui_button(loadout_row, "Change", _open_loadout.bind("menu"), "ghost", 44)
 	change_button.name = "ChangeLoadout"
-	change_button.tooltip_text = "Choose ship or pilot"
+	change_button.tooltip_text = "Choose ship, pilot, or flight artifact"
 	change_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# The Daily is the same UTC challenge and starting ship for every player.
 	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
@@ -1060,17 +1063,6 @@ func _show_menu() -> void:
 		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
-	# Optional run-rule variants stay separate from the shared Daily flight.
-	Kit.label(body, "Optional flight artifact", 14, Kit.MUTED)
-	var artifact_row := HBoxContainer.new()
-	artifact_row.add_theme_constant_override("separation", 5)
-	body.add_child(artifact_row)
-	for option in [{"id":"standard","short":"Standard"},{"id":"glass_fleet","short":"Glass"},{"id":"arsenal_roulette","short":"Shift"},{"id":"drone_armada","short":"Drones"}]:
-		var selected: bool = str(profile.get("artifact","standard")) == str(option.id)
-		var artifact_button := _ui_button(artifact_row, str(option.short), _set_artifact.bind(str(option.id)), "amber" if selected else "secondary", 44, true)
-		artifact_button.name = "Artifact" + str(option.id).to_pascal_case()
-		artifact_button.tooltip_text = str(Catalog.artifact(str(option.id)).description)
-	Kit.label(body, str(Catalog.artifact(str(profile.get("artifact","standard"))).description), 14, Kit.MUTED, true)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -1274,7 +1266,11 @@ func _set_artifact(id: String) -> void:
 		return
 	profile.artifact = id
 	_save_profile()
-	_show_menu()
+	sound.play("card")
+	# Selecting an Artifact now happens in the loadout area, not on the title.
+	# Stay on the tab so all rule descriptions remain readable.
+	loadout_tab = "Artifacts"
+	_show_loadout()
 
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
@@ -1541,15 +1537,34 @@ func _show_loadout() -> void:
 	var prior: int = reading_scroll.scroll_vertical if mode == "loadout" and is_instance_valid(reading_scroll) else 0
 	mode = "loadout"
 	var view := _page(1.0, true, 560.0)
-	_page_header(view.top, "Next flight", "Ships & pilots", _loadout_back, true)
-	_tabs(view.top, ["Ships", "Pilots"], loadout_tab, _loadout_tab)
+	_page_header(view.top, "Next flight", "Flight loadout", _loadout_back, true)
+	_tabs(view.top, ["Ships", "Pilots", "Artifacts"], loadout_tab, _loadout_tab)
 	var body: VBoxContainer = view.body
-	var ships := loadout_tab == "Ships"
-	var entries: Array = Catalog.SHIPS if ships else Catalog.PILOTS
-	for entry in entries:
-		_loadout_card(body, entry, ships)
+	if loadout_tab == "Artifacts":
+		Kit.label(body, "Optional rules for regular flights. Daily Challenges always use Standard.", 16, Kit.MUTED, true)
+		for entry in Catalog.ARTIFACTS:
+			_artifact_card(body, entry)
+	else:
+		var ships := loadout_tab == "Ships"
+		var entries: Array = Catalog.SHIPS if ships else Catalog.PILOTS
+		for entry in entries:
+			_loadout_card(body, entry, ships)
 	_keep_scroll(reading_scroll, prior)
 	_focus(_ui_button(reading_footer, "Done", _loadout_back, "primary", 54, true))
+
+func _artifact_card(parent: Node, entry: Dictionary) -> void:
+	var id: String = str(entry.id)
+	var selected: bool = str(profile.get("artifact", "standard")) == id
+	var card := _tap_card(parent, _set_artifact.bind(id), Kit.AMBER, selected)
+	card.panel.name = "ArtifactOption" + id.to_pascal_case()
+	# Name and explanation occupy their own full-width rows. Never squeeze the
+	# complete word "Standard" (or long names) into four equal-width buttons.
+	Kit.caps(card.content, "SELECTED" if selected else "TAP TO SELECT", Kit.CYAN if selected else Kit.MUTED, 12)
+	var title := Kit.label(card.content, str(entry.name), 19, Color.WHITE, true)
+	title.name = "ArtifactTitle" + id.to_pascal_case()
+	title.custom_minimum_size.x = 0
+	title.add_theme_font_override("font", Kit.font(0, 0.45))
+	Kit.label(card.content, str(entry.description), 16, Kit.TEXT, true)
 
 func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 	var key := "ship" if ships else "pilot"
