@@ -7,3 +7,7 @@ dist/
 
 __pycache__/
 *.pyc
+
+# Generated Android export assets / Gradle build template
+/android/
+/assets/android-icon.png
