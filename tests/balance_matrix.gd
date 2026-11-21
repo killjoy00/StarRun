@@ -254,7 +254,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 				density_by_phase[phase] = {
 					"samples":0, "bullet_sum":0, "boss_bullet_sum":0,
 					"charge_sum":0, "max_visible":0, "over_20":0, "over_40":0,
-					"enemy_sum":0, "empty_enemy_samples":0, "max_visible_enemies":0
+					"enemy_sum":0, "empty_enemy_samples":0, "max_visible_enemies":0, "scrap_sum":0
 				}
 			var visible := 0
 			var boss_owned := 0
@@ -265,12 +265,17 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 					if str(bullet.get("source", "")).begins_with("boss"):
 						boss_owned += 1
 			var visible_enemies := 0
+			var record_scrap := 0
 			for enemy in sim.enemies:
 				var enemy_p: Vector2 = enemy.p
 				if enemy.hp > 0.0 and enemy_p.x >= 0.0 and enemy_p.x <= Sim.WIDTH and enemy_p.y >= 0.0 and enemy_p.y <= 920.0:
-					visible_enemies += 1
+					if bool(enemy.get("scrap", false)):
+						record_scrap += 1
+					else:
+						visible_enemies += 1
 			var record: Dictionary = density_by_phase[phase]
 			record.enemy_sum += visible_enemies
+			record.scrap_sum += record_scrap
 			record.empty_enemy_samples += int(visible_enemies == 0)
 			record.max_visible_enemies = maxi(int(record.max_visible_enemies), visible_enemies)
 			record.samples += 1
@@ -391,7 +396,9 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 				close_ordnance = true
 	var injured: bool = sim.hull < sim.max_hull - 25.0
 	var vulnerable: bool = sim.shield < sim.max_shield * 0.55
-	var crowd: bool = sim.enemies.size() >= 3
+	# Bots judge a crowd by threat, not body count: a swarm pack reads as one
+	# ship and scrap drones as none (the same rule the simulation uses).
+	var crowd: bool = (sim._crowd_count() if sim.has_method("_crowd_count") else sim.enemies.size()) >= 3
 	var boss: bool = sim.boss_spawned
 	for active_id in sim.active_slots:
 		var ability: String = str(active_id)

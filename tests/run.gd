@@ -35,6 +35,7 @@ func _defeat_boss_fixture(sim: RefCounted) -> void:
 		sim._damage_enemy(core, 999999999.0, "nova")
 
 func _run() -> void:
+	_test_swarm_packs_and_scrap()
 	_test_course()
 	_test_defenses()
 	_test_interrupts_and_priority()
@@ -164,7 +165,8 @@ func _test_hidden_archive() -> void:
 		flight.time = flight.tick * Sim.DT
 		flight.step()
 	check(sim.signal_status == "offer" and daily.signal_status.is_empty(), "Seeded signal starts in an ordinary campaign and never appears in a Daily")
-	check(sim.rng.state == daily.rng.state and sim.enemies == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
+	# Regular flights add harmless scrap to empty screens (never in Daily).
+	check(sim.rng.state == daily.rng.state and sim.enemies.filter(func(e): return not bool(e.get("scrap", false))) == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
 	check(not daily.choose_signal("cast") and not sim.can_enter_secret(), "No Daily interaction or premature Archive entry")
 	var legacy := sim.snapshot()
 	for key in legacy.keys():
@@ -702,9 +704,10 @@ func _test_world1_mutations_and_merchant() -> void:
 	gap.next_encounter_at = 999999.0
 	gap.next_hazard = 999999.0
 	gap.next_spawn = gap.time
-	var gap_before: int = gap.enemies.size()
+	# Count ships by crowd weight: a swarm pack is one ship, scrap is none.
+	var gap_before: int = gap._crowd_count()
 	gap.step()
-	check(gap.enemies.size() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
+	check(gap._crowd_count() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
 	var bank := Sim.new(61112)
 	check(bank._install_mutation("ricochet_pulse"), "Bank Shot installs only on owned Pulse weapon")
 	bank._add_enemy("drone",Vector2(230,310))
@@ -1474,6 +1477,83 @@ func _test_resume() -> void:
 	check(restored.cards == original.cards, "Resuming a draft must preserve its exact hand")
 	check(not restored.restore({"version": -1}), "Unknown checkpoint versions must be rejected")
 
+# More on-screen action must not change the balance budget: a pack carries
+# one ship's XP, kill, volley rate and escape damage; scrap carries nothing.
+func _test_swarm_packs_and_scrap() -> void:
+	var pack := Sim.new(5150)
+	pack._add_pack("drone", Vector2(270, 120))
+	var single := Sim.new(5150)
+	single._add_enemy("drone", Vector2(270, 120))
+	var pack_xp := 0
+	var rewarders := 0
+	for member in pack.enemies:
+		pack_xp += int(member.xp)
+		rewarders += int(not bool(member.get("no_reward", false)))
+	check(pack.enemies.size() == 3 and pack._crowd_count() == 1 and pack_xp == int(single.enemies[0].xp) and rewarders == 1,
+		"A swarm pack is three ships that count as one, with one ship's XP and one reward")
+	check(pack.enemies.all(func(e): return is_equal_approx(float(e.fire), float(pack.enemies[0].fire))), "Pack members share one volley timer")
+	# Kill every member: exactly one kill and one ship's XP.
+	for member in pack.enemies.duplicate():
+		pack._damage_enemy(member, 99999.0, "nova")
+	check(pack.kills == 1, "Destroying a whole pack counts one kill")
+	# Volleys: a pack fires like one ship while any member lives.
+	var volley := Sim.new(5151)
+	volley._add_pack("drone", Vector2(270, 300))
+	var lone := Sim.new(5151)
+	lone._add_enemy("drone", Vector2(270, 300))
+	for sim in [volley, lone]:
+		for enemy in sim.enemies:
+			enemy.fire = 0.0
+		sim._update_enemies()
+	check(volley.bullets.size() == lone.bullets.size() and volley.bullets.size() > 0, "One pack volley fires the same shots as one ship")
+	check(volley.enemies.all(func(e): return float(e.fire) > 0.5), "After a volley every pack member waits for the next shared turn")
+	var daily := Sim.new(5152)
+	daily.daily_day = "2026-11-21"
+	check(not daily._packs_enabled() and not daily._scrap_enabled(), "Daily keeps its historical spawns")
+	var hard := Sim.new(5152, {}, "vanguard", "rookie", "hard")
+	check(not hard._packs_enabled() and hard._scrap_enabled(), "Hard/Insane get scrap but no packs, keeping their World 1 gate")
+	# Scrap: harmless, rewardless filler on an empty screen only.
+	var scrap := Sim.new(5153)
+	scrap.time = 5.0
+	scrap._spawn_scrap_swarm()
+	var drones: Array = scrap.enemies.filter(func(e): return bool(e.get("scrap", false)))
+	check(drones.size() == 4 and scrap._crowd_count() == 0 and scrap._visible_world1_enemies() == 0, "Scrap fills an empty screen and counts as no crowd")
+	var hull_before: float = scrap.hull
+	var kills_before: int = scrap.kills
+	var xp_before: float = scrap.xp
+	for drone in drones:
+		drone.p.y = 950.0
+	scrap._update_enemies()
+	check(scrap.hull == hull_before and scrap.enemies.is_empty(), "Escaping scrap never damages the ship")
+	scrap._spawn_scrap_swarm()
+	scrap.scrap_next_at = 0.0
+	for drone in scrap.enemies.duplicate():
+		scrap._damage_enemy(drone, 50.0, "pulse")
+	check(scrap.kills == kills_before and scrap.xp == xp_before and float(scrap.damage_dealt.pulse) == 0.0, "Scrap pops with no kills, XP or damage stats")
+	var busy := Sim.new(5154)
+	busy._add_enemy("gunship", Vector2(200, 200))
+	busy._add_enemy("gunship", Vector2(340, 200))
+	busy._spawn_scrap_swarm()
+	check(busy.enemies.size() == 2, "Scrap stays away while real enemies hold the screen")
+	var target := Sim.new(5155)
+	target._add_enemy("drone", Vector2(270, 300))
+	target.time = 1.0
+	target.enemies.append({"id":999, "kind":"scrap", "p":Vector2(270, 700), "hp":1.0, "max_hp":1.0, "speed":0.0, "fire":1.0e9, "xp":0, "phase":0.0, "no_reward":true, "scrap":true})
+	check(str(target._nearest(Vector2(270, 760)).kind) == "drone", "Weapons always prefer any real enemy over scrap")
+	# Shots fly through scrap while a real enemy exists, so scrap never soaks
+	# damage that real threats would have taken.
+	var lane := Sim.new(5156)
+	lane._add_enemy("drone", Vector2(270, 150))
+	lane.enemies.append({"id":998, "kind":"scrap", "p":Vector2(270, 500), "hp":1.0, "max_hp":1.0, "speed":0.0, "fire":1.0e9, "xp":0, "phase":0.0, "no_reward":true, "scrap":true})
+	lane.shots.append({"p":Vector2(270, 505), "v":Vector2.UP * 700.0, "damage":5.0, "weapon":"pulse", "target":-1})
+	lane._update_shots()
+	check(float(lane.enemies[1].hp) > 0.0 and lane.shots.size() == 1, "A shot passes through scrap while a real enemy is on screen")
+	lane.enemies[0].hp = -1.0
+	lane.enemies = lane.enemies.filter(func(e): return e.hp > 0.0)
+	lane.shots = [{"p":Vector2(270, 505), "v":Vector2.UP * 700.0, "damage":5.0, "weapon":"pulse", "target":-1}]
+	lane._update_shots()
+	check(lane.enemies.is_empty() or float(lane.enemies[0].hp) <= 0.0, "With no real enemy left, shots pop scrap")
+
 func _test_saves() -> void:
 	var services := Services.new()
 	var path := "user://starrun-test.save"
@@ -1745,18 +1825,18 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if urgent_beam or sim.bullets.size() >= 20:
 			sim.activate("stasis_lock")
 			sim.activate("ghost_signal")
-		if sim.boss_spawned or sim.enemies.size() >= 3:
+		if sim.boss_spawned or sim._crowd_count() >= 3:
 			sim.activate("railstorm")
 			sim.activate("missile_grid")
 			sim.activate("prism_focus")
 		if sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield - 30:
 			sim.activate("repair_matrix")
-		if sim.hull < sim.max_hull - 20 and sim.enemies.size() > 0:
+		if sim.hull < sim.max_hull - 20 and sim._crowd_count() > 0:
 			sim.activate("scrap_converter")
 		if sim.bullets.size() >= 15:
 			sim.activate("reflective_wall")
 			sim.activate("reactor_surge")
-		if sim.enemies.size() >= 3 or sim.boss_spawned:
+		if sim._crowd_count() >= 3 or sim.boss_spawned:
 			sim.activate("barrage")
 			sim.activate("overdrive")
 		if sim.hull < sim.max_hull - 26:
@@ -1771,7 +1851,7 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 				sim.activate("aegis")
 			elif sim.aegis_left <= 0:
 				sim.activate("nova")
-		elif sim.enemies.size() >= 3 and sim.charges.is_empty():
+		elif sim._crowd_count() >= 3 and sim.charges.is_empty():
 			sim.activate("nova")
 		elif sim.shield < 30 and sim.charges.is_empty():
 			var near := 0
@@ -1794,11 +1874,11 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
-		if sim.enemies.size() >= 2 or sim.boss_spawned:
+		if sim._crowd_count() >= 2 or sim.boss_spawned:
 			sim.activate("wing_drones")
 			sim.activate("ion_mine")
 			sim.activate("storm_carrier")
-		if sim.enemies.size() >= 3:
+		if sim._crowd_count() >= 3:
 			sim.activate("focus")
 			sim.activate("jammer")
 			sim.activate("strike")

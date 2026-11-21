@@ -60,18 +60,18 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if urgent_beam or sim.bullets.size() >= 20:
 			sim.activate("stasis_lock")
 			sim.activate("ghost_signal")
-		if sim.boss_spawned or sim.enemies.size() >= 3:
+		if sim.boss_spawned or sim._crowd_count() >= 3:
 			sim.activate("railstorm")
 			sim.activate("missile_grid")
 			sim.activate("prism_focus")
 		if sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield - 30:
 			sim.activate("repair_matrix")
-		if sim.hull < sim.max_hull - 20 and sim.enemies.size() > 0:
+		if sim.hull < sim.max_hull - 20 and sim._crowd_count() > 0:
 			sim.activate("scrap_converter")
 		if sim.bullets.size() >= 15:
 			sim.activate("reflective_wall")
 			sim.activate("reactor_surge")
-		if sim.enemies.size() >= 3 or sim.boss_spawned:
+		if sim._crowd_count() >= 3 or sim.boss_spawned:
 			sim.activate("barrage")
 			sim.activate("overdrive")
 		if sim.hull < sim.max_hull - 26:
@@ -86,7 +86,7 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 				sim.activate("aegis")
 			elif sim.aegis_left <= 0:
 				sim.activate("nova")
-		elif sim.enemies.size() >= 3 and sim.charges.is_empty():
+		elif sim._crowd_count() >= 3 and sim.charges.is_empty():
 			sim.activate("nova")
 		elif sim.shield < 30 and sim.charges.is_empty():
 			var near := 0
@@ -109,7 +109,7 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
-		if sim.enemies.size() >= 3:
+		if sim._crowd_count() >= 3:
 			sim.activate("focus")
 			sim.activate("jammer")
 			sim.activate("strike")

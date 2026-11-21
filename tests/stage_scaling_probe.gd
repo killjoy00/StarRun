@@ -56,7 +56,7 @@ func _run() -> void:
 						sim.activate("repair_matrix")
 						sim.activate("mend")
 						sim.activate("capacitor")
-					if carrier and not idle and (sim.boss_spawned or sim.enemies.size() >= 3): sim.activate("storm_carrier")
+					if carrier and not idle and (sim.boss_spawned or sim._crowd_count() >= 3): sim.activate("storm_carrier")
 					sim.step()
 					sim.effects.clear()
 					max_bullets = maxi(max_bullets, sim.bullets.size())

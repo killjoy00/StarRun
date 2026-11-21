@@ -54,6 +54,14 @@ Five signatures: Charged Barrage, Interceptor Screen, Reactive Shield, Hunter Lo
 
 See [rival design and testing](docs/RIVAL_CAPTAINS.md).
 
+## More on-screen action, same balance budget
+
+- **Swarm packs.** World 1's light ships (drones and rushers) arrive as a pack of three smaller ships. A pack carries exactly one ship's budget: one XP payout and one kill (only the lead rewards), one shared volley timer that slows as members fall, one ship's escape damage, and about one ship's health (36% per member, to offset wasted overkill on small targets). Crowd limits, the opening director and the World 1 fire throttle count a pack as one ship. Pack spawns draw no extra combat RNG, and the test bots judge crowds the same way (a pack is one ship, scrap is none).
+- **Scrap swarm.** When the screen is down to one real enemy or none, harmless salvage drones drift through. They never shoot or hurt the ship, grant no XP, kills, Cores or procs, and count as no crowd. While any real enemy exists, weapons, abilities, chains and splash ignore them and shots fly straight through, so they only soak fire that would otherwise be idle.
+- **Background battle and wreckage.** A dim, distant skirmish plays behind the playfield, and kills throw tumbling hull fragments. Both are cosmetic and switch off with Calmer visuals.
+- Packs run on Normal only: chain lightning and other splash clear tight packs slightly faster, and Hard/Insane must keep their no-Hangar World 1 gate exactly. Hard/Insane still get the scrap swarm and background battle. Daily keeps its historical spawns (no packs or scrap).
+- **Measured (scripted bot, Normal, no Hangar, same seeds before → after):** in the opening 30 seconds the screen went from empty 11–60% of the time to 0–5%, with 5–8 ships visible instead of 1–2, while kills, level, hull and hostile shots stayed the same (Vanguard and Kestrel, 4 seeds). Across World 1 (16 seeds per ship), real enemies on screen in the mid-phase rose 2.4 → 4.7 (Vanguard), 1.3 → 2.5 (Kestrel) and 5.4 → 9.1 (Bulwark), plus 1–4 scrap drones. World 1 clears were 31 of 48 before and 32 of 48 after (12 → 8, 8 → 12, 11 → 12 per ship, swings both ways from draft order); kills and levels within 1.5%. Reaching the World 1 boss without upgrades stays near-certain (14–16 of 16).
+
 ## Reliability and balance pass
 
 - **Ships:** Kestrel now has 85 hull / 40 shield (was 70 / 30). Bulwark takes 20% less beam and missile damage and gets +20% automatic damage against bosses (was +12%). Vanguard gains *veteran systems* after each cleared world: +15% / +20% / +25% weapon and ability power and 10% / 15% / 20% status resistance. In scripted no-Hangar Normal World 1 runs on the same 8 seeds, Kestrel went from 2 to 4 clears and Bulwark from 1 to 4, against Vanguard's 5; the Hard/Insane no-Hangar World 1 gate still records zero clears for all six pilots.

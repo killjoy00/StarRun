@@ -135,9 +135,9 @@ func _cast(sim: RefCounted) -> void:
 	var imminent: bool = sim.charges.any(func(c): return float(c.remaining) < 0.5)
 	if imminent:
 		if not sim.activate("aegis"): sim.activate("nova")
-	elif sim.enemies.size() >= 4:
+	elif sim._crowd_count() >= 4:
 		sim.activate("nova")
-	if sim.enemies.size() >= 3 or sim.boss_spawned:
+	if sim._crowd_count() >= 3 or sim.boss_spawned:
 		sim.activate("barrage")
 		sim.activate("overdrive")
 	if sim.hull < sim.max_hull - 28:

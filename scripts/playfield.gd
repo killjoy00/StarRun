@@ -152,6 +152,8 @@ func _draw() -> void:
 		var depth := 0.35 + (i % 3) * 0.3
 		var p := Vector2(fposmod(i * 173.7 + 35 + drift.x * depth, 600) - 30, fposmod(i * 231.2 + visual_time * (95 + depth * 110), 1120) - 80)
 		_asteroid(p, 10 + (i % 3) * 13, i, depth)
+	if not sim.secret_entered and not profile.reduced:
+		_draw_distant_battle(visual_stage)
 	# Exact two-second preview remains fair on curved flight paths.
 	for i in range(2, 25):
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
@@ -363,6 +365,54 @@ func _draw_warp(elapsed: float) -> void:
 		var radius := 45.0 + ring * 48.0 + progress * 140.0
 		draw_arc(center, radius, 0, TAU, 68, Color(color, 0.40 * (1.0 - progress)), 2.5, true)
 
+## A distant skirmish behind the playfield: small, dim allied and hostile
+## craft trade tracer fire and some are shot down. Purely cosmetic: it uses
+## visual time only (no simulation state or RNG), is never targetable, avoids
+## the coral threat colour, and is off with Calmer visuals.
+func _draw_distant_battle(visual_stage: int) -> void:
+	var lanes := 8 if visual_stage == 1 else 6
+	var ally := Color(0.45, 0.90, 0.86)
+	var hostile := Color(0.70, 0.64, 0.92)
+	var positions: Array = []
+	for i in range(lanes):
+		var period := 8.0 + fposmod(i * 3.7, 6.0)
+		var clock := visual_time + i * 2.3
+		var cycle := floori(clock / period)
+		var t := fposmod(clock, period) / period
+		var left_to_right := (i + cycle) % 2 == 0
+		var y0 := 110.0 + fposmod(i * 83.0 + cycle * 47.0, 520.0)
+		var start := Vector2(-40.0 if left_to_right else 580.0, y0)
+		var finish := Vector2(580.0 if left_to_right else -40.0, y0 + (60.0 if i % 2 == 0 else -45.0))
+		var p := start.lerp(finish, t) + Vector2(0.0, sin(clock * 1.7 + i) * 9.0)
+		var is_ally := i % 2 == 0
+		var downed := not is_ally and cycle % 3 == 0 and t > 0.62
+		positions.append({"p": p, "ally": is_ally, "alive": not downed})
+		if downed:
+			# A brief distant burst, then nothing until the next pass.
+			var burst := (t - 0.62) / 0.12
+			if burst < 1.0:
+				draw_arc(p, 4.0 + burst * 16.0, 0, TAU, 18, Color(1.0, 0.82, 0.55, 0.35 * (1.0 - burst)), 1.5, true)
+				draw_circle(p, 3.0 * (1.0 - burst), Color(1.0, 0.9, 0.7, 0.4 * (1.0 - burst)))
+			continue
+		var heading := (finish - start).normalized()
+		var side := heading.orthogonal()
+		var size := 5.0 + (i % 3)
+		var color := Color(ally if is_ally else hostile, 0.30)
+		draw_colored_polygon(PackedVector2Array([p + heading * size, p - heading * size + side * size * 0.7, p - heading * size * 0.5, p - heading * size - side * size * 0.7]), color)
+		draw_line(p - heading * size, p - heading * (size + 7.0), Color(color, 0.18), 2.0, true)
+	# Allies trade short tracer bursts with the nearest hostile.
+	for i in range(0, positions.size() - 1, 2):
+		var a: Dictionary = positions[i]
+		var b: Dictionary = positions[i + 1]
+		if not a.alive or not b.alive or fposmod(visual_time * 1.6 + i, 1.0) > 0.35:
+			continue
+		var from: Vector2 = a.p
+		var to: Vector2 = b.p
+		if from.distance_to(to) > 360.0:
+			continue
+		var along := fposmod(visual_time * 3.0 + i * 0.37, 1.0)
+		draw_line(from.lerp(to, along), from.lerp(to, minf(1.0, along + 0.12)), Color(1.0, 0.86, 0.6, 0.22), 1.2, true)
+
 func _draw_environment(sector: int, drift: Vector2) -> void:
 	# Procedural layers provide distinct vistas without interrupting continuous scrolling.
 	match sector:
@@ -477,6 +527,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		var art_key := ("boss" if boss else (kind if SHIPS.has(kind) else ("gunship" if kind in ["missile_bomber", "carrier", "shieldguard", "minelayer", "ion_frigate", "corroder", "disruptor"] else "drone")))
 		var tint := Color("ff9a86") if bool(enemy.get("rival",false)) else Color.WHITE
 		match kind:
+			"scrap": tint = Color(0.62, 0.66, 0.72, 0.85) # harmless salvage, not a threat
 			"interceptor": tint = Color("66f5df")
 			"rusher": tint = Color("ff938e")
 			"missile_bomber": tint = Color("ffb76c")
@@ -490,7 +541,9 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			"boss3": tint = Color("ff8f48")
 			"boss4": tint = Color("cda8ff")
 		var bank := sin(sim.time * (2.2 if kind == "interceptor" else 0.7) + enemy.phase) * (0.035 if boss else 0.11)
-		draw_set_transform(p, bank)
+		# Swarm-pack members are smaller ships flying as one formation.
+		var art_scale := 0.72 if enemy.has("pack_id") else (0.5 if kind == "scrap" else 1.0)
+		draw_set_transform(p, bank, Vector2(art_scale, art_scale))
 		if _custom_enemy(kind):
 			_draw_custom_enemy(kind)
 		else:
@@ -963,7 +1016,7 @@ func _draw_effect(effect: Dictionary) -> void:
 			draw_line(p + direction * age * 7, p + direction * age * 26, Color(color, alpha), 1.8, true)
 	else:
 		var big: bool = effect.get("boss", false)
-		var radius := (115 if big else 48) * age
+		var radius := (115 if big else (28 if effect.get("scrap", false) else 48)) * age
 		_glow(p, maxf(1, (32 if big else 15) * alpha), Color(1.0, 0.75, 0.3, alpha))
 		draw_arc(p, radius + 5, 0, TAU, 48, Color(1, 0.6, 0.2, alpha * 0.65), 2.0, true)
 		var count := 14 if profile.reduced else 25
@@ -973,6 +1026,13 @@ func _draw_effect(effect: Dictionary) -> void:
 			var distance := radius * (0.4 + fposmod(i * 0.173, 0.7))
 			var tail := p + direction * distance
 			draw_line(tail, tail + direction * (3 + alpha * 12), Color(1, 0.45 + (i % 3) * 0.15, 0.2, alpha), 1.5, true)
+		# Tumbling hull fragments make kills read as physical wreckage.
+		if not profile.reduced and not big and effect.kind == "explosion":
+			for i in range(4):
+				var direction := Vector2.from_angle(i * 1.7 + float(effect.get("born", 0)) * 0.31)
+				var center := p + direction * age * (34.0 + i * 9.0)
+				var spin := age * (4.0 + i)
+				draw_colored_polygon(PackedVector2Array([center + Vector2(-3.5, -2).rotated(spin), center + Vector2(3.5, -1).rotated(spin), center + Vector2(1, 3).rotated(spin)]), Color(0.62, 0.68, 0.76, alpha))
 
 func _draw_fusion_formed(effect: Dictionary, alpha: float, age: float) -> void:
 	var id: String = effect.fusion
