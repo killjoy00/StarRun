@@ -3,7 +3,14 @@ extends RefCounted
 static func key(host, event: InputEvent) -> void:
 	if not event is InputEventKey or not event.pressed or event.echo:
 		return
-	if event.keycode in [KEY_ESCAPE, KEY_P] and host.mode in ["playing", "paused", "build"]:
+	# Desktop fullscreen works on every screen: F11, or Alt+Enter.
+	if host._desktop_window() and (event.keycode == KEY_F11 or (event.keycode in [KEY_ENTER, KEY_KP_ENTER] and event.alt_pressed)):
+		host._toggle_fullscreen()
+		host.get_viewport().set_input_as_handled()
+		return
+	if event.keycode == KEY_ESCAPE and back(host):
+		host.get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_P and host.mode in ["playing", "paused", "build"]:
 		host._toggle_pause()
 		host.get_viewport().set_input_as_handled()
 	elif host.mode == "stage_clear" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE]:
@@ -26,15 +33,21 @@ static func key(host, event: InputEvent) -> void:
 	elif host.mode == "cards" and event.keycode in [KEY_1, KEY_2, KEY_3, KEY_4]:
 		host._choose(event.keycode - KEY_1)
 		host.get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and host.mode in ["settings", "briefing", "abandon"]:
+
+## Shared "go back" for Escape and the Android Back button/gesture.
+## Returns true when the current screen consumed it.
+static func back(host) -> bool:
+	if host.mode in ["playing", "paused", "build"]:
+		host._toggle_pause()
+	elif host.mode in ["settings", "briefing", "abandon"]:
 		host._close_sheet()
-		host.get_viewport().set_input_as_handled()
-	elif event.keycode == KEY_ESCAPE and host.mode in ["hangar", "loadout"]:
-		if host.mode == "loadout":
-			host._loadout_back()
-		else:
-			host._show_menu()
-		host.get_viewport().set_input_as_handled()
+	elif host.mode == "loadout":
+		host._loadout_back()
+	elif host.mode == "hangar":
+		host._show_menu()
+	else:
+		return false
+	return true
 
 static func gamepad(host, event: InputEvent) -> void:
 	if event is InputEventJoypadButton and event.pressed:

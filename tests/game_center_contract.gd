@@ -77,28 +77,47 @@ func _run() -> void:
 	check(bridge.busy and bridge.request_id == "score_2026-11-18" and saves.count == 0,
 		"Unrelated score and out-of-order award callbacks cannot release the pending score")
 	client.score_submitted.emit(false, Bridge.BOARD, "Network unavailable")
-	check(not bridge.busy and bridge.last_error == "Network unavailable"
-		and not profile.game_center_synced.has("score_2026-11-18"),
-		"Failed submission persists no false success and releases the queue for later retry")
+	check(bridge.last_error == "Network unavailable" and not profile.game_center_synced.has("score_2026-11-18")
+		and bridge.busy and bridge.request_id == "achievement_daily_first" and client.awards.size() == 1,
+		"A failed score persists no false success and no longer blocks the rest of the queue")
+	client.achievement_reported.emit(true, "com.rsm.starrun.daily_first", "")
+	check(not bridge.busy and bool(profile.game_center_synced.get("achievement_daily_first", false)) and client.submits.size() == 1,
+		"The failed item is skipped for the rest of this pass instead of looping")
 	bridge.sync()
 	check(client.submits.size() == 2 and bridge.busy, "Later sync retries the still-unsent best score")
 	client.score_submitted.emit(true, Bridge.BOARD, "")
-	check(int(profile.game_center_synced.get("score_2026-11-18", -1)) == 120
-		and client.awards.size() == 1 and client.awards[0].id == "com.rsm.starrun.daily_first",
-		"Successful score is saved before the next real Apple achievement uploads")
+	check(int(profile.game_center_synced.get("score_2026-11-18", -1)) == 120 and not bridge.busy and client.awards.size() == 1,
+		"Successful retry is saved without re-reporting confirmed achievements")
 	client.achievement_reported.emit(true, "com.rsm.starrun.open_frequency", "")
 	client.score_submitted.emit(true, Bridge.BOARD, "")
-	check(bridge.busy and bridge.request_id == "achievement_daily_first",
-		"Local-only or duplicate responses cannot discard the current native achievement request")
-	client.achievement_reported.emit(false, "com.rsm.starrun.daily_first", "Temporary failure")
-	check(not bridge.busy and not profile.game_center_synced.has("achievement_daily_first"), "Failed achievement stays retryable")
+	check(not bridge.busy and client.awards.size() == 1, "Local-only or duplicate responses are ignored")
+	# One failing achievement must not block a later real one.
+	profile.achievements["first_finish"] = "2026-11-18"
+	profile.achievements["five_runs"] = "2026-11-18"
 	bridge.sync()
-	check(client.awards.size() == 2, "Failed achievement retries without re-submitting confirmed scores")
-	client.achievement_reported.emit(true, "com.rsm.starrun.daily_first", "")
-	check(not bridge.busy and bool(profile.game_center_synced.get("achievement_daily_first", false))
-		and client.awards.size() == 2, "Matching award completes exactly once; no local-only cloud upload")
+	var first_id: String = str(client.awards[-1].id)
+	check(bridge.busy and client.awards.size() == 2, "A new achievement uploads")
+	client.achievement_reported.emit(false, first_id, "Unknown identifier")
+	check(bridge.busy and client.awards.size() == 3 and str(client.awards[-1].id) != first_id,
+		"A rejected achievement is skipped and the next one still uploads")
+	client.achievement_reported.emit(true, str(client.awards[-1].id), "")
+	check(not bridge.busy and not profile.game_center_synced.has("achievement_" + first_id.trim_prefix("com.rsm.starrun.")),
+		"The rejected achievement stays retryable")
+	# A native callback that never arrives cannot wedge the queue forever.
 	bridge.sync()
-	check(client.awards.size() == 2 and client.submits.size() == 2, "Duplicate sync is idempotent")
+	check(bridge.busy and client.awards.size() == 4 and str(client.awards[-1].id) == first_id, "Sync retries the rejected achievement")
+	bridge.update(Bridge.REQUEST_TIMEOUT + 0.1)
+	check(not bridge.busy and bridge.last_error == "Game Center did not respond", "A lost callback times out and releases the queue")
+	client.achievement_reported.emit(true, first_id, "")
+	check(not profile.game_center_synced.has("achievement_" + first_id.trim_prefix("com.rsm.starrun.")),
+		"A callback that arrives after its timeout cannot falsely acknowledge")
+	bridge.update(Bridge.RETRY_INTERVAL + 0.1)
+	check(bridge.busy and client.awards.size() == 5, "Failed items retry in the background while signed in")
+	client.achievement_reported.emit(true, first_id, "")
+	check(not bridge.busy and bool(profile.game_center_synced.get("achievement_" + first_id.trim_prefix("com.rsm.starrun."), false)),
+		"Background retry completes the award")
+	bridge.sync()
+	check(client.awards.size() == 5 and client.submits.size() == 2, "Duplicate sync is idempotent")
 	check(bridge.show_leaderboard() and bridge.show_achievements() and client.panels.size() == 2,
 		"Native Game Center menus use the correct board and achievement panel")
 

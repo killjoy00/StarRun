@@ -500,14 +500,14 @@ func _test_ship_pilot_identity_tuning() -> void:
 	for sim in [siege, baseline]:
 		sim._spawn_boss()
 		sim._damage_enemy(sim.enemies[0], 100.0, "pulse")
-	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.12), "Bulwark has a narrowly scoped 12 percent automatic siege bonus against boss cores")
+	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.20), "Bulwark has a narrowly scoped 20 percent automatic siege bonus against boss cores")
 	var part_siege := Sim.new(88232, {}, "bulwark", "rookie")
 	var part_base := Sim.new(88232, {}, "vanguard", "rookie")
 	for sim in [part_siege,part_base]:
 		sim.stage = 2
 		sim._spawn_boss()
 		sim._damage_enemy(sim.enemies[1], 100.0, "pulse")
-	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.12), "Bulwark siege bonus also applies to actual targetable boss modules")
+	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.20), "Bulwark siege bonus also applies to actual targetable boss modules")
 	var drone_siege := Sim.new(88233, {}, "bulwark", "rookie")
 	var drone_base := Sim.new(88233, {}, "vanguard", "rookie")
 	for sim in [drone_siege,drone_base]:
@@ -892,6 +892,19 @@ func _test_roguelike_variation() -> void:
 	shift.stage_clears = 1
 	check(shift.begin_intermission() and shift.skip_prototype() and shift.choose_route("repair") and shift.advance_stage(), "Artifact mode passes through the real boss intermission")
 	check([shift.upgrades.pulse,shift.upgrades.seeker,shift.upgrades.arc,shift.upgrades.lance] == [3,4,2,1], "Arsenal Shift rotates actual weapon ranks without duplicating them")
+	# A mutated weapon is pinned so its mutation is never stranded at rank 0.
+	var pinned := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")
+	pinned.upgrades.pulse = 4
+	pinned.upgrades.seeker = 2
+	pinned.upgrades.arc = 1
+	pinned.upgrades.lance = 0
+	pinned.mutations = ["piercing_pulse"]
+	pinned.upgrades.piercing_pulse = 1
+	pinned.stage_transition_queued = true
+	pinned.stage_clears = 1
+	check(pinned.begin_intermission() and pinned.skip_prototype() and pinned.choose_route("repair") and pinned.advance_stage(), "Mutated Arsenal Shift flight warps")
+	check(pinned.upgrades.pulse == 4, "Arsenal Shift keeps a mutated weapon's ranks so its mutation stays live")
+	check([pinned.upgrades.seeker,pinned.upgrades.arc,pinned.upgrades.lance] == [0,2,1], "Arsenal Shift rotates the unmutated weapons among themselves")
 	var rare := Sim.new(447)
 	rare.stage = 2
 	rare.level = 5
@@ -1467,6 +1480,36 @@ func _test_saves() -> void:
 	var expected := {"vector": Vector2(12, 19), "seed": 981, "cards": ["pulse", "aegis"]}
 	check(services.write_atomic(path, expected), "Atomic save must succeed")
 	check(services.read_save(path) == expected, "Saved data must survive a disk round trip")
+	var newer := {"seed": 982}
+	check(services.write_atomic(path, newer), "A second save must succeed")
+	check(services.read_save(path + ".bak") == expected, "The previous good save is kept as a backup")
+	# Windows rename = delete target, then move. Simulate a crash in between.
+	check(services.write_atomic(path, {"seed": 983}), "Third save must succeed")
+	var interrupted := FileAccess.open(path + ".tmp", FileAccess.WRITE)
+	interrupted.store_var({"seed": 984})
+	interrupted.close()
+	DirAccess.remove_absolute(path)
+	check(services.read_save(path) == {"seed": 984} and services.last_recovery == "tmp", "A save interrupted mid-replace is recovered from its verified .tmp")
+	DirAccess.remove_absolute(path + ".tmp")
+	# A damaged primary falls back to the backup and is never promoted over it.
+	var damaged := FileAccess.open(path, FileAccess.WRITE)
+	damaged.store_string("not a save")
+	damaged.close()
+	check(services.read_save(path) == {"seed": 982} and services.last_recovery == "backup", "A corrupt save falls back to the last good backup")
+	DirAccess.remove_absolute(path + ".bak")
+	damaged = FileAccess.open(path, FileAccess.WRITE)
+	damaged.store_string("not a save")
+	damaged.close()
+	check(services.read_save(path).is_empty() and services.last_recovery == "corrupt", "An unrecoverable save reports corruption")
+	check(not FileAccess.file_exists(path) and FileAccess.file_exists(services.last_quarantine), "An unreadable save is moved aside, never silently overwritten")
+	DirAccess.remove_absolute(services.last_quarantine)
+	# A deleted run must not be resumable from its backup copy.
+	# Never touch a developer's real suspended flight when run locally.
+	var run_path: String = Services.RUN
+	if not FileAccess.file_exists(run_path):
+		check(services.write_atomic(run_path, {"tick": 1}) and services.write_atomic(run_path, {"tick": 2}), "Run saves succeed")
+		services.delete_run()
+		check(services.read_save(run_path).is_empty(), "Deleting a run removes its backup and temporary copies")
 	DirAccess.remove_absolute(path)
 
 func _install(sim: RefCounted, id: String) -> void:
@@ -1596,7 +1639,7 @@ func _test_loadouts() -> void:
 	check(base.active_slots == ["aegis"], "Vanguard starts with its Aegis signature only")
 	var interceptor := Sim.new(222, {}, "kestrel", "ace")
 	check(interceptor.ship_id == "kestrel" and interceptor.pilot_id == "ace" and interceptor.active_slots == ["overdrive"], "Selected hull must supply its own signature active")
-	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 70, "Interceptor starts with Pulse focus and fragile hull")
+	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 85, "Interceptor starts with Pulse focus and a light hull")
 	check(interceptor.course[2].t < base.course[2].t, "Interceptor autopilot must make faster turns")
 	interceptor._update_weapons()
 	check(interceptor.shots.any(func(s): return s.weapon == "pulse") and not interceptor.shots.any(func(s): return s.weapon == "seeker"), "Ship weapon exclusions must prevent firing uninstalled weapons")
@@ -2421,7 +2464,7 @@ func _test_new_stage_threats() -> void:
 	sim._update_enemies()
 	check(sim.bullets.any(func(b): return b.kind == "slag" and b.fuse > 0.0), "Foundry bomber must create timed molten-slag hazards")
 	sim._hit(2.0, "heat", "test")
-	check(sim.heat_left >= 5.0 and sim.weapon_power() < Sim.new().weapon_power(), "Heat must reduce firepower temporarily")
+	check(sim.heat_left >= 3.5 and sim.weapon_power() < Sim.new().weapon_power(), "Heat must reduce firepower temporarily")
 	var first_kills := sim.kills
 	sim.enemies.clear()
 	sim._add_enemy("splitter", Vector2(225, 180))
@@ -2613,7 +2656,7 @@ func _test_long_runs() -> void:
 	for kind in ["ion", "heat", "gravity", "corrosion"]: sim._hit(1, kind, "test")
 	sim.cooldowns.aegis = 8
 	sim._hit(1, "disrupt", "test")
-	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 2.5) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
+	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 1.75) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
 	check(is_equal_approx(sim.status_damage_multiplier(), 0.85), "Rank-10 Insulation blocks 15% of status attack damage")
 	for kind in ["ion", "heat", "gravity", "corrosion", "disrupt", "void"]:
 		var control := Sim.new(5720)
@@ -2797,7 +2840,7 @@ func _test_expanded_hangar() -> void:
 	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.2), "Restart circuit shortens shield-break downtime")
 	var sealed := Sim.new(3004,{"hazard_seals":4})
 	sealed._hit(1,"heat","heat")
-	check(is_equal_approx(sealed.heat_left,4.0), "Sealed systems shorten an actual status hit")
+	check(is_equal_approx(sealed.heat_left,2.8), "Sealed systems shorten an actual status hit")
 	var siege := Sim.new(3005,{"boss_damage":5})
 	var target := {"id":99,"kind":"boss","hp":1000.0,"max_hp":1000.0,"p":Vector2(270,130)}
 	siege._damage_enemy(target,100,"pulse")

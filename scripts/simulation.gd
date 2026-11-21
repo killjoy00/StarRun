@@ -365,12 +365,17 @@ func step() -> void:
 		corrosion_damage *= status_damage_multiplier()
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
-		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
-		damage_taken.corrosion += corrosion_damage
-		if hull <= 0.0:
-			ended = true
-			_log("Hull lost to corrosion")
-			return
+		if aegis_left > 0.0:
+			# Aegis is full immunity: it stops the corrosion tick like any other hit.
+			prevented += corrosion_damage
+		else:
+			hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
+			damage_taken.corrosion += corrosion_damage
+			if hull <= 0.0:
+				ended = true
+				_log("Hull lost to corrosion")
+				return
+			_try_emergency_field()
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
@@ -603,6 +608,12 @@ func _enemy_limit() -> int:
 
 func _has_mutation(id: String) -> bool:
 	return id in mutations
+
+func _weapon_has_mutation(weapon: String) -> bool:
+	for id in mutations:
+		if str(Catalog.mutation(str(id)).get("requires", "")) == weapon:
+			return true
+	return false
 
 func _install_mutation(id: String) -> bool:
 	var spec: Dictionary = Catalog.mutation(id)
@@ -863,7 +874,12 @@ func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -
 func status_damage_multiplier() -> float:
 	# Insulation now resists damaging status attacks as well as reducing
 	# their duration. Rank 5: 7% resisted; rank 10: 15% resisted.
-	return 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
+	var factor := 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
+	# Vanguard veteran systems also harden against the World 2+ status
+	# barrage (ion, corrosion, disrupt, heat, gravity, void) that killed it.
+	if ship_id == "vanguard":
+		factor *= 1.0 - [0.0, 0.10, 0.15, 0.20][clampi(stage_clears, 0, 3)]
+	return factor
 
 func status_duration_scale() -> float:
 	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
@@ -1919,11 +1935,17 @@ func advance_stage() -> bool:
 		secret_intro_pending = true
 	if artifact_id == "arsenal_roulette":
 		# Move existing ranks, rather than gifting or destroying upgrades.
-		var before: Array = [int(upgrades.pulse), int(upgrades.seeker), int(upgrades.arc), int(upgrades.lance)]
-		upgrades.pulse = before[3]
-		upgrades.seeker = before[0]
-		upgrades.arc = before[1]
-		upgrades.lance = before[2]
+		# A weapon carrying a mutation is pinned: its ranks stay put so the
+		# mutation can never be stranded on a weapon rotated down to rank 0.
+		# The remaining weapons rotate among themselves in the usual order.
+		var cycle: Array = []
+		for weapon in ["pulse", "seeker", "arc", "lance"]:
+			if not _weapon_has_mutation(weapon):
+				cycle.append(weapon)
+		if cycle.size() >= 2:
+			var before: Array = cycle.map(func(w): return int(upgrades[w]))
+			for i in range(cycle.size()):
+				upgrades[cycle[i]] = before[(i - 1 + cycle.size()) % cycle.size()]
 		_log("ARSENAL SHIFT - automatic weapon ranks rotated")
 	stage_casts.clear()
 	tactician_counter_used = false
@@ -2521,9 +2543,10 @@ func _update_weapons() -> void:
 								break
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
+	power *= vanguard_veteran_bonus()
 	if merchant_pact_power > 0.0:
 		power *= 1.0 + merchant_pact_power
 	# Shielded Passage contributes immediate offense without needing a niche draft.
@@ -2569,7 +2592,17 @@ func ability_power() -> float:
 		power *= 1.20
 	if _has_prototype("echo_coil"):
 		power *= 1.70
-	return power
+	return power * vanguard_veteran_bonus()
+
+## Vanguard keeps pace after World 1 instead of falling behind the specialist
+## hulls, whose focused weapons scale better into World 2's 4.8x enemy health.
+## Front-loaded: +15% weapon and ability power after World 1, +20% after
+## World 2, +25% after World 3 (status resistance is in status_damage_multiplier).
+## World 1 (and its no-Hangar difficulty gates) is unchanged.
+func vanguard_veteran_bonus() -> float:
+	if ship_id != "vanguard":
+		return 1.0
+	return 1.0 + [0.0, 0.15, 0.20, 0.25][clampi(stage_clears, 0, 3)]
 
 func hull_damage_multiplier() -> float:
 	var factor := 1.0
@@ -2864,9 +2897,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 			# Bulwark retains its slower fire and tank role, but is no
-			# longer disproportionately weak at long advanced bosses.
+			# longer disproportionately weak at long bosses (World 1 included).
 			if ship_id == "bulwark":
-				amount *= 1.12
+				amount *= 1.20
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
@@ -3100,10 +3133,16 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
+		# Fortress plating: Bulwark died to Harvester beams and missiles in
+		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
+		if ship_id == "bulwark":
+			reduced *= 0.80
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
-		heat_left = maxf(heat_left, 5.0 * status_duration_scale())
+		# Toned down: -15% automatic damage for 3.5s (was -25% for 5s), so
+		# World 3 heat stays a pressure to answer, not a near-permanent tax.
+		heat_left = maxf(heat_left, 3.5 * status_duration_scale())
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
@@ -3166,7 +3205,13 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			if upgrades[id] > 0:
 				availability.append("%s %.1fs" % [content.abilities[id].name, cooldowns[id]])
 		_log("Hull lost · " + " / ".join(availability))
-	elif hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
+	else:
+		_try_emergency_field()
+
+# Once per flight, low hull from any source (hits or damage over time)
+# deploys the Hangar's Emergency Field.
+func _try_emergency_field() -> void:
+	if hull > 0.0 and hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
 		emergency_used = true
 		aegis_left = maxf(aegis_left, 1.0 + meta.emergency * 0.5)
 		_log("Emergency field deployed")
@@ -3485,8 +3530,10 @@ func _activate_fusion(id: String, strength: float) -> void:
 			prevented += turned * 2.0
 		"reflective_wall":
 			barrier_left = maxf(barrier_left, 10.0 * strength)
-			var absorbed := bullets.filter(func(b): return b.kind in ["chaff", "ion", "corrosion", "disrupt"]).size()
-			bullets = bullets.filter(func(b): return b.kind not in ["chaff", "ion", "corrosion", "disrupt"])
+			# Same small-shot family the Barrier itself blocks, including the
+			# World 3-4 heat, gravity and void rounds.
+			var absorbed := bullets.filter(func(b): return _is_small_shot(str(b.kind))).size()
+			bullets = bullets.filter(func(b): return not _is_small_shot(str(b.kind)))
 			shield = minf(max_shield, shield + absorbed * 3.5 * strength)
 			prevented += absorbed * 2.0
 			for n in range(mini(12, absorbed)):
