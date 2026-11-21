@@ -10,7 +10,10 @@ const MAXED_DRAFT_CORES := 5
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
-const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3, "storm_weaver":3, "ember_hunter":3, "phase_stalker":3}
+# World 1 light ships only (they also appear in Endless). Worlds 2-4 packs
+# were measured and held back: the Arcwing Archive route won 5 of 8 seeds
+# with them versus 7 of 8 without.
+const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3}
 const Catalog = preload("res://scripts/catalog.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var signal_count := 0
