@@ -53,6 +53,7 @@ func _run() -> void:
 	_test_legacy_modules()
 	_test_loadouts()
 	_test_threat_catalog()
+	_test_extended_hangar()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -1308,7 +1309,8 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 			check(Catalog.price(key, rank) == ceili(old_price * 1.10), "Compounded Hangar price for %s rank %d" % [key, rank])
 	var caps := {"hull":7,"shield":7,"regen":6,"ability_cooldown":6,"boss_damage":6}
 	for key in caps:
-		check(int(Catalog.entry(str(key)).max) == int(caps[key]), "Extra purchased rank is accessible for " + str(key))
+		# The original cap is where the pricier extended ranks begin.
+		check(int(Catalog.entry(str(key)).tier_from) == int(caps[key]) and int(Catalog.entry(str(key)).max) > int(caps[key]), "Extra purchased rank is accessible for " + str(key))
 	check(Catalog.entry("module_breaker").max == 3 and Catalog.entry("point_defense").max == 3, "New boss module offense and projectile defense tracks are in the real Hangar catalog")
 	var saved_hangar := {"hull":7, "shield":7, "regen":6, "ability_cooldown":6, "boss_damage":6, "module_breaker":3, "point_defense":3}
 	var held := Sim.new(18802, saved_hangar)
@@ -1875,6 +1877,45 @@ func _test_active_pool() -> void:
 	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_extended_hangar() -> void:
+	# Ranks below the original cap keep their original price; extended ranks cost more.
+	var hull: Dictionary = Catalog.entry("hull")
+	check(int(hull.max) == 15 and int(hull.tier_from) == 7, "Hull plating extends to 15 ranks")
+	check(Catalog.legacy_price("hull", 6) == 5 and Catalog.legacy_price("hull", 7) == 9 and Catalog.legacy_price("hull", 14) == 37, "Extended hull ranks cost more the higher they go; original ranks keep their price")
+	var full := Catalog.defaults()
+	for item in Catalog.HANGAR:
+		full[str(item.id)] = int(item.max)
+	var strong := Sim.new(5150, full)
+	check(is_equal_approx(strong.max_hull, float(Catalog.ship("vanguard").hull) + 150.0), "Fifteen hull ranks add 150 hull")
+	# Second wind: one killing blow is survived per run.
+	var survivor := Sim.new(5151, {"second_wind": 1})
+	survivor.shield = 0.0
+	survivor.hull = 5.0
+	survivor._hit(999.0, "chaff", "drone")
+	check(not survivor.ended and is_equal_approx(survivor.hull, survivor.max_hull * 0.25) and survivor.aegis_left > 0.0, "Second wind survives a killing blow at 25% hull with brief immunity")
+	survivor.aegis_left = 0.0
+	survivor.shield = 0.0
+	survivor.hull = 5.0
+	survivor._hit(999.0, "chaff", "drone")
+	check(survivor.ended, "Second wind works once per run")
+	var restored := Sim.new(2)
+	check(restored.restore(survivor.snapshot()) and restored.second_wind_used, "Second wind use survives save and restore")
+	var plain := Sim.new(5152)
+	plain.shield = 0.0
+	plain.hull = 5.0
+	plain._hit(999.0, "chaff", "drone")
+	check(plain.ended, "Without Second wind a killing blow ends the run")
+	# Weapon tuning scales the matching weapon only.
+	var tuned := Sim.new(5153, {"pulse_tuning": 5})
+	var untuned := Sim.new(5153)
+	for fixture in [tuned, untuned]:
+		fixture._add_enemy("drone", Vector2(270, 300))
+		fixture.pulse_timer = 0.0
+		fixture._update_weapons()
+	var tuned_damage: float = tuned.shots.filter(func(shot): return shot.weapon == "pulse")[0].damage
+	var untuned_damage: float = untuned.shots.filter(func(shot): return shot.weapon == "pulse")[0].damage
+	check(is_equal_approx(tuned_damage, untuned_damage * 1.25), "Five ranks of Pulse tuning add 25% Pulse damage")
 
 func _test_stage_difficulty_and_pressure() -> void:
 	var normal := Sim.new(111, {}, "vanguard", "rookie", "normal")
@@ -2870,7 +2911,7 @@ func _test_fusion_thresholds() -> void:
 	check(stable.restore(restored.snapshot()) and stable.snapshot() == restored.snapshot(), "The migrated full-bar hand stays fixed on subsequent resumes")
 
 func _test_expanded_hangar() -> void:
-	check(Catalog.HANGAR.size() == 40, "Two new boss-specialist tracks expand the Hangar catalog from 38 to 40")
+	check(Catalog.HANGAR.size() == 44, "Boss-specialist tracks, Second wind and three weapon tunings expand the Hangar catalog to 44")
 	var starting := Sim.new(3001,{"arc_start":1,"lance_start":1,"signature_rank":2})
 	check(starting.upgrades.arc == 1 and starting.upgrades.lance == 1, "Purchased starting weapons are installed")
 	check(Sim.new(3001,{"arc_start":1},"arcwing").upgrades.arc == 2, "Charged coil also improves an Arcwing’s starting weapon")

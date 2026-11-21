@@ -43,25 +43,25 @@ const SHIPS := [
 
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
 const HANGAR := [
-	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":7, "cost":5, "step":0},
-	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":7, "cost":5, "step":2},
-	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Small bullets do 0.12 less damage per rank.", "max":4, "cost":6, "step":2},
-	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"Shield recharges faster: +0.25 per second at rank 1, then +0.30 per rank.", "max":6, "cost":5, "step":0},
-	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Slowly repair hull: 0.15 per second at rank 1, then +0.20 per rank.", "max":4, "cost":8, "step":3},
-	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"Guns do 8% more damage per rank.", "max":5, "cost":5, "step":0},
-	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"Guns fire 5% faster per rank.", "max":5, "cost":7, "step":2},
+	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":15, "tier_from":7, "tier_step":4, "cost":5, "step":0},
+	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":15, "tier_from":7, "tier_step":4, "cost":5, "step":2},
+	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Small bullets do 0.12 less damage per rank.", "max":6, "tier_from":4, "tier_step":6, "cost":6, "step":2},
+	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"Shield recharges faster: +0.25 per second at rank 1, then +0.30 per rank.", "max":10, "tier_from":6, "tier_step":4, "cost":5, "step":0},
+	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Slowly repair hull: 0.15 per second at rank 1, then +0.20 per rank.", "max":8, "tier_from":4, "tier_step":5, "cost":8, "step":3},
+	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"Guns do 8% more damage per rank.", "max":12, "tier_from":5, "tier_step":6, "cost":5, "step":0},
+	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"Guns fire 5% faster per rank.", "max":10, "tier_from":5, "tier_step":6, "cost":7, "step":2},
 	{"id":"guidance", "name":"Guidance array", "group":"Weapons", "description":"Pulse aims wider and curves more toward enemies.", "max":4, "cost":6, "step":2},
 	{"id":"pulse_start", "name":"Pulse precharge", "group":"Weapons", "description":"Start every run with Pulse at rank 2.", "max":1, "cost":15, "step":0},
 	{"id":"seeker_start", "name":"Loaded pods", "group":"Weapons", "description":"Start every run with Seeker at rank 2.", "max":1, "cost":15, "step":0},
-	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Abilities recharge 3% faster per rank.", "max":6, "cost":7, "step":3},
-	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 6% more damage, healing and duration per rank.", "max":5, "cost":7, "step":3},
+	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Abilities recharge 3% faster per rank.", "max":10, "tier_from":6, "tier_step":5, "cost":7, "step":3},
+	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 6% more damage, healing and duration per rank.", "max":10, "tier_from":5, "tier_step":5, "cost":7, "step":3},
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Get 5 shield every time you use an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per run, become immune for 1.5 seconds when your hull gets low. +0.5 seconds at rank 2.", "max":2, "cost":12, "step":8},
 	{"id":"extra_card", "name":"Expanded uplink", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
 	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"1 reroll per world per rank. Unused rerolls don't carry over.", "max":3, "cost":7, "step":3},
 	{"id":"banishes", "name":"Banish protocols", "group":"Tactics", "description":"Remove an upgrade from this run so it never shows up. 1 use per rank.", "max":3, "cost":7, "step":3},
 	{"id":"skips", "name":"Repair fallback", "group":"Tactics", "description":"Skip an upgrade pick to repair 12 hull. 1 use per rank per run.", "max":3, "cost":5, "step":2},
-	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":5, "cost":6, "step":2},
+	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "cost":6, "step":2},
 	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"8% more Cores after every run per rank.", "max":5, "cost":6, "step":2},
 	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every run pays at least 2 more Cores per rank.", "max":3, "cost":8, "step":3},
 	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"5 more Cores per rank for beating a boss.", "max":3, "cost":8, "step":4},
@@ -71,7 +71,7 @@ const HANGAR := [
 	{"id":"warp_repairs","name":"Docking crew","group":"Hull","description":"Repair 4% more hull between worlds per rank.","max":3,"cost":14,"step":7},
 	{"id":"arc_start","name":"Charged coil","group":"Weapons","description":"Start every run with 1 extra Arc rank.","max":1,"cost":35,"step":0},
 	{"id":"lance_start","name":"Lance mount","group":"Weapons","description":"Start every run with Lance at rank 1.","max":1,"cost":40,"step":0},
-	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Guns do 3% more damage to bosses per rank.","max":6,"cost":14,"step":6},
+	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Guns do 3% more damage to bosses per rank.","max":10, "tier_from":6, "tier_step":6,"cost":14,"step":6},
 	{"id":"ordnance_damage","name":"Warhead tooling","group":"Weapons","description":"Seekers do 5% more damage per rank.","max":4,"cost":12,"step":5},
 	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship's starting ability gets 1 extra rank.","max":2,"cost":16,"step":10},
 	{"id":"cast_repair","name":"Field patch kit","group":"Abilities","description":"Each ability use repairs 1 hull per rank.","max":3,"cost":18,"step":8},
@@ -82,7 +82,11 @@ const HANGAR := [
 	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each boss part you destroy pays 1 more Core per rank.","max":3,"cost":18,"step":8},
 	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Beat a world with more than 60% hull for 3 more Cores per rank.","max":3,"cost":18,"step":8},
 	{"id":"module_breaker","name":"Breach sensors","group":"Weapons","description":"Do 6% more damage to boss parts per rank. Not the boss core.","max":3,"cost":18,"step":8},
-	{"id":"point_defense","name":"Point defense","group":"Hull","description":"Boss bullets and missiles do 5% less damage per rank. Not beams.","max":3,"cost":16,"step":7}
+	{"id":"point_defense","name":"Point defense","group":"Hull","description":"Boss bullets and missiles do 5% less damage per rank. Not beams.","max":3,"cost":16,"step":7},
+	{"id":"second_wind","name":"Second wind","group":"Hull","description":"Once per run, survive a killing blow with 25% hull. +15% hull per extra rank.","max":3,"cost":45,"step":30},
+	{"id":"pulse_tuning","name":"Pulse tuning","group":"Weapons","description":"Pulse does 5% more damage per rank.","max":5,"cost":14,"step":6},
+	{"id":"arc_tuning","name":"Coil tuning","group":"Weapons","description":"Arc does 5% more damage per rank.","max":5,"cost":14,"step":6},
+	{"id":"lance_tuning","name":"Lens tuning","group":"Weapons","description":"Lance does 5% more damage per rank.","max":5,"cost":14,"step":6},
 ]
 
 static func defaults() -> Dictionary:
@@ -101,7 +105,12 @@ static func entry(id: String) -> Dictionary:
 # The first 15% price increase remains the reference for the next +10%.
 static func legacy_price(id: String, rank: int) -> int:
 	var item := entry(id)
-	return int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
+	var base := int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
+	# Extended trees: ranks past the original cap cost more the higher you go.
+	# Ranks below it keep their original price, so old receipts still match.
+	if item.has("tier_from") and rank >= int(item.tier_from):
+		base += int(item.tier_step) * (rank - int(item.tier_from) + 1)
+	return base
 
 static func previous_price(id: String, rank: int) -> int:
 	var base := legacy_price(id, rank)

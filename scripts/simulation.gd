@@ -173,6 +173,7 @@ var choice_cores := 0 # Flat, banked rewards. Added after payout multipliers at 
 var mend_left := 0.0
 var mend_rate := 0.0
 var emergency_used := false
+var second_wind_used := false
 var arc_timer := 0.0
 var lance_timer := 0.0
 var rerolls_left := 0
@@ -378,7 +379,7 @@ func step() -> void:
 		else:
 			hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
 			damage_taken.corrosion += corrosion_damage
-			if hull <= 0.0:
+			if hull <= 0.0 and not _try_second_wind():
 				ended = true
 				_log("Hull lost to corrosion")
 				return
@@ -2580,7 +2581,7 @@ func _update_weapons() -> void:
 		pulse_timer += 0.19
 		var barrels := 3 if rank_at("pulse", 10) else (2 if rank_at("pulse", 5) else 1)
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1, "pierce":(1 if _has_mutation("piercing_pulse") else 0), "last_enemy":-1})
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.0 + int(meta.get("pulse_tuning", 0)) * 0.05) * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1, "pierce":(1 if _has_mutation("piercing_pulse") else 0), "last_enemy":-1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		# Haven clears early waves with rapid support pods instead of a Pulse starter.
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
@@ -2621,7 +2622,7 @@ func _update_weapons() -> void:
 			visited.append(target.id)
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
-			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
+			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.0 + int(meta.get("arc_tuning", 0)) * 0.05) * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
 			if _has_mutation("grounding_arc") and target.hp > 0.0:
 				target.fire = maxf(float(target.fire), 1.8)
 				var canceled: int = charges.size()
@@ -2647,7 +2648,7 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0)
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0)
 					_damage_enemy(enemy, strike_damage, "lance")
 					if _has_mutation("refracting_lance") and not echo_used:
 						for other in enemies:
@@ -3312,7 +3313,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			_log("Emergency Safeguard: 80% shield and 15 hull back")
 	if kind != "chaff" or hull_damage > 0.0:
 		_log("%s · %.1f %s damage%s" % [source, reduced, kind, " to hull" if hull_damage > 0 else " to shield"])
-	if hull <= 0:
+	if hull <= 0 and not _try_second_wind():
 		ended = true
 		if source == "rival" or content.enemies.has(source):
 			last_killing_source = source
@@ -3326,6 +3327,17 @@ func _hit(amount: float, kind: String, source: String) -> void:
 
 # Once per flight, low hull from any source (hits or damage over time)
 # deploys the Hangar's Emergency Field.
+## Hangar Second wind: once per run, a killing blow leaves the ship at
+## 25% hull (+15% per extra rank) with a short moment of immunity.
+func _try_second_wind() -> bool:
+	if second_wind_used or int(meta.get("second_wind", 0)) <= 0:
+		return false
+	second_wind_used = true
+	hull = max_hull * (0.25 + 0.15 * float(int(meta.second_wind) - 1))
+	aegis_left = maxf(aegis_left, 1.5)
+	_log("SECOND WIND - back in the fight")
+	return true
+
 func _try_emergency_field() -> void:
 	if hull > 0.0 and hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
 		emergency_used = true
@@ -3952,7 +3964,7 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
-	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
