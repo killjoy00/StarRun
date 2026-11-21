@@ -1883,7 +1883,7 @@ func _test_extended_hangar() -> void:
 	# Ranks below the original cap keep their original price; extended ranks cost more.
 	var hull: Dictionary = Catalog.entry("hull")
 	check(int(hull.max) == 15 and int(hull.tier_from) == 7, "Hull plating extends to 15 ranks")
-	check(Catalog.legacy_price("hull", 6) == 5 and Catalog.legacy_price("hull", 7) == 9 and Catalog.legacy_price("hull", 14) == 37, "Extended hull ranks cost more the higher they go; original ranks keep their price")
+	check(Catalog.legacy_price("hull", 6) == 5 and Catalog.legacy_price("hull", 7) == 90 and Catalog.legacy_price("hull", 14) == 370, "Extended hull ranks cost about a win each and rise; original ranks keep their price")
 	var full := Catalog.defaults()
 	for item in Catalog.HANGAR:
 		full[str(item.id)] = int(item.max)

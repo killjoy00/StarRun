@@ -33,10 +33,13 @@ def hangar_prices(scale: float) -> list[tuple[str, int]]:
         item = re.search(r'"id":\s*"([a-z_]+)"', line).group(1)
         cost, step, top = field("cost", 0), field("step", 0), field("max", 1)
         tier_from, tier_step = field("tier_from", 0), field("tier_step", 0)
+        tier_scale, item_scale = field("tier_scale", 1), field("scale", 1)
         for rank in range(top):
             base = cost + step * rank
             if tier_from and rank >= tier_from:
                 base += tier_step * (rank - tier_from + 1)
+                base *= tier_scale
+            base *= item_scale
             price = math.ceil(math.ceil(base * 1.15) * 1.10) if base > 0 else 0
             ranks.append((item, math.ceil(price * scale)))
     return ranks

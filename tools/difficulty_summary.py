@@ -3,7 +3,8 @@
 
 Targets (Normal, full campaign):
   no Hangar   never finishes the campaign
-  half Hangar wins 40-60% (half the Cores of a full Hangar)
+  mid Hangar  wins 40-60% (p32: what a player owns about halfway through
+              progression, 32% of the full Hangar cost)
   max Hangar  wins most runs (70%+)
 
 Usage: difficulty_summary.py <log> [<log> ...]
@@ -14,7 +15,9 @@ import json
 import re
 import sys
 
-TARGETS = {"none": (0.0, 0.0), "half": (0.40, 0.60), "max": (0.70, 1.0)}
+# "p32" is the Hangar a player owns at the midpoint of progression (about
+# run 50 of 100; see tools/progression_model.py): 32% of the full cost.
+TARGETS = {"none": (0.0, 0.0), "p32": (0.40, 0.60), "max": (0.70, 1.0)}
 
 
 def main() -> int:

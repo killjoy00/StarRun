@@ -74,10 +74,13 @@ The game is meant to be hard, and the Hangar is how you get through it. Targets 
 | Hangar | Target |
 |---|---|
 | None | Never finishes the campaign |
-| Half (half the Cores of a full Hangar) | Wins 40–60% |
+| Mid (what a player owns at the midpoint of progression, about run 50: 32% of the full Hangar cost) | Wins 40–60% |
 | Max | Wins most runs (70%+) |
 
-- **Longer Hangar.** Eleven core upgrades have extra ranks (for example hull 7 → 15, damage 5 → 12). Ranks up to the old cap keep their old price; extended ranks cost more the higher they go. New options: Second wind (once per run, survive a killing blow with 25% hull) and Pulse, Coil and Lens tuning (+5% damage per rank for that gun). A full Hangar costs 6120 Cores (was 2811).
+- **Progression length.** Target: a full Hangar in about 100 runs, a first win around runs 25–35. There is no published industry figure for this; community and wiki numbers for Hades (about 35,000 Darkness to max the Mirror, 90–100 hours to complete) and Vampire Survivors (roughly 170,000–200,000 coins for all PowerUps) suggest similar games take something like 50–150 runs, and 25 felt short. `tools/progression_model.py` simulates a player from zero using the bot's measured Cores per run.
+- **Cores per run.** 30 per run, plus 1 per 30 kills, plus 20 per world cleared (and 5 × clears²), times the Salvage rig bonus. A World 1 loss pays about 60 and a full win about 400, so early runs still move the Hangar forward and winning does not finish it in a few runs. Salvage's bonus Cores are capped per use (20 + 4 per rank); in dense later worlds one Salvage window was paying thousands.
+- **Hangar prices.** Original ranks keep their price. Extended ranks (past each upgrade's old cap) cost 10x, about a win each; Second wind and the three weapon tunings cost 5x. A full Hangar costs 31,396 Cores.
+- **Longer Hangar.** Eleven core upgrades have extra ranks (for example hull 7 → 15, damage 5 → 12). Ranks up to the old cap keep their old price; extended ranks cost more the higher they go. New options: Second wind (once per run, survive a killing blow with 25% hull) and Pulse, Coil and Lens tuning (+5% damage per rank for that gun). 
 - **Harder Worlds 2–4.** 2x spawn rate and 3.5x enemy health. World 1 and boss health are unchanged. On Hard and Insane, ordinary enemies in Worlds 2–4 have 15% less health than that, so a full Hangar still wins often enough.
 - **Vanguard** has 115 hull and 55 shield (was 100 / 50); it was the weakest ship at half Hangar (2 of 8 wins).
 - **Measured** (scripted bot, six ships × 8 seeds each): no Hangar 0/48, half 27/48 (56%), max 44/48 (92%). Enemies on screen at half Hangar went from under 1 to about 9 / 11 / 18 in Worlds 2 / 3 / 4. Ship spread is wide at half Hangar (Kestrel and Arcwing 7/8, Vanguard 2/8), which is worth tuning separately. These are bot results, not human win rates.

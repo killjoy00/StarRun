@@ -2,7 +2,8 @@ name: Difficulty experiment
 # Full Normal campaigns for all six ships at no / half / max Hangar, in
 # parallel, with per-world spawn, health and damage multipliers. Measures
 # win rates against the difficulty targets (no Hangar never finishes, half
-# Hangar wins 40-60%, max Hangar wins 70%+) and on-screen density per world.
+# Hangar (p32, the midpoint of progression) wins 40-60%, max Hangar wins
+# 70%+) and on-screen density per world.
 #
 # Start it from the Actions tab (Run workflow) or by pushing a change to
 # .github/difficulty-experiment.json on a claude/ branch.
@@ -26,7 +27,7 @@ on:
         default: '2'
       hangars:
         description: 'Hangar levels, comma separated (none, half, max, or pNN for NN% of a full Hangar)'
-        default: 'none,half,max'
+        default: 'none,p32,max'
       difficulty:
         description: 'normal, hard or insane (targets are for normal)'
         default: 'normal'
