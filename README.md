@@ -67,6 +67,22 @@ See [rival design and testing](docs/RIVAL_CAPTAINS.md).
 - **Plain text.** Cards, ships, pilots, Hangar upgrades, menus, warnings and achievements were rewritten in short, plain sentences, and the game says "run" instead of mixing "run" and "flight".
 - **Limits.** Very strong builds (for example mid-Hangar Kestrel) still clear later-world waves almost as fast as they arrive; packs cannot fix that without adding XP or health. Worlds 2–4 packs were tried and held back: the Arcwing Archive route won 5 of 8 seeds with them against 7 of 8 without. Two rejected designs: larger packs on empty screens (every member needs a shot, so packs outlived the ship they replaced and Kestrel's World 1 clears fell from 8 to 2 of 16), and overkill that spills between packmates (packs died too fast and kills rose).
 
+## Difficulty targets and a longer Hangar
+
+The game is meant to be hard, and the Hangar is how you get through it. Targets for Normal, full four-world campaign:
+
+| Hangar | Target |
+|---|---|
+| None | Never finishes the campaign |
+| Half (half the Cores of a full Hangar) | Wins 40–60% |
+| Max | Wins most runs (70%+) |
+
+- **Longer Hangar.** Eleven core upgrades have extra ranks (for example hull 7 → 15, damage 5 → 12). Ranks up to the old cap keep their old price; extended ranks cost more the higher they go. New options: Second wind (once per run, survive a killing blow with 25% hull) and Pulse, Coil and Lens tuning (+5% damage per rank for that gun). A full Hangar costs 6120 Cores (was 2811).
+- **Harder Worlds 2–4.** 2x spawn rate and 3.5x enemy health. World 1 and boss health are unchanged.
+- **Measured** (scripted bot, six ships × 8 seeds each): no Hangar 0/48, half 27/48 (56%), max 44/48 (92%). Enemies on screen at half Hangar went from under 1 to about 9 / 11 / 18 in Worlds 2 / 3 / 4. Ship spread is wide at half Hangar (Kestrel and Arcwing 7/8, Vanguard 2/8), which is worth tuning separately. These are bot results, not human win rates.
+- **Experiments.** `.github/workflows/difficulty-experiment.yml` runs all six ships at none / half / max Hangar in parallel (about 10 minutes) with per-world spawn, health and damage multipliers and a difficulty input, and reports win rates against the targets plus density per world. Start it from the Actions tab (Run workflow).
+- **CI gates.** A full-Hangar Arcwing must win the campaign and clear the Archive; no Hangar must never finish Normal (six ships × 2 seeds).
+
 ## Reliability and balance pass
 
 - **Ships:** Kestrel now has 85 hull / 40 shield (was 70 / 30). Bulwark takes 20% less beam and missile damage and gets +20% automatic damage against bosses (was +12%). Vanguard gains *veteran systems* after each cleared world: +15% / +20% / +25% weapon and ability power and 10% / 15% / 20% status resistance. In scripted no-Hangar Normal World 1 runs on the same 8 seeds, Kestrel went from 2 to 4 clears and Bulwark from 1 to 4, against Vanguard's 5; the Hard/Insane no-Hangar World 1 gate still records zero clears for all six pilots.
