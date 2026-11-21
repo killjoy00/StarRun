@@ -31,12 +31,12 @@ on:
     branches: ['claude/**']
     paths:
       - '.github/difficulty-experiment.json'
-      - '.github/workflows/difficulty-experiment.yml'
 permissions:
   contents: read
+# Experiments run side by side; each run is its own group.
 concurrency:
-  group: difficulty-experiment-${{ github.ref }}
-  cancel-in-progress: true
+  group: difficulty-experiment-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
   config:
     runs-on: ubuntu-latest
