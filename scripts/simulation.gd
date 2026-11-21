@@ -10,7 +10,6 @@ const MAXED_DRAFT_CORES := 5
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
-const ENEMY_TOUGHNESS := 1.6
 # World 1 light ships only (they also appear in Endless). Worlds 2-4 packs
 # were measured and held back: the Arcwing Archive route won 5 of 8 seeds
 # with them versus 7 of 8 without.
@@ -614,26 +613,6 @@ func _enemy_limit() -> int:
 	if _regular_world1_opening():
 		return 11
 	return mini(55, 20 + (stage - 1) * 5)
-
-## Adaptive toughness: a ship spawning onto a nearly empty screen (a build
-## that kills everything instantly) gets more health, so it stays on screen
-## longer; it fires proportionally slower, so incoming fire is unchanged.
-## Crowded screens (builds that are already struggling) get normal ships, so
-## slow builds never fall behind on kills and XP. A flat health increase was
-## measured and rejected: it buried slow ships (Bulwark reached the World 1
-## boss 7 of 16 times at 1.5x) and barely changed fast ones.
-## Normal World 1 only. In all four worlds it was measured and held back: mid-Hangar
-## Vanguard won 2 of 3 campaigns (3 of 3 without) and World 4 waves piled up.
-## Hard, Insane, bosses, the Archive and Daily are exempt.
-func enemy_toughness() -> float:
-	if stage != 1 or difficulty != "normal" or not daily_day.is_empty() or secret_entered:
-		return 1.0
-	var visible := _visible_world1_enemies()
-	if visible <= 1:
-		return ENEMY_TOUGHNESS
-	if visible >= 4:
-		return 1.0
-	return lerpf(ENEMY_TOUGHNESS, 1.0, float(visible - 1) / 3.0)
 
 func _has_mutation(id: String) -> bool:
 	return id in mutations
@@ -1663,12 +1642,8 @@ func _crowd_count() -> int:
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
 	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
-	var toughness := 1.0 if HiddenSector.ENEMIES.has(kind) else enemy_toughness()
-	scaling *= toughness
 	var first_fire := shooter_first_fire_window(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
-	if toughness > 1.0:
-		enemies[-1]["toughness"] = toughness
 	next_id += 1
 
 ## Ships placed directly on screen (scripted waves, rivals, bosses) fly in
@@ -2268,10 +2243,6 @@ func _update_enemies() -> void:
 				# launch cycle and accidentally create more XP on Insane.
 				var attack_scale := enemy_cadence_scale() if kind in ["carrier", "echo_carrier"] else enemy_fire_scale()
 				enemy.fire = (float(content.enemies[kind].interval) / attack_scale) * projectile_interval_factor(kind)
-				# Tougher ships live longer, so each fires proportionally slower.
-				# Carriers keep their launch cadence (their fighters carry XP).
-				if kind not in ["carrier", "echo_carrier"]:
-					enemy.fire *= float(enemy.get("toughness", 1.0))
 				# Elite wingmen fire about 20% more volleys only while their
 				# marked leader survives. Destroying it restores normal pacing.
 				if _elite_leader_active(enemy):
