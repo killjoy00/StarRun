@@ -158,20 +158,20 @@ jobs:
   real_campaign:
     name: Real four-world completion (no forced boss kills)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Godot
         run: tools/install-godot.sh
       - name: Import project
         run: godot --headless --path . --editor --import --quit
-      - name: "Require a genuine four-world victory with offered draft cards"
+      - name: "Require a genuine four-world victory with a full Hangar"
         run: |
           set -o pipefail
           godot --headless --path . --script tests/balance_matrix.gd -- \
             --seeds=4 --seed-offset=1 --strategy=timed \
             --ship=arcwing --difficulty=normal --build=focused \
-            --hangar=mid --pilot=rookie --trace --require-win \
+            --hangar=max --pilot=rookie --trace --require-win \
             2>&1 | tee /tmp/starrun-complete-campaign.log
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-campaign.log; then
             echo "::error::Godot reported an error during full four-world gameplay"
@@ -181,11 +181,23 @@ jobs:
         run: |
           set -o pipefail
           godot --headless --path . --script tests/archive_campaign.gd -- \
-            --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win \
+            --ship=arcwing --pilot=rookie --difficulty=normal --hangar=max --matched --require-win \
             2>&1 | tee /tmp/starrun-complete-archive.log
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-archive.log; then
             exit 1
           fi
+      - name: "Difficulty target: no Hangar never finishes Normal"
+        run: |
+          set -o pipefail
+          for ship in vanguard kestrel bulwark wraith arcwing haven; do
+            godot --headless --path . --script tests/balance_matrix.gd -- \
+              --seeds=2 --seed-offset=20 --strategy=timed --ship=$ship \
+              --difficulty=normal --hangar=none --require-no-campaign-wins \
+              2>&1 | tee /tmp/starrun-complete-nohangar-$ship.log
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-complete-nohangar-$ship.log; then
+              exit 1
+            fi
+          done
       - name: Preserve reproducible full-campaign evidence
         if: always()
         uses: actions/upload-artifact@v4

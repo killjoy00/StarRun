@@ -23,12 +23,15 @@ def main() -> int:
     per_ship = collections.defaultdict(lambda: [0, 0])
     density = collections.defaultdict(lambda: collections.defaultdict(lambda: [0.0, 0.0]))
     tuning = ""
+    difficulty = "normal"
     for path in sys.argv[1:]:
         match = re.search(r"-(none|half|max|mid)-([a-z]+)(?:-\d+)?\.log$", path)
         if not match:
             continue
         hangar, ship = match.group(1), match.group(2)
         for line in open(path, errors="replace"):
+            if line.startswith("BALANCE_MATRIX ") and '"difficulty"' in line:
+                difficulty = json.loads(line.split(" ", 1)[1]).get("difficulty", difficulty)
             if line.startswith("WORLD_TUNING "):
                 tuning = line.split(" ", 1)[1].strip()
             elif line.startswith("CAMPAIGN_TRACE "):
@@ -46,7 +49,7 @@ def main() -> int:
                     if part in ("waves", "mid", "opening"):
                         density[hangar][world][0] += stats["enemy_sum"]
                         density[hangar][world][1] += stats["samples"]
-    print(f"World tuning: {tuning or 'none (current game values)'}\n")
+    print(f"Difficulty: {difficulty}. World tuning: {tuning or 'none (current game values)'}\n")
     print("| Hangar | Wins | Target | Per ship | Enemies on screen (W1/W2/W3/W4) |")
     print("|---|---|---|---|---|")
     ok = True
