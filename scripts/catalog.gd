@@ -4,85 +4,89 @@ const ACTIVE_SLOTS := 4
 const DIFFICULTIES := ["normal", "hard", "insane"]
 # Optional challenge rules are local to regular flights. Daily always uses standard.
 const ARTIFACTS := [
-	{"id":"standard", "name":"Standard", "description":"The classic four-world flight."},
-	{"id":"glass_fleet", "name":"Glass Fleet", "description":"Half maximum hull, +25% shields and +50% automatic weapon damage."},
-	{"id":"arsenal_roulette", "name":"Arsenal Shift", "description":"At every warp, owned Pulse, Seeker, Arc and Lance ranks rotate to the next weapon."},
-	{"id":"drone_armada", "name":"Drone Armada", "description":"No conventional automatic guns or weapon drafts. Three persistent escort drones grow with your level."},
+	{"id":"standard", "name":"Standard", "description":"The normal four-world run."},
+	{"id":"glass_fleet", "name":"Glass Fleet", "description":"Half hull, +25% shield and +50% gun damage."},
+	{"id":"arsenal_roulette", "name":"Arsenal Shift", "description":"Each time you warp, your gun ranks move to the next gun (Pulse, Seeker, Arc, Lance)."},
+	{"id":"drone_armada", "name":"Drone Armada", "description":"No guns and no gun upgrades. Three drones fight for you and get stronger as you level up."},
 ]
 # One extraordinary weapon transformation at a time; can be drafted or bought from a black market.
 const MUTATIONS := [
-	{"id":"piercing_pulse", "requires":"pulse", "name":"Ghost Rounds", "description":"Pulse bolts punch through the first enemy and carry 60% damage into a second target.", "market_cost":"Sell 25% of maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.75},
-	{"id":"ricochet_pulse", "requires":"pulse", "name":"Bank Shot", "description":"Pulse hits jump a 35%-strength energy bolt to one nearby enemy.", "market_cost":"Sell 20% maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.80},
-	{"id":"split_seeker", "requires":"seeker", "name":"Hydra Warheads", "description":"Seeker impacts launch up to three miniature homing missiles at other enemies.", "market_cost":"Sell 20% of maximum hull capacity.", "hull_factor":0.80, "shield_factor":1.0},
-	{"id":"breach_seeker", "requires":"seeker", "name":"Siege Torpedoes", "description":"Seeker strikes boss cores 25% harder and splash 25% damage onto two nearby enemies.", "market_cost":"Sell 18% maximum hull capacity.", "hull_factor":0.82, "shield_factor":1.0},
-	{"id":"arc_reactor", "requires":"arc", "name":"Chain Reactor", "description":"Arc Coil kills release a lightning burst that jumps to two nearby threats.", "market_cost":"Sell 15% of maximum hull and shield capacity.", "hull_factor":0.85, "shield_factor":0.85},
-	{"id":"grounding_arc", "requires":"arc", "name":"Static Lock", "description":"Arc lightning stalls enemy firing by 1.8s and cancels a target's charging heavy beam.", "market_cost":"Sell 20% maximum hull capacity.", "hull_factor":0.80, "shield_factor":1.0},
-	{"id":"refracting_lance", "requires":"lance", "name":"Prism Echo", "description":"Lance impacts refract a second 35%-damage beam to a nearby off-axis target.", "market_cost":"Sell 15% of hull and shield capacity.", "hull_factor":0.85, "shield_factor":0.85},
-	{"id":"capacitor_lance", "requires":"lance", "name":"Capacitor Lance", "description":"The first Lance kill each firing cycle refunds 0.65 seconds of its cooldown.", "market_cost":"Sell 25% maximum shield capacity.", "hull_factor":1.0, "shield_factor":0.75},
+	{"id":"piercing_pulse", "requires":"pulse", "name":"Ghost Rounds", "description":"Pulse shots go through the first enemy and hit a second one for 60% damage.", "market_cost":"Lose 25% max shield.", "hull_factor":1.0, "shield_factor":0.75},
+	{"id":"ricochet_pulse", "requires":"pulse", "name":"Bank Shot", "description":"Pulse hits bounce a 35% damage shot to a nearby enemy.", "market_cost":"Lose 20% max shield.", "hull_factor":1.0, "shield_factor":0.80},
+	{"id":"split_seeker", "requires":"seeker", "name":"Hydra Warheads", "description":"Seeker hits launch up to 3 small missiles at other enemies.", "market_cost":"Lose 20% max hull.", "hull_factor":0.80, "shield_factor":1.0},
+	{"id":"breach_seeker", "requires":"seeker", "name":"Siege Torpedoes", "description":"Seekers do 25% more to bosses and splash 25% damage onto 2 nearby enemies.", "market_cost":"Lose 18% max hull.", "hull_factor":0.82, "shield_factor":1.0},
+	{"id":"arc_reactor", "requires":"arc", "name":"Chain Reactor", "description":"Arc kills set off a lightning burst that hits 2 nearby enemies.", "market_cost":"Lose 15% max hull and shield.", "hull_factor":0.85, "shield_factor":0.85},
+	{"id":"grounding_arc", "requires":"arc", "name":"Static Lock", "description":"Arc hits stop enemies from shooting for 1.8 seconds and cancel charging beams.", "market_cost":"Lose 20% max hull.", "hull_factor":0.80, "shield_factor":1.0},
+	{"id":"refracting_lance", "requires":"lance", "name":"Prism Echo", "description":"Lance hits split off a second beam for 35% damage.", "market_cost":"Lose 15% max hull and shield.", "hull_factor":0.85, "shield_factor":0.85},
+	{"id":"capacitor_lance", "requires":"lance", "name":"Capacitor Lance", "description":"Your first Lance kill each shot cuts 0.65 seconds off its recharge.", "market_cost":"Lose 25% max shield.", "hull_factor":1.0, "shield_factor":0.75},
 ]
 const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
 const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine"]
 
 # These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
 const PILOTS := [
-	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"Balanced training. No special bonus.", "trait":"STANDARD ISSUE"},
-	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage, stronger tracking, and a precision crossfire volley after three rapid weapon kills.", "trait":"PRECISION"},
-	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield, regeneration and shield-powered weapons. A sentry deploys at a maintenance window or if shields break.", "trait":"FIELD REPAIR"},
-	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% Seeker damage, faster lock-on, and a marked priority target that your auto-weapons pursue.", "trait":"MISSILE EXPERT"},
-	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% kill XP, +15% Cores, and a damaging scrap shockwave every 12 defeated enemies.", "trait":"COLLECTOR"},
-	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"15% shorter cooldowns, one extra reroll, and a once-per-world counterbattery when an ability is timed against incoming fire.", "trait":"BATTLE PLAN"}
+	{"id":"rookie", "name":"Vale · Flight leader", "cost":0, "description":"No special bonus.", "trait":"BALANCED"},
+	{"id":"ace", "name":"Vega · Ace", "cost":25, "description":"+25% Pulse damage and better aim. 3 quick kills fire a bonus volley.", "trait":"AIM"},
+	{"id":"engineer", "name":"Patch · Engineer", "cost":35, "description":"+20 shield and faster shield recharge. Drops a turret when your shield breaks or between waves.", "trait":"SHIELDS"},
+	{"id":"hunter", "name":"Orion · Hunter", "cost":45, "description":"+30% Seeker damage and faster lock-on. Marks a target for all your guns.", "trait":"MISSILES"},
+	{"id":"scavenger", "name":"Scrap · Salvager", "cost":60, "description":"+25% XP and +15% Cores. Every 12 kills sends out a damaging shockwave.", "trait":"LOOT"},
+	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"Abilities recharge 15% faster. One extra reroll. Once per world, an ability used just before a hit fires back.", "trait":"ABILITIES"}
 ]
 const SHIPS := [
-	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced guns and shields. Starts with Pulse Cannon and Seeker Pods. Veteran systems: after each world, more weapon and ability power (+15% / +20% / +25%) and status resistance (10% / 15% / 20%).", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
-	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"25% quicker firing, sharper autopilot turns. Twin Pulse start; light defenses.", "hull":85, "shield":40, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
-	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Massive hull, heavy shields, inherent armor, 20% less beam and missile damage, and +20% automatic damage to boss cores and parts. Wide, slower flight path; Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
-	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"No Pulse Cannon at launch. Double seeker pods with 35% harder-hitting ordnance.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
-	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Starts with Arc Coil instead of Seekers. Lightning chains are 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
-	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Support drones heal 25% more. Seeker Pods hit 12% harder and reload about 20% faster. Extra shielding, no Pulse; 25% less status damage.", "hull":115, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
+	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced. Starts with Pulse and Seeker. Gets stronger after each world: more damage and less status damage.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
+	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"Fast. Fires 25% faster and starts with 2 Pulse ranks. Low hull and shield.", "hull":85, "shield":40, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
+	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 20% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
+	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
+	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Lightning. Starts with Arc instead of Seeker. Arc is 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
+	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Support. Drones heal 25% more. Seekers hit 12% harder and reload 20% faster. Extra shield, no Pulse, 25% less status damage.", "hull":115, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
 ]
 
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
 const HANGAR := [
-	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":7, "cost":5, "step":0},
-	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":7, "cost":5, "step":2},
-	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Reduce every chaff hit by another 0.12.", "max":4, "cost":6, "step":2},
-	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"+0.25 shield/s per rank; from rank 2, +0.30 per rank.", "max":6, "cost":5, "step":0},
-	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Repair 0.15 hull/s per rank; from rank 2, +0.20 per rank.", "max":4, "cost":8, "step":3},
-	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"All automatic weapons deal 8% more damage.", "max":5, "cost":5, "step":0},
-	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"All automatic weapons fire 5% faster.", "max":5, "cost":7, "step":2},
-	{"id":"guidance", "name":"Guidance array", "group":"Weapons", "description":"Widen pulse targeting and increase its gentle steering.", "max":4, "cost":6, "step":2},
-	{"id":"pulse_start", "name":"Pulse precharge", "group":"Weapons", "description":"Start each new flight with level 2 Pulse Cannon.", "max":1, "cost":15, "step":0},
-	{"id":"seeker_start", "name":"Loaded pods", "group":"Weapons", "description":"Start each new flight with level 2 Seeker Pods.", "max":1, "cost":15, "step":0},
-	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Every ability recharges 3% faster per rank.", "max":6, "cost":7, "step":3},
-	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"+6% ability damage, healing and duration.", "max":5, "cost":7, "step":3},
-	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Recover 5 shield whenever you activate an ability.", "max":3, "cost":10, "step":4},
-	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per flight, gain 1.5 seconds of Aegis at low hull. +0.5s at rank 2.", "max":2, "cost":12, "step":8},
-	{"id":"extra_card", "name":"Expanded uplink", "group":"Tactics", "description":"Choose from four cards at every level-up.", "max":1, "cost":15, "step":0},
-	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"One reroll per stage per rank. Unused stage rerolls do not carry over.", "max":3, "cost":7, "step":3},
-	{"id":"banishes", "name":"Banish protocols", "group":"Tactics", "description":"Remove an upgrade track from this flight's pool. One use per rank.", "max":3, "cost":7, "step":3},
-	{"id":"skips", "name":"Repair fallback", "group":"Tactics", "description":"Skip a draft to repair 12 hull. One use per rank per flight.", "max":3, "cost":5, "step":2},
-	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"Earn 6% more XP from kills per rank.", "max":5, "cost":6, "step":2},
-	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"Earn 8% more cores after every flight.", "max":5, "cost":6, "step":2},
-	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every flight pays at least 2 additional cores per rank.", "max":3, "cost":8, "step":3},
-	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"Earn 5 additional cores per rank for a boss clear.", "max":3, "cost":8, "step":4},
-	{"id":"beam_plating","name":"Ablative panels","group":"Hull","description":"Beam, missile and mine hits deal 3% less damage per rank.","max":4,"cost":12,"step":5},
-	{"id":"shield_restart","name":"Restart circuit","group":"Hull","description":"Shields recover from a break 0.2 seconds sooner per rank.","max":4,"cost":12,"step":5},
-	{"id":"hazard_seals","name":"Sealed systems","group":"Hull","description":"Status effects last 5% less per rank.","max":4,"cost":14,"step":5},
-	{"id":"warp_repairs","name":"Docking crew","group":"Hull","description":"Repair an extra 4% of maximum hull between worlds per rank.","max":3,"cost":14,"step":7},
-	{"id":"arc_start","name":"Charged coil","group":"Weapons","description":"Start each flight with one extra Arc Coil rank.","max":1,"cost":35,"step":0},
-	{"id":"lance_start","name":"Lance mount","group":"Weapons","description":"Start each flight with a rank-1 Lance.","max":1,"cost":40,"step":0},
-	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Automatic weapons deal 3% more damage to bosses and their parts per rank.","max":6,"cost":14,"step":6},
-	{"id":"ordnance_damage","name":"Warhead tooling","group":"Weapons","description":"Seeker Pods deal 5% more damage per rank.","max":4,"cost":12,"step":5},
-	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship’s starting ability gains one rank per purchase.","max":2,"cost":16,"step":10},
+	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":15, "tier_from":7, "tier_step":4, "cost":5, "step":0},
+	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":15, "tier_from":7, "tier_step":4, "cost":5, "step":2},
+	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Small bullets do 0.12 less damage per rank.", "max":6, "tier_from":4, "tier_step":6, "cost":6, "step":2},
+	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"Shield recharges faster: +0.25 per second at rank 1, then +0.30 per rank.", "max":10, "tier_from":6, "tier_step":4, "cost":5, "step":0},
+	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Slowly repair hull: 0.15 per second at rank 1, then +0.20 per rank.", "max":8, "tier_from":4, "tier_step":5, "cost":8, "step":3},
+	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"Guns do 8% more damage per rank.", "max":12, "tier_from":5, "tier_step":6, "cost":5, "step":0},
+	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"Guns fire 5% faster per rank.", "max":10, "tier_from":5, "tier_step":6, "cost":7, "step":2},
+	{"id":"guidance", "name":"Guidance array", "group":"Weapons", "description":"Pulse aims wider and curves more toward enemies.", "max":4, "cost":6, "step":2},
+	{"id":"pulse_start", "name":"Pulse precharge", "group":"Weapons", "description":"Start every run with Pulse at rank 2.", "max":1, "cost":15, "step":0},
+	{"id":"seeker_start", "name":"Loaded pods", "group":"Weapons", "description":"Start every run with Seeker at rank 2.", "max":1, "cost":15, "step":0},
+	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Abilities recharge 3% faster per rank.", "max":10, "tier_from":6, "tier_step":5, "cost":7, "step":3},
+	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 6% more damage, healing and duration per rank.", "max":10, "tier_from":5, "tier_step":5, "cost":7, "step":3},
+	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Get 5 shield every time you use an ability.", "max":3, "cost":10, "step":4},
+	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per run, become immune for 1.5 seconds when your hull gets low. +0.5 seconds at rank 2.", "max":2, "cost":12, "step":8},
+	{"id":"extra_card", "name":"Expanded uplink", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
+	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"1 reroll per world per rank. Unused rerolls don't carry over.", "max":3, "cost":7, "step":3},
+	{"id":"banishes", "name":"Banish protocols", "group":"Tactics", "description":"Remove an upgrade from this run so it never shows up. 1 use per rank.", "max":3, "cost":7, "step":3},
+	{"id":"skips", "name":"Repair fallback", "group":"Tactics", "description":"Skip an upgrade pick to repair 12 hull. 1 use per rank per run.", "max":3, "cost":5, "step":2},
+	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "cost":6, "step":2},
+	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"8% more Cores after every run per rank.", "max":5, "cost":6, "step":2},
+	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every run pays at least 2 more Cores per rank.", "max":3, "cost":8, "step":3},
+	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"5 more Cores per rank for beating a boss.", "max":3, "cost":8, "step":4},
+	{"id":"beam_plating","name":"Ablative panels","group":"Hull","description":"Beams, missiles and mines do 3% less damage per rank.","max":4,"cost":12,"step":5},
+	{"id":"shield_restart","name":"Restart circuit","group":"Hull","description":"A broken shield starts recharging 0.2 seconds sooner per rank.","max":4,"cost":12,"step":5},
+	{"id":"hazard_seals","name":"Sealed systems","group":"Hull","description":"Status effects are 5% shorter per rank.","max":4,"cost":14,"step":5},
+	{"id":"warp_repairs","name":"Docking crew","group":"Hull","description":"Repair 4% more hull between worlds per rank.","max":3,"cost":14,"step":7},
+	{"id":"arc_start","name":"Charged coil","group":"Weapons","description":"Start every run with 1 extra Arc rank.","max":1,"cost":35,"step":0},
+	{"id":"lance_start","name":"Lance mount","group":"Weapons","description":"Start every run with Lance at rank 1.","max":1,"cost":40,"step":0},
+	{"id":"boss_damage","name":"Siege targeting","group":"Weapons","description":"Guns do 3% more damage to bosses per rank.","max":10, "tier_from":6, "tier_step":6,"cost":14,"step":6},
+	{"id":"ordnance_damage","name":"Warhead tooling","group":"Weapons","description":"Seekers do 5% more damage per rank.","max":4,"cost":12,"step":5},
+	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship's starting ability gets 1 extra rank.","max":2,"cost":16,"step":10},
 	{"id":"cast_repair","name":"Field patch kit","group":"Abilities","description":"Each ability use repairs 1 hull per rank.","max":3,"cost":18,"step":8},
-	{"id":"opening_charge","name":"Hot start","group":"Abilities","description":"The first use of each ability per world recharges 10% sooner per rank.","max":3,"cost":18,"step":8},
-	{"id":"reroll_focus","name":"Focused uplink","group":"Tactics","description":"Rerolls include an upgrade you own, when one remains available.","max":1,"cost":35,"step":0},
-	{"id":"banish_relay","name":"Banish relay","group":"Tactics","description":"Regain one upgrade removal per rank when entering a new world.","max":2,"cost":20,"step":12},
-	{"id":"skip_patch","name":"Repair stores","group":"Tactics","description":"Skipping a draft repairs 6 extra hull per rank.","max":3,"cost":8,"step":4},
-	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each destroyed boss part pays 1 extra core per rank.","max":3,"cost":18,"step":8},
-	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Clear a world above 60% hull for 3 extra cores per rank.","max":3,"cost":18,"step":8},
-	{"id":"module_breaker","name":"Breach sensors","group":"Weapons","description":"Deal 6% more damage to targetable boss modules per rank. Boss cores are unaffected.","max":3,"cost":18,"step":8},
-	{"id":"point_defense","name":"Point defense","group":"Hull","description":"Take 5% less damage from boss bullets and missiles per rank; not heavy beams.","max":3,"cost":16,"step":7}
+	{"id":"opening_charge","name":"Hot start","group":"Abilities","description":"The first use of each ability in a world recharges 10% faster per rank.","max":3,"cost":18,"step":8},
+	{"id":"reroll_focus","name":"Focused uplink","group":"Tactics","description":"Rerolls always include an upgrade you already have, if one is left.","max":1,"cost":35,"step":0},
+	{"id":"banish_relay","name":"Banish relay","group":"Tactics","description":"Get back 1 Remove per rank each new world.","max":2,"cost":20,"step":12},
+	{"id":"skip_patch","name":"Repair stores","group":"Tactics","description":"Skipping an upgrade pick repairs 6 more hull per rank.","max":3,"cost":8,"step":4},
+	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each boss part you destroy pays 1 more Core per rank.","max":3,"cost":18,"step":8},
+	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Beat a world with more than 60% hull for 3 more Cores per rank.","max":3,"cost":18,"step":8},
+	{"id":"module_breaker","name":"Breach sensors","group":"Weapons","description":"Do 6% more damage to boss parts per rank. Not the boss core.","max":3,"cost":18,"step":8},
+	{"id":"point_defense","name":"Point defense","group":"Hull","description":"Boss bullets and missiles do 5% less damage per rank. Not beams.","max":3,"cost":16,"step":7},
+	{"id":"second_wind","name":"Second wind","group":"Hull","description":"Once per run, survive a killing blow with 25% hull. +15% hull per extra rank.","max":3,"cost":45,"step":30},
+	{"id":"pulse_tuning","name":"Pulse tuning","group":"Weapons","description":"Pulse does 5% more damage per rank.","max":5,"cost":14,"step":6},
+	{"id":"arc_tuning","name":"Coil tuning","group":"Weapons","description":"Arc does 5% more damage per rank.","max":5,"cost":14,"step":6},
+	{"id":"lance_tuning","name":"Lens tuning","group":"Weapons","description":"Lance does 5% more damage per rank.","max":5,"cost":14,"step":6},
 ]
 
 static func defaults() -> Dictionary:
@@ -101,7 +105,12 @@ static func entry(id: String) -> Dictionary:
 # The first 15% price increase remains the reference for the next +10%.
 static func legacy_price(id: String, rank: int) -> int:
 	var item := entry(id)
-	return int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
+	var base := int(item.get("cost", 0)) + int(item.get("step", 0)) * rank
+	# Extended trees: ranks past the original cap cost more the higher you go.
+	# Ranks below it keep their original price, so old receipts still match.
+	if item.has("tier_from") and rank >= int(item.tier_from):
+		base += int(item.tier_step) * (rank - int(item.tier_from) + 1)
+	return base
 
 static func previous_price(id: String, rank: int) -> int:
 	var base := legacy_price(id, rank)

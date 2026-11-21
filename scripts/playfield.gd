@@ -490,6 +490,8 @@ func _draw_player(ship: Vector2, velocity: Vector2) -> void:
 func _draw_enemy(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var kind: String = enemy.kind
+	if not profile.reduced and not kind.begins_with("boss") and kind not in ["boss_module", "boulder", "station"] and not HiddenSector.ENEMIES.has(kind):
+		_draw_enemy_exhaust(enemy)
 	if kind == "boss_module":
 		_draw_boss_module(enemy)
 		_draw_evolution_marks(enemy)
@@ -637,6 +639,21 @@ func _draw_evolution_marks(enemy: Dictionary) -> void:
 			var axis: float = TAU * float(i) / 4.0
 			draw_arc(p, radius + 13.0, axis, axis + 0.16, 5, Color("edd5ff"), 3.0, true)
 
+## Engine plumes behind every ordinary enemy; ships arriving on screen
+## burn hotter. Visual only, from visual time.
+func _draw_enemy_exhaust(enemy: Dictionary) -> void:
+	var p: Vector2 = enemy.p
+	var scale := 0.72 if enemy.has("pack_id") else 1.0
+	var flicker := 0.75 + 0.25 * sin(visual_time * 31.0 + float(enemy.phase) * 7.0)
+	var length := (34.0 if enemy.has("arrive_y") else 16.0) * scale * flicker
+	for side in [-1.0, 1.0]:
+		var base := p + Vector2(side * 9.0 * scale, -18.0 * scale)
+		draw_line(base, base + Vector2(0, -length), Color(1.0, 0.55, 0.25, 0.35), 4.0 * scale, true)
+		draw_line(base, base + Vector2(0, -length * 0.55), Color(1.0, 0.9, 0.7, 0.55), 1.6 * scale, true)
+	for i in range(3):
+		var drift := fposmod(visual_time * 2.3 + float(enemy.phase) + i * 0.33, 1.0)
+		draw_circle(p + Vector2(sin(float(enemy.phase) * 5.0 + i) * 6.0 * scale, -18.0 * scale - drift * 30.0 * scale), (1.8 - drift) * scale, Color(1.0, 0.7, 0.4, 0.35 * (1.0 - drift)))
+
 func _draw_boss_module(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var role: String = str(enemy.role)
@@ -768,6 +785,9 @@ func _draw_projectile(bullet: Dictionary) -> void:
 		_threat_outline(PackedVector2Array([p + direction * 13, p + wing * 7 - direction * 5, p - direction * 10, p - wing * 7 - direction * 5]))
 		draw_line(p - direction * 5, p + direction * 5, Color("fff0d6"), 2, true)
 	elif kind == "chaff":
+		if not profile.reduced:
+			var back: Vector2 = -bullet.v.normalized()
+			draw_line(p, p + back * 14.0, Color(DANGER, 0.30), 3.0, true)
 		draw_circle(p, 6.0, THREAT_INK)
 		draw_circle(p, 3.8, DANGER)
 		draw_circle(p, 1.5, Color("fff0d6"))
@@ -780,6 +800,9 @@ func _draw_projectile(bullet: Dictionary) -> void:
 			"heat": tint = Color("ffb35d")
 			"gravity": tint = Color("b887ff")
 			"void": tint = Color("fa6fff")
+		if not profile.reduced:
+			var trail: Vector2 = -bullet.v.normalized()
+			draw_line(p, p + trail * 16.0, Color(tint, 0.32), 3.0, true)
 		_threat_outline(PackedVector2Array([p + Vector2(0, -7), p + Vector2(7, 0), p + Vector2(0, 7), p + Vector2(-7, 0)]))
 		draw_circle(p, 3.0, tint)
 		draw_circle(p, 1.1, Color("fff0d6"))
@@ -1009,7 +1032,7 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif effect.kind in ["impact", "shield-hit", "hull-hit"]:
 		var color := CYAN if effect.kind == "shield-hit" else AMBER
 		_glow(p, 3 + age * 10, Color(color, alpha * 0.7))
-		for i in range(5):
+		for i in range(5 if profile.reduced else 9):
 			var angle: float = i * TAU / 5 + effect.get("born", 0) * 0.17
 			var direction := Vector2.from_angle(angle)
 			draw_line(p + direction * age * 7, p + direction * age * 26, Color(color, alpha), 1.8, true)
@@ -1018,7 +1041,9 @@ func _draw_effect(effect: Dictionary) -> void:
 		var radius := (115 if big else 48) * age
 		_glow(p, maxf(1, (32 if big else 15) * alpha), Color(1.0, 0.75, 0.3, alpha))
 		draw_arc(p, radius + 5, 0, TAU, 48, Color(1, 0.6, 0.2, alpha * 0.65), 2.0, true)
-		var count := 14 if profile.reduced else 25
+		var count := 14 if profile.reduced else 40
+		if not profile.reduced:
+			draw_circle(p, radius * 0.75, Color(0.35, 0.33, 0.38, alpha * 0.22))
 		for i in range(count):
 			var angle: float = i * 2.39996 + effect.get("born", 0) * 0.11
 			var direction := Vector2.from_angle(angle)

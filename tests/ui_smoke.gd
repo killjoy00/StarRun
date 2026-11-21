@@ -207,7 +207,7 @@ func _run() -> void:
 			check(standard_label.size.x >= word_width, "The word Standard must have enough measured width to display in full")
 		check(_choice_panels_within_screen(scene.overlay, logical.x), "Artifact cards must fit inside narrow-phone margins")
 		scene._set_artifact("glass_fleet")
-		check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half maximum hull"), "Choosing an Artifact must persist and explain its rules")
+		check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half hull"), "Choosing an Artifact must persist and explain its rules")
 		scene._set_artifact("standard")
 		check(str(scene.profile.artifact) == "standard", "Standard must restore ordinary flight rules")
 		scene._loadout_back()
@@ -365,7 +365,7 @@ func _run() -> void:
 		check(scene.mode == "playing", "Closing the build view must resume combat")
 	scene._show_menu()
 	scene._set_artifact("glass_fleet")
-	check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half maximum hull"), "Regular flight artifact selection must persist and explain its tradeoff")
+	check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half hull"), "Regular flight artifact selection must persist and explain its tradeoff")
 	scene._set_artifact("standard")
 	check(str(scene.profile.artifact) == "standard", "Returning to Standard must remove the optional rule set")
 	scene._set_difficulty("hard")
@@ -420,7 +420,7 @@ func _run() -> void:
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
 	check(_contains_text(scene.reading_scroll, "Shielded passage") and _contains_text(scene.reading_scroll, "Redline assault") and _contains_text(scene.reading_scroll, "Hunter contract"), "Every strategic route must render after the prototype choice")
-	check(_contains_text(scene.reading_scroll, "70%") and _contains_text(scene.reading_scroll, "35% less damage") and _contains_text(scene.reading_scroll, "+15% weapon damage") and _contains_text(scene.reading_scroll, "half shields") and _contains_text(scene.reading_scroll, "One extra upgrade pick"), "Each route must explain its current benefit, shield threshold, and tradeoff in plain language")
+	check(_contains_text(scene.reading_scroll, "70%") and _contains_text(scene.reading_scroll, "35% less damage") and _contains_text(scene.reading_scroll, "+15% gun damage") and _contains_text(scene.reading_scroll, "above half") and _contains_text(scene.reading_scroll, "One extra upgrade"), "Each route must explain its current benefit, shield threshold, and tradeoff in plain language")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
@@ -517,7 +517,7 @@ func _run() -> void:
 	scene.world._process(0.50)
 	check(scene.world.beam_cancel_feedback.is_empty(), "Beam cancellation cue must expire after 0.85 real seconds")
 	scene._show_beam_tutorial()
-	check(_contains_text(scene.overlay, "destroy that enemy to cancel the beam"), "First beam tutorial must explain destroying its charging enemy")
+	check(_contains_text(scene.overlay, "Destroy the marked enemy to stop it"), "First beam tutorial must explain destroying its charging enemy")
 	for dimensions in [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]:
 		root.size = dimensions
 		await process_frame
@@ -550,7 +550,7 @@ func _run() -> void:
 		scene._resume_archive()
 		scene.sim._spawn_boss()
 		scene._show_archive_intro(false)
-		check(_contains_text(scene.overlay, "Last Custodian") and _contains_text(scene.overlay, "Save a ready ability") and _contains_text(scene.overlay, "Three reinforced seals"), "Boss intro explains the counter")
+		check(_contains_text(scene.overlay, "Last Custodian") and _contains_text(scene.overlay, "use an ability to open the core") and _contains_text(scene.overlay, "3 shields"), "Boss intro explains the counter")
 		scene._resume_archive()
 		scene.sim.archive_phase = 2
 		scene.sim.archive_phase_released = true
@@ -578,7 +578,7 @@ func _run() -> void:
 		check(scene.mode == "build_choice" and scene.sim.pending_build_choices.size() == 1, "Rank-5 mobile evolution choice pauses combat")
 		check(_contains_text(scene.overlay, "Duelist") and _contains_text(scene.overlay, "Spotter"), "Both evolution paths and their descriptions are visible on real mobile UI")
 		# Kit.caps renders card headings as uppercase on actual devices.
-		check(_contains_text(scene.overlay, "FOCUSED DAMAGE") and _contains_text(scene.overlay, "CROSS-WEAPON SETUP"), "Both compact specialization roles fit the phone evolution choice")
+		check(_contains_text(scene.overlay, "FOCUS FIRE") and _contains_text(scene.overlay, "TEAM UP"), "Both compact specialization roles fit the phone evolution choice")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Evolution panel fits narrow-phone safe area")
 		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Evolution option cards preserve 24pt phone gutters")
 		var snapshot: Dictionary = scene.services.read_save(scene.Services.RUN)

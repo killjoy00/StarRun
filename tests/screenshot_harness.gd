@@ -36,6 +36,34 @@ func _initialize() -> void:
 	create_timer(150.0).timeout.connect(func(): push_error("Screenshot matrix timed out"); quit(1))
 	call_deferred("_run")
 
+## Layout guard: every visible control and its text must stay inside the
+## screen horizontally. Reports each offender with its path and rectangle.
+var bounds_failures := 0
+func _scan_bounds(scene: Node, screen: String, dimensions: Vector2i) -> void:
+	# Controls live in the stretched canvas, so compare in logical units.
+	var width: float = (scene as CanvasItem).get_viewport_rect().size.x
+	for node in scene.find_children("*", "Control", true, false):
+		var control := node as Control
+		if not control.is_visible_in_tree() or control.size.x <= 0.0:
+			continue
+		var rect := control.get_global_rect()
+		var clipped_by_scroll := false
+		var parent := control.get_parent()
+		while parent != null and parent != scene:
+			if parent is ScrollContainer and (parent as ScrollContainer).horizontal_scroll_mode != ScrollContainer.SCROLL_MODE_DISABLED:
+				clipped_by_scroll = true
+				break
+			parent = parent.get_parent()
+		if clipped_by_scroll:
+			continue
+		var text_overflow := false
+		if control is Label:
+			var label := control as Label
+			text_overflow = label.autowrap_mode == TextServer.AUTOWRAP_OFF and not label.clip_text and label.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING and label.get_minimum_size().x > label.size.x + 2.0
+		if rect.position.x < -2.0 or rect.end.x > width + 2.0 or text_overflow:
+			bounds_failures += 1
+			print("OFFSCREEN %s %dx%d %s x=%.0f..%.0f%s \"%s\"" % [screen, dimensions.x, dimensions.y, str(scene.get_path_to(control)), rect.position.x, rect.end.x, " text-overflow" if text_overflow else "", str(control.get("text")) if control.get("text") != null else ""])
+
 func _run() -> void:
 	for dimensions in SIZES:
 		root.size = dimensions
@@ -68,6 +96,7 @@ func _run() -> void:
 				failures += 1
 				push_error("Screenshot size mismatch: %s / %s" % [str(dimensions), screen])
 				continue
+			_scan_bounds(scene, screen, dimensions)
 			var path := folder.path_join(screen + ".png")
 			if picture.save_png(path) != OK:
 				failures += 1
@@ -77,7 +106,9 @@ func _run() -> void:
 		scene.queue_free()
 		await process_frame
 	print("SCREENSHOT MATRIX: %d of %d screens (3 sizes) saved to %s" % [count, SIZES.size() * SCREENS.size(), output])
-	quit(0 if failures == 0 and count == SIZES.size() * SCREENS.size() else 1)
+	if bounds_failures > 0:
+		push_error("%d controls left the screen horizontally (see OFFSCREEN lines)" % bounds_failures)
+	quit(0 if failures == 0 and bounds_failures == 0 and count == SIZES.size() * SCREENS.size() else 1)
 
 func _prepare(scene, screen: String) -> void:
 	match screen:
@@ -123,7 +154,7 @@ func _prepare(scene, screen: String) -> void:
 			scene.mode = "playing"
 			scene._clear_overlay()
 			scene.last_sector = scene._sector_name(scene.sim.time)
-			scene.banner_text = "!  HOSTILE FORMATION INBOUND" if screen == "opening-warning" else "STRIKE WING  ·  THREE-SHIP ATTACK"
+			scene.banner_text = "!  ENEMY GROUP INCOMING" if screen == "opening-warning" else "THREE-SHIP ATTACK"
 			scene.banner_clock = 4.0
 		"merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt":
 			scene.sim.enable_merchant()

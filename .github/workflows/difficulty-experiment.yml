@@ -1,0 +1,139 @@
+name: Difficulty experiment
+# Full Normal campaigns for all six ships at no / half / max Hangar, in
+# parallel, with per-world spawn, health and damage multipliers. Measures
+# win rates against the difficulty targets (no Hangar never finishes, half
+# Hangar wins 40-60%, max Hangar wins 70%+) and on-screen density per world.
+#
+# Start it from the Actions tab (Run workflow) or by pushing a change to
+# .github/difficulty-experiment.json on a claude/ branch.
+on:
+  workflow_dispatch:
+    inputs:
+      spawn:
+        description: 'Spawn rate multiplier per world (W1,W2,W3,W4)'
+        default: '1,1,1,1'
+      health:
+        description: 'Enemy health multiplier per world'
+        default: '1,1,1,1'
+      damage:
+        description: 'Enemy damage multiplier per world'
+        default: '1,1,1,1'
+      seeds:
+        description: 'Seeds per ship and Hangar level'
+        default: '4'
+      chunks:
+        description: 'Parallel jobs per ship and Hangar level (must divide seeds)'
+        default: '2'
+      hangars:
+        description: 'Hangar levels, comma separated (none,half,max)'
+        default: 'none,half,max'
+  push:
+    branches: ['claude/**']
+    paths:
+      - '.github/difficulty-experiment.json'
+      - '.github/workflows/difficulty-experiment.yml'
+permissions:
+  contents: read
+concurrency:
+  group: difficulty-experiment-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      spawn: ${{ steps.read.outputs.spawn }}
+      health: ${{ steps.read.outputs.health }}
+      damage: ${{ steps.read.outputs.damage }}
+      per_chunk: ${{ steps.read.outputs.per_chunk }}
+      chunks: ${{ steps.read.outputs.chunks }}
+      hangars: ${{ steps.read.outputs.hangars }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: read
+        env:
+          EVENT: ${{ github.event_name }}
+          IN_SPAWN: ${{ inputs.spawn }}
+          IN_HEALTH: ${{ inputs.health }}
+          IN_DAMAGE: ${{ inputs.damage }}
+          IN_SEEDS: ${{ inputs.seeds }}
+          IN_CHUNKS: ${{ inputs.chunks }}
+          IN_HANGARS: ${{ inputs.hangars }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            spawn=$IN_SPAWN; health=$IN_HEALTH; damage=$IN_DAMAGE; seeds=$IN_SEEDS; chunks=$IN_CHUNKS; hangars=$IN_HANGARS
+          else
+            f=.github/difficulty-experiment.json
+            spawn=$(jq -r .spawn $f); health=$(jq -r .health $f); damage=$(jq -r .damage $f)
+            seeds=$(jq -r .seeds $f); chunks=$(jq -r .chunks $f); hangars=$(jq -r '.hangars | join(",")' $f)
+          fi
+          for v in "$spawn" "$health" "$damage"; do
+            [[ "$v" =~ ^[0-9.]+,[0-9.]+,[0-9.]+,[0-9.]+$ ]] || { echo "::error::Bad multiplier list: $v"; exit 1; }
+          done
+          [[ "$seeds" =~ ^[0-9]+$ && "$chunks" =~ ^[0-9]+$ && "$chunks" -ge 1 && $((seeds % chunks)) -eq 0 ]] || { echo "::error::seeds must be a multiple of chunks"; exit 1; }
+          [[ "$hangars" =~ ^(none|half|max)(,(none|half|max))*$ ]] || { echo "::error::Bad hangar list: $hangars"; exit 1; }
+          {
+            echo "spawn=$spawn"; echo "health=$health"; echo "damage=$damage"
+            echo "per_chunk=$((seeds / chunks))"
+            echo "chunks=$(seq 0 $((chunks - 1)) | jq -cs .)"
+            echo "hangars=$(echo "$hangars" | jq -cR 'split(",")')"
+          } >> "$GITHUB_OUTPUT"
+  campaign:
+    needs: config
+    name: '${{ matrix.hangar }} / ${{ matrix.ship }} / part ${{ matrix.chunk }}'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+        hangar: ${{ fromJSON(needs.config.outputs.hangars) }}
+        chunk: ${{ fromJSON(needs.config.outputs.chunks) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Play full campaigns
+        env:
+          SHIP: ${{ matrix.ship }}
+          HANGAR: ${{ matrix.hangar }}
+          CHUNK: ${{ matrix.chunk }}
+          PER_CHUNK: ${{ needs.config.outputs.per_chunk }}
+          SPAWN: ${{ needs.config.outputs.spawn }}
+          HEALTH: ${{ needs.config.outputs.health }}
+          DAMAGE: ${{ needs.config.outputs.damage }}
+        run: |
+          set -o pipefail
+          mkdir -p logs
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --seeds="$PER_CHUNK" --seed-offset=$((20 + CHUNK * PER_CHUNK)) \
+            --ship="$SHIP" --difficulty=normal --strategy=timed --hangar="$HANGAR" \
+            --spawn="$SPAWN" --health="$HEALTH" --damage="$DAMAGE" --trace --density \
+            2>&1 | tee "logs/exp-$HANGAR-$SHIP-$CHUNK.log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "logs/exp-$HANGAR-$SHIP-$CHUNK.log"; then
+            echo "::error::Godot reported a script error"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: difficulty-${{ matrix.hangar }}-${{ matrix.ship }}-${{ matrix.chunk }}
+          path: logs/
+          retention-days: 14
+  summary:
+    needs: campaign
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: difficulty-*
+          path: logs
+          merge-multiple: true
+      - name: Summarise against targets
+        run: |
+          python3 tools/difficulty_summary.py logs/*.log | tee summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"

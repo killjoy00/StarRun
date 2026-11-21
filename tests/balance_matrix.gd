@@ -11,6 +11,11 @@ const Catalog = preload("res://scripts/catalog.gd")
 const STRATEGIES := ["never", "on_cooldown", "timed"]
 const MAX_STAGE_SECONDS := 540.0
 
+## Experiment knobs: per-world multipliers on spawn rate, enemy health and
+## enemy damage, e.g. --spawn=1,1.5,1.5,1.5. Applied to each run's own copy of
+## the stage data, so experiments need no edits to data/content.json.
+var world_tuning := {}
+
 func _initialize() -> void:
 	call_deferred("_run")
 
@@ -30,6 +35,7 @@ func _run() -> void:
 	var seed_offset := 0
 	var stage_limit := 4
 	var require_no_world1_clears := false
+	var require_no_campaign_wins := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
 			seeds = maxi(1, int(arg.get_slice("=", 1)))
@@ -61,10 +67,25 @@ func _run() -> void:
 			density = true
 		elif arg == "--require-win":
 			require_win = true
-	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
+		elif arg.begins_with("--spawn=") or arg.begins_with("--health=") or arg.begins_with("--damage="):
+			var values := PackedFloat64Array()
+			for part in arg.get_slice("=", 1).split(","):
+				values.append(float(part))
+			if values.size() != 4 or values.has(0.0):
+				push_error("%s needs four non-zero per-world values" % arg.get_slice("=", 0))
+				quit(2)
+				return
+			world_tuning[arg.get_slice("=", 0).trim_prefix("--")] = values
+		elif arg == "--require-no-campaign-wins":
+			require_no_campaign_wins = true
+	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "half", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
 		return
+	if not world_tuning.is_empty():
+		print("WORLD_TUNING ", JSON.stringify(world_tuning))
+	if hangar_style == "half":
+		print("HANGAR_PROFILE ", JSON.stringify(_hangar("half")))
 	if require_no_world1_clears and (stage_limit != 1 or hangar_style != "none" or only_difficulty not in ["hard", "insane"]):
 		push_error("No-Hangar World 1 gate applies only to Hard/Insane with stage-limit=1")
 		quit(2)
@@ -197,10 +218,18 @@ func _run() -> void:
 		push_error("Expected at least one genuine four-world victory using real combat, cards and bosses")
 	if require_no_world1_clears and world1_clears > 0:
 		push_error("%d of %d unupgraded Hard/Insane attempts cleared World 1 (ship %s, pilot %s). Investigate and rebalance before merging." % [world1_clears, trials, only_ship, pilot_id])
-	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) else 0)
+	# Difficulty target: with no Hangar upgrades, Normal must never be finished.
+	if require_no_campaign_wins and campaign_wins > 0:
+		push_error("A run without Hangar upgrades finished the campaign (%d wins)" % campaign_wins)
+	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) or (require_no_campaign_wins and campaign_wins > 0) else 0)
 
 func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard") -> Dictionary:
 	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty, artifact_id)
+	for knob in world_tuning:
+		var key: String = {"spawn": "spawn_scale", "health": "health_scale", "damage": "damage_scale"}[knob]
+		for world in range(4):
+			var spec: Dictionary = sim.content.stages[world]
+			spec[key] = float(spec.get(key, 1.0)) * float(world_tuning[knob][world])
 	var timed_out := false
 	var fault := false
 	var stage_reports: Array = []
@@ -435,6 +464,30 @@ func _hangar(style: String) -> Dictionary:
 	if style == "max":
 		for item in Catalog.HANGAR:
 			result[str(item.id)] = int(item.max)
+	elif style == "half":
+		# Half the Cores of a full Hangar, spent the way a player spreading
+		# upgrades would: always buy the cheapest next rank available.
+		var total := 0
+		for item in Catalog.HANGAR:
+			for rank in range(int(item.max)):
+				total += Catalog.price(str(item.id), rank)
+		var budget := total / 2
+		for item in Catalog.HANGAR:
+			result[str(item.id)] = 0
+		while true:
+			var best_id := ""
+			var best_price := 1 << 30
+			for item in Catalog.HANGAR:
+				var id: String = str(item.id)
+				if int(result[id]) < int(item.max):
+					var next_price := Catalog.price(id, int(result[id]))
+					if next_price < best_price:
+						best_price = next_price
+						best_id = id
+			if best_id.is_empty() or best_price > budget:
+				break
+			budget -= best_price
+			result[best_id] = int(result[best_id]) + 1
 	elif style == "mid":
 		for item in Catalog.HANGAR:
 			var id: String = str(item.id)
