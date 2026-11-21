@@ -35,7 +35,7 @@ func _defeat_boss_fixture(sim: RefCounted) -> void:
 		sim._damage_enemy(core, 999999999.0, "nova")
 
 func _run() -> void:
-	_test_swarm_packs_and_scrap()
+	_test_swarm_packs()
 	_test_course()
 	_test_defenses()
 	_test_interrupts_and_priority()
@@ -165,8 +165,7 @@ func _test_hidden_archive() -> void:
 		flight.time = flight.tick * Sim.DT
 		flight.step()
 	check(sim.signal_status == "offer" and daily.signal_status.is_empty(), "Seeded signal starts in an ordinary campaign and never appears in a Daily")
-	# Regular flights add harmless scrap to empty screens (never in Daily).
-	check(sim.rng.state == daily.rng.state and sim.enemies.filter(func(e): return not bool(e.get("scrap", false))) == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
+	check(sim.rng.state == daily.rng.state and sim.enemies == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
 	check(not daily.choose_signal("cast") and not sim.can_enter_secret(), "No Daily interaction or premature Archive entry")
 	var legacy := sim.snapshot()
 	for key in legacy.keys():
@@ -566,13 +565,13 @@ func _test_world1_density_and_pilot_identities() -> void:
 	check(normal.next_encounter_at <= 17.0 and is_equal_approx(hard.next_encounter_at, old_hard_schedule), "World 1 Normal opens with a real wing inside 17 seconds without changing Hard's gate")
 	normal.time = normal.next_encounter_at
 	normal._spawn_encounter()
-	check(normal.enemies.size() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
+	check(normal._crowd_count() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
 	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
 	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 strike wings are paid for from scheduled spawn slots")
 	var director := Sim.new(8151, {}, "vanguard", "rookie", "normal")
 	director.time = 8.0
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
+	check(director._crowd_count() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
 	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
 	var expiry := Sim.new(8152)
 	expiry.time = 8.0
@@ -600,11 +599,11 @@ func _test_world1_density_and_pilot_identities() -> void:
 		advanced.bullets.append({"p":Vector2(50.0 + index * 20.0,250.0), "v":Vector2.DOWN * 150.0,"damage":1.0,"kind":"chaff","source":"test"})
 	advanced._update_enemies()
 	check(advanced.bullets.size() > 14, "Hard retains its authored unthrottled projectile cadence")
-	var untouched := director.enemies.size()
+	var untouched := director._crowd_count()
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")
+	check(director._crowd_count() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == untouched + 1, "Director holds off while two enemies are already visible")
+	check(director._crowd_count() == untouched + 1, "Director holds off while two enemies are already visible")
 	var pressure_save := director.snapshot()
 	var pressure_restored := Sim.new()
 	check(pressure_restored.restore(pressure_save) and pressure_restored.snapshot() == pressure_save, "Reinforcement timing and wave state survive exact resume")
@@ -674,7 +673,7 @@ func _test_world1_mutations_and_merchant() -> void:
 	disposable.time = 1.5
 	var rng_before_scout: int = disposable.rng.state
 	disposable._spawn_opening_scout_screen()
-	check(disposable.enemies.size() == 2 and disposable.enemies.all(func(e): return bool(e.get("opening_scout",false)) and int(e.xp) == 0), "First scout contact is two real non-farming enemies")
+	check(disposable._crowd_count() == 2 and disposable.enemies.all(func(e): return bool(e.get("opening_scout",false)) and int(e.xp) == 0), "First scout contact is two real non-farming enemies")
 	check(disposable.rng.state == rng_before_scout, "Opening scripted scouts do not consume real combat or draft randomness")
 	var hull_before_scout: float = disposable.hull
 	disposable.time += 4.0
@@ -704,7 +703,7 @@ func _test_world1_mutations_and_merchant() -> void:
 	gap.next_encounter_at = 999999.0
 	gap.next_hazard = 999999.0
 	gap.next_spawn = gap.time
-	# Count ships by crowd weight: a swarm pack is one ship, scrap is none.
+	# Count ships by crowd weight: a swarm pack is one ship.
 	var gap_before: int = gap._crowd_count()
 	gap.step()
 	check(gap._crowd_count() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
@@ -1000,7 +999,7 @@ func _test_elite_squad_counterplay() -> void:
 	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
 	normal_opener.time = normal_opener.next_encounter_at
 	normal_opener._spawn_encounter()
-	check(normal_opener.encounter_queue.is_empty() and normal_opener.enemies.size() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
+	check(normal_opener.encounter_queue.is_empty() and normal_opener._crowd_count() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
 	var squad := Sim.new(7600)
 	squad.stage = 2
 	squad._spawn_encounter()
@@ -1478,8 +1477,8 @@ func _test_resume() -> void:
 	check(not restored.restore({"version": -1}), "Unknown checkpoint versions must be rejected")
 
 # More on-screen action must not change the balance budget: a pack carries
-# one ship's XP, kill, volley rate and escape damage; scrap carries nothing.
-func _test_swarm_packs_and_scrap() -> void:
+# one ship's XP, kill, volley rate and escape damage.
+func _test_swarm_packs() -> void:
 	var pack := Sim.new(5150)
 	pack._add_pack("drone", Vector2(270, 120))
 	var single := Sim.new(5150)
@@ -1489,8 +1488,12 @@ func _test_swarm_packs_and_scrap() -> void:
 	for member in pack.enemies:
 		pack_xp += int(member.xp)
 		rewarders += int(not bool(member.get("no_reward", false)))
-	check(pack.enemies.size() == 3 and pack._crowd_count() == 1 and pack_xp == int(single.enemies[0].xp) and rewarders == 1,
-		"A swarm pack is three ships that count as one, with one ship's XP and one reward")
+	var pack_hp := 0.0
+	for member in pack.enemies:
+		pack_hp += float(member.max_hp)
+	check(pack.enemies.size() == 4 and pack._crowd_count() == 1 and pack_xp == int(single.enemies[0].xp) and rewarders == 1,
+		"A drone pack is four ships that count as one, with one ship's XP and one reward")
+	check(is_equal_approx(pack_hp, float(single.enemies[0].max_hp) * Sim.PACK_HP_TOTAL), "A pack's total health is about one ship's")
 	check(pack.enemies.all(func(e): return is_equal_approx(float(e.fire), float(pack.enemies[0].fire))), "Pack members share one volley timer")
 	# Kill every member: exactly one kill and one ship's XP.
 	for member in pack.enemies.duplicate():
@@ -1509,50 +1512,9 @@ func _test_swarm_packs_and_scrap() -> void:
 	check(volley.enemies.all(func(e): return float(e.fire) > 0.5), "After a volley every pack member waits for the next shared turn")
 	var daily := Sim.new(5152)
 	daily.daily_day = "2026-11-21"
-	check(not daily._packs_enabled() and not daily._scrap_enabled(), "Daily keeps its historical spawns")
+	check(not daily._packs_enabled(), "Daily keeps its historical spawns")
 	var hard := Sim.new(5152, {}, "vanguard", "rookie", "hard")
-	check(not hard._packs_enabled() and hard._scrap_enabled(), "Hard/Insane get scrap but no packs, keeping their World 1 gate")
-	# Scrap: harmless, rewardless filler on an empty screen only.
-	var scrap := Sim.new(5153)
-	scrap.time = 5.0
-	scrap._spawn_scrap_swarm()
-	var drones: Array = scrap.enemies.filter(func(e): return bool(e.get("scrap", false)))
-	check(drones.size() == 4 and scrap._crowd_count() == 0 and scrap._visible_world1_enemies() == 0, "Scrap fills an empty screen and counts as no crowd")
-	var hull_before: float = scrap.hull
-	var kills_before: int = scrap.kills
-	var xp_before: float = scrap.xp
-	for drone in drones:
-		drone.p.y = 950.0
-	scrap._update_enemies()
-	check(scrap.hull == hull_before and scrap.enemies.is_empty(), "Escaping scrap never damages the ship")
-	scrap._spawn_scrap_swarm()
-	scrap.scrap_next_at = 0.0
-	for drone in scrap.enemies.duplicate():
-		scrap._damage_enemy(drone, 50.0, "pulse")
-	check(scrap.kills == kills_before and scrap.xp == xp_before and float(scrap.damage_dealt.pulse) == 0.0, "Scrap pops with no kills, XP or damage stats")
-	var busy := Sim.new(5154)
-	busy._add_enemy("gunship", Vector2(200, 200))
-	busy._add_enemy("gunship", Vector2(340, 200))
-	busy._spawn_scrap_swarm()
-	check(busy.enemies.size() == 2, "Scrap stays away while real enemies hold the screen")
-	var target := Sim.new(5155)
-	target._add_enemy("drone", Vector2(270, 300))
-	target.time = 1.0
-	target.enemies.append({"id":999, "kind":"scrap", "p":Vector2(270, 700), "hp":1.0, "max_hp":1.0, "speed":0.0, "fire":1.0e9, "xp":0, "phase":0.0, "no_reward":true, "scrap":true})
-	check(str(target._nearest(Vector2(270, 760)).kind) == "drone", "Weapons always prefer any real enemy over scrap")
-	# Shots fly through scrap while a real enemy exists, so scrap never soaks
-	# damage that real threats would have taken.
-	var lane := Sim.new(5156)
-	lane._add_enemy("drone", Vector2(270, 150))
-	lane.enemies.append({"id":998, "kind":"scrap", "p":Vector2(270, 500), "hp":1.0, "max_hp":1.0, "speed":0.0, "fire":1.0e9, "xp":0, "phase":0.0, "no_reward":true, "scrap":true})
-	lane.shots.append({"p":Vector2(270, 505), "v":Vector2.UP * 700.0, "damage":5.0, "weapon":"pulse", "target":-1})
-	lane._update_shots()
-	check(float(lane.enemies[1].hp) > 0.0 and lane.shots.size() == 1, "A shot passes through scrap while a real enemy is on screen")
-	lane.enemies[0].hp = -1.0
-	lane.enemies = lane.enemies.filter(func(e): return e.hp > 0.0)
-	lane.shots = [{"p":Vector2(270, 505), "v":Vector2.UP * 700.0, "damage":5.0, "weapon":"pulse", "target":-1}]
-	lane._update_shots()
-	check(lane.enemies.is_empty() or float(lane.enemies[0].hp) <= 0.0, "With no real enemy left, shots pop scrap")
+	check(not hard._packs_enabled(), "Hard/Insane keep their exact no-Hangar World 1 gate (no packs)")
 
 func _test_saves() -> void:
 	var services := Services.new()

@@ -527,7 +527,6 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		var art_key := ("boss" if boss else (kind if SHIPS.has(kind) else ("gunship" if kind in ["missile_bomber", "carrier", "shieldguard", "minelayer", "ion_frigate", "corroder", "disruptor"] else "drone")))
 		var tint := Color("ff9a86") if bool(enemy.get("rival",false)) else Color.WHITE
 		match kind:
-			"scrap": tint = Color(0.62, 0.66, 0.72, 0.85) # harmless salvage, not a threat
 			"interceptor": tint = Color("66f5df")
 			"rusher": tint = Color("ff938e")
 			"missile_bomber": tint = Color("ffb76c")
@@ -542,7 +541,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 			"boss4": tint = Color("cda8ff")
 		var bank := sin(sim.time * (2.2 if kind == "interceptor" else 0.7) + enemy.phase) * (0.035 if boss else 0.11)
 		# Swarm-pack members are smaller ships flying as one formation.
-		var art_scale := 0.72 if enemy.has("pack_id") else (0.5 if kind == "scrap" else 1.0)
+		var art_scale := 0.72 if enemy.has("pack_id") else 1.0
 		draw_set_transform(p, bank, Vector2(art_scale, art_scale))
 		if _custom_enemy(kind):
 			_draw_custom_enemy(kind)
@@ -1016,7 +1015,7 @@ func _draw_effect(effect: Dictionary) -> void:
 			draw_line(p + direction * age * 7, p + direction * age * 26, Color(color, alpha), 1.8, true)
 	else:
 		var big: bool = effect.get("boss", false)
-		var radius := (115 if big else (28 if effect.get("scrap", false) else 48)) * age
+		var radius := (115 if big else 48) * age
 		_glow(p, maxf(1, (32 if big else 15) * alpha), Color(1.0, 0.75, 0.3, alpha))
 		draw_arc(p, radius + 5, 0, TAU, 48, Color(1, 0.6, 0.2, alpha * 0.65), 2.0, true)
 		var count := 14 if profile.reduced else 25
