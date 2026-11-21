@@ -945,9 +945,9 @@ func _name_part(full: String, part: int) -> String:
 
 func _difficulty_text(id: String) -> String:
 	match id:
-		"hard": return "Enemies get 25% more health and damage, and fire and arrive faster. Cores ×1.75."
-		"insane": return "2× Normal enemy health and damage. More enemy shots, not more spawns. Cores ×2.5."
-	return "Standard enemy strength. Cores ×1."
+		"hard": return "Enemies are 25% tougher and shoot more. Cores ×1.75."
+		"insane": return "Enemies are twice as tough and shoot even more. Cores ×2.5."
+	return "The normal challenge. Cores ×1."
 
 func _multiplier_text(id: String) -> String:
 	var value := float(Catalog.REWARD_MULTIPLIERS[id])
@@ -1040,7 +1040,7 @@ func _show_menu() -> void:
 	Kit.label(names, "Pilot · " + _name_part(pilot.name, 0), 14, Kit.MUTED)
 	var change_button := _ui_button(loadout_row, "Change", _open_loadout.bind("menu"), "ghost", 44)
 	change_button.name = "ChangeLoadout"
-	change_button.tooltip_text = "Choose ship, pilot, or flight artifact"
+	change_button.tooltip_text = "Choose ship, pilot or rules"
 	change_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	# The Daily is the same UTC challenge and starting ship for every player.
 	var daily: Dictionary = Progress.daily_setup(Progress.utc_day())
@@ -1066,7 +1066,7 @@ func _show_menu() -> void:
 	if game_center.supports_game_center():
 		var leaderboard := _ui_button(daily_actions, "Leaderboard", _show_game_center_leaderboard, "ghost", 44, true)
 		leaderboard.tooltip_text = "Game Center daily leaderboard"
-	Kit.label(body, "Regular flight difficulty", 14, Kit.MUTED)
+	Kit.label(body, "Difficulty", 14, Kit.MUTED)
 	var segments := HBoxContainer.new()
 	segments.add_theme_constant_override("separation", 6)
 	body.add_child(segments)
@@ -1096,9 +1096,9 @@ func _show_menu() -> void:
 	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
 	var primary: Button
 	if saved.is_empty():
-		primary = _ui_button(reading_footer, "Launch flight", _launch, "primary", 60, true)
+		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
 	else:
-		_ui_button(bottom, "Start new flight", _confirm_abandon.bind("menu"), "ghost", 44)
+		_ui_button(bottom, "Start new run", _confirm_abandon.bind("menu"), "ghost", 44)
 		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
 		primary = _ui_button(reading_footer, resume_title, _resume_run, "primary", 60, true)
 	_focus(primary)
@@ -1182,14 +1182,14 @@ func _show_achievements() -> void:
 	_page_header(view.top, "PILOT RECORD", "Achievements", _show_menu)
 	var unlocked: Dictionary = profile.achievements
 	Kit.label(view.top, "%d / %d earned  ·  saved on this device" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
-	Kit.label(view.body, "Tough flights are part of the climb. These milestones track the things you've survived, discovered and mastered.", 16, Kit.TEXT, true)
+	Kit.label(view.body, "Goals to aim for. Each one unlocks when you do it.", 16, Kit.TEXT, true)
 	if game_center.supports_game_center():
 		_ui_button(view.body, "View Apple Game Center achievements", _show_native_achievements, "secondary", 48)
 	for item in Progress.ACHIEVEMENTS:
 		var id: String = str(item.id)
 		var is_unlocked: bool = unlocked.has(id)
 		if bool(item.get("local_only", false)) and not is_unlocked:
-			_info_card(view.body, "Unlisted achievement", "The flight recorder is waiting for a signal.", Kit.MUTED)
+			_info_card(view.body, "Unlisted achievement", "Nothing earned yet.", Kit.MUTED)
 			continue
 		var done: int = mini(int(item.target), Progress.progress(profile, id))
 		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
@@ -1227,20 +1227,20 @@ func _show_rival_journal() -> void:
 	mode = "rival_journal"
 	var view := _page(1.0, true, 520.0)
 	_page_header(view.top, "LOCAL DOSSIER", "Rival captains", _show_menu)
-	Kit.label(view.top, "Personal enemies. No online tracking or combat bonuses.", 15, Kit.MUTED, true)
+	Kit.label(view.top, "Enemy captains who beat you. Saved on this device only.", 15, Kit.MUTED, true)
 	var active: Dictionary = profile.rival_active
 	if active.is_empty():
-		_info_card(view.body, "No active rival", "Lose to an enemy captain and they may return in a later regular flight.", Kit.MUTED)
+		_info_card(view.body, "No active rival", "If an enemy captain beats you, they may come back in a later run.", Kit.MUTED)
 	else:
 		_section(view.body, "Still at large", Kit.DANGER)
 		_rival_identity(view.body, active, "Defeated you: %d  ·  Sightings: %d  ·  Escapes: %d\nFirst encountered in World %d" % [int(active.get("defeat_count",1)), int(active.get("times_encountered",0)), int(active.get("times_escaped",0)), int(active.get("world_created",1))])
 	var history: Array = profile.rival_archive
 	_section(view.body, "Retired captains (%d)" % history.size(), Kit.AMBER)
 	if history.is_empty():
-		Kit.label(view.body, "No retired rivals yet. Every captain you defeat earns a permanent cosmetic dossier trophy.", 16, Kit.MUTED, true)
+		Kit.label(view.body, "No rivals beaten yet. Beat a captain to earn a trophy.", 16, Kit.MUTED, true)
 	for i in range(history.size()-1, -1, -1):
 		var retired: Dictionary = history[i]
-		_rival_identity(view.body, retired, "RETIRED  !  ·  Defeated you %d time(s)  ·  %d encounter(s)\nTrophy recorded on this device." % [int(retired.get("defeat_count",1)),int(retired.get("times_encountered",0))])
+		_rival_identity(view.body, retired, "BEATEN  !  ·  Beat you %d time(s)  ·  Met %d time(s)\nTrophy saved on this device." % [int(retired.get("defeat_count",1)),int(retired.get("times_encountered",0))])
 	_focus(_ui_button(reading_footer, "Back to Star/Run", _show_menu, "primary", 54, true))
 
 func _rival_stinger(title: String, note: String, reward: bool = false) -> void:
@@ -1248,9 +1248,9 @@ func _rival_stinger(title: String, note: String, reward: bool = false) -> void:
 	rival_stinger_clock = 0.0
 	var view := _page(0.97, true, 490.0)
 	_page_header(view.top, "!  INCOMING TRANSMISSION  !", title)
-	Kit.label(view.top, "A captain from your flight history has returned." if not reward else "The score is settled.", 16, Kit.AMBER, true)
+	Kit.label(view.top, "A captain who beat you before is back." if not reward else "The score is settled.", 16, Kit.AMBER, true)
 	_rival_identity(view.body, sim.rival_record, note)
-	var action := _ui_button(reading_footer, "Continue flight", _dismiss_rival_stinger, "primary", 60, true)
+	var action := _ui_button(reading_footer, "Continue", _dismiss_rival_stinger, "primary", 60, true)
 	_focus(action)
 	sound.play("warning" if not reward else "victory")
 	_haptic(120)
@@ -1261,14 +1261,14 @@ func _show_rival_intro() -> void:
 		return
 	if RivalCaptains.note_encounter(profile, sim):
 		_save_profile()
-	_rival_stinger("RIVAL SIGHTED!", "This captain's earlier attack ended one of your flights.\nDefeats: %d  ·  World %d  ·  Eliminate or survive the captain." % [int(sim.rival_record.get("defeat_count",1)),int(sim.stage)])
+	_rival_stinger("RIVAL SIGHTED!", "This captain ended one of your runs.\nWins against you: %d  ·  World %d  ·  Destroy them or outlast them." % [int(sim.rival_record.get("defeat_count",1)),int(sim.stage)])
 
 func _show_rival_retired() -> void:
 	if not sim.rival_retire_pending or sim.rival_record.is_empty():
 		return
 	if RivalCaptains.retire(profile, sim):
 		_save_profile()
-	_rival_stinger("RIVAL DEFEATED!", "Captain retired. A permanent trophy and battle record have been added to your local Rival dossier.", true)
+	_rival_stinger("RIVAL DEFEATED!", "Captain beaten. A trophy was added to your Rivals list.", true)
 
 func _dismiss_rival_stinger() -> void:
 	if mode not in ["rival_intro", "rival_retired"]:
@@ -1324,8 +1324,8 @@ func _show_settings() -> void:
 	mode = "settings"
 	var box := _sheet("Sound and effects", "Settings", _close_sheet, false)
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
-	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
-	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	_toggle_row(box, "Music", "Music during runs.", bool(profile.music), _toggle_music)
+	_toggle_row(box, "Calmer visuals", "Less glow, fewer effects and no screen shake.", bool(profile.reduced), _toggle_fx)
 	if _desktop_window():
 		_toggle_row(box, "Fullscreen", "Also F11 or Alt+Enter.", bool(profile.get("fullscreen", false)), _toggle_fullscreen)
 	if (OS.get_name() == "iOS" and _ad_monetization_enabled()) or OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
@@ -1373,13 +1373,13 @@ func _show_briefing(launch_after: bool = false) -> void:
 		sheet_base = "menu"
 	_render_base(sheet_base)
 	mode = "briefing"
-	var box := _sheet("How a run works", "Flight briefing", _close_sheet, false)
+	var box := _sheet("How a run works", "How to play", _close_sheet, false)
 	var steps := [
 		["Autopilot", "Your ship steers and shoots by itself. You never aim."],
-		["Abilities", "The four buttons under the playfield are yours. Tap one when it's ready, then it recharges."],
-		["Level up", "Upgrade both matching abilities to rank 5 to fuse them and free a slot."],
-		["Four bosses", "Clear four stages. The cores you earn buy permanent upgrades in the Hangar."],
-		["Unknown signals", "Watch for unlisted transmissions in Worlds 2–4 on regular flights. Recover any two before you defeat the Regent."],
+		["Abilities", "Tap the four buttons at the bottom to use abilities. Each one recharges after use."],
+		["Level up", "Pick an upgrade each time you level up. Two matching abilities at rank 5 can fuse into one."],
+		["Four bosses", "Beat four worlds. Spend the Cores you earn on permanent upgrades in the Hangar."],
+		["Unknown signals", "Look for hidden signals in Worlds 2 to 4. Find two before the last boss to unlock a secret world."],
 	]
 	for i in range(steps.size()):
 		var row := HBoxContainer.new()
@@ -1418,9 +1418,9 @@ func _confirm_abandon(base: String, desired: String = "normal") -> void:
 	_render_base(base)
 	mode = "abandon"
 	var saved := services.read_save(Services.RUN)
-	var box := _sheet("Abandon your saved flight?", "New flight", _close_sheet, false)
-	Kit.label(box, "You have a flight saved in Stage %d. Starting over deletes it, and it pays out no cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
-	_focus(_ui_button(box, "Resume saved flight", _resume_run, "primary", 54))
+	var box := _sheet("Delete your saved run?", "New run", _close_sheet, false)
+	Kit.label(box, "You have a run saved in World %d. Starting over deletes it and earns no Cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
+	_focus(_ui_button(box, "Resume saved run", _resume_run, "primary", 54))
 	_ui_button(box, "Abandon and start daily" if pending_launch == "daily" else "Abandon and launch", _new_daily_run if pending_launch == "daily" else _launch, "danger", 48)
 	_ui_button(box, "Cancel", _close_sheet, "ghost", 44)
 
@@ -1480,7 +1480,7 @@ func _show_hangar() -> void:
 	if refund_total > 0:
 		var armed := confirm_key == "refund"
 		var refund := _ui_button(list, ("Tap again to refund %d cores" if armed else "Refund all upgrades  ·  %d cores") % refund_total, _refund_tap, "danger" if armed else "ghost", 44)
-		refund.tooltip_text = "Every rank in every category is removed and fully refunded."
+		refund.tooltip_text = "Removes all upgrades and gives back every Core."
 	_keep_scroll(hangar_scroll, prior)
 	var launch := _ui_button(reading_footer, "Launch", _launch_or_confirm.bind("hangar"), "primary", 56, true)
 	_focus(launch)
@@ -1560,11 +1560,11 @@ func _show_loadout() -> void:
 	var prior: int = reading_scroll.scroll_vertical if mode == "loadout" and is_instance_valid(reading_scroll) else 0
 	mode = "loadout"
 	var view := _page(1.0, true, 560.0, 24.0)
-	_page_header(view.top, "Next flight", "Flight loadout", _loadout_back, true)
+	_page_header(view.top, "Next run", "Loadout", _loadout_back, true)
 	_tabs(view.top, ["Ships", "Pilots", "Artifacts"], loadout_tab, _loadout_tab)
 	var body: VBoxContainer = view.body
 	if loadout_tab == "Artifacts":
-		Kit.label(body, "Optional rules for regular flights. Daily Challenges always use Standard.", 16, Kit.MUTED, true)
+		Kit.label(body, "Optional rules for normal runs. The Daily always uses Standard.", 16, Kit.MUTED, true)
 		for entry in Catalog.ARTIFACTS:
 			_artifact_card(body, entry)
 	else:
@@ -1711,7 +1711,7 @@ func _show_build_choice() -> void:
 	if str(choice.kind) == "evolution":
 		var weapon_card: Dictionary = sim.content.cards.filter(func(c): return str(c.id) == id)[0]
 		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
-		Kit.label(body, str(weapon_card.name) + " keeps its current ranks. Pick a permanent specialization for this flight.", 16, Kit.MUTED, true)
+		Kit.label(body, str(weapon_card.name) + " keeps its ranks. Pick one bonus for the rest of this run.", 16, Kit.MUTED, true)
 		for option in sim.content.weapon_evolutions[id]:
 			var card := _tap_card(body, _choose_build_decision.bind(str(option.id)), Kit.AMBER)
 			card.panel.name = "EvolutionChoice" + str(option.id).to_pascal_case()
@@ -1730,7 +1730,7 @@ func _show_build_choice() -> void:
 		Kit.caps(fusion.content, "FUSE · FREE ONE SLOT", Kit.VIOLET, 12)
 		var fusion_title := Kit.label(fusion.content, "Fuse · " + str(spec.name), 20, Color.WHITE, true)
 		fusion_title.add_theme_font_override("font", Kit.font(0, 0.45))
-		Kit.label(fusion.content, str(spec.description) + "\nBoth rank-5 abilities become a new rank-1 fusion. Frees one slot.", 16, Kit.TEXT, true)
+		Kit.label(fusion.content, str(spec.description) + "\nBoth abilities become one new ability at rank 1. Frees a slot.", 16, Kit.TEXT, true)
 		Kit.caps(fusion.content, "TAP TO FUSE", Kit.CYAN, 12)
 		first_option = fusion.button
 		var keep := _tap_card(body, _choose_build_decision.bind("keep"), Kit.CYAN)
@@ -1738,7 +1738,7 @@ func _show_build_choice() -> void:
 		Kit.caps(keep.content, "KEEP SEPARATE", Kit.CYAN, 12)
 		var keep_title := Kit.label(keep.content, "Keep both abilities", 20, Color.WHITE, true)
 		keep_title.add_theme_font_override("font", Kit.font(0, 0.45))
-		Kit.label(keep.content, "Keep both abilities and their individual cooldowns. This fusion will not be offered again this run.", 16, Kit.TEXT, true)
+		Kit.label(keep.content, "Keep both abilities as they are. This fusion won't be offered again this run.", 16, Kit.TEXT, true)
 		Kit.caps(keep.content, "TAP TO KEEP BOTH", Kit.CYAN, 12)
 	_focus(first_option)
 
@@ -1776,9 +1776,9 @@ func _show_cards(play_sound: bool = true) -> void:
 	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
 	_page_header(top, "Level %d  ·  Stage %d" % [sim.level, sim.stage], title)
 	if banish_mode:
-		Kit.label(top, "Tap one to take it out of this run's draft pool. %d removal%s left." % [sim.banishes_left, "" if sim.banishes_left == 1 else "s"], 16, Kit.DANGER, true)
+		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
 	elif capped:
-		Kit.label(top, "All upgrades installed. Repair your ship or bank Cores.", 16, Kit.MUTED, true)
+		Kit.label(top, "You have every upgrade. Repair your ship or take Cores.", 16, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
 		for slot in sim.active_slots:
@@ -1790,9 +1790,9 @@ func _show_cards(play_sound: bool = true) -> void:
 		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
 	elif not capped:
 		if sim.rerolls_left > 0:
-			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Replace the whole hand. Hangar rerolls refill each stage.")
+			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Get new choices. Rerolls refill each world.")
 		if sim.skips_left > 0:
-			_draft_tool("Skip", "+%d hull" % (12 + int(sim.meta.skip_patch) * 6), _draft_action.bind("skip", 0), "Take no upgrade and repair %d hull" % (12 + int(sim.meta.skip_patch) * 6))
+			_draft_tool("Skip", "+%d hull" % (12 + int(sim.meta.skip_patch) * 6), _draft_action.bind("skip", 0), "Skip and repair %d hull" % (12 + int(sim.meta.skip_patch) * 6))
 		if sim.banishes_left > 0:
 			_draft_tool("Remove", "%d left" % sim.banishes_left, _toggle_banish, "Take one upgrade out of this run's pool")
 	if not card_buttons.is_empty():
@@ -1826,7 +1826,7 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
 	elif tag == "MUTATION":
 		accent = Kit.VIOLET
-		tag_text = "RARE WEAPON MUTATION · one per run"
+		tag_text = "Rare · one per run"
 	elif id == "core_cache":
 		accent = Kit.AMBER
 		tag_text = "Cores"
@@ -1872,7 +1872,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
 	Kit.label(info, str(fused.description) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.description), 16, Kit.TEXT, true)
 	if not fusion.is_empty():
-		var fusion_note := "Unlocks %s · choose fuse or keep" % str(fused.name) if sim._new_build_decisions() else "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank]
+		var fusion_note := "Unlocks %s · fuse or keep" % str(fused.name) if sim._new_build_decisions() else "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank]
 		Kit.label(info, fusion_note, 15, Kit.VIOLET, true)
 	elif reaches_milestone:
 		# Don't repeat distant rank descriptions on every ordinary card.
@@ -1931,7 +1931,7 @@ func _show_pause() -> void:
 	_save_run()
 	var seconds := int(sim.time - sim.stage_start)
 	var box := _sheet("Paused", "Stage %d  ·  %s  ·  %02d:%02d" % [sim.stage, sim.stage_name().capitalize(), seconds / 60, seconds % 60])
-	Kit.label(box, "Your flight is saved. Nothing moves until you resume.", 15, Kit.MUTED, true)
+	Kit.label(box, "Your run is saved. The game is paused.", 15, Kit.MUTED, true)
 	var resume := _ui_button(box, "Resume", _toggle_pause, "primary", 56)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
@@ -1984,7 +1984,7 @@ func _show_build() -> void:
 			slot_number.custom_minimum_size.x = 36
 			row.add_child(text)
 			Kit.label(text, "Empty slot", 16, Kit.DIM)
-			Kit.label(text, "Draft an ability to fill it.", 15, Kit.DIM)
+			Kit.label(text, "Pick an ability to fill it.", 15, Kit.DIM)
 			continue
 		var id: String = str(sim.active_slots[slot])
 		var badge := IconBadge.new()
@@ -2019,7 +2019,7 @@ func _show_build() -> void:
 		if not nearby.is_empty():
 			_section(body, "Builds in progress")
 			for i in range(mini(3, nearby.size())):
-				_info_card(body, str(nearby[i].name), "%d/3 components · Keep building to unlock its automatic signature." % int(nearby[i].progress), Kit.AMBER)
+				_info_card(body, str(nearby[i].name), "%d/3 parts · Get all 3 to switch it on." % int(nearby[i].progress), Kit.AMBER)
 	var engines: Array = sim.active_engines()
 	if not engines.is_empty():
 		_section(body, "Automatic build engines")
@@ -2039,7 +2039,7 @@ func _show_build() -> void:
 			_info_card(body, str(spec.name), "Gain: %s\nCost: %s" % [spec.benefit, spec.cost], Kit.CYAN)
 	if not sim.route_choice.is_empty():
 		Kit.label(body, "Current route: " + _route_name(sim.route_choice), 16, Kit.CYAN)
-	_ui_button(body, "Hide full equipment list" if build_show_all else "Show weapons, passives and Hangar ranks", _toggle_build_details, "ghost", 44)
+	_ui_button(body, "Hide full equipment list" if build_show_all else "Show all upgrades and Hangar ranks", _toggle_build_details, "ghost", 44)
 	if build_show_all:
 		for group in [["WEAPON", "Automatic weapons"], ["SYSTEM", "Passive upgrades"]]:
 			_section(body, str(group[1]))
@@ -2080,11 +2080,11 @@ func _show_signal() -> void:
 	mode = "archive_signal"
 	_save_run()
 	var view := _page(1.0, true, 500.0)
-	_page_header(view.top, "Unknown frequency  ·  %d / %d signals" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS], HiddenSector.signal_name(sim.seed_value, sim.stage).capitalize())
-	Kit.label(view.top, "“If you can hear this, the Citadel is hiding a door. Recover two coordinates and we can show you where.”", 17, Kit.TEXT, true)
-	_info_card(view.body, "Tune the receiver", "Cast any ready ability when the receiver says CAST NOW. The window repeats for 52 seconds.", HiddenSector.MINT)
+	_page_header(view.top, "Hidden signal  ·  %d / %d found" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS], HiddenSector.signal_name(sim.seed_value, sim.stage).capitalize())
+	Kit.label(view.top, "“If you can hear this, there is a hidden door past the last world. Find two signals and we can show you where.”", 17, Kit.TEXT, true)
+	_info_card(view.body, "Tune the receiver", "Use any ability when you see USE NOW. You have 52 seconds.", HiddenSector.MINT)
 	_ui_button(view.body, "Tune receiver", _choose_signal.bind("cast"), "secondary", 48)
-	_info_card(view.body, "Intercept the courier", "Shoot down the marked courier before it escapes. Your ship tracks the target automatically.", HiddenSector.COLOR)
+	_info_card(view.body, "Intercept the courier", "Shoot down the marked ship before it escapes. Your ship aims at it for you.", HiddenSector.COLOR)
 	_ui_button(view.body, "Intercept courier", _choose_signal.bind("courier"), "secondary", 48)
 	_focus(_ui_button(reading_footer, "Ignore signal", _choose_signal.bind("ignore"), "ghost", 50, true))
 
@@ -2110,7 +2110,7 @@ func _show_archive_reveal(reset_clock: bool = true) -> void:
 	_page_header(view.top, "Campaign cleared  ·  Signal found", "A door in the dark")
 	_archive_art(view.body, "gate")
 	Kit.label(view.body, "“The Regent is down. Look beyond the wreckage. That light has been waiting for you.”", 18, Kit.TEXT, true)
-	Kit.label(view.body, "The Silent Archive is a tougher final sector. Your four-world victory and Cores are secured. Enter with your current build and a fresh shield.", 16, Kit.MUTED, true)
+	Kit.label(view.body, "The Silent Archive is a harder secret world. Your win and Cores are already saved. You keep your build and get a full shield.", 16, Kit.MUTED, true)
 	var finish_button := _ui_button(reading_footer, "Finish campaign", _finish_at_citadel, "primary", 52, true)
 	_ui_button(reading_footer, "Play Endless", _continue_endless, "secondary", 52, true)
 	_ui_button(view.bottom, "Enter the Silent Archive", _enter_archive, "amber", 52)
@@ -2136,12 +2136,12 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		_page_header(view.top, "Archive defense online", "The Last Custodian")
 		_archive_art(view.body, "boss")
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
-		Kit.label(view.body, "Three reinforced seals. Save a ready ability for each warning: counter to expose the core. Damage pushes each phase forward quickly, but the Custodian fights back with a new surge.", 17, HiddenSector.MINT, true)
+		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
 		_archive_art(view.body, "arrival")
-		Kit.label(view.body, "Two coordinates. One station. Your autopilot has a heading.", 18, Kit.TEXT, true)
-		Kit.label(view.body, "Keep a ready ability for the station's lock warnings. Destroy relay ships to scatter their escort fire.", 17, HiddenSector.MINT, true)
+		Kit.label(view.body, "You found both signals. Your ship knows the way.", 18, Kit.TEXT, true)
+		Kit.label(view.body, "Save an ability for the station's warnings. Destroy the relay ships to weaken its guards.", 17, HiddenSector.MINT, true)
 	_focus(_ui_button(reading_footer, "Engage Custodian" if sim.boss_spawned else "Fly into the Archive", _resume_archive, "primary", 56, true))
 	if reset_sound:
 		sound.play("archive-boss" if sim.boss_spawned else "archive-signal", -6.0)
@@ -2161,10 +2161,10 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 	var view := _page(1.0, true, 540.0)
 	_page_header(view.top, "World 5 clear  ·  Final signal", "A light left on")
 	_archive_art(view.body, "epilogue")
-	Kit.label(view.body, "The station unlocks one bay at a time. Thousands of distress calls spill into open space. Yours is the first ship to answer.", 19, Kit.TEXT, true)
+	Kit.label(view.body, "The station opens. You found the secret ending.", 19, Kit.TEXT, true)
 	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
 	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
-	_focus(_ui_button(reading_footer, "Complete flight", _finish_archive, "primary", 56, true))
+	_focus(_ui_button(reading_footer, "Finish", _finish_archive, "primary", 56, true))
 	if reset_sound:
 		sound.play("archive-release", -4.0)
 		_haptic(125)
@@ -2181,7 +2181,7 @@ func _update_archive_hud() -> void:
 		var world_y := 289.0 if sim.secret_entered and sim.boss_spawned else 97.0
 		signal_label.position.y = field.position.y + world_y * scale_factor
 	if not sim.archive_attack.is_empty():
-		signal_label.text = "%s  %.1fs  ·  CAST AN ABILITY" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time)]
+		signal_label.text = "%s  %.1fs  ·  USE AN ABILITY" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time)]
 		signal_label.add_theme_color_override("font_color", Kit.DANGER)
 	elif sim.signal_status == "cast":
 		signal_label.text = "CAST NOW  ·  ANY ABILITY" if sim.signal_cast_window() else "RECEIVER TUNING  ·  WAIT"
@@ -2253,20 +2253,20 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
 	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
 	if is_final:
-		var final_copy := "Daily complete. Claim your score and try again for a new personal best." if not sim.daily_day.is_empty() else "All four worlds cleared. Claim your win, or keep this build and take on harder worlds."
+		var final_copy := "Daily done. Save your score, or try again to beat it." if not sim.daily_day.is_empty() else "You beat all four worlds. Take your win, or keep going with harder worlds."
 		Kit.label(content, final_copy, 16, Kit.TEXT, true)
 	elif sim.endless_enabled:
-		Kit.label(content, "World %d awaits. The enemies, bosses and rewards keep escalating." % (sim.stage + 1), 16, Kit.TEXT, true)
+		Kit.label(content, "World %d is next. Enemies, bosses and rewards keep getting bigger." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
-		Kit.label(content, "Next: %s, %s. Choose a prototype or Cores, then a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
+		Kit.label(content, "Next: %s, %s. Pick a Prototype or Cores, then a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
 	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
 	if is_final and sim.daily_day.is_empty():
 		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	elif sim.endless_enabled:
-		stage_clear_secondary = _ui_button(content, "Claim victory with this build", _claim_endless, "secondary", 50)
+		stage_clear_secondary = _ui_button(content, "Take the win", _claim_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	if not stage_clear_button.disabled:
 		_focus(stage_clear_button)
@@ -2301,10 +2301,10 @@ func _show_merchant_signal() -> void:
 	mode = "merchant_signal"
 	_save_run()
 	var view := _page(0.97, true, 510.0)
-	_page_header(view.top, "!  INCOMING HAIL  ·  WORLD %d" % sim.stage, "A private offer")
+	_page_header(view.top, "!  A TRADER IS CALLING  ·  WORLD %d" % sim.stage, "A private offer")
 	_merchant_identity(view.body)
-	Kit.label(view.body, "An unregistered freighter is offering unusual hardware. Every deal has a price. Combat is paused while you decide.", 16, Kit.TEXT, true)
-	Kit.label(view.body, "Hail them, or ignore the signal. No steering or combat time required.", 15, Kit.MUTED, true)
+	Kit.label(view.body, "A trader is offering rare gear. Every deal has a cost. The game is paused while you decide.", 16, Kit.TEXT, true)
+	Kit.label(view.body, "Answer, or ignore them and keep flying.", 15, Kit.MUTED, true)
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	_focus(_ui_button(reading_footer, "Hail freighter", _merchant_hail, "primary", 58, true))
 	_ui_button(reading_footer, "Ignore signal", _merchant_leave, "secondary", 58, true)
@@ -2323,8 +2323,8 @@ func _show_merchant_shop() -> void:
 	mode = "merchant_shop"
 	_save_run()
 	var view := _page(0.95, true, 540.0)
-	_page_header(view.top, "UNREGISTERED MARKET  ·  ONE DEAL", "Quartermaster")
-	Kit.label(view.top, "One trade per visit. Every cost applies for this flight only. You can leave without buying.", 16, Kit.MUTED, true)
+	_page_header(view.top, "TRADER  ·  ONE DEAL", "Quartermaster")
+	Kit.label(view.top, "You can make one deal. Costs last for this run only. You can leave without buying.", 16, Kit.MUTED, true)
 	_merchant_identity(view.body)
 	for offer in sim.merchant_offers:
 		var id: String = str(offer.id)
@@ -2336,7 +2336,7 @@ func _show_merchant_shop() -> void:
 		if not sim.merchant_can_afford(id):
 			card.button.disabled = true
 			card.panel.modulate = Color(1,1,1,0.48)
-			Kit.label(card.content, "Unavailable with your current resources or build.", 14, Kit.MUTED, true)
+			Kit.label(card.content, "You can't take this deal right now.", 14, Kit.MUTED, true)
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	_ui_button(reading_footer, "Leave without a deal", _merchant_leave, "secondary", 55, true)
 	if not card_buttons.is_empty():
@@ -2360,7 +2360,7 @@ func _show_merchant_confirm() -> void:
 	if not offer.is_empty():
 		Kit.label(view.body, str(offer.name), 22, Kit.AMBER, true)
 		_gain_cost(view.body, str(offer.gain), str(offer.cost))
-	Kit.label(view.body, "This changes the rest of this flight. Nothing is paid or changed until you confirm.", 16, Kit.MUTED, true)
+	Kit.label(view.body, "This lasts for the rest of this run. Nothing happens until you confirm.", 16, Kit.MUTED, true)
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	var accept := _ui_button(reading_footer, "Accept trade", _merchant_accept, "primary", 55, true)
 	accept.disabled = not sim.merchant_can_afford(sim.merchant_selected)
@@ -2397,9 +2397,9 @@ func _show_merchant_receipt() -> void:
 	var view := _page(0.97, true, 490.0)
 	_page_header(view.top, "TRANSACTION COMPLETE", "Deal made")
 	_merchant_identity(view.body)
-	Kit.label(view.body, "Deal complete. Payment and consequences apply for this flight. The freighter is already gone.", 17, Kit.TEXT, true)
+	Kit.label(view.body, "Deal done. It lasts for the rest of this run. The trader is gone.", 17, Kit.TEXT, true)
 	Kit.label(view.body, "Received: " + (_merchant_trade_name(str(sim.merchant_trade_log[-1])) if not sim.merchant_trade_log.is_empty() else "Unknown"), 16, Kit.CYAN, true)
-	_focus(_ui_button(reading_footer, "Back to the flight", _merchant_resume, "primary", 58, true))
+	_focus(_ui_button(reading_footer, "Back to the game", _merchant_resume, "primary", 58, true))
 
 func _merchant_leave() -> void:
 	if mode not in ["merchant_signal","merchant_shop","merchant_confirm"] or not sim.merchant_leave():
@@ -2441,7 +2441,7 @@ func _show_prototypes() -> void:
 	_page_header(view.top, "Between worlds · step 1 of 2", "Choose a prototype")
 	# This explanation scrolls with the options rather than crowding the
 	# fixed header on a short phone.
-	Kit.label(view.body, "Install a prototype, take a risky black-market modification, or bank %d Cores. One choice per warp." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
+	Kit.label(view.body, "Each Prototype is a big bonus with a cost. Or skip it and take %d Cores." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
 	for i in range(sim.prototype_offers.size()):
 		var spec: Dictionary = sim.prototype_spec(str(sim.prototype_offers[i]))
 		var illegal: bool = str(spec.role) == "ILLEGAL TRADE"
@@ -2456,7 +2456,7 @@ func _show_prototypes() -> void:
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
-	skip_button.tooltip_text = "Bank %d Cores for this flight's final payout and continue to route selection." % Simulation.PROTOTYPE_SKIP_CORES
+	skip_button.tooltip_text = "Add %d Cores to your reward and go to the next step." % Simulation.PROTOTYPE_SKIP_CORES
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 
@@ -2487,9 +2487,9 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.body, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull, refill shields, take 35% less damage; +15% weapon damage above half shields; abilities recharge 15% faster next world.", "cost": "Weapon bonus drops at half shields. No extra XP or bounty.", "accent": Kit.CYAN},
-		{"id": "overclock", "tag": "All-in", "gain": "Automatic weapons hit 35% harder and fire 20% faster next world.", "cost": "Repair only 10% hull, start at 50% shields; hull hits hurt 20% more.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade pick, +50%% kill XP, +%d boss Cores; repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies have 30% more health, damage and spawn pressure.", "accent": Kit.DANGER},
+		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull and refill shield. Next world: take 35% less damage, abilities recharge 15% faster, +15% gun damage while shield is above half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
+		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull and start at half shield. Hull damage is 20% higher.", "accent": Kit.AMBER},
+		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade, +50%% XP, +%d Cores for the boss. Repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies are 30% tougher and there are more of them.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
@@ -2513,21 +2513,21 @@ func _show_results() -> void:
 		title = "Open Frequency" if sim.won else "Signal lost"
 	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], title)
 	if sim.secret_entered and not sim.won:
-		Kit.label(view.top, "The Citadel victory and campaign Cores are secured.", 16, HiddenSector.MINT, true)
-	Kit.label(view.top, "Reached %s in %02d:%02d of flight." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
+		Kit.label(view.top, "Your win and Cores are saved.", 16, HiddenSector.MINT, true)
+	Kit.label(view.top, "Reached %s in %02d:%02d." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
 	if not result_rival_news.is_empty():
 		var recent: Dictionary = result_rival_news.get("rival", {})
 		var event_kind: String = str(result_rival_news.get("kind", ""))
 		if not recent.is_empty():
 			match event_kind:
 				"created":
-					_rival_identity(body, recent, "!  NEW RIVAL RECORDED\nThis captain was responsible for your defeat. They may return in a later regular flight.")
+					_rival_identity(body, recent, "!  NEW RIVAL\nThis captain beat you. They may come back in a later run.")
 				"rival_defeat":
-					_rival_identity(body, recent, "!  YOUR RIVAL STRUCK AGAIN\nTheir record grows stronger. You can still settle the score.")
+					_rival_identity(body, recent, "!  YOUR RIVAL BEAT YOU AGAIN\nYou can still get even.")
 				"retired":
-					_rival_identity(body, recent, "RIVAL DEFEATED  ·  Permanent cosmetic trophy saved.")
+					_rival_identity(body, recent, "RIVAL BEATEN  ·  Trophy saved.")
 	if sim.rival_outcome == "retired" and result_rival_news.is_empty() and not sim.rival_record.is_empty():
-		_rival_identity(body, sim.rival_record, "RIVAL RETIRED  ·  Recorded in your permanent local dossier.")
+		_rival_identity(body, sim.rival_record, "RIVAL BEATEN FOR GOOD  ·  Saved in your Rivals list.")
 	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
 		_ui_button(body, "Open rival dossier", _show_rival_journal, "secondary", 48)
 	var total_damage := 0.0
@@ -2541,8 +2541,8 @@ func _show_results() -> void:
 			worst_damage = value
 	if not sim.won and total_damage > 0.0:
 		var labels := {"heavy":"heavy beams", "chaff":"small shots", "ordnance":"missiles", "hazard":"hazards", "ion":"ion bursts", "corrosion":"corrosion", "heat":"heat attacks", "gravity":"gravity attacks", "disrupt":"disruption shots", "void":"void attacks"}
-		var advice := {"heavy":"Aegis blocks those. Wait for the charge warning before firing it.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small shots; Deflector converts them into shield.", "hazard":"Watch the incoming lanes and use short defensive windows.", "ion":"Capacitor restores your shield and clears its disruption.", "corrosion":"Avoid the corroders and add repair or armor.", "heat":"Use shield recovery and interrupt the enemy volley.", "gravity":"Use Chrono or Jammer to control crowded firing lanes.", "disrupt":"Jammer silences enemy weapons before they fire.", "void":"Keep a defensive active ready for the Citadel volleys."}
-		_info_card(body, "What took you down", "%d%% of incoming damage came from %s. %s" % [roundi(worst_damage / total_damage * 100.0), str(labels.get(worst_kind, worst_kind)), str(advice.get(worst_kind, "Upgrade your defenses before returning."))], Kit.DANGER)
+		var advice := {"heavy":"Aegis blocks beams. Use it when the warning shows.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small bullets. Deflector turns them into shield.", "hazard":"Watch where shots come from and use defense abilities in time.", "ion":"Capacitor refills your shield and fixes jamming.", "corrosion":"Kill corroding enemies first and add repair or armor.", "heat":"Add shield recharge and stop the enemy volley.", "gravity":"Chrono or Jammer helps when lots of enemies are shooting.", "disrupt":"Jammer silences enemy weapons before they fire.", "void":"Save a defense ability for the final boss's big attacks."}
+		_info_card(body, "What took you down", "%d%% of incoming damage came from %s. %s" % [roundi(worst_damage / total_damage * 100.0), str(labels.get(worst_kind, worst_kind)), str(advice.get(worst_kind, "Upgrade your defenses and try again."))], Kit.DANGER)
 	var hero := PanelContainer.new()
 	hero.add_theme_stylebox_override("panel", Kit.box(Color("1b160f"), Color("4d3c22"), 16, 1, 16, 14))
 	body.add_child(hero)
@@ -2615,7 +2615,7 @@ Same setup for everyone today. Unlimited retries; Cores only on the first finish
 		build_lines.append("Merchant: " + ", ".join(deal_names))
 	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
 	if sim.bounty_earned > 0:
-		_info_card(body, "Bounty contracts", "%d base cores from bounty runs." % sim.bounty_earned, Kit.AMBER)
+		_info_card(body, "Bounty contracts", "%d Cores from Bounty routes." % sim.bounty_earned, Kit.AMBER)
 	_info_card(body, "Ship at the end", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled], Color("9fcbff"))
 	var damage_lines := PackedStringArray()
 	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
@@ -2651,21 +2651,21 @@ func _opening_first30_beat() -> void:
 	opening_last_phase = phase
 	match phase:
 		"scouts":
-			banner_text = "SCOUT CONTACTS  ·  WEAPONS ONLINE"
+			banner_text = "ENEMIES AHEAD"
 			banner_clock = 3.5
 		"warning":
-			banner_text = "!  HOSTILE FORMATION INBOUND"
+			banner_text = "!  ENEMY GROUP INCOMING"
 			banner_clock = 4.0
 			sound.play("warning")
 		"formation":
-			banner_text = "STRIKE WING  ·  THREE-SHIP ATTACK"
+			banner_text = "THREE-SHIP ATTACK"
 			banner_clock = 3.5
 			sound.play("warning")
 		"recovery":
-			banner_text = "OPENING BREACH  ·  WATCH FOR REINFORCEMENTS"
+			banner_text = "MORE ENEMIES COMING"
 			banner_clock = 2.6
 		"counterattack":
-			banner_text = "COUNTERATTACK  ·  HOLD THE LINE"
+			banner_text = "BIG WAVE  ·  HOLD ON"
 			banner_clock = 3.5
 
 func _new_run() -> void:
@@ -2738,8 +2738,8 @@ func _show_beam_tutorial() -> void:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 9)
 	panel.add_child(column)
-	Kit.caps(column, "LIVE TRAINING  ·  HEAVY BEAM", Kit.AMBER, 14)
-	Kit.label(column, "The red lane shows where a heavy beam will fire. The red-marked enemy is charging it: destroy that enemy to cancel the beam, or use Aegis when it fires.", 17, Kit.TEXT, true)
+	Kit.caps(column, "TIP  ·  BIG BEAM", Kit.AMBER, 14)
+	Kit.label(column, "The red line shows where a big beam will hit. Destroy the marked enemy to stop it, or use Aegis when it fires.", 17, Kit.TEXT, true)
 	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
 	var slot: int = sim.active_slots.find("aegis")
 	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
@@ -2774,7 +2774,7 @@ func _start_flight() -> void:
 	for id in sim.active_slots:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
-	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Build your ship. Outlast four worlds.")
+	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Upgrade your ship. Survive four worlds.")
 	banner_clock = 5.0
 	sound.play("start")
 	_save_run()
@@ -2869,7 +2869,7 @@ func _process(delta: float) -> void:
 		if warning and not previous_warning:
 			sound.play("warning")
 			if sim.boss_spawned:
-				banner_text = "BOSS BEAM · %s · USE YOUR DEFENSE" % sim.boss_attack_pattern.to_upper()
+				banner_text = "BOSS BEAM · %s · USE A DEFENSE" % sim.boss_attack_pattern.to_upper()
 				banner_clock = 2.8
 		previous_warning = warning
 		for key in previous_ready:
@@ -2960,11 +2960,11 @@ func _update_hud() -> void:
 
 func _archive_signal_feedback() -> void:
 	if sim.signal_status == "offer":
-		banner_text = "UNLISTED SIGNAL · CHECK RECEIVER"
+		banner_text = "HIDDEN SIGNAL FOUND"
 		banner_clock = 4.0
 		sound.play("archive-signal")
 	elif sim.signal_status == "received":
-		banner_text = "%d / %d COORDINATES RECOVERED" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS]
+		banner_text = "%d / %d SIGNALS FOUND" % [sim.signal_count, HiddenSector.REQUIRED_SIGNALS]
 		banner_clock = 4.0
 		_save_run()
 		sound.play("archive-release", -10.0)

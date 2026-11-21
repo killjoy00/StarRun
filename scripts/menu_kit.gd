@@ -84,6 +84,10 @@ static func label(parent: Node, text_value: String, font_size: int, color: Color
 static func caps(parent: Node, text_value: String, color: Color = MUTED, font_size: int = 14) -> Label:
 	var node := label(parent, text_value.to_upper(), font_size, color)
 	node.add_theme_font_override("font", font(2, 0.25))
+	# A long tag in a column must wrap, never widen its card past the screen
+	# (it did on 390- and 430-wide iPhones). Row labels keep their width.
+	if not parent is HBoxContainer:
+		node.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return node
 
 ## Button kinds: primary (one per screen), secondary, ghost, danger, amber.

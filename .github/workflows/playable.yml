@@ -79,6 +79,13 @@ jobs:
           if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|Error calling from signal" /tmp/starrun-touch.log; then
             exit 1
           fi
+      - name: Layout fuzz - real drafts, Hangar and loadout tabs at four phone widths
+        run: |
+          set -o pipefail
+          xvfb-run -a godot --path . --audio-driver Dummy --script tests/layout_fuzz.gd 2>&1 | tee /tmp/starrun-layout-fuzz.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|Error calling from signal" /tmp/starrun-layout-fuzz.log; then
+            exit 1
+          fi
       - name: Capture UI screens at three viewport sizes
         run: |
           set -o pipefail

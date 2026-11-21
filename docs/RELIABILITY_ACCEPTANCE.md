@@ -22,7 +22,7 @@ Still required: touch-control reaction at 3x, device haptics and sound, safe are
 
 ## Quartermaster, mutations and general gameplay / issue #51
 
-- After an accepted trade, `merchant_state = "receipt"` is persisted. The purchase has already happened exactly once; the game pauses with the receipt until the player taps Back to the flight. A crash or home-screen return cannot hide the receipt or reapply the payment.
+- After an accepted trade, `merchant_state = "receipt"` is persisted. The purchase has already happened exactly once; the game pauses with the receipt until the player taps Back to the game. A crash or home-screen return cannot hide the receipt or reapply the payment.
 - A new merchant hail is postponed (not permanently consumed) when an Archive signal is unresolved, a Rival Captain notification is pending, or a draft is active. Rival arrivals are likewise deferred during modal trade or coordinate decisions.
 - Closing an earlier modal surfaces the outstanding signal. `tests/event_overlay_smoke.gd` covers actual UI screens at 360/390 logical widths, including restarting after preview/confirmation and again after trade.
 - `tests/reliability_matrix.gd` exercises state immutability and exactly-once settlement over multiple fixed seeds. Daily retains no Quartermaster or coordinate signals.

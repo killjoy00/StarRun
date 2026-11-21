@@ -53,6 +53,7 @@ func _run() -> void:
 	_test_legacy_modules()
 	_test_loadouts()
 	_test_threat_catalog()
+	_test_adaptive_toughness()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -566,13 +567,16 @@ func _test_world1_density_and_pilot_identities() -> void:
 	normal.time = normal.next_encounter_at
 	normal._spawn_encounter()
 	check(normal._crowd_count() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
-	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
+	check(normal.enemies.all(func(e): return float(e.p.y) < 0.0 and float(e.get("arrive_y", -1.0)) >= 0.0), "The first strike wing flies in from above the screen instead of popping in")
+	for _frame in range(60):
+		normal._update_enemies()
+	check(not normal.enemies.is_empty() and normal.enemies.all(func(e): return float(e.p.y) >= 0.0 and not e.has("arrive_y")), "Within a second the strike wing has flown into view")
 	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 strike wings are paid for from scheduled spawn slots")
 	var director := Sim.new(8151, {}, "vanguard", "rookie", "normal")
 	director.time = 8.0
 	director._spawn_world1_pressure()
 	check(director._crowd_count() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
-	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
+	check(director.enemies.all(func(e): return (e.p.y >= 0.0 or float(e.get("arrive_y", -1.0)) >= 0.0) and e.hp > 0.0), "Reinforcements fly into view and are damageable, not just decorative")
 	var expiry := Sim.new(8152)
 	expiry.time = 8.0
 	expiry._spawn_world1_pressure()
@@ -1873,13 +1877,32 @@ func _test_active_pool() -> void:
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
 
+func _test_adaptive_toughness() -> void:
+	var empty := Sim.new(4401)
+	empty._add_enemy("drone", Vector2(200, 100))
+	var drone: Dictionary = empty.enemies[0]
+	check(is_equal_approx(float(drone.get("toughness", 1.0)), Sim.ENEMY_TOUGHNESS), "A ship spawning onto an empty Normal World 1 screen is tougher")
+	var crowded := Sim.new(4401)
+	for i in range(4):
+		crowded._add_enemy("drone", Vector2(60 + i * 90, 120))
+	crowded._add_enemy("drone", Vector2(200, 100))
+	check(not crowded.enemies[-1].has("toughness"), "A crowded screen gets ordinary ships")
+	for setup in [["hard", 1], ["normal", 2]]:
+		var other := Sim.new(4401, {}, "vanguard", "rookie", str(setup[0]))
+		other.stage = int(setup[1])
+		other._add_enemy("drone", Vector2(200, 100))
+		check(not other.enemies[0].has("toughness"), "Toughness is Normal World 1 only: %s world %d" % setup)
+
 func _test_stage_difficulty_and_pressure() -> void:
 	var normal := Sim.new(111, {}, "vanguard", "rookie", "normal")
 	var hard := Sim.new(111, {}, "vanguard", "rookie", "hard")
 	var insane := Sim.new(111, {}, "vanguard", "rookie", "insane")
 	for sim in [normal, hard, insane]:
 		sim._add_enemy("drone", Vector2(240, 100))
-	check(normal.enemies[0].hp < hard.enemies[0].hp and hard.enemies[0].hp < insane.enemies[0].hp, "Difficulty must increase enemy health")
+	# Compare base health: Normal World 1 adds empty-screen toughness on top
+	# (tested separately in _test_adaptive_toughness).
+	var base_hp := func(s): return float(s.enemies[0].hp) / float(s.enemies[0].get("toughness", 1.0))
+	check(base_hp.call(normal) < base_hp.call(hard) and base_hp.call(hard) < base_hp.call(insane), "Difficulty must increase enemy health")
 	check(is_equal_approx(insane.threat_scale(), 2.0) and is_equal_approx(hard.threat_scale(), 1.25), "Insane enemy HP and shot strength rise 25% over the previous 1.6 scale")
 	check(is_equal_approx(insane.enemy_cadence_scale(), 1.6) and is_equal_approx(hard.enemy_cadence_scale(), 1.25), "Extra Insane toughness must not increase spawns or XP-granting kills")
 	check(is_equal_approx(insane.enemy_fire_scale(), 2.0) and is_equal_approx(hard.enemy_fire_scale(), 1.25), "Insane regular shot frequency rises 25% while spawn density remains unchanged")
@@ -2262,7 +2285,7 @@ func _test_route_prototype_balance_grid() -> void:
 	check(is_equal_approx(redline_attacker.weapon_power(), shielded_base.weapon_power() * 1.35) and is_equal_approx(redline_attacker.stage_fire_rate, 1.20), "Redline's attack modifiers remain exactly unchanged")
 	var world_one_enemy := Sim.new(9342)
 	world_one_enemy._add_enemy("drone", Vector2(250, 100))
-	check(is_equal_approx(world_one_enemy.enemies[0].max_hp, float(world_one_enemy.content.enemies.drone.hp)) and is_equal_approx(world_one_enemy.enemy_damage_multiplier(), 1.0), "World 1 enemy health and damage are unchanged")
+	check(is_equal_approx(world_one_enemy.enemies[0].max_hp / float(world_one_enemy.enemies[0].get("toughness", 1.0)), float(world_one_enemy.content.enemies.drone.hp)) and is_equal_approx(world_one_enemy.enemy_damage_multiplier(), 1.0), "World 1 enemy health and damage are unchanged")
 	for late_stage in [2, 3, 4]:
 		var balanced := Sim.new(9342)
 		balanced.stage = late_stage
@@ -2440,6 +2463,11 @@ func _test_fusions_and_milestones() -> void:
 	counter.charges.append({"source":0, "x":270.0, "remaining":0.5, "duration":1.8, "damage":29.0})
 	counter._add_enemy("station", Vector2(260, 120))
 	plain._add_enemy("station", Vector2(260, 120))
+	# Measure the counter against base health, not empty-screen toughness.
+	for fixture in [counter, plain]:
+		var station: Dictionary = fixture.enemies[-1]
+		station.hp /= float(station.get("toughness", 1.0))
+		station.max_hp = station.hp
 	check(counter.activate("nova_aegis") and plain.activate("nova_aegis"), "Nova Guard must cast when a beam is close")
 	check(counter.cooldowns.nova_aegis < plain.cooldowns.nova_aegis and counter.hull > plain.hull and counter.aegis_left > plain.aegis_left, "A well-timed fusion counter must earn real healing and a shorter cooldown")
 	check(counter.kills > plain.kills, "A timed Nova Guard counter must hit much harder than firing it early")
