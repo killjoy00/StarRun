@@ -23,6 +23,9 @@ def main() -> int:
     per_ship = collections.defaultdict(lambda: [0, 0])
     density = collections.defaultdict(lambda: collections.defaultdict(lambda: [0.0, 0.0]))
     tuning = ""
+    # Per world: runs that entered it and runs that cleared it, per Hangar level.
+    entered = collections.defaultdict(lambda: [0, 0, 0, 0])
+    cleared = collections.defaultdict(lambda: [0, 0, 0, 0])
     difficulty = "normal"
     for path in sys.argv[1:]:
         match = re.search(r"-(none|half|max|mid)-([a-z]+)(?:-\d+)?\.log$", path)
@@ -38,6 +41,9 @@ def main() -> int:
                 trace = json.loads(line.split(" ", 1)[1])
                 stages = trace["stages"]
                 won = len(stages) == 4 and all(s["status"] == "cleared" for s in stages)
+                for index, stage in enumerate(stages[:4]):
+                    entered[hangar][index] += 1
+                    cleared[hangar][index] += int(stage["status"] == "cleared")
                 wins[hangar] += int(won)
                 runs[hangar] += 1
                 per_ship[(hangar, ship)][0] += int(won)
@@ -67,6 +73,18 @@ def main() -> int:
         )
         target = "never" if hangar == "none" else (f"{low:.0%}-{high:.0%}" if hangar in TARGETS else "-")
         print(f"| {hangar} | {wins[hangar]}/{runs[hangar]} ({rate:.0%}) {'OK' if hit else 'MISS'} | {target} | {ships} | {worlds} |")
+    print("\nDeaths per world: share of runs that reached a world and died in it.")
+    print("Even progression means similar numbers in each world.\n")
+    print("| Hangar | W1 | W2 | W3 | W4 |")
+    print("|---|---|---|---|---|")
+    for hangar in ("none", "half", "max", "mid"):
+        if not runs[hangar]:
+            continue
+        cells = []
+        for index in range(4):
+            n_in = entered[hangar][index]
+            cells.append(f"{(n_in - cleared[hangar][index]) / n_in:.0%} of {n_in}" if n_in else "-")
+        print(f"| {hangar} | " + " | ".join(cells) + " |")
     print("\nAll targets met." if ok else "\nTargets missed.")
     return 0
 
