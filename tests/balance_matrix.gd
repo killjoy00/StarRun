@@ -61,10 +61,12 @@ func _run() -> void:
 			density = true
 		elif arg == "--require-win":
 			require_win = true
-	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
+	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "half", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
 		return
+	if hangar_style == "half":
+		print("HANGAR_PROFILE ", JSON.stringify(_hangar("half")))
 	if require_no_world1_clears and (stage_limit != 1 or hangar_style != "none" or only_difficulty not in ["hard", "insane"]):
 		push_error("No-Hangar World 1 gate applies only to Hard/Insane with stage-limit=1")
 		quit(2)
@@ -435,6 +437,30 @@ func _hangar(style: String) -> Dictionary:
 	if style == "max":
 		for item in Catalog.HANGAR:
 			result[str(item.id)] = int(item.max)
+	elif style == "half":
+		# Half the Cores of a full Hangar, spent the way a player spreading
+		# upgrades would: always buy the cheapest next rank available.
+		var total := 0
+		for item in Catalog.HANGAR:
+			for rank in range(int(item.max)):
+				total += Catalog.price(str(item.id), rank)
+		var budget := total / 2
+		for item in Catalog.HANGAR:
+			result[str(item.id)] = 0
+		while true:
+			var best_id := ""
+			var best_price := 1 << 30
+			for item in Catalog.HANGAR:
+				var id: String = str(item.id)
+				if int(result[id]) < int(item.max):
+					var next_price := Catalog.price(id, int(result[id]))
+					if next_price < best_price:
+						best_price = next_price
+						best_id = id
+			if best_id.is_empty() or best_price > budget:
+				break
+			budget -= best_price
+			result[best_id] = int(result[best_id]) + 1
 	elif style == "mid":
 		for item in Catalog.HANGAR:
 			var id: String = str(item.id)
