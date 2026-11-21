@@ -6,6 +6,7 @@ const Playfield = preload("res://scripts/playfield.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const HangarBay = preload("res://scripts/hangar_bay.gd")
 const IconBadge = preload("res://scripts/icon_badge.gd")
+const RankBar = preload("res://scripts/rank_bar.gd")
 const CombatHud = preload("res://scripts/combat_hud.gd")
 const InputRouter = preload("res://scripts/input_router.gd")
 const Kit = preload("res://scripts/menu_kit.gd")
@@ -878,26 +879,6 @@ func _tiles(parent: Node, items: Array) -> HBoxContainer:
 		Kit.caps(stack, str(item[0]), Kit.MUTED, 12)
 	return row
 
-func _pips(parent: Node, filled: int, total: int, tint: Color = Kit.CYAN, next_available: bool = false) -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 3)
-	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	parent.add_child(row)
-	for i in range(total):
-		var pip: Control
-		if next_available and i == filled:
-			pip = Panel.new()
-			pip.add_theme_stylebox_override("panel", Kit.box(Color("213447"), Kit.AMBER, 0, 1, 0, 0))
-		else:
-			pip = ColorRect.new()
-			pip.color = tint if i < filled else Color("213447")
-		pip.custom_minimum_size = Vector2(0, 6)
-		pip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(pip)
-	return row
-
 func _tabs(parent: Node, items: Array, current: String, action: Callable) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 0)
@@ -1511,8 +1492,13 @@ func _hangar_row(parent: Node, entry: Dictionary) -> void:
 	var progress := HBoxContainer.new()
 	progress.add_theme_constant_override("separation", 8)
 	info.add_child(progress)
-	_pips(progress, bought, top_rank, Kit.CYAN, not maxed and int(profile.cores) >= price)
-	Kit.label(progress, "%d/%d" % [bought, top_rank], 14, Kit.DIM)
+	var bar := RankBar.new()
+	bar.name = "RankBar"
+	progress.add_child(bar)
+	var extended_from := int(entry.get("tier_from", 0))
+	bar.setup(bought, top_rank, extended_from, not maxed and int(profile.cores) >= price)
+	var in_extended := extended_from > 0 and bought >= extended_from
+	Kit.label(progress, "%d/%d" % [bought, top_rank], 14, Color("ffb347") if in_extended else Kit.DIM)
 	var buy := Button.new()
 	buy.custom_minimum_size = Vector2(84, 44)
 	buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
