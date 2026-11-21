@@ -1,12 +1,12 @@
 # Star/Run
 
-**Star/Run** is a four-world tactical space auto-shooter for iPhone, Web, Windows and Linux. The **1.3 release candidate** builds on 1.1's clear red-beam interrupts and friendly Prism lance fix, plus 1.2's stronger bosses and expanded Hangar: selected slower ranged enemies in Worlds 2–4 now survive a little longer and fire their opening volley sooner, putting more readable enemy bullets on screen. The native Daily share sheet, local achievements and optional iPhone Game Center bridge are built, but Apple's first public review and actual on-device functionality still require verification. See [sharing and Game Center](docs/SHARING_GAME_CENTER.md), [Daily rules](docs/DAILY_ACHIEVEMENTS.md), [1.2 boss/Hangar review](docs/v12-boss-hangar-balance.md), and [1.3 screen-pressure tests](docs/shooter-hp-pressure-study.md).
+**Star/Run** is a four-world tactical space auto-shooter for iPhone, Android, Web, Windows, Linux and macOS. The **1.3 release candidate** builds on 1.1's clear red-beam interrupts and friendly Prism lance fix, plus 1.2's stronger bosses and expanded Hangar: selected slower ranged enemies in Worlds 2–4 now survive a little longer and fire their opening volley sooner, putting more readable enemy bullets on screen. The native Daily share sheet, local achievements and optional iPhone Game Center bridge are built, but Apple's first public review and actual on-device functionality still require verification. See [sharing and Game Center](docs/SHARING_GAME_CENTER.md), [Daily rules](docs/DAILY_ACHIEVEMENTS.md), [1.2 boss/Hangar review](docs/v12-boss-hangar-balance.md), and [1.3 screen-pressure tests](docs/shooter-hp-pressure-study.md).
 
 StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fires automatically; the player chooses its build and *when* to use four equipped active abilities.
 
 ## Gameplay: four-world roguelite plus 0.9.0 progression and daily missions
 
-- **Four active slots from 22 abilities.** Every ship starts with a signature ability. Each ability has a matching partner; upgrading both to rank 5 makes a stronger fused ability and frees a slot. Eleven fusions are available.
+- **Four active slots from 22 abilities.** Every ship starts with a signature ability. Each ability has a matching partner; upgrading both to rank 5 makes a stronger fused ability and frees a slot. Twelve fusions are available.
 - **Normal, Hard, Insane.** Choose the difficulty before launch. Higher settings increase enemy health, damage and firing pressure, with respective core rewards of **1×, 1.75×, and 2.5×**.
 - **Stage 1: Debris Belt.** Fly through changing scenery and enemy waves, then defeat the Harvester. A full Hangar can make this stage easy, by design.
 - **Stage 2: Ion Storm.** A fully different cobalt lightning environment, new electrical silhouettes, ion shield suppression, corrosion, ability disruption and the Storm Carrier.
@@ -19,14 +19,14 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 - **Boss victories are earned moments.** Defeating a boss freezes combat for oversized explosions and shockwaves. Tap **Warp to next stage**, pick a Prototype and route, and receive an extra level-up before the next stage. After Stage 4, tap **Claim victory** for the full report.
 - **Phone-first menus.** Title, Hangar, Ships & pilots, drafts, intermissions and results share one layout system: header on top, actions pinned to the bottom within thumb reach, and safe-area margins for the notch and home indicator. The whole card is the tap target; holding and dragging it scrolls when content overflows. Combat HUD and controls also respect the notch and home indicator. Permanent unlocks, Refund all and abandoning a saved flight take a second tap or a confirmation. The first flight opens with a four-step briefing.
 - **Meaningful timing.** Aegis base cooldown is 14 seconds and Nova is 24 seconds. Chaff, heavy telegraphs, ordnance, mines and stage-specific suppression require different responses.
-- **Real milestones at ranks 5 and 10.** All 47 base upgrade tracks and 11 fused tracks get breakpoint effects. Later picks add two ranks; crossing rank 5 or 10 triggers the effect immediately, even if the choice skipped that exact number.
+- **Real milestones at ranks 5 and 10.** All 47 base upgrade tracks and 12 fused tracks get breakpoint effects. Later picks add two ranks; crossing rank 5 or 10 triggers the effect immediately, even if the choice skipped that exact number.
 - **Full-build rewards.** Once there are no eligible upgrades left, a level-up offers **Field repair (+30 hull)** or **5 banked Cores**. These fixed Core rewards pay out when the run ends and are not boosted by difficulty or other multipliers.
 - **Ten more passives from world 2.** Siege rounds, Finisher rounds, First strike, Blast plating, Insulation, Shield reserve, Combat repairs, Last stand, Shield focus and Follow-through. Active, Passive and Auto weapon labels stay visible on every draft card. Consumed fusion components leave the pool; upgrade the combined ability directly.
 - **Later worlds scale with growing builds.** Worlds 2–4 have substantially higher health, damage and firing pressure, stronger boss modules and longer boss fights. Aegis effects leave a vulnerability window between casts.
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties and each has a painted face portrait.
 - **Uncrowded combat HUD.** Build/speed/pause controls have their own row above Hull/Shield meters; ability names, ready/cooldown captions and icons no longer occupy the same space or give slot one an artificial highlight.
 - **Readable threats.** Enemy rounds and heavy-beam warnings use coral-red outlines above friendly effects. Red **CHARGING** rings identify emitters; destroying them produces a cyan **BEAM CANCELED** cue. A fractured shield ring and segmented shield bar make shield loss visible, including with reduced effects. Fusion and rank-5/10 picks get a thin accent border.
-- **Persistent Hangar.** Thirty-eight refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Reroll uplinks grant one reroll per rank each stage. Equipment and selected difficulty are retained in saves.
+- **Persistent Hangar.** Forty refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Reroll uplinks grant one reroll per rank each stage. Equipment and selected difficulty are retained in saves.
 
 Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Flak Screen, EMP Blackout, Deflector, Rail Strike, Prism Reversal, Chaff Barrier, Capacitor, Precision Focus, Decoy Beacon, Signal Jammer, Energy Siphon, Chain Overload, Reactor Reboot, Salvage Surge, Wing Drones, Ion Mine.
 
@@ -54,9 +54,25 @@ Five signatures: Charged Barrage, Interceptor Screen, Reactive Shield, Hunter Lo
 
 See [rival design and testing](docs/RIVAL_CAPTAINS.md).
 
+## More on-screen action, same balance budget
+
+- **Swarm packs (Normal, World 1).** World 1's light ships arrive as a pack of smaller ships: four drones, or three rushers or interceptors (also in Endless, which reuses World 1's ships). The scripted World 1 opener (scouts, strike wings, reinforcements) uses packs too. Every pack is real and shoots back, but carries exactly one ship's budget: one XP payout and one kill (only the lead rewards), one ship's escape damage, one shared volley timer that slows as members fall, and 108% of one ship's health split across members (offsetting the shots lost to overkill on small targets). Crowd limits, the opening director and the World 1 fire throttle count a pack as one ship, and only the lead draws combat RNG.
+- **Background battle and wreckage.** A dim, distant skirmish plays behind the playfield, and kills throw tumbling hull fragments. Both are cosmetic and switch off with Calmer visuals.
+- Packs run on Normal only. Chain lightning and other splash clear tight packs slightly faster, and Hard/Insane must keep their no-Hangar World 1 gate exactly; their simulation traces are byte-identical to before. Daily keeps its historical spawns.
+- **Measured (scripted bot, Normal, no Hangar, same 16 seeds per ship, two runs of the final design):** real enemies on screen in World 1's opening rose from 1.4 → 3.8–4.1 (Vanguard), 1.8 → 4.2–4.5 (Kestrel) and 3.1 → 8.1–8.2 (Bulwark); mid-phase from 2.4 → 4.1–5.1, 1.3 → 2.9 and 5.4 → 10.8–11.8. World 1 clears were 31 of 48 before and 27 and 33 of 48 in the two runs (draft order swings single seeds both ways); kills stayed within 3% and reaching the World 1 boss without upgrades stays near-certain (14–16 of 16). The Arcwing Archive route (mid Hangar, 16 seeds) cleared 10 before and 8 after; that is within noise but leans slightly harder, so it is worth watching.
+- **Limits.** Very strong builds (for example mid-Hangar Kestrel) still clear later-world waves almost as fast as they arrive; packs cannot fix that without adding XP or health. Worlds 2–4 packs were tried and held back: the Arcwing Archive route won 5 of 8 seeds with them against 7 of 8 without. Two rejected designs: larger packs on empty screens (every member needs a shot, so packs outlived the ship they replaced and Kestrel's World 1 clears fell from 8 to 2 of 16), and overkill that spills between packmates (packs died too fast and kills rose).
+
+## Reliability and balance pass
+
+- **Ships:** Kestrel now has 85 hull / 40 shield (was 70 / 30). Bulwark takes 20% less beam and missile damage and gets +20% automatic damage against bosses (was +12%). Vanguard gains *veteran systems* after each cleared world: +15% / +20% / +25% weapon and ability power and 10% / 15% / 20% status resistance. In scripted no-Hangar Normal World 1 runs on the same 8 seeds, Kestrel went from 2 to 4 clears and Bulwark from 1 to 4, against Vanguard's 5; the Hard/Insane no-Hangar World 1 gate still records zero clears for all six pilots.
+- **Heat (World 3):** -15% automatic damage for 3.5 s per hit (was -25% for 5 s).
+- **Fixes:** Reflector Wall now absorbs World 3–4 heat, gravity and void rounds. Aegis blocks corrosion ticks, and corrosion can trigger the Emergency Field. Arsenal Shift no longer rotates ranks away from a mutated weapon. Damage-over-time no longer fires a hit sound and vibration every frame.
+- **Saves:** every save is verified before it replaces the old one, the previous good copy is kept as a backup, an interrupted Windows replace is recovered, and an unreadable profile is set aside rather than overwritten.
+- **Platforms:** Game Center skips a failing item instead of stalling the queue and retries in the background; Remove Ads is revoked when Apple no longer lists the purchase.
+
 ## Controls
 
-On iPhone, four compact on-screen buttons run left to right on one row. Fused abilities use just one button. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses. Level-up choices use keys 1–4 or touch.
+On iPhone, four compact on-screen buttons run left to right on one row. Fused abilities use just one button. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses; menus and drafts follow controller focus. Level-up choices use keys 1–4 or touch. On desktop, **F11** or **Alt+Enter** toggles fullscreen (also in Settings), and the window shrinks to fit smaller screens such as Steam Deck. On Android, **Back** pauses a flight or steps back a screen; only the title screen exits.
 
 The playfield uses adaptive 390×844 logical canvas scaling on modern portrait iPhones. Phone UI text uses a 16-point minimum. Build and Results use pinned navigation, short summaries and word-wrapped detail. iOS readability and performance still need real-device validation.
 
@@ -72,7 +88,7 @@ StarRun's iPhone workflow compiles an unsigned app for CI. **Signed TestFlight d
 
 ## Building and running
 
-Pinned to **Godot 4.6.3**, GDScript and the Compatibility renderer. GitHub Actions performs simulation and responsive UI checks, builds Web/Windows/Linux, and compiles an unsigned native iPhone application. Shared Apple signing credentials are in the companion TestFlight release workflow; no secrets are stored in this repo.
+Pinned to **Godot 4.6.3**, GDScript and the Compatibility renderer. GitHub Actions performs simulation and responsive UI checks, builds Web/Windows/Linux/macOS (macOS is ad-hoc signed for playtesting, not notarized), builds a CI-signed Android App Bundle, and compiles an unsigned native iPhone application. Steam integration (Steamworks achievements and cloud saves) is not built yet. Shared Apple signing credentials are in the companion TestFlight release workflow; no secrets are stored in this repo.
 
 ```sh
 godot --headless --path . --editor --import --quit

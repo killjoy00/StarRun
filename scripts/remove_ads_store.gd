@@ -75,6 +75,7 @@ func _recover_entitlement() -> void:
 	var recovered: Variant = await _flow.recover_purchases(true)
 	if recovered is Array:
 		checked = true
+		_revoke_if_absent(recovered)
 		message = "Ads removed" if owned else ("One purchase removes banner ads." if product_available else "Remove Ads is not available in the App Store yet.")
 	else:
 		message = "Unable to verify purchases. Ads remain hidden until the store responds."
@@ -93,6 +94,21 @@ func _grant_verified(purchase: Dictionary, is_consumable: bool) -> bool:
 	message = "Ads removed. Thanks for supporting Star/Run."
 	changed.emit()
 	return true
+
+# StoreKit's current entitlements omit refunded or revoked purchases. Only a
+# *successful* check that does not contain the product at all removes the
+# locally cached entitlement; offline, failed or delayed checks keep it.
+func _revoke_if_absent(recovered: Array) -> void:
+	if not owned:
+		return
+	for outcome in recovered:
+		if outcome is Dictionary:
+			var purchase: Variant = outcome.get("purchase", {})
+			if purchase is Dictionary and str(purchase.get("productId", "")) == PRODUCT_ID:
+				return
+	owned = false
+	if is_instance_valid(host) and host.has_method("_on_remove_ads_revoked"):
+		host.call("_on_remove_ads_revoked")
 
 func _purchase_processed(purchase: Dictionary, status: Object) -> void:
 	if str(purchase.get("productId", "")) != PRODUCT_ID:
@@ -141,6 +157,7 @@ func restore() -> void:
 		var recovered: Variant = await _flow.recover_purchases(true)
 		if recovered is Array:
 			checked = true
+			_revoke_if_absent(recovered)
 			message = "Ads removed" if owned else "No prior Remove Ads purchase found."
 		else:
 			message = "Could not verify previous purchases. Try again."

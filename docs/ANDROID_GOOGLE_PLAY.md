@@ -16,6 +16,13 @@ Google Play **Android App Bundle (AAB)** under the package ID `com.rsm.starrun`.
   signed AAB can be produced using a **temporary CI-only key**. Never upload this
   disposable-key artifact to Google Play; it is not the production upload key.
 
+- **Back button/gesture:** `application/config/quit_on_go_back` is off. Back pauses a
+  flight, closes a sheet or steps back a menu (the same as Escape); only the title
+  screen exits, and it saves first. Godot's default would quit instantly mid-flight.
+- **Haptics:** the `VIBRATE` permission is enabled; without it Godot silently ignores
+  `Input.vibrate_handheld()`. `tools/android-export.sh` fails if the compiled
+  manifest lacks it.
+
 Android cannot be called tested on a real phone until a physical Android device has
 been used. Rendering, touchscreen, insets, state persistence, resume/background,
 60 Hz pacing, daily date rollover and four-world boss battles need hardware checks.

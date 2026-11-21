@@ -15,6 +15,14 @@ var request_score := -1
 var last_error := ""
 var profile: Dictionary
 var save_callback: Callable
+# Items that failed during the current pass are skipped so one bad request
+# (a network error, or an identifier Apple rejects) cannot block the rest
+# of the queue. An explicit sync() starts a fresh pass and retries them.
+var _skipped: Dictionary = {}
+var _request_age := 0.0
+var _retry_clock := 0.0
+const REQUEST_TIMEOUT := 30.0 # A native callback that never arrives counts as a failure.
+const RETRY_INTERVAL := 120.0 # Signed-in sessions retry failed items in the background.
 # Tests can inject a UTC day without changing the production system clock.
 var utc_day_override := ""
 
@@ -84,6 +92,41 @@ func _on_auth(ok: bool, error: String) -> void:
 func sync() -> void:
 	if not available() or busy:
 		return
+	_skipped.clear()
+	_retry_clock = 0.0
+	_advance()
+
+## Call every frame. Times out a lost native callback and retries failures.
+func update(delta: float) -> void:
+	if not available():
+		return
+	if busy:
+		_request_age += delta
+		if _request_age >= REQUEST_TIMEOUT:
+			_fail_request("Game Center did not respond")
+	elif not _skipped.is_empty():
+		_retry_clock += delta
+		if _retry_clock >= RETRY_INTERVAL:
+			sync()
+
+func _begin_request(id: String, score: int) -> void:
+	busy = true
+	request_id = id
+	request_score = score
+	_request_age = 0.0
+
+func _fail_request(error: String) -> void:
+	last_error = error
+	_skipped[request_id] = true
+	busy = false
+	request_id = ""
+	request_score = -1
+	state_changed.emit()
+	_advance()
+
+func _advance() -> void:
+	if not available() or busy:
+		return
 	# Never post a stale suspended Daily into the next day's recurring board.
 	# Current UTC is authoritative. Keep older results in local history only.
 	var day := _today()
@@ -91,10 +134,8 @@ func sync() -> void:
 	var record: Dictionary = records.get(day,{})
 	var score: int = int(record.get("best_score",-1))
 	var synced: Dictionary = profile.get("game_center_synced",{})
-	if score >= 0 and score > int(synced.get("score_"+day,-1)):
-		busy = true
-		request_id = "score_"+day
-		request_score = score
+	if score >= 0 and score > int(synced.get("score_"+day,-1)) and not _skipped.has("score_"+day):
+		_begin_request("score_"+day, score)
 		service.submit_score(BOARD,score)
 		return
 	var awards: Dictionary = profile.get("achievements",{})
@@ -105,10 +146,8 @@ func sync() -> void:
 		if not _cloud_achievement(id):
 			continue
 		var ack := "achievement_"+id
-		if not bool(synced.get(ack,false)):
-			busy = true
-			request_id = ack
-			request_score = -1
+		if not bool(synced.get(ack,false)) and not _skipped.has(ack):
+			_begin_request(ack, -1)
 			service.report_achievement("com.rsm.starrun."+id,100.0)
 			return
 	state_changed.emit()
@@ -116,37 +155,35 @@ func sync() -> void:
 func _on_score(ok: bool, leaderboard: String, error: String) -> void:
 	if not busy or not request_id.begins_with("score_") or leaderboard != BOARD:
 		return # Duplicate, unrelated or late native callbacks cannot erase an active request.
-	if ok:
-		var synced: Dictionary = profile.game_center_synced
-		synced[request_id] = maxi(int(synced.get(request_id,-1)),request_score)
-		last_error = ""
-		_save()
-	else:
-		last_error = error
+	if not ok:
+		# Stays unsynced; skip it for this pass and continue with the rest.
+		_fail_request(error)
+		return
+	var synced: Dictionary = profile.game_center_synced
+	synced[request_id] = maxi(int(synced.get(request_id,-1)),request_score)
+	last_error = ""
+	_save()
 	busy = false
 	request_id = ""
 	request_score = -1
 	state_changed.emit()
-	# A failed network request stays unsynced and retries on a later sync.
-	if ok:
-		sync()
+	_advance()
 
 func _on_achievement(ok: bool, achievement_id: String, error: String) -> void:
 	var expected: String = "com.rsm.starrun." + request_id.trim_prefix("achievement_")
 	if not busy or not request_id.begins_with("achievement_") or achievement_id != expected:
 		return # A stale award callback must not release another pending request.
-	if ok:
-		profile.game_center_synced[request_id] = true
-		last_error = ""
-		_save()
-	else:
-		last_error = error
+	if not ok:
+		_fail_request(error)
+		return
+	profile.game_center_synced[request_id] = true
+	last_error = ""
+	_save()
 	busy = false
 	request_id = ""
 	request_score = -1
 	state_changed.emit()
-	if ok:
-		sync()
+	_advance()
 
 func _on_panel_failed(_panel: String, error: String) -> void:
 	last_error = error

@@ -7,6 +7,13 @@ const SAVE_VERSION := 1
 const DAILY_ORIGINAL_MUTATIONS := ["piercing_pulse", "split_seeker", "arc_reactor"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+# A pack's members share 108% of one ship's health, offsetting the shots
+# lost to overkill on small targets. Base size per light kind.
+const PACK_HP_TOTAL := 1.08
+# World 1 light ships only (they also appear in Endless). Worlds 2-4 packs
+# were measured and held back: the Arcwing Archive route won 5 of 8 seeds
+# with them versus 7 of 8 without.
+const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3}
 const Catalog = preload("res://scripts/catalog.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var signal_count := 0
@@ -365,12 +372,17 @@ func step() -> void:
 		corrosion_damage *= status_damage_multiplier()
 		if ship_id == "haven":
 			corrosion_damage *= 0.75
-		hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
-		damage_taken.corrosion += corrosion_damage
-		if hull <= 0.0:
-			ended = true
-			_log("Hull lost to corrosion")
-			return
+		if aegis_left > 0.0:
+			# Aegis is full immunity: it stops the corrosion tick like any other hit.
+			prevented += corrosion_damage
+		else:
+			hull = maxf(0.0, hull - corrosion_damage * hull_damage_multiplier())
+			damage_taken.corrosion += corrosion_damage
+			if hull <= 0.0:
+				ended = true
+				_log("Hull lost to corrosion")
+				return
+			_try_emergency_field()
 	if mend_left > 0.0:
 		hull = minf(max_hull, hull + mend_rate * minf(DT, mend_left))
 		mend_left = maxf(0.0, mend_left - DT)
@@ -604,6 +616,12 @@ func _enemy_limit() -> int:
 func _has_mutation(id: String) -> bool:
 	return id in mutations
 
+func _weapon_has_mutation(weapon: String) -> bool:
+	for id in mutations:
+		if str(Catalog.mutation(str(id)).get("requires", "")) == weapon:
+			return true
+	return false
+
 func _install_mutation(id: String) -> bool:
 	var spec: Dictionary = Catalog.mutation(id)
 	if spec.is_empty() or not mutations.is_empty() or int(upgrades.get(str(spec.requires), 0)) <= 0 or artifact_id == "drone_armada" or (not daily_day.is_empty() and id not in DAILY_ORIGINAL_MUTATIONS):
@@ -692,7 +710,7 @@ func _try_merchant_signal() -> bool:
 	if signal_status in ["offer", "cast", "courier"] or rival_intro_pending or rival_retire_pending or secret_intro_pending or not cards.is_empty():
 		return false
 	# Don't stack a trading interlude on a nemesis, heavy warning, or boss.
-	if enemies.size() >= _enemy_limit() - 7 or not charges.is_empty() or enemies.any(func(e): return bool(e.get("rival", false))):
+	if _crowd_count() >= _enemy_limit() - 7 or not charges.is_empty() or enemies.any(func(e): return bool(e.get("rival", false))):
 		return false
 	merchant_offers = _make_merchant_offers()
 	merchant_seen_stages.append(stage)
@@ -863,7 +881,12 @@ func passive_bonus(id: String, per_rank: float, at_five: float, at_ten: float) -
 func status_damage_multiplier() -> float:
 	# Insulation now resists damaging status attacks as well as reducing
 	# their duration. Rank 5: 7% resisted; rank 10: 15% resisted.
-	return 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
+	var factor := 1.0 - passive_bonus("insulation", 0.008, 0.03, 0.04)
+	# Vanguard veteran systems also harden against the World 2+ status
+	# barrage (ion, corrosion, disrupt, heat, gravity, void) that killed it.
+	if ship_id == "vanguard":
+		factor *= 1.0 - [0.0, 0.10, 0.15, 0.20][clampi(stage_clears, 0, 3)]
+	return factor
 
 func status_duration_scale() -> float:
 	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
@@ -1479,7 +1502,7 @@ func _spawn_enemy() -> void:
 				_add_enemy("archive_shard", Vector2(rng.randf_range(55, 485), -35))
 			encounter_index += 1
 		return
-	if enemies.size() >= _enemy_limit():
+	if _crowd_count() >= _enemy_limit():
 		return
 	# Each authored enemy ecology recurs, but endless mixes threats from later worlds.
 	var stage_time := time - stage_start
@@ -1541,7 +1564,78 @@ func _spawn_enemy() -> void:
 	if endless_enabled and stage > int(content.stage_count):
 		pool.append_array(["phase_stalker", "slag_bomber", "ion_frigate", "shieldguard", "void_lancer"])
 	var kind: String = pool[rng.randi_range(0, pool.size() - 1)]
-	_add_enemy(kind, Vector2(rng.randf_range(55, 485), -35))
+	var origin := Vector2(rng.randf_range(55, 485), -35)
+	if _packs_enabled() and PACK_KINDS.has(kind):
+		_add_pack(kind, origin)
+	else:
+		_add_enemy(kind, origin)
+
+## Swarm packs put more ships on screen without changing the balance budget.
+## A light spawn arrives as three or four smaller ships that together carry
+## one ship's XP and kill credit (only the lead pays out), escape damage and
+## volley rate (one shared timer, slowing as members fall). Member health is
+## tuned so a pack costs about one ship of firepower despite overkill. Crowd
+## limits, spawn gates and the opening director count a pack as one ship,
+## and only the lead draws combat RNG.
+func _packs_enabled() -> bool:
+	# Normal only: chain lightning and other splash clear tight packs a little
+	# faster, and Hard/Insane keep their no-Hangar World 1 gate exactly.
+	# Daily keeps its historical spawns; the Archive never uses packs.
+	return daily_day.is_empty() and not secret_entered and difficulty == "normal"
+
+## One ship, or a swarm pack in its place where packs apply. Returns every
+## spawned member so authored openers can apply their tweaks to all of them.
+func _spawn_unit(kind: String, position: Vector2) -> Array:
+	var before := enemies.size()
+	if _packs_enabled() and PACK_KINDS.has(kind):
+		_add_pack(kind, position)
+	else:
+		_add_enemy(kind, position)
+	return enemies.slice(before)
+
+func _add_pack(kind: String, origin: Vector2) -> void:
+	var pack_id: int = next_id
+	var first_fire := 0.0
+	var offsets := [Vector2.ZERO, Vector2(-30, -24), Vector2(30, -24), Vector2(0, -48)]
+	# Fixed sizes: bigger packs on empty screens were measured and rejected.
+	# Every member needs a shot, so large packs outlive the ship they replace
+	# and fire more volleys, which fragile fast-killing ships cannot absorb.
+	var size: int = int(PACK_KINDS[kind])
+	var lead_phase := 0.0
+	for i in range(size):
+		var offset: Vector2 = offsets[i]
+		# Only the lead draws combat RNG, exactly like the single ship it
+		# replaces, so packs do not reshuffle later draft offers.
+		var rng_before: int = rng.state
+		# Off-screen spawns trail above the lead; authored on-screen arrivals
+		# open the formation downward so every member is visible.
+		var dy: float = offset.y if origin.y < 0.0 else -offset.y
+		_add_enemy(kind, Vector2(clampf(origin.x + offset.x, 35.0, 505.0), origin.y + dy))
+		var member: Dictionary = enemies[-1]
+		if i == 0:
+			lead_phase = float(member.phase)
+		else:
+			rng.state = rng_before
+			member.phase = lead_phase + float(i) * 1.1
+		member["pack_id"] = pack_id
+		member["pack_share"] = size
+		member.max_hp *= PACK_HP_TOTAL / float(size)
+		member.hp = member.max_hp
+		# One shared volley timer: the first shot comes when a single ship's would.
+		if i == 0:
+			first_fire = float(member.fire)
+		member.fire = first_fire
+		if i > 0:
+			member.xp = 0
+			member["no_reward"] = true
+
+## Pack members count as a fraction of a ship for every crowd rule, so a
+## pack never blocks the XP-bearing spawns the single ship would not have.
+func _crowd_count() -> int:
+	var total := 0.0
+	for enemy in enemies:
+		total += 1.0 / float(enemy.get("pack_share", 1))
+	return ceili(total - 0.001)
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
@@ -1563,7 +1657,7 @@ func _elite_leader_active(wing: Dictionary) -> bool:
 	return false
 
 func _spawn_encounter() -> void:
-	if enemies.size() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
+	if _crowd_count() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
 	if _regular_world1_opening():
 		# If slow guns are already holding a crowded screen, do not pile
@@ -1611,22 +1705,22 @@ func _spawn_opening_scout_screen() -> void:
 		return
 	var phase: int = opening_scout_wave
 	opening_scout_wave += 1
-	var count: int = mini(2, maxi(0, mini(_enemy_limit() - enemies.size(), 3 - _visible_world1_enemies())))
+	var count: int = mini(2, maxi(0, mini(_enemy_limit() - _crowd_count(), 3 - _visible_world1_enemies())))
 	for index in range(count):
 		var enemy_type := "drone" if (phase + index) % 3 == 0 else ("interceptor" if phase != 3 else "gunship")
 		var x: float = 135.0 if index == 0 else 405.0
 		var y: float = 95.0 if phase < 2 else 120.0
 		var rng_before: int = rng.state
-		_add_enemy(enemy_type, Vector2(x, y + float(index) * 32.0))
+		var unit: Array = _spawn_unit(enemy_type, Vector2(x, y + float(index) * 32.0))
 		rng.state = rng_before
-		var scout: Dictionary = enemies[-1]
-		scout["opening_scout"] = true
-		scout["pressure_wing"] = true
-		scout["xp"] = 0
-		scout["max_hp"] *= 0.85 if phase < 2 else 0.70
-		scout["opening_scout_expires"] = time + 3.8
-		scout.hp = scout.max_hp
-		scout.fire = 4.5 if phase == 0 else (3.2 if phase == 1 else 2.5)
+		for scout in unit:
+			scout["opening_scout"] = true
+			scout["pressure_wing"] = true
+			scout["xp"] = 0
+			scout["max_hp"] *= 0.85 if phase < 2 else 0.70
+			scout["opening_scout_expires"] = time + 3.8
+			scout.hp = scout.max_hp
+			scout.fire = 4.5 if phase == 0 else (3.2 if phase == 1 else 2.5)
 	if count > 0:
 		_log("SCOUT SWEEP - unregistered contacts" if phase < 2 else "ESCORTS INBOUND - prepare for the strike")
 
@@ -1646,25 +1740,25 @@ func _spawn_world1_strike_wing() -> void:
 			2: formation = ["sniper", "gunship", "interceptor"]
 	encounter_index += 1
 	for index in range(3):
-		_add_enemy(str(formation[index]), Vector2(100.0 + index * 165.0, 38.0 - index * 16.0))
-		var member: Dictionary = enemies[-1]
-		member["strike_wing"] = true
-		# Only the grouped attackers gain a modest window to reveal their
-		# patterns before automatic fire clears the formation.
-		member.max_hp *= 1.20
-		member.hp = member.max_hp
-		member.fire = 1.85 + index * 0.20
+		for member in _spawn_unit(str(formation[index]), Vector2(100.0 + index * 165.0, 38.0 - index * 16.0)):
+			member["strike_wing"] = true
+			# Only the grouped attackers gain a modest window to reveal their
+			# patterns before automatic fire clears the formation.
+			member.max_hp *= 1.20
+			member.hp = member.max_hp
+			member.fire = 1.85 + index * 0.20
 	var pace := maxf(0.55, 1.65 - elapsed / 260.0)
 	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("STRIKE WING - coordinated enemy attack")
 
 func _visible_world1_enemies() -> int:
-	var visible := 0
+	# Pack members count as a fraction of a ship (see _crowd_count).
+	var visible := 0.0
 	for enemy in enemies:
 		var p: Vector2 = enemy.p
 		if enemy.hp > 0.0 and p.x >= 0.0 and p.x <= WIDTH and p.y >= 0.0 and p.y <= 920.0:
-			visible += 1
-	return visible
+			visible += 1.0 / float(enemy.get("pack_share", 1))
+	return ceili(visible - 0.001)
 
 func _spawn_world1_pressure() -> void:
 	if not _regular_world1_opening():
@@ -1673,22 +1767,21 @@ func _spawn_world1_pressure() -> void:
 	# Extra pressure ships are genuine, attackable enemies, but do not
 	# grant XP or turn strong early builds into an endless upgrade fountain.
 	var count: int = mini(1, maxi(0, 2 - _visible_world1_enemies()))
-	count = mini(count, maxi(0, _enemy_limit() - enemies.size()))
+	count = mini(count, maxi(0, _enemy_limit() - _crowd_count()))
 	if count <= 0:
 		return
 	for index in range(count):
 		var kind: String = ["gunship", "interceptor", "drone"][(seed_value + pressure_waves + index) % 3]
-		_add_enemy(kind, Vector2(135.0 + 270.0 * index, 72.0 + 30.0 * index))
-		var wing: Dictionary = enemies[-1]
-		wing["strike_wing"] = true
-		wing["pressure_wing"] = true
-		wing.xp = 0
-		wing.max_hp *= 1.65
-		wing.hp = wing.max_hp
-		wing.fire = 2.20 + index * 0.20
-		# Extra director ships are non-XP presence, not permanent reinforcements.
-		# Slow automatic guns must never accumulate an endless no-reward backlog.
-		wing["pressure_expires"] = time + 8.0
+		for wing in _spawn_unit(kind, Vector2(135.0 + 270.0 * index, 72.0 + 30.0 * index)):
+			wing["strike_wing"] = true
+			wing["pressure_wing"] = true
+			wing.xp = 0
+			wing.max_hp *= 1.65
+			wing.hp = wing.max_hp
+			wing.fire = 2.20 + index * 0.20
+			# Extra director ships are non-XP presence, not permanent reinforcements.
+			# Slow automatic guns must never accumulate an endless no-reward backlog.
+			wing["pressure_expires"] = time + 8.0
 	pressure_waves += 1
 	_log("STRIKE WING REINFORCEMENTS - no additional XP")
 
@@ -1707,7 +1800,7 @@ func configure_rival(record: Dictionary) -> bool:
 	return true
 
 func _try_spawn_rival() -> bool:
-	if rival_spawned or rival_record.is_empty() or not daily_day.is_empty() or boss_spawned or stage != rival_stage or enemies.size() >= _enemy_limit() - 3:
+	if rival_spawned or rival_record.is_empty() or not daily_day.is_empty() or boss_spawned or stage != rival_stage or _crowd_count() >= _enemy_limit() - 3:
 		return false
 	var kind: String = str(rival_record.get("combat_kind", "gunship"))
 	if not content.enemies.has(kind) or kind in ["boss", "boss2", "boss3", "boss4", "boulder"]:
@@ -1759,7 +1852,7 @@ func _rival_action(enemy: Dictionary, minions: Array) -> void:
 				_log("RIVAL LOCK - defensive counter window")
 			enemy.rival_timer = 7.0
 		"interceptor_screen":
-			if int(enemy.rival_trait_used) < 1 and enemies.size() + minions.size() <= _enemy_limit() - 3:
+			if int(enemy.rival_trait_used) < 1 and _crowd_count() + minions.size() <= _enemy_limit() - 3:
 				for side in [-1.0, 1.0]:
 					minions.append({"kind":"interceptor", "p":enemy.p + Vector2(side * 70.0, 25.0), "rival_escort":true})
 				enemy.rival_trait_used = 1
@@ -1775,7 +1868,7 @@ func _rival_action(enemy: Dictionary, minions: Array) -> void:
 			enemy.rival_timer = 8.0
 
 func _spawn_hazard() -> void:
-	if enemies.size() >= _enemy_limit() - 1:
+	if _crowd_count() >= _enemy_limit() - 1:
 		return
 	var kind := "station"
 	match ((stage - 1) % int(content.stage_count)) + 1:
@@ -1919,11 +2012,17 @@ func advance_stage() -> bool:
 		secret_intro_pending = true
 	if artifact_id == "arsenal_roulette":
 		# Move existing ranks, rather than gifting or destroying upgrades.
-		var before: Array = [int(upgrades.pulse), int(upgrades.seeker), int(upgrades.arc), int(upgrades.lance)]
-		upgrades.pulse = before[3]
-		upgrades.seeker = before[0]
-		upgrades.arc = before[1]
-		upgrades.lance = before[2]
+		# A weapon carrying a mutation is pinned: its ranks stay put so the
+		# mutation can never be stranded on a weapon rotated down to rank 0.
+		# The remaining weapons rotate among themselves in the usual order.
+		var cycle: Array = []
+		for weapon in ["pulse", "seeker", "arc", "lance"]:
+			if not _weapon_has_mutation(weapon):
+				cycle.append(weapon)
+		if cycle.size() >= 2:
+			var before: Array = cycle.map(func(w): return int(upgrades[w]))
+			for i in range(cycle.size()):
+				upgrades[cycle[i]] = before[(i - 1 + cycle.size()) % cycle.size()]
 		_log("ARSENAL SHIFT - automatic weapon ranks rotated")
 	stage_casts.clear()
 	tactician_counter_used = false
@@ -2146,11 +2245,11 @@ func _update_enemies() -> void:
 				if int(enemy.get("last_launch", -1)) < launch_cycle:
 					enemy.last_launch = launch_cycle
 					for bay in enemies:
-						if bay.kind == "boss_module" and bay.hp > 0 and bay.role == "launch_bay" and enemies.size() + minions.size() < _enemy_limit() - 2:
+						if bay.kind == "boss_module" and bay.hp > 0 and bay.role == "launch_bay" and _crowd_count() + minions.size() < _enemy_limit() - 2:
 							minions.append({"p":bay.p + Vector2(0, 25), "kind":"storm_weaver"})
 					_log("Storm Carrier launched fighters - destroy its bays")
 			if kind in ["carrier", "echo_carrier"]:
-				if enemies.size() + minions.size() < _enemy_limit() - 2:
+				if _crowd_count() + minions.size() < _enemy_limit() - 2:
 					minions.append({"p": enemy.p + Vector2(rng.randf_range(-30, 30), 28), "kind":"phase_stalker" if kind == "echo_carrier" else "drone"})
 				bullets.append({"p": enemy.p, "v": direction * 165.0, "damage": 2.0 * threat_scale(), "kind": "void" if kind == "echo_carrier" else "chaff", "source": "rival" if bool(enemy.get("rival", false)) else kind})
 			elif kind in ["minelayer", "slag_bomber"]:
@@ -2193,16 +2292,24 @@ func _update_enemies() -> void:
 				if kind == "boss3" and _alive_modules("vent") > 0:
 					for i in range(2):
 						bullets.append({"p":enemy.p + Vector2((i * 2 - 1) * 70, 10), "v":Vector2(0, 95), "damage":18.0 * threat_scale() * boss_projectile_damage_multiplier(), "kind":"slag", "hp":18.0, "fuse":3.2, "source":"rival" if bool(enemy.get("rival", false)) else kind})
+				# A pack shares one volley timer, so it fires like one ship, and
+				# fires less as members fall: a lone survivor of a mostly
+				# destroyed pack is not a full-strength gunship.
+				if enemy.has("pack_id"):
+					var mates: Array = enemies.filter(func(m): return float(m.hp) > 0.0 and int(m.get("pack_id", -1)) == int(enemy.pack_id))
+					enemy.fire *= float(enemy.pack_share) / float(maxi(1, mates.size()))
+					for mate in mates:
+						mate.fire = enemy.fire
 		if enemy.p.y > 885:
 			if bool(enemy.get("rival", false)) and rival_outcome.is_empty():
 				rival_outcome = "escaped"
 				_log(str(rival_record.get("name", "Rival")) + " escaped")
 			enemy.hp = -1.0
 			if kind not in ["boulder", "station"]:
-				_hit(5.0, "hazard", "Escaped " + kind)
+				_hit(5.0 / float(enemy.get("pack_share", 1)), "hazard", "Escaped " + kind)
 	enemies = enemies.filter(func(e): return e.hp > 0.0)
 	for minion in minions:
-		if enemies.size() < _enemy_limit():
+		if _crowd_count() < _enemy_limit():
 			_add_enemy(str(minion.kind), minion.p)
 			if bool(minion.get("rival_escort", false)):
 				enemies[-1]["rival_escort"] = true
@@ -2521,9 +2628,10 @@ func _update_weapons() -> void:
 								break
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.75 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
+	power *= vanguard_veteran_bonus()
 	if merchant_pact_power > 0.0:
 		power *= 1.0 + merchant_pact_power
 	# Shielded Passage contributes immediate offense without needing a niche draft.
@@ -2569,7 +2677,17 @@ func ability_power() -> float:
 		power *= 1.20
 	if _has_prototype("echo_coil"):
 		power *= 1.70
-	return power
+	return power * vanguard_veteran_bonus()
+
+## Vanguard keeps pace after World 1 instead of falling behind the specialist
+## hulls, whose focused weapons scale better into World 2's 4.8x enemy health.
+## Front-loaded: +15% weapon and ability power after World 1, +20% after
+## World 2, +25% after World 3 (status resistance is in status_damage_multiplier).
+## World 1 (and its no-Hangar difficulty gates) is unchanged.
+func vanguard_veteran_bonus() -> float:
+	if ship_id != "vanguard":
+		return 1.0
+	return 1.0 + [0.0, 0.15, 0.20, 0.25][clampi(stage_clears, 0, 3)]
 
 func hull_damage_multiplier() -> float:
 	var factor := 1.0
@@ -2864,9 +2982,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		if str(enemy.kind).begins_with("boss"):
 			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 			# Bulwark retains its slower fire and tank role, but is no
-			# longer disproportionately weak at long advanced bosses.
+			# longer disproportionately weak at long bosses (World 1 included).
 			if ship_id == "bulwark":
-				amount *= 1.12
+				amount *= 1.20
 		if enemy.hp < enemy.max_hp * 0.35:
 			amount *= 1.0 + passive_bonus("finisher", 0.04, 0.15, 0.25)
 		if float(enemy.hp) > float(enemy.max_hp) * 0.75:
@@ -3048,7 +3166,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		xp -= xp_needed()
 		level += 1
 		pending_levels += 1
-	if enemy.kind == "splitter" and enemies.size() < _enemy_limit() - 2:
+	if enemy.kind == "splitter" and _crowd_count() < _enemy_limit() - 2:
 		for i in range(2):
 			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
 	if is_boss:
@@ -3100,10 +3218,16 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
+		# Fortress plating: Bulwark died to Harvester beams and missiles in
+		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
+		if ship_id == "bulwark":
+			reduced *= 0.80
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
-		heat_left = maxf(heat_left, 5.0 * status_duration_scale())
+		# Toned down: -15% automatic damage for 3.5s (was -25% for 5s), so
+		# World 3 heat stays a pressure to answer, not a near-permanent tax.
+		heat_left = maxf(heat_left, 3.5 * status_duration_scale())
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
@@ -3166,7 +3290,13 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			if upgrades[id] > 0:
 				availability.append("%s %.1fs" % [content.abilities[id].name, cooldowns[id]])
 		_log("Hull lost · " + " / ".join(availability))
-	elif hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
+	else:
+		_try_emergency_field()
+
+# Once per flight, low hull from any source (hits or damage over time)
+# deploys the Hangar's Emergency Field.
+func _try_emergency_field() -> void:
+	if hull > 0.0 and hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
 		emergency_used = true
 		aegis_left = maxf(aegis_left, 1.0 + meta.emergency * 0.5)
 		_log("Emergency field deployed")
@@ -3485,8 +3615,10 @@ func _activate_fusion(id: String, strength: float) -> void:
 			prevented += turned * 2.0
 		"reflective_wall":
 			barrier_left = maxf(barrier_left, 10.0 * strength)
-			var absorbed := bullets.filter(func(b): return b.kind in ["chaff", "ion", "corrosion", "disrupt"]).size()
-			bullets = bullets.filter(func(b): return b.kind not in ["chaff", "ion", "corrosion", "disrupt"])
+			# Same small-shot family the Barrier itself blocks, including the
+			# World 3-4 heat, gravity and void rounds.
+			var absorbed := bullets.filter(func(b): return _is_small_shot(str(b.kind))).size()
+			bullets = bullets.filter(func(b): return not _is_small_shot(str(b.kind)))
 			shield = minf(max_shield, shield + absorbed * 3.5 * strength)
 			prevented += absorbed * 2.0
 			for n in range(mini(12, absorbed)):

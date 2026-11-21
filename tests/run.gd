@@ -35,6 +35,7 @@ func _defeat_boss_fixture(sim: RefCounted) -> void:
 		sim._damage_enemy(core, 999999999.0, "nova")
 
 func _run() -> void:
+	_test_swarm_packs()
 	_test_course()
 	_test_defenses()
 	_test_interrupts_and_priority()
@@ -500,14 +501,14 @@ func _test_ship_pilot_identity_tuning() -> void:
 	for sim in [siege, baseline]:
 		sim._spawn_boss()
 		sim._damage_enemy(sim.enemies[0], 100.0, "pulse")
-	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.12), "Bulwark has a narrowly scoped 12 percent automatic siege bonus against boss cores")
+	check(is_equal_approx(float(siege.damage_dealt.pulse) / float(baseline.damage_dealt.pulse), 1.20), "Bulwark has a narrowly scoped 20 percent automatic siege bonus against boss cores")
 	var part_siege := Sim.new(88232, {}, "bulwark", "rookie")
 	var part_base := Sim.new(88232, {}, "vanguard", "rookie")
 	for sim in [part_siege,part_base]:
 		sim.stage = 2
 		sim._spawn_boss()
 		sim._damage_enemy(sim.enemies[1], 100.0, "pulse")
-	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.12), "Bulwark siege bonus also applies to actual targetable boss modules")
+	check(is_equal_approx(float(part_siege.damage_dealt.pulse) / float(part_base.damage_dealt.pulse), 1.20), "Bulwark siege bonus also applies to actual targetable boss modules")
 	var drone_siege := Sim.new(88233, {}, "bulwark", "rookie")
 	var drone_base := Sim.new(88233, {}, "vanguard", "rookie")
 	for sim in [drone_siege,drone_base]:
@@ -564,13 +565,13 @@ func _test_world1_density_and_pilot_identities() -> void:
 	check(normal.next_encounter_at <= 17.0 and is_equal_approx(hard.next_encounter_at, old_hard_schedule), "World 1 Normal opens with a real wing inside 17 seconds without changing Hard's gate")
 	normal.time = normal.next_encounter_at
 	normal._spawn_encounter()
-	check(normal.enemies.size() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
+	check(normal._crowd_count() == 3 and normal.enemies.all(func(e): return bool(e.get("strike_wing",false))), "Opening strike wing enters visibly with three enemies")
 	check(normal.enemies.all(func(e): return float(e.p.y) >= 0.0), "The first strike wing must appear on-screen, not outside the frame")
 	check(normal.enemies[0].xp <= hard.content.enemies[str(normal.enemies[0].kind)].xp, "World 1 strike wings are paid for from scheduled spawn slots")
 	var director := Sim.new(8151, {}, "vanguard", "rookie", "normal")
 	director.time = 8.0
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
+	check(director._crowd_count() == 1 and director.enemies.all(func(e): return int(e.xp) == 0 and bool(e.get("pressure_wing", false))), "Opening director introduces one real, non-XP reinforcement enemy to a sparse screen")
 	check(director.enemies.all(func(e): return e.p.y >= 0.0 and e.hp > 0.0), "Reinforcements are visible and damageable, not just decorative")
 	var expiry := Sim.new(8152)
 	expiry.time = 8.0
@@ -598,11 +599,11 @@ func _test_world1_density_and_pilot_identities() -> void:
 		advanced.bullets.append({"p":Vector2(50.0 + index * 20.0,250.0), "v":Vector2.DOWN * 150.0,"damage":1.0,"kind":"chaff","source":"test"})
 	advanced._update_enemies()
 	check(advanced.bullets.size() > 14, "Hard retains its authored unthrottled projectile cadence")
-	var untouched := director.enemies.size()
+	var untouched := director._crowd_count()
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")
+	check(director._crowd_count() == untouched + 1, "Director adds just one additional enemy to reach its two-visible target")
 	director._spawn_world1_pressure()
-	check(director.enemies.size() == untouched + 1, "Director holds off while two enemies are already visible")
+	check(director._crowd_count() == untouched + 1, "Director holds off while two enemies are already visible")
 	var pressure_save := director.snapshot()
 	var pressure_restored := Sim.new()
 	check(pressure_restored.restore(pressure_save) and pressure_restored.snapshot() == pressure_save, "Reinforcement timing and wave state survive exact resume")
@@ -672,7 +673,7 @@ func _test_world1_mutations_and_merchant() -> void:
 	disposable.time = 1.5
 	var rng_before_scout: int = disposable.rng.state
 	disposable._spawn_opening_scout_screen()
-	check(disposable.enemies.size() == 2 and disposable.enemies.all(func(e): return bool(e.get("opening_scout",false)) and int(e.xp) == 0), "First scout contact is two real non-farming enemies")
+	check(disposable._crowd_count() == 2 and disposable.enemies.all(func(e): return bool(e.get("opening_scout",false)) and int(e.xp) == 0), "First scout contact is two real non-farming enemies")
 	check(disposable.rng.state == rng_before_scout, "Opening scripted scouts do not consume real combat or draft randomness")
 	var hull_before_scout: float = disposable.hull
 	disposable.time += 4.0
@@ -702,9 +703,10 @@ func _test_world1_mutations_and_merchant() -> void:
 	gap.next_encounter_at = 999999.0
 	gap.next_hazard = 999999.0
 	gap.next_spawn = gap.time
-	var gap_before: int = gap.enemies.size()
+	# Count ships by crowd weight: a swarm pack is one ship.
+	var gap_before: int = gap._crowd_count()
 	gap.step()
-	check(gap.enemies.size() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
+	check(gap._crowd_count() == gap_before + 1 and gap.next_spawn > gap.time, "Warning/cutscene choreography cannot starve the ordinary XP-bearing World 1 spawn schedule")
 	var bank := Sim.new(61112)
 	check(bank._install_mutation("ricochet_pulse"), "Bank Shot installs only on owned Pulse weapon")
 	bank._add_enemy("drone",Vector2(230,310))
@@ -892,6 +894,19 @@ func _test_roguelike_variation() -> void:
 	shift.stage_clears = 1
 	check(shift.begin_intermission() and shift.skip_prototype() and shift.choose_route("repair") and shift.advance_stage(), "Artifact mode passes through the real boss intermission")
 	check([shift.upgrades.pulse,shift.upgrades.seeker,shift.upgrades.arc,shift.upgrades.lance] == [3,4,2,1], "Arsenal Shift rotates actual weapon ranks without duplicating them")
+	# A mutated weapon is pinned so its mutation is never stranded at rank 0.
+	var pinned := Sim.new(446, {}, "vanguard", "rookie", "normal", "arsenal_roulette")
+	pinned.upgrades.pulse = 4
+	pinned.upgrades.seeker = 2
+	pinned.upgrades.arc = 1
+	pinned.upgrades.lance = 0
+	pinned.mutations = ["piercing_pulse"]
+	pinned.upgrades.piercing_pulse = 1
+	pinned.stage_transition_queued = true
+	pinned.stage_clears = 1
+	check(pinned.begin_intermission() and pinned.skip_prototype() and pinned.choose_route("repair") and pinned.advance_stage(), "Mutated Arsenal Shift flight warps")
+	check(pinned.upgrades.pulse == 4, "Arsenal Shift keeps a mutated weapon's ranks so its mutation stays live")
+	check([pinned.upgrades.seeker,pinned.upgrades.arc,pinned.upgrades.lance] == [0,2,1], "Arsenal Shift rotates the unmutated weapons among themselves")
 	var rare := Sim.new(447)
 	rare.stage = 2
 	rare.level = 5
@@ -984,7 +999,7 @@ func _test_elite_squad_counterplay() -> void:
 	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
 	normal_opener.time = normal_opener.next_encounter_at
 	normal_opener._spawn_encounter()
-	check(normal_opener.encounter_queue.is_empty() and normal_opener.enemies.size() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
+	check(normal_opener.encounter_queue.is_empty() and normal_opener._crowd_count() == 3 and normal_opener.enemies.all(func(e): return bool(e.get("strike_wing",false)) and not e.has("elite_role")), "Normal World 1 uses visible simultaneous strike wings without introducing elite buffs")
 	var squad := Sim.new(7600)
 	squad.stage = 2
 	squad._spawn_encounter()
@@ -1461,12 +1476,82 @@ func _test_resume() -> void:
 	check(restored.cards == original.cards, "Resuming a draft must preserve its exact hand")
 	check(not restored.restore({"version": -1}), "Unknown checkpoint versions must be rejected")
 
+# More on-screen action must not change the balance budget: a pack carries
+# one ship's XP, kill, volley rate and escape damage.
+func _test_swarm_packs() -> void:
+	var pack := Sim.new(5150)
+	pack._add_pack("drone", Vector2(270, 120))
+	var single := Sim.new(5150)
+	single._add_enemy("drone", Vector2(270, 120))
+	var pack_xp := 0
+	var rewarders := 0
+	for member in pack.enemies:
+		pack_xp += int(member.xp)
+		rewarders += int(not bool(member.get("no_reward", false)))
+	var pack_hp := 0.0
+	for member in pack.enemies:
+		pack_hp += float(member.max_hp)
+	check(pack.enemies.size() == 4 and pack._crowd_count() == 1 and pack_xp == int(single.enemies[0].xp) and rewarders == 1,
+		"A drone pack is four ships that count as one, with one ship's XP and one reward")
+	check(is_equal_approx(pack_hp, float(single.enemies[0].max_hp) * Sim.PACK_HP_TOTAL), "A pack's total health is about one ship's")
+	check(pack.enemies.all(func(e): return is_equal_approx(float(e.fire), float(pack.enemies[0].fire))), "Pack members share one volley timer")
+	# Kill every member: exactly one kill and one ship's XP.
+	for member in pack.enemies.duplicate():
+		pack._damage_enemy(member, 99999.0, "nova")
+	check(pack.kills == 1, "Destroying a whole pack counts one kill")
+	# Volleys: a pack fires like one ship while any member lives.
+	var volley := Sim.new(5151)
+	volley._add_pack("drone", Vector2(270, 300))
+	var lone := Sim.new(5151)
+	lone._add_enemy("drone", Vector2(270, 300))
+	for sim in [volley, lone]:
+		for enemy in sim.enemies:
+			enemy.fire = 0.0
+		sim._update_enemies()
+	check(volley.bullets.size() == lone.bullets.size() and volley.bullets.size() > 0, "One pack volley fires the same shots as one ship")
+	check(volley.enemies.all(func(e): return float(e.fire) > 0.5), "After a volley every pack member waits for the next shared turn")
+	var daily := Sim.new(5152)
+	daily.daily_day = "2026-11-21"
+	check(not daily._packs_enabled(), "Daily keeps its historical spawns")
+	var hard := Sim.new(5152, {}, "vanguard", "rookie", "hard")
+	check(not hard._packs_enabled(), "Hard/Insane keep their exact no-Hangar World 1 gate (no packs)")
+
 func _test_saves() -> void:
 	var services := Services.new()
 	var path := "user://starrun-test.save"
 	var expected := {"vector": Vector2(12, 19), "seed": 981, "cards": ["pulse", "aegis"]}
 	check(services.write_atomic(path, expected), "Atomic save must succeed")
 	check(services.read_save(path) == expected, "Saved data must survive a disk round trip")
+	var newer := {"seed": 982}
+	check(services.write_atomic(path, newer), "A second save must succeed")
+	check(services.read_save(path + ".bak") == expected, "The previous good save is kept as a backup")
+	# Windows rename = delete target, then move. Simulate a crash in between.
+	check(services.write_atomic(path, {"seed": 983}), "Third save must succeed")
+	var interrupted := FileAccess.open(path + ".tmp", FileAccess.WRITE)
+	interrupted.store_var({"seed": 984})
+	interrupted.close()
+	DirAccess.remove_absolute(path)
+	check(services.read_save(path) == {"seed": 984} and services.last_recovery == "tmp", "A save interrupted mid-replace is recovered from its verified .tmp")
+	DirAccess.remove_absolute(path + ".tmp")
+	# A damaged primary falls back to the backup and is never promoted over it.
+	var damaged := FileAccess.open(path, FileAccess.WRITE)
+	damaged.store_string("not a save")
+	damaged.close()
+	check(services.read_save(path) == {"seed": 982} and services.last_recovery == "backup", "A corrupt save falls back to the last good backup")
+	DirAccess.remove_absolute(path + ".bak")
+	damaged = FileAccess.open(path, FileAccess.WRITE)
+	damaged.store_string("not a save")
+	damaged.close()
+	check(services.read_save(path).is_empty() and services.last_recovery == "corrupt", "An unrecoverable save reports corruption")
+	check(not FileAccess.file_exists(path) and FileAccess.file_exists(services.last_quarantine), "An unreadable save is moved aside, never silently overwritten")
+	DirAccess.remove_absolute(services.last_quarantine)
+	# A deleted run must not be resumable from its backup copy.
+	# Never touch a developer's real suspended flight when run locally.
+	var run_path: String = Services.RUN
+	if not FileAccess.file_exists(run_path):
+		check(services.write_atomic(run_path, {"tick": 1}) and services.write_atomic(run_path, {"tick": 2}), "Run saves succeed")
+		services.delete_run()
+		check(services.read_save(run_path).is_empty(), "Deleting a run removes its backup and temporary copies")
 	DirAccess.remove_absolute(path)
 
 func _install(sim: RefCounted, id: String) -> void:
@@ -1596,7 +1681,7 @@ func _test_loadouts() -> void:
 	check(base.active_slots == ["aegis"], "Vanguard starts with its Aegis signature only")
 	var interceptor := Sim.new(222, {}, "kestrel", "ace")
 	check(interceptor.ship_id == "kestrel" and interceptor.pilot_id == "ace" and interceptor.active_slots == ["overdrive"], "Selected hull must supply its own signature active")
-	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 70, "Interceptor starts with Pulse focus and fragile hull")
+	check(interceptor.upgrades.pulse == 2 and interceptor.upgrades.seeker == 0 and interceptor.max_hull == 85, "Interceptor starts with Pulse focus and a light hull")
 	check(interceptor.course[2].t < base.course[2].t, "Interceptor autopilot must make faster turns")
 	interceptor._update_weapons()
 	check(interceptor.shots.any(func(s): return s.weapon == "pulse") and not interceptor.shots.any(func(s): return s.weapon == "seeker"), "Ship weapon exclusions must prevent firing uninstalled weapons")
@@ -1702,18 +1787,18 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if urgent_beam or sim.bullets.size() >= 20:
 			sim.activate("stasis_lock")
 			sim.activate("ghost_signal")
-		if sim.boss_spawned or sim.enemies.size() >= 3:
+		if sim.boss_spawned or sim._crowd_count() >= 3:
 			sim.activate("railstorm")
 			sim.activate("missile_grid")
 			sim.activate("prism_focus")
 		if sim.hull < sim.max_hull - 30 or sim.shield < sim.max_shield - 30:
 			sim.activate("repair_matrix")
-		if sim.hull < sim.max_hull - 20 and sim.enemies.size() > 0:
+		if sim.hull < sim.max_hull - 20 and sim._crowd_count() > 0:
 			sim.activate("scrap_converter")
 		if sim.bullets.size() >= 15:
 			sim.activate("reflective_wall")
 			sim.activate("reactor_surge")
-		if sim.enemies.size() >= 3 or sim.boss_spawned:
+		if sim._crowd_count() >= 3 or sim.boss_spawned:
 			sim.activate("barrage")
 			sim.activate("overdrive")
 		if sim.hull < sim.max_hull - 26:
@@ -1728,7 +1813,7 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 				sim.activate("aegis")
 			elif sim.aegis_left <= 0:
 				sim.activate("nova")
-		elif sim.enemies.size() >= 3 and sim.charges.is_empty():
+		elif sim._crowd_count() >= 3 and sim.charges.is_empty():
 			sim.activate("nova")
 		elif sim.shield < 30 and sim.charges.is_empty():
 			var near := 0
@@ -1751,11 +1836,11 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 		if sim.bullets.size() >= 12:
 			sim.activate("prism")
 			sim.activate("overload")
-		if sim.enemies.size() >= 2 or sim.boss_spawned:
+		if sim._crowd_count() >= 2 or sim.boss_spawned:
 			sim.activate("wing_drones")
 			sim.activate("ion_mine")
 			sim.activate("storm_carrier")
-		if sim.enemies.size() >= 3:
+		if sim._crowd_count() >= 3:
 			sim.activate("focus")
 			sim.activate("jammer")
 			sim.activate("strike")
@@ -2421,7 +2506,7 @@ func _test_new_stage_threats() -> void:
 	sim._update_enemies()
 	check(sim.bullets.any(func(b): return b.kind == "slag" and b.fuse > 0.0), "Foundry bomber must create timed molten-slag hazards")
 	sim._hit(2.0, "heat", "test")
-	check(sim.heat_left >= 5.0 and sim.weapon_power() < Sim.new().weapon_power(), "Heat must reduce firepower temporarily")
+	check(sim.heat_left >= 3.5 and sim.weapon_power() < Sim.new().weapon_power(), "Heat must reduce firepower temporarily")
 	var first_kills := sim.kills
 	sim.enemies.clear()
 	sim._add_enemy("splitter", Vector2(225, 180))
@@ -2613,7 +2698,7 @@ func _test_long_runs() -> void:
 	for kind in ["ion", "heat", "gravity", "corrosion"]: sim._hit(1, kind, "test")
 	sim.cooldowns.aegis = 8
 	sim._hit(1, "disrupt", "test")
-	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 2.5) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
+	check(is_equal_approx(sim.shield_offline, 2) and is_equal_approx(sim.heat_left, 1.75) and is_equal_approx(sim.gravity_left, 2.25) and is_equal_approx(sim.corrosion_left, 2.5) and is_equal_approx(sim.cooldowns.aegis, 9), "Insulation shortens all five debuffs")
 	check(is_equal_approx(sim.status_damage_multiplier(), 0.85), "Rank-10 Insulation blocks 15% of status attack damage")
 	for kind in ["ion", "heat", "gravity", "corrosion", "disrupt", "void"]:
 		var control := Sim.new(5720)
@@ -2797,7 +2882,7 @@ func _test_expanded_hangar() -> void:
 	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.2), "Restart circuit shortens shield-break downtime")
 	var sealed := Sim.new(3004,{"hazard_seals":4})
 	sealed._hit(1,"heat","heat")
-	check(is_equal_approx(sealed.heat_left,4.0), "Sealed systems shorten an actual status hit")
+	check(is_equal_approx(sealed.heat_left,2.8), "Sealed systems shorten an actual status hit")
 	var siege := Sim.new(3005,{"boss_damage":5})
 	var target := {"id":99,"kind":"boss","hp":1000.0,"max_hp":1000.0,"p":Vector2(270,130)}
 	siege._damage_enemy(target,100,"pulse")

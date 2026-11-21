@@ -188,7 +188,7 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
   exports:
-    name: Web, Windows, and Linux builds
+    name: Web, Windows, Linux, and macOS builds
     needs: simulation
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -197,18 +197,21 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.local/share/godot/export_templates/4.6.3.stable
-          key: godot-4.6.3-starrun-templates-v1
+          key: godot-4.6.3-starrun-templates-v2
         id: templates
       - name: Install pinned Godot and templates
         run: tools/install-godot.sh ${{ steps.templates.outputs.cache-hit != 'true' && '--templates' || '' }}
       - name: Build all playtest targets
         run: |
-          mkdir -p build/web build/windows build/linux
+          mkdir -p build/web build/windows build/linux build/macos
           godot --headless --path . --editor --import --quit
           godot --headless --path . --export-release Web build/web/index.html
           python3 tools/package-web.py build/web
           godot --headless --path . --export-release Windows build/windows/StarRun.exe
           godot --headless --path . --export-release Linux build/linux/StarRun.x86_64
+          # Unsigned (ad-hoc) universal app for playtesting; Steam/notarized releases sign on macOS.
+          godot --headless --path . --export-release macOS build/macos/StarRun.zip
+          unzip -l build/macos/StarRun.zip | grep -q '\.app/Contents/MacOS/'
           build/linux/StarRun.x86_64 --headless --quit-after 10
       - uses: actions/upload-artifact@v4
         with:
@@ -219,6 +222,11 @@ jobs:
         with:
           name: StarRun-Windows
           path: build/windows
+          retention-days: 30
+      - uses: actions/upload-artifact@v4
+        with:
+          name: StarRun-macOS
+          path: build/macos/StarRun.zip
           retention-days: 30
       - name: Archive Linux executable with its permissions
         run: tar -C build/linux -czf build/StarRun-Linux.tar.gz StarRun.x86_64

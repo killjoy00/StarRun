@@ -391,7 +391,9 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 				close_ordnance = true
 	var injured: bool = sim.hull < sim.max_hull - 25.0
 	var vulnerable: bool = sim.shield < sim.max_shield * 0.55
-	var crowd: bool = sim.enemies.size() >= 3
+	# Bots judge a crowd by threat, not body count: a swarm pack reads as one
+	# ship (the same rule the simulation uses).
+	var crowd: bool = (sim._crowd_count() if sim.has_method("_crowd_count") else sim.enemies.size()) >= 3
 	var boss: bool = sim.boss_spawned
 	for active_id in sim.active_slots:
 		var ability: String = str(active_id)

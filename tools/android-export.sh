@@ -101,4 +101,9 @@ curl --fail --location --retry 3 \
 java -jar "$bundletool" dump manifest --bundle=build/android/StarRun.aab --module=base \
   > "$work/compiled-AndroidManifest.xml"
 python3 tools/android-orientation-manifest.py verify "$work/compiled-AndroidManifest.xml"
+# Haptics are silently disabled on Android without this permission.
+grep -Fq 'android.permission.VIBRATE' "$work/compiled-AndroidManifest.xml" || {
+  echo "::error::Compiled manifest lacks android.permission.VIBRATE; haptics would not work"
+  exit 1
+}
 echo "Built signed Star/Run Android App Bundle with optional portrait hardware for com.rsm.starrun"

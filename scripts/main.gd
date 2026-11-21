@@ -64,6 +64,8 @@ var previous_ready := {}
 var previous_warning := false
 var last_boss_kills := 0
 var last_hull := 100.0
+var hit_feedback_clock := 0.0
+var chip_damage := 0.0
 var card_selection := 0
 var banner_text := ""
 var banner_clock := 0.0
@@ -115,6 +117,8 @@ var remove_ads_store: Node = null
 
 func _ready() -> void:
 	var saved := services.read_save(Services.PROFILE)
+	# Test doubles may not implement the recovery fields; read them defensively.
+	var profile_recovery := str(services.get("last_recovery")) if services.get("last_recovery") != null else ""
 	if not saved.is_empty():
 		profile.merge(saved, true)
 	var hangar := Catalog.defaults()
@@ -175,6 +179,16 @@ func _ready() -> void:
 		daily_share_service.share_completed.connect(_on_native_share_completed)
 		daily_share_service.share_canceled.connect(_on_native_share_canceled)
 	get_tree().auto_accept_quit = false
+	# Only the real launched game owns the OS window; test harnesses size it.
+	if get_tree().current_scene == self:
+		_apply_window_mode()
+	# Android Back must never kill a flight; _notification routes it instead.
+	get_tree().quit_on_go_back = false
+	if profile_recovery == "corrupt":
+		_queue_toast("Profile could not be read", "Starting fresh. The damaged save was kept on this device.")
+	elif profile_recovery in ["tmp", "backup"]:
+		_queue_toast("Profile recovered", "Your progress was restored from the last good save.")
+		_save_profile()
 
 
 # The iPhone ad SDK is installed only during ad-enabled native exports.
@@ -232,6 +246,13 @@ func _on_remove_ads_entitled() -> bool:
 		native_ad_banner.call("set_ads_removed", true)
 	_on_ad_banner_visibility(false)
 	return bool(profile.get("remove_ads", false))
+
+func _on_remove_ads_revoked() -> void:
+	# Apple no longer lists the purchase (for example, it was refunded).
+	profile.remove_ads = false
+	_save_profile()
+	if is_instance_valid(native_ad_banner):
+		native_ad_banner.call("set_ads_removed", false)
 
 func _buy_remove_ads() -> void:
 	if is_instance_valid(remove_ads_store):
@@ -1305,6 +1326,8 @@ func _show_settings() -> void:
 	_toggle_row(box, "Sound effects", "Weapons, hits and ability-ready alerts.", bool(profile.sound), _toggle_sound)
 	_toggle_row(box, "Music", "Soundtrack during flights.", bool(profile.music), _toggle_music)
 	_toggle_row(box, "Calmer visuals", "Less glow, fewer particles and no screen shake.", bool(profile.reduced), _toggle_fx)
+	if _desktop_window():
+		_toggle_row(box, "Fullscreen", "Also F11 or Alt+Enter.", bool(profile.get("fullscreen", false)), _toggle_fullscreen)
 	if (OS.get_name() == "iOS" and _ad_monetization_enabled()) or OS.get_environment("STARRUN_IAP_REVIEW_CAPTURE") == "1":
 		var has_ads_removed := bool(profile.get("remove_ads", false))
 		Kit.label(box, "AD-FREE", 16, Kit.CYAN)
@@ -2782,6 +2805,7 @@ func _process(delta: float) -> void:
 	if is_instance_valid(native_ad_banner):
 		native_ad_banner.call("set_display_for_mode", mode)
 	_advance_toast(delta)
+	game_center.update(delta)
 	visual_time += delta * (game_speed if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
@@ -2853,9 +2877,18 @@ func _process(delta: float) -> void:
 			if ready and not previous_ready[key]:
 				sound.play("ready-" + key)
 			previous_ready[key] = ready
+		# Discrete hits give feedback immediately. Damage over time (corrosion)
+		# lowers hull every tick, so it is pooled and rate-limited instead of
+		# firing a sound and a vibration on every frame.
+		hit_feedback_clock = maxf(0.0, hit_feedback_clock - delta)
 		if sim.hull < last_hull:
-			sound.play("hit")
-			_haptic(80 if last_hull - sim.hull >= 15.0 else 35)
+			var lost: float = last_hull - sim.hull
+			chip_damage += lost
+			if hit_feedback_clock <= 0.0 and (lost >= 1.0 or chip_damage >= 6.0):
+				sound.play("hit")
+				_haptic(80 if lost >= 15.0 else 35)
+				hit_feedback_clock = 0.12 if lost >= 1.0 else 0.6
+				chip_damage = 0.0
 		last_hull = sim.hull
 		save_clock += delta
 		if save_clock > 10:
@@ -3111,6 +3144,43 @@ func _respec() -> void:
 	_save_profile()
 	_show_hangar()
 
+## Windows, Linux (including Steam Deck) and macOS own a resizable window.
+func _desktop_window() -> bool:
+	return OS.has_feature("pc") and DisplayServer.get_name() != "headless"
+
+func _toggle_fullscreen() -> void:
+	profile.fullscreen = not bool(profile.get("fullscreen", false))
+	_apply_window_mode()
+	_save_profile()
+	if mode == "settings":
+		_refresh_panel()
+
+func _apply_window_mode() -> void:
+	if not _desktop_window():
+		return
+	if bool(profile.get("fullscreen", false)):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN)
+		return
+	if DisplayServer.window_get_mode() != DisplayServer.WINDOW_MODE_WINDOWED:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
+	_fit_window_to_screen()
+
+## The default 1280x900 window is taller than a Steam Deck (800 px) or a
+## 1366x768 laptop. Shrink it to the screen's usable area and center it.
+func _fit_window_to_screen() -> void:
+	var screen := DisplayServer.window_get_current_screen()
+	var usable := DisplayServer.screen_get_usable_rect(screen)
+	if usable.size.x <= 0 or usable.size.y <= 0:
+		return
+	var size := DisplayServer.window_get_size()
+	# Leave room for the title bar and window borders.
+	var limit := Vector2i(usable.size.x - 16, usable.size.y - 48)
+	if size.x <= limit.x and size.y <= limit.y:
+		return
+	var fitted := Vector2i(mini(size.x, limit.x), mini(size.y, limit.y))
+	DisplayServer.window_set_size(fitted)
+	DisplayServer.window_set_position(usable.position + (usable.size - fitted) / 2)
+
 func _toggle_sound() -> void:
 	profile.sound = not profile.sound
 	sound.enabled = profile.sound
@@ -3154,6 +3224,15 @@ func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		if mode == "playing":
 			_show_pause()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		# Retry any Game Center items that failed while the app was away.
+		game_center.sync()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		# Android Back pauses a flight or steps back a screen, like Escape.
+		# Only the title screen exits, and it saves first.
+		if not InputRouter.back(self) and mode == "menu":
+			_save_run()
+			get_tree().quit()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
 		_save_run()
 		get_tree().quit()

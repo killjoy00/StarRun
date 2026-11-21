@@ -111,7 +111,7 @@ func _cast(sim: RefCounted) -> void:
 	if imminent:
 		sim.activate("aegis")
 		sim.activate("nova")
-	if sim.enemies.size() >= 3:
+	if sim._crowd_count() >= 3:
 		sim.activate("nova")
 		sim.activate("barrage")
 		sim.activate("overdrive")
