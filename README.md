@@ -78,7 +78,8 @@ The game is meant to be hard, and the Hangar is how you get through it. Targets 
 | Max | Wins most runs (70%+) |
 
 - **Longer Hangar.** Eleven core upgrades have extra ranks (for example hull 7 → 15, damage 5 → 12). Ranks up to the old cap keep their old price; extended ranks cost more the higher they go. New options: Second wind (once per run, survive a killing blow with 25% hull) and Pulse, Coil and Lens tuning (+5% damage per rank for that gun). A full Hangar costs 6120 Cores (was 2811).
-- **Harder Worlds 2–4.** 2x spawn rate and 3.5x enemy health. World 1 and boss health are unchanged.
+- **Harder Worlds 2–4.** 2x spawn rate and 3.5x enemy health. World 1 and boss health are unchanged. On Hard and Insane, ordinary enemies in Worlds 2–4 have 15% less health than that, so a full Hangar still wins often enough.
+- **Vanguard** has 115 hull and 55 shield (was 100 / 50); it was the weakest ship at half Hangar (2 of 8 wins).
 - **Measured** (scripted bot, six ships × 8 seeds each): no Hangar 0/48, half 27/48 (56%), max 44/48 (92%). Enemies on screen at half Hangar went from under 1 to about 9 / 11 / 18 in Worlds 2 / 3 / 4. Ship spread is wide at half Hangar (Kestrel and Arcwing 7/8, Vanguard 2/8), which is worth tuning separately. These are bot results, not human win rates.
 - **Experiments.** `.github/workflows/difficulty-experiment.yml` runs all six ships at none / half / max Hangar in parallel (about 10 minutes) with per-world spawn, health and damage multipliers and a difficulty input, and reports win rates against the targets plus density per world. Start it from the Actions tab (Run workflow).
 - **CI gates.** A full-Hangar Arcwing must win the campaign and clear the Archive; no Hangar must never finish Normal (six ships × 2 seeds).

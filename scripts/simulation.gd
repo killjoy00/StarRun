@@ -874,6 +874,14 @@ func stage_damage_scale() -> float:
 func enemy_health_multiplier() -> float:
 	return 0.90 if stage in [2, 3, 4] else 1.0
 
+## Hard and Insane share Normal's tougher Worlds 2-4 waves; ordinary enemies
+## there get a little less health so a full Hangar still wins often enough.
+## Bosses and World 1 are unaffected.
+func advanced_wave_health() -> float:
+	if stage not in [2, 3, 4]:
+		return 1.0
+	return {"normal": 1.0, "hard": 0.85, "insane": 0.85}[difficulty]
+
 func enemy_damage_multiplier() -> float:
 	return 1.05 if stage in [2, 3, 4] else 1.0
 
@@ -1642,7 +1650,7 @@ func _crowd_count() -> int:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * advanced_wave_health() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1

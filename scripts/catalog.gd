@@ -33,7 +33,7 @@ const PILOTS := [
 	{"id":"tactician", "name":"Nyx · Tactician", "cost":75, "description":"Abilities recharge 15% faster. One extra reroll. Once per world, an ability used just before a hit fires back.", "trait":"ABILITIES"}
 ]
 const SHIPS := [
-	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced. Starts with Pulse and Seeker. Gets stronger after each world: more damage and less status damage.", "hull":100, "shield":50, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
+	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced. Starts with Pulse and Seeker. Gets stronger after each world: more damage and less status damage.", "hull":115, "shield":55, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
 	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"Fast. Fires 25% faster and starts with 2 Pulse ranks. Low hull and shield.", "hull":85, "shield":40, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
 	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 20% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
 	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
