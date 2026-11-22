@@ -1166,20 +1166,27 @@ func _show_achievements() -> void:
 	var view := _page(1.0, true, 540.0)
 	_page_header(view.top, "PILOT RECORD", "Achievements", _show_menu)
 	var unlocked: Dictionary = profile.achievements
-	Kit.label(view.top, "%d / %d earned  ·  saved on this device" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
-	Kit.label(view.body, "Goals to aim for. Each one unlocks when you do it.", 16, Kit.TEXT, true)
+	Kit.label(view.top, "%d of %d earned" % [unlocked.size(),Progress.ACHIEVEMENTS.size()], 15, Kit.MUTED, true)
 	if game_center.supports_game_center():
 		_ui_button(view.body, "View Apple Game Center achievements", _show_native_achievements, "secondary", 48)
 	for item in Progress.ACHIEVEMENTS:
 		var id: String = str(item.id)
 		var is_unlocked: bool = unlocked.has(id)
 		if bool(item.get("local_only", false)) and not is_unlocked:
-			_info_card(view.body, "Unlisted achievement", "Nothing earned yet.", Kit.MUTED)
+			_info_card(view.body, "Secret achievement", "Keep playing to find it.", Kit.MUTED)
 			continue
 		var done: int = mini(int(item.target), Progress.progress(profile, id))
-		var status_text := "UNLOCKED  ·  %s" % str(unlocked.get(id,"")) if is_unlocked else ("%d / %d" % [done, int(item.target)])
-		_info_card(view.body, ("%s  ·  %s" % [str(item.name), str(item.category)]) if is_unlocked else str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
+		var status_text := ("Earned %s" % _pretty_day(str(unlocked.get(id, "")))) if is_unlocked else ("%d / %d" % [done, int(item.target)])
+		_info_card(view.body, str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
 	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+## "2026-11-22" -> "Nov 22, 2026". Anything else is shown as stored.
+func _pretty_day(day: String) -> String:
+	var parts := day.split("-")
+	if parts.size() != 3 or not parts[1].is_valid_int():
+		return day
+	var months := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	return "%s %d, %s" % [months[clampi(int(parts[1]) - 1, 0, 11)], int(parts[2]), parts[0]]
 
 func _rival_identity(parent: Node, record: Dictionary, note: String) -> void:
 	var frame := PanelContainer.new()
@@ -1205,7 +1212,7 @@ func _rival_identity(parent: Node, record: Dictionary, note: String) -> void:
 	Kit.label(text_column, str(record.get("name","Unknown captain")), 21, Kit.TEXT, true)
 	Kit.label(text_column, RivalCaptains.trait_name(str(record.get("trait",""))), 17, Kit.AMBER, true)
 	Kit.label(content, note, 16, Kit.MUTED, true)
-	Kit.label(content, RivalCaptains.counterplay(str(record.get("trait",""))), 16, Kit.TEXT, true)
+	Kit.label(content, RivalCaptains.flavor(record), 16, Kit.TEXT, true)
 
 func _show_rival_journal() -> void:
 	RivalCaptains.prepare(profile)
@@ -1822,7 +1829,7 @@ func _show_cards(play_sound: bool = true) -> void:
 		_ui_button(reading_footer, "Cancel", _toggle_banish, "secondary", 52, true)
 	elif not capped:
 		if sim.rerolls_left > 0:
-			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Get new choices. Rerolls refill each world.")
+			_draft_tool("Reroll", "%d left" % sim.rerolls_left, _draft_action.bind("reroll", 0), "Get new choices.")
 		if sim.skips_left > 0:
 			_draft_tool("Skip", "+%d hull" % (12 + int(sim.meta.skip_patch) * 6), _draft_action.bind("skip", 0), "Skip and repair %d hull" % (12 + int(sim.meta.skip_patch) * 6))
 		if sim.banishes_left > 0:
@@ -2277,7 +2284,7 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	headline.add_theme_constant_override("separation", 2)
 	headline.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(headline)
-	var progress_title := "Endless world %d cleared" % sim.stage if sim.endless_enabled else "Stage %d of %d cleared" % [sim.stage, sim.stage_count()]
+	var progress_title := "Endless world %d cleared" % sim.stage if sim.endless_enabled else "World %d of %d cleared" % [sim.stage, sim.stage_count()]
 	var eyebrow := Kit.caps(headline, progress_title, Kit.AMBER, 15)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var title := Kit.label(headline, "%s destroyed" % sim.boss_name(), 32, Color.WHITE, true)
@@ -2298,28 +2305,25 @@ func _show_stage_clear(reset_clock: bool = true) -> void:
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 10)
 	panel.add_child(content)
-	Kit.caps(content, str(sim.stage_spec().reward_label), Kit.AMBER, 14)
 	var stats := HBoxContainer.new()
 	stats.add_theme_constant_override("separation", 12)
 	content.add_child(stats)
-	_big_stat(stats, str(sim.payout()), "Cores so far", Kit.AMBER)
-	_big_stat(stats, str(sim.kills), "Enemies destroyed", Color.WHITE)
-	Kit.label(content, "Cores are paid out when the run ends.", 15, Kit.MUTED, true)
+	_big_stat(stats, str(sim.payout()), "Cores this run", Kit.AMBER)
+	_big_stat(stats, str(sim.kills), "Kills", Color.WHITE)
 	if is_final:
-		var final_copy := "Daily done. Save your score, or try again to beat it." if not sim.daily_day.is_empty() else "You beat all four worlds. Take your win, or keep going with harder worlds."
-		Kit.label(content, final_copy, 16, Kit.TEXT, true)
+		Kit.label(content, "Daily done." if not sim.daily_day.is_empty() else "All four worlds beaten.", 16, Kit.TEXT, true)
 	elif sim.endless_enabled:
-		Kit.label(content, "World %d is next. Enemies, bosses and rewards keep getting bigger." % (sim.stage + 1), 16, Kit.TEXT, true)
+		Kit.label(content, "Next: World %d. It only gets harder." % (sim.stage + 1), 16, Kit.TEXT, true)
 	else:
 		var next: Dictionary = sim.content.stages[sim.stage]
-		Kit.label(content, "Next: %s, %s. Pick a Prototype or Cores, then a route." % [str(next.name).capitalize(), str(next.subtitle).to_lower()], 16, Kit.TEXT, true)
-	stage_clear_button = _ui_button(content, "Claim victory" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
+		Kit.label(content, "Next: %s" % str(next.name).capitalize(), 16, Kit.TEXT, true)
+	stage_clear_button = _ui_button(content, "Finish run" if is_final else ("Continue to world %d" % (sim.stage + 1) if sim.endless_enabled else "Warp to " + str(sim.stage_spec().transition).capitalize()), _begin_warp, "primary", 58)
 	stage_clear_button.disabled = stage_clear_clock < 1.2
 	if is_final and sim.daily_day.is_empty():
-		stage_clear_secondary = _ui_button(content, "Continue into Endless", _continue_endless, "secondary", 50)
+		stage_clear_secondary = _ui_button(content, "Keep going (Endless)", _continue_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	elif sim.endless_enabled:
-		stage_clear_secondary = _ui_button(content, "Take the win", _claim_endless, "secondary", 50)
+		stage_clear_secondary = _ui_button(content, "End run", _claim_endless, "secondary", 50)
 		stage_clear_secondary.disabled = stage_clear_clock < 1.2
 	if not stage_clear_button.disabled:
 		_focus(stage_clear_button)
@@ -2491,11 +2495,11 @@ func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	var step_text := ("World %d prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Between worlds · step 1 of 2"
-	_page_header(view.top, step_text, "Choose a prototype")
+	var step_text := ("World %d prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Step 1 of 2"
+	_page_header(view.top, step_text, "Pick a prototype")
 	# This explanation scrolls with the options rather than crowding the
 	# fixed header on a short phone.
-	Kit.label(view.body, "Each Prototype is a big bonus with a cost. Or skip it and take %d Cores." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
+	Kit.label(view.body, "Each one has a bonus and a cost. Or skip it for %d Cores." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
 	for i in range(sim.prototype_offers.size()):
 		var spec: Dictionary = sim.prototype_spec(str(sim.prototype_offers[i]))
 		var illegal: bool = str(spec.role) == "ILLEGAL TRADE"
@@ -2510,7 +2514,7 @@ func _show_prototypes() -> void:
 		_gain_cost(card.content, str(spec.benefit), str(spec.cost))
 	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
 	var skip_button := _ui_button(reading_footer, "Skip prototype · +%d Cores" % Simulation.PROTOTYPE_SKIP_CORES, _skip_prototype, "secondary", 54, true)
-	skip_button.tooltip_text = "Add %d Cores to your reward and go to the next step." % Simulation.PROTOTYPE_SKIP_CORES
+	skip_button.tooltip_text = "Take %d Cores instead." % Simulation.PROTOTYPE_SKIP_CORES
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 
@@ -2537,13 +2541,13 @@ func _show_route_choice() -> void:
 	mode = "route"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	_page_header(view.top, "Between worlds · step 2 of 2", "Choose your route")
+	_page_header(view.top, "Step 2 of 2", "Pick a route")
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.body, "Next: World %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull and refill shield. Next world: take 35% less damage, abilities recharge 15% faster, +15% gun damage while shield is above half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
-		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull and start at half shield. Hull damage is 20% higher.", "accent": Kit.AMBER},
-		{"id": "bounty", "tag": "Growth", "gain": "One extra upgrade, +50%% XP, +%d Cores for the boss. Repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "Enemies are 30% tougher and there are more of them.", "accent": Kit.DANGER},
+		{"id": "repair", "tag": "Safe", "gain": "Repair 70% hull. Next world: 35% less damage taken, abilities recharge 15% faster, +15% gun damage while shield is over half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
+		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull. Start at half shield. Take 20% more hull damage.", "accent": Kit.AMBER},
+		{"id": "bounty", "tag": "Greedy", "gain": "One extra upgrade, +50%% XP, +%d Cores for the boss. Repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "More enemies, and 30% tougher.", "accent": Kit.DANGER},
 	]
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
@@ -2561,42 +2565,15 @@ func _show_results() -> void:
 	mode = "results"
 	var view := _page(1.0, true, 540.0)
 	var body: VBoxContainer = view.body
-	var qualifier: String = "Daily · %s UTC" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
-	var title := "Victory" if sim.won else "Ship destroyed"
+	var qualifier: String = "Daily · %s" % sim.daily_day if not sim.daily_day.is_empty() else str(sim.difficulty).capitalize()
+	var title := "Victory" if sim.won else "Destroyed"
 	if sim.secret_entered:
 		title = "Open Frequency" if sim.won else "Signal lost"
-	_page_header(view.top, "World %d of %d  ·  %s" % [sim.stage, sim.stage_count(), qualifier], title)
+	_page_header(view.top, qualifier, title)
+	Kit.label(view.top, "World %d of %d  ·  %s  ·  %s" % [sim.stage, sim.stage_count(), sim.stage_name().capitalize(), _clock(sim.time)], 16, Kit.MUTED, true)
 	if sim.secret_entered and not sim.won:
 		Kit.label(view.top, "Your win and Cores are saved.", 16, HiddenSector.MINT, true)
-	Kit.label(view.top, "Reached %s in %02d:%02d." % [sim.stage_name().capitalize(), int(sim.time) / 60, int(sim.time) % 60], 16, Kit.MUTED, true)
-	if not result_rival_news.is_empty():
-		var recent: Dictionary = result_rival_news.get("rival", {})
-		var event_kind: String = str(result_rival_news.get("kind", ""))
-		if not recent.is_empty():
-			match event_kind:
-				"created":
-					_rival_identity(body, recent, "!  NEW RIVAL\nThis captain beat you. They may come back in a later run.")
-				"rival_defeat":
-					_rival_identity(body, recent, "!  YOUR RIVAL BEAT YOU AGAIN\nYou can still get even.")
-				"retired":
-					_rival_identity(body, recent, "RIVAL BEATEN  ·  Trophy saved.")
-	if sim.rival_outcome == "retired" and result_rival_news.is_empty() and not sim.rival_record.is_empty():
-		_rival_identity(body, sim.rival_record, "RIVAL BEATEN FOR GOOD  ·  Saved in your Rivals list.")
-	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
-		_ui_button(body, "Open rival dossier", _show_rival_journal, "secondary", 48)
-	var total_damage := 0.0
-	var worst_kind := ""
-	var worst_damage := 0.0
-	for kind in sim.damage_taken:
-		var value := float(sim.damage_taken[kind])
-		total_damage += value
-		if value > worst_damage:
-			worst_kind = str(kind)
-			worst_damage = value
-	if not sim.won and total_damage > 0.0:
-		var labels := {"heavy":"heavy beams", "chaff":"small shots", "ordnance":"missiles", "hazard":"hazards", "ion":"ion bursts", "corrosion":"corrosion", "heat":"heat attacks", "gravity":"gravity attacks", "disrupt":"disruption shots", "void":"void attacks"}
-		var advice := {"heavy":"Aegis blocks beams. Use it when the warning shows.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small bullets. Deflector turns them into shield.", "hazard":"Watch where shots come from and use defense abilities in time.", "ion":"Capacitor refills your shield and fixes jamming.", "corrosion":"Kill corroding enemies first and add repair or armor.", "heat":"Add shield recharge and stop the enemy volley.", "gravity":"Chrono or Jammer helps when lots of enemies are shooting.", "disrupt":"Jammer silences enemy weapons before they fire.", "void":"Save a defense ability for the final boss's big attacks."}
-		_info_card(body, "What took you down", "%d%% of incoming damage came from %s. %s" % [roundi(worst_damage / total_damage * 100.0), str(labels.get(worst_kind, worst_kind)), str(advice.get(worst_kind, "Upgrade your defenses and try again."))], Kit.DANGER)
+	# Cores first: it is what the run was for.
 	var hero := PanelContainer.new()
 	hero.add_theme_stylebox_override("panel", Kit.box(Color("1b160f"), Color("4d3c22"), 16, 1, 16, 14))
 	body.add_child(hero)
@@ -2605,98 +2582,157 @@ func _show_results() -> void:
 	hero.add_child(hero_row)
 	hero_row.add_child(Kit.core_icon(30))
 	var credited: int = result_earned_cores if result_earned_cores >= 0 else sim.payout()
-	var earned := Kit.label(hero_row, "+%d" % credited, 40, Kit.AMBER)
+	var earned := Kit.label(hero_row, "+%s" % _num(credited), 40, Kit.AMBER)
 	earned.add_theme_font_override("font", Kit.font(0, 0.7))
 	var hero_text := VBoxContainer.new()
 	hero_text.add_theme_constant_override("separation", 0)
 	hero_text.alignment = BoxContainer.ALIGNMENT_CENTER
 	hero_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero_row.add_child(hero_text)
-	Kit.label(hero_text, "cores earned" if credited > 0 else "no additional Cores", 16, Kit.TEXT)
-	Kit.label(hero_text, "%d in your wallet" % int(profile.cores), 15, Kit.MUTED)
+	Kit.label(hero_text, "Cores", 16, Kit.TEXT)
+	Kit.label(hero_text, "Wallet %s" % _num(int(profile.cores)), 15, Kit.MUTED)
+	if sim.bounty_earned > 0:
+		Kit.label(hero_text, "%s from bounties" % _num(sim.bounty_earned), 14, Kit.MUTED)
+	_ui_button(body, "Hangar", _show_hangar, "amber", 48)
 	if not sim.daily_day.is_empty():
 		var day_record: Dictionary = profile.daily_records.get(sim.daily_day, {})
 		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score",-1))
 		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
-		_info_card(body, "DAILY CHALLENGE  ·  %s UTC" % sim.daily_day, "Score %d  ·  Best %d%s
-Same setup for everyone today. Unlimited retries; Cores only on the first finished attempt." % [score, best, "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
-		_ui_button(body, "Share Daily score" if daily_share_service != null else "Copy Daily score", _share_daily_result, "secondary", 50)
+		_info_card(body, "Daily  ·  %s" % sim.daily_day, "Score %s  ·  Best %s%s\nCores only for your first daily run of the day." % [_num(score), _num(best), "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+		_ui_button(body, "Share score" if daily_share_service != null else "Copy score", _share_daily_result, "secondary", 50)
 		if game_center.supports_game_center():
-			_ui_button(body, "Online leaderboard · Game Center", _show_game_center_leaderboard, "secondary", 48)
-	_ui_button(body, "Spend Cores in the Hangar", _show_hangar, "amber", 48)
+			_ui_button(body, "Leaderboard", _show_game_center_leaderboard, "secondary", 48)
+	# Rival news.
+	if not result_rival_news.is_empty():
+		var recent: Dictionary = result_rival_news.get("rival", {})
+		if not recent.is_empty():
+			match str(result_rival_news.get("kind", "")):
+				"created":
+					_rival_identity(body, recent, "NEW RIVAL  ·  They may come back.")
+				"rival_defeat":
+					_rival_identity(body, recent, "YOUR RIVAL GOT YOU AGAIN")
+				"retired":
+					_rival_identity(body, recent, "RIVAL BEATEN  ·  Trophy added.")
+	if sim.rival_outcome == "retired" and result_rival_news.is_empty() and not sim.rival_record.is_empty():
+		_rival_identity(body, sim.rival_record, "RIVAL BEATEN  ·  Trophy added.")
+	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
+		_ui_button(body, "Rivals", _show_rival_journal, "secondary", 48)
 	if not result_awards.is_empty():
-		var unlocked := PackedStringArray()
+		var names := PackedStringArray()
 		for id in result_awards:
 			var entry: Dictionary = Progress.achievement(str(id))
 			if not entry.is_empty():
-				unlocked.append(str(entry.name))
-		_info_card(body, "Achievements unlocked", "
-".join(unlocked), Kit.CYAN)
-		_ui_button(body, "View all achievements", _show_achievements, "secondary", 48)
-	_tiles(body, [["Kills", str(sim.kills)], ["Stages", "%d/%d" % [sim.stage_clears, sim.stage_count()]], ["Abilities used", str(sim.ability_uses)]])
-	var impact_rows: Array = sim.build_impact_rows(2)
-	if not impact_rows.is_empty():
-		var impact_lines := PackedStringArray()
-		for impact in impact_rows:
-			impact_lines.append("%s · %s" % [str(impact.name), str(impact.detail)])
-		_info_card(body, "Your build at work", "\n".join(impact_lines), Kit.CYAN)
+				names.append(str(entry.name))
+		_info_card(body, "New achievements", "\n".join(names), Kit.CYAN)
+		_ui_button(body, "Achievements", _show_achievements, "secondary", 48)
+	# The numbers.
+	_tiles(body, [["Kills", _num(sim.kills)], ["Worlds", "%d/%d" % [mini(sim.stage_clears, sim.stage_count()), sim.stage_count()]], ["Level", str(sim.level)]])
+	_tiles(body, [["Blocked", _num(roundi(sim.prevented))], ["Beams stopped", str(sim.beams_cancelled)], ["Abilities used", str(sim.ability_uses)]])
+	# What killed you, with one tip.
+	var taken_rows: Array = []
+	var total_taken := 0.0
+	var damage_names := {"heavy":"Heavy beams", "chaff":"Small shots", "ordnance":"Missiles", "hazard":"Hazards", "ion":"Ion", "corrosion":"Corrosion", "heat":"Heat", "gravity":"Gravity", "disrupt":"Disruption", "void":"Void"}
+	for kind in sim.damage_taken:
+		var value := float(sim.damage_taken[kind])
+		if value > 0.0:
+			taken_rows.append([str(damage_names.get(kind, str(kind).capitalize())), value, str(kind)])
+			total_taken += value
+	taken_rows.sort_custom(func(a, b): return a[1] > b[1])
+	if not sim.won and not taken_rows.is_empty():
+		var tips := {"heavy":"Aegis blocks beams. Use it when the warning shows.", "ordnance":"Flak clears missiles, mines and slag.", "chaff":"Barrier blocks small bullets. Deflector turns them into shield.", "hazard":"Watch the edges and keep a defense ability ready.", "ion":"Capacitor refills your shield and fixes jamming.", "corrosion":"Kill corroding enemies first. Add repair or armor.", "heat":"Add shield recharge and stop the volley.", "gravity":"Chrono or Jammer helps against crowds.", "disrupt":"Jammer silences enemy weapons.", "void":"Save a defense ability for the boss's big attacks."}
+		var worst: Array = taken_rows[0]
+		_info_card(body, "What killed you", "%s, %d%% of damage taken.\n%s" % [worst[0], roundi(worst[1] / total_taken * 100.0), str(tips.get(worst[2], "Upgrade your defenses."))], Kit.DANGER)
+	var dealt_rows: Array = []
+	var weapon_names := {"pulse":"Pulse", "seeker":"Seekers", "arc":"Arc", "lance":"Lance", "nova":"Nova", "barrage":"Barrage"}
+	for key in sim.damage_dealt:
+		var value := float(sim.damage_dealt[key])
+		if value > 0.0:
+			dealt_rows.append([str(weapon_names.get(key, str(key).capitalize())), value])
+	dealt_rows.sort_custom(func(a, b): return a[1] > b[1])
+	_bar_rows(body, "Damage dealt", dealt_rows.slice(0, 5), Kit.AMBER)
+	_bar_rows(body, "Damage taken", taken_rows.slice(0, 5), Kit.DANGER)
+	# The build, as short lines.
 	var build_lines := PackedStringArray()
+	var ability_names := PackedStringArray()
 	for slot in sim.active_slots:
-		var fusion: Dictionary = sim.fusion_spec(str(slot))
-		if not fusion.is_empty():
-			build_lines.append("Fusion: " + str(fusion.name))
+		var spec_name: String = str(sim.content.abilities.get(str(slot), {}).get("name", str(slot).capitalize()))
+		ability_names.append("%s %d" % [spec_name, int(sim.upgrades.get(str(slot), 0))])
+	if not ability_names.is_empty():
+		build_lines.append("Abilities: " + ", ".join(ability_names))
+	for combo in sim.active_synergies():
+		build_lines.append("Bonus: " + str(combo.name).capitalize())
 	for link in sim.active_passive_links():
 		build_lines.append("Pair: " + str(link.name))
-	for combo in sim.active_synergies():
-		build_lines.append(str(combo.name).capitalize() + ": " + str(combo.description))
 	for engine in sim.active_engines():
-		build_lines.append("Engine: " + str(engine.name) + (" [mastered]" if int(engine.tier) == 3 else ""))
+		build_lines.append("Engine: " + str(engine.name) + (" (max)" if int(engine.tier) == 3 else ""))
 	for weapon in sim.weapon_evolutions:
 		for option in sim.content.weapon_evolutions.get(str(weapon), []):
 			if str(option.id) == str(sim.weapon_evolutions[weapon]):
-				build_lines.append("Evolution: " + str(option.name) + " (" + str(weapon) + ")")
+				build_lines.append("Evolution: " + str(option.name))
 	for id in sim.prototypes:
-		var spec: Dictionary = sim.prototype_spec(str(id))
-		build_lines.append(str(spec.name) + ": " + str(spec.benefit))
-	if sim.artifact_id != "standard":
-		build_lines.append("Artifact: " + str(Catalog.artifact(sim.artifact_id).name))
+		build_lines.append("Prototype: " + str(sim.prototype_spec(str(id)).name))
 	for id in sim.mutations:
 		build_lines.append("Mutation: " + str(Catalog.mutation(str(id)).name))
+	if sim.artifact_id != "standard":
+		build_lines.append("Artifact: " + str(Catalog.artifact(sim.artifact_id).name))
 	if sim.merchant_trade_count > 0:
 		var deal_names := PackedStringArray()
 		for deal_id in sim.merchant_trade_log:
 			deal_names.append(_merchant_trade_name(str(deal_id)))
-		build_lines.append("Merchant: " + ", ".join(deal_names))
-	_info_card(body, "What you built", "\n".join(build_lines) if not build_lines.is_empty() else "No fusions, pairs or prototypes this time.", Kit.CYAN)
-	if sim.bounty_earned > 0:
-		_info_card(body, "Bounty contracts", "%d Cores from Bounty routes." % sim.bounty_earned, Kit.AMBER)
-	_info_card(body, "Ship at the end", "Hull %d / %d  ·  Shield %d / %d\n%.0f damage blocked  ·  %d beams cancelled" % [sim.hull, sim.max_hull, sim.shield, sim.max_shield, sim.prevented, sim.beams_cancelled], Color("9fcbff"))
-	var damage_lines := PackedStringArray()
-	for kind in ["chaff", "heavy", "ordnance", "hazard", "ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
-		var value: float = float(sim.damage_taken.get(kind, 0.0))
-		if value > 0.0:
-			var name: String = str({"ordnance": "Missiles", "hazard": "Hazards", "heavy": "Heavy beams"}.get(kind, kind.capitalize()))
-			damage_lines.append("%s   %.0f" % [name, value])
-	_info_card(body, "Damage taken", "\n".join(damage_lines) if not damage_lines.is_empty() else "No incoming damage recorded.", Kit.DANGER)
-	var weapons: Array = []
-	for key in sim.damage_dealt:
-		var value: float = float(sim.damage_dealt[key])
-		if value > 0:
-			weapons.append({"name": str(key).capitalize(), "damage": value})
-	weapons.sort_custom(func(a, b): return a.damage > b.damage)
-	var weapon_lines := PackedStringArray()
-	for i in range(mini(5, weapons.size())):
-		weapon_lines.append("%s   %.0f" % [weapons[i].name, weapons[i].damage])
-	_info_card(body, "Top weapons", "\n".join(weapon_lines) if not weapon_lines.is_empty() else "No weapon damage recorded.", Kit.AMBER)
-	var recap := PackedStringArray()
-	for i in range(sim.events.size() - 1, -1, -1):
-		var event: Dictionary = sim.events[i]
-		if event.time >= sim.time - 10.0 and recap.size() < 5:
-			recap.append("%.1fs before the end  ·  %s" % [sim.time - event.time, event.message])
-	_info_card(body, "Final ten seconds", "\n".join(recap) if not recap.is_empty() else "Nothing logged in the final ten seconds.", Kit.MUTED)
-	var again := _ui_button(reading_footer, "Another daily" if not sim.daily_day.is_empty() else "Fly again", _new_daily_run if not sim.daily_day.is_empty() else _new_run, "primary", 56, true)
+		build_lines.append("Trader: " + ", ".join(deal_names))
+	_info_card(body, "Your build", "\n".join(build_lines) if not build_lines.is_empty() else "No abilities this run.", Kit.CYAN)
+	if not sim.won:
+		var recap := PackedStringArray()
+		for i in range(sim.events.size() - 1, -1, -1):
+			var event: Dictionary = sim.events[i]
+			if event.time >= sim.time - 10.0 and recap.size() < 4:
+				recap.append("-%.1fs   %s" % [sim.time - event.time, event.message])
+		if not recap.is_empty():
+			_info_card(body, "Last moments", "\n".join(recap), Kit.MUTED)
+	var again := _ui_button(reading_footer, "Daily again" if not sim.daily_day.is_empty() else "Fly again", _new_daily_run if not sim.daily_day.is_empty() else _new_run, "primary", 56, true)
 	_ui_button(reading_footer, "Title", _show_menu, "secondary", 56, true)
 	_focus(again)
+
+## A titled card of horizontal bars, longest first: [name, value] rows.
+func _bar_rows(parent: Node, heading: String, rows: Array, tint: Color) -> void:
+	if rows.is_empty():
+		return
+	var panel := PanelContainer.new()
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, Kit.LINE, 14, 1, 14, 12))
+	parent.add_child(panel)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	panel.add_child(content)
+	Kit.caps(content, heading, tint, 13)
+	var top: float = maxf(1.0, float(rows[0][1]))
+	for row in rows:
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		content.add_child(line)
+		var name_label := Kit.label(line, str(row[0]), 15, Kit.TEXT)
+		name_label.custom_minimum_size.x = 104
+		var bar := _meter(tint)
+		bar.value = float(row[1]) / top * 100.0
+		bar.custom_minimum_size = Vector2(0, 10)
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		line.add_child(bar)
+		var amount := Kit.label(line, _num(roundi(float(row[1]))), 15, Kit.MUTED)
+		amount.custom_minimum_size.x = 64
+		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+
+## 12345 -> "12,345".
+func _num(value: int) -> String:
+	var digits := str(absi(value))
+	var out := ""
+	while digits.length() > 3:
+		out = "," + digits.right(3) + out
+		digits = digits.left(digits.length() - 3)
+	return ("-" if value < 0 else "") + digits + out
+
+func _clock(seconds: float) -> String:
+	return "%d:%02d" % [int(seconds) / 60, int(seconds) % 60]
 
 func _opening_first30_beat() -> void:
 	var phase: String = sim.world1_opening_phase()

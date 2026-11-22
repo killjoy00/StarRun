@@ -26,7 +26,7 @@ StarRun is a no-steering, no-aiming roguelite autoshooter. The ship flies and fi
 - **Six ships and six pilots.** Each ship has a distinct flight, weapon and signature-ability starting package. Pilots provide additional specialties and each has a painted face portrait.
 - **Uncrowded combat HUD.** Build/speed/pause controls have their own row above Hull/Shield meters; ability names, ready/cooldown captions and icons no longer occupy the same space or give slot one an artificial highlight.
 - **Readable threats.** Enemy rounds and heavy-beam warnings use coral-red outlines above friendly effects. Red **CHARGING** rings identify emitters; destroying them produces a cyan **BEAM CANCELED** cue. A fractured shield ring and segmented shield bar make shield loss visible, including with reduced effects. Fusion and rank-5/10 picks get a thin accent border.
-- **Persistent Hangar.** Forty refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Reroll uplinks grant one reroll per rank each stage. Equipment and selected difficulty are retained in saves.
+- **Persistent Hangar.** Forty refundable permanent upgrades enhance weapons, defense, ability power, draft tools and salvage. Rerolls give 3 per rank for the whole run. Equipment and selected difficulty are retained in saves.
 
 Current active pool: Aegis, Nova, Barrage, Overdrive, Chrono, Repair Drones, Flak Screen, EMP Blackout, Deflector, Rail Strike, Prism Reversal, Chaff Barrier, Capacitor, Precision Focus, Decoy Beacon, Signal Jammer, Energy Siphon, Chain Overload, Reactor Reboot, Salvage Surge, Wing Drones, Ion Mine.
 

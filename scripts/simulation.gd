@@ -11,6 +11,7 @@ const DAILY_EXCLUDED_CARDS := ["guard_drones"]
 const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+const REROLLS_PER_RANK := 3 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
 const START_WORLD_LEVELS := [1, 18, 47, 85]
@@ -191,7 +192,7 @@ var salvage_window_cores := 0
 var arc_timer := 0.0
 var lance_timer := 0.0
 var rerolls_left := 0
-var pilot_rerolls_left := 0 # Tactician bonus lasts one flight; Hangar uses refill each stage.
+var pilot_rerolls_left := 0 # Tactician bonus, part of the per-run total.
 var banishes_left := 0
 var skips_left := 0
 var banished: Array = []
@@ -275,7 +276,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 		for weapon in ["pulse", "seeker", "arc", "lance"]:
 			upgrades[weapon] = 0
 	pilot_rerolls_left = 1 if pilot_id == "tactician" else 0
-	rerolls_left = meta.rerolls + pilot_rerolls_left
+	rerolls_left = int(meta.rerolls) * REROLLS_PER_RANK + pilot_rerolls_left
 	banishes_left = meta.banishes
 	skips_left = meta.skips
 
@@ -1395,7 +1396,7 @@ func prototype_spec(id: String) -> Dictionary:
 		var mutation: Dictionary = Catalog.mutation(id.trim_prefix("market:"))
 		if mutation.is_empty():
 			return {}
-		return {"id":id, "name":"BLACK MARKET · " + str(mutation.name), "role":"ILLEGAL TRADE", "benefit":str(mutation.description), "cost":str(mutation.market_cost)}
+		return {"id":id, "name":str(mutation.name), "role":"ILLEGAL TRADE", "benefit":str(mutation.description), "cost":str(mutation.market_cost)}
 	for spec in content.prototypes:
 		if spec.id == id:
 			return spec
@@ -2174,7 +2175,6 @@ func advance_stage() -> bool:
 	escort_left = 0.0
 	escort_timer = 0.0
 	ion_mines.clear()
-	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	encounter_index = 0
 	encounter_queue.clear()
 	spawn_rhythm_slot = 0

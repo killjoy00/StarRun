@@ -476,7 +476,7 @@ func _run() -> void:
 	check(scene.sim.won and scene.mode == "results" and scene.profile.daily_records.has(daily_id), "Settling the Daily saves the best result locally")
 	check(scene.profile.achievements.has("daily_first"), "Finishing a Daily earns its permanent achievement")
 	check(_contains_text(scene.reading_scroll, "DAILY CHALLENGE"), "Daily results show score, UTC identity and personal best")
-	check(_contains_text(scene.reading_scroll, "Copy Daily score"), "Non-iOS results explicitly offer clipboard fallback")
+	check(_contains_text(scene.reading_scroll, "Copy score"), "Non-iOS results explicitly offer clipboard fallback")
 	scene._share_daily_result()
 	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Desktop clipboard fallback shows a confirmation toast")
 	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Share payload preserves the saved Daily UTC date")

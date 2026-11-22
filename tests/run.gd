@@ -1648,7 +1648,8 @@ func _test_hangar_and_tactics() -> void:
 	sim._offer_cards()
 	check(sim.cards.size() == 4, "Expanded uplink must offer four choices")
 	var pending: int = sim.pending_levels
-	check(sim.reroll_cards() and sim.rerolls_left == 0 and sim.pending_levels == pending, "Reroll must spend one use without spending another level")
+	var before_reroll: int = sim.rerolls_left
+	check(sim.reroll_cards() and sim.rerolls_left == before_reroll - 1 and sim.pending_levels == pending, "Reroll must spend one use without spending another level")
 	var removed: String = sim.cards[0].id
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
@@ -2678,41 +2679,40 @@ func _balance(seeds: int) -> Dictionary:
 	return result
 
 func _test_stage_rerolls_and_shield_breaks() -> void:
+	# Rerolls are a per-run total: 3 per Hangar rank, plus the Tactician's one.
 	for rank in [0, 1, 3]:
 		for pilot in ["rookie", "tactician"]:
 			var sim := Sim.new(2401, {"rerolls": rank}, "vanguard", pilot)
+			var total: int = rank * Sim.REROLLS_PER_RANK + (1 if pilot == "tactician" else 0)
+			check(sim.rerolls_left == total, "A run starts with 3 rerolls per rank plus the pilot bonus")
+			sim._offer_cards(false)
+			var used := 0
 			for stage_number in range(1, 5):
-				var expected: int = rank + (1 if pilot == "tactician" and stage_number == 1 else 0)
-				check(sim.rerolls_left == expected, "Only purchased stage rerolls replenish; pilot bonus is once per flight")
-				sim._offer_cards(false)
-				for use in range(expected):
-					check(sim.reroll_cards(), "Every granted reroll can replace the hand")
-				check(not sim.reroll_cards(), "Exhausted rerolls cannot replace the hand")
+				if stage_number == 1 and total > 0:
+					check(sim.reroll_cards(), "A granted reroll replaces the hand")
+					used += 1
 				var saved := sim.snapshot()
 				var resumed := Sim.new()
-				check(resumed.restore(saved) and resumed.rerolls_left == 0 and resumed.pilot_rerolls_left == 0, "Resume must not replenish spent rerolls")
+				check(resumed.restore(saved) and resumed.rerolls_left == total - used, "Resume keeps the remaining rerolls")
 				check(resumed.pilot_id == pilot, "Resume must retain the pilot whose reroll allowance was saved")
 				sim = resumed
 				sim.cards.clear()
 				sim._spawn_boss()
 				_defeat_boss_fixture(sim)
 				if stage_number < 4:
-					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Rerolls refill through the real boss/intermission transition")
-					var allowance: int = sim.rerolls_left
-					check(not sim.advance_stage() and sim.rerolls_left == allowance, "Repeated stage advance cannot grant more rerolls")
-	var unused := Sim.new(2402, {"rerolls": 2}, "vanguard", "tactician")
-	unused._offer_cards(false)
-	unused.reroll_cards()
-	check(unused.rerolls_left == 2 and unused.pilot_rerolls_left == 1, "Use renewable stage rerolls before the pilot reserve")
-	unused.cards.clear()
-	unused._spawn_boss()
-	_defeat_boss_fixture(unused)
-	unused._enter_stage_two()
-	check(unused.rerolls_left == 3 and unused.pilot_rerolls_left == 1, "Unused stage uses do not accumulate; unused pilot reserve remains")
-	var legacy := unused.snapshot()
+					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Boss and intermission transition still works")
+					check(sim.rerolls_left == total - used, "Rerolls do not refill at a new world")
+					check(not sim.advance_stage() and sim.rerolls_left == total - used, "Repeated stage advance cannot grant rerolls")
+			sim._offer_cards(false)
+			for spend in range(total - used):
+				check(sim.reroll_cards(), "Every remaining reroll can be spent later in the run")
+			check(not sim.reroll_cards(), "Exhausted rerolls cannot replace the hand")
+	var legacy_run := Sim.new(2402, {"rerolls": 2}, "vanguard", "tactician")
+	legacy_run.rerolls_left = 3
+	var legacy := legacy_run.snapshot()
 	legacy.erase("pilot_rerolls_left")
 	var migrated := Sim.new()
-	check(migrated.restore(legacy) and migrated.rerolls_left == unused.rerolls_left, "Older checkpoints keep their current allowance without a free refill")
+	check(migrated.restore(legacy) and migrated.rerolls_left == 3, "Older checkpoints keep their current allowance without a free refill")
 	var shielded := Sim.new(2403)
 	shielded._hit(2, "chaff", "test")
 	check(not shielded.effects.any(func(e): return e.kind == "shield-break"), "Ordinary shield hits do not show a break")
