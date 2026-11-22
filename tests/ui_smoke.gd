@@ -427,7 +427,7 @@ func _run() -> void:
 	scene._resume_run()
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
 	scene._choose_route("overclock")
-	check(scene.sim.stage == 2 and scene.mode == "cards" and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with reduced shields and its stronger weapons")
+	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with its stronger weapons and no free draft")
 	scene.sim.cards.clear()
 	scene.mode = "playing"
 	scene._show_build()

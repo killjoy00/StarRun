@@ -1891,8 +1891,12 @@ func _test_daily_fair_drafts() -> void:
 	for cast in [false, true]:
 		var sim := Sim.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), "normal")
 		sim.daily_day = "2026-11-22"
+		# Survival is not under test: keep both flights alive long enough to
+		# draft several hands while their combat still differs.
+		sim.max_hull = 100000.0
+		sim.hull = sim.max_hull
 		var seen: Array = []
-		for i in range(60 * 200):
+		for i in range(60 * 400):
 			if sim.ended or sim.stage_transition_queued or seen.size() >= 6:
 				break
 			if not sim.cards.is_empty():
@@ -1951,7 +1955,7 @@ func _test_start_world() -> void:
 	check(sim.skip_prototype() and sim.stage == 2 and sim.intermission_step == "prototype" and sim.stage_clears == 2, "A skipped world's Prototype pick moves straight to the next skipped world")
 	check(sim.skip_prototype() and sim.intermission_step == "route", "The last skipped world asks for the route into the start world")
 	check(sim.choose_route("bounty") and sim.advance_stage() and sim.stage == 3 and not sim.skipping_worlds() and sim.route_choice == "bounty", "The chosen route applies to the start world")
-	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 3, "Catch-up gives the start world's level-ups, one per warp and the bounty pick")
+	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 1, "Catch-up gives the start world's level-ups plus the bounty pick, and no free pick per warp")
 	check(sim.payout() == 30 + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
 	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.15), "Vanguard's veteran bonus counts the skipped worlds")
 	sim._offer_cards()
@@ -2078,7 +2082,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 	sim._damage_enemy(sim.enemies[0], 30.0, "pulse")
 	check(sim.stage_clears == 1 and sim.stage_transition_queued and not sim.ended, "Harvester must lead to Stage 2")
 	sim._enter_stage_two()
-	check(sim.stage == 2 and sim.stage_start == sim.time and sim.pending_levels == 1, "Stage 2 must reset schedules and offer a milestone draft")
+	check(sim.stage == 2 and sim.stage_start == sim.time and sim.pending_levels == 0, "Stage 2 must reset schedules without a free between-world draft")
 	sim._add_enemy("ion_frigate", Vector2(250,100))
 	check(sim.enemies[0].max_hp > normal.enemies[0].max_hp, "Stage 2 must be tougher than Stage 1")
 	sim.enemies.clear()
@@ -2141,7 +2145,7 @@ func _test_four_stage_campaign() -> void:
 			check(sim.advance_stage(), "Claiming the final boss victory must complete the campaign")
 		if stage_number < 4:
 			check(sim.stage == stage_number + 1 and not sim.stage_transition_queued and not sim.won, "Next stage should be playable without resetting the build")
-			check(sim.pending_levels == stage_number + (1 if stage_number == 3 else 0), "Each boss grants its usual level-up, and the Hunter warp grants one extra draft")
+			check(sim.pending_levels == (1 if stage_number == 3 else 0), "Warps grant no free draft; only the Bounty route adds one")
 		else:
 			check(sim.ended and sim.won and sim.stage_clears == 4, "Acknowledging final boss must finish all four stages")
 	check(not sim.advance_stage(), "Final stage can only be settled once")
@@ -2314,7 +2318,7 @@ func _test_prototype_and_route_choices() -> void:
 	risk._spawn_boss()
 	risk._damage_enemy(risk.enemies[0], 100000.0, "pulse")
 	check(risk.begin_intermission() and risk.choose_prototype(0) and risk.choose_route("bounty") and risk.advance_stage(), "Bounty route must advance after two choices")
-	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30) and risk.pending_levels >= 2 and risk.hull >= risk.max_hull * 0.40, "Hunter route keeps risk while providing a bonus draft and repair")
+	check(risk.stage == 3 and is_equal_approx(risk.stage_risk, 1.30) and risk.pending_levels >= 1 and risk.hull >= risk.max_hull * 0.40, "Hunter route keeps risk while providing a bonus draft and repair")
 	var baseline := Sim.new(889)
 	baseline.stage = 3
 	risk._add_enemy("drone", Vector2(220, 80))
@@ -2631,7 +2635,7 @@ func _test_fusions_and_milestones() -> void:
 	first.upgrades.hull = 4
 	first.cards = [first.content.cards.filter(func(card): return card.id == "hull")[0]]
 	var hp: float = first.max_hull
-	check(first.choose_card(0) and first.upgrades.hull == 6 and first.max_hull == hp + 36.0 + 25.0 and first.capacity_milestones.has("hull5"), "Crossing rank 5 must pay a one-time larger hull bonus")
+	check(first.choose_card(0) and first.upgrades.hull == 7 and first.max_hull == hp + 54.0 + 25.0 and first.capacity_milestones.has("hull5"), "Crossing rank 5 must pay a one-time larger hull bonus")
 	first.upgrades.hull = 9
 	first.cards = [first.content.cards.filter(func(card): return card.id == "hull")[0]]
 	hp = first.max_hull
@@ -2816,7 +2820,7 @@ func _test_long_runs() -> void:
 		fused.cards = [fused.content.cards.filter(func(c): return c.id == pair.id)[0]]
 		var power: float = fused._active_rank_scale(pair.id)
 		var slots: Array = fused.active_slots.duplicate()
-		check(fused.choose_card(0) and fused.upgrades[pair.id] == 3 and fused._active_rank_scale(pair.id) > power and fused.active_slots == slots, "Upgrading a fusion strengthens it without consuming a slot")
+		check(fused.choose_card(0) and fused.upgrades[pair.id] == 4 and fused._active_rank_scale(pair.id) > power and fused.active_slots == slots, "Upgrading a fusion strengthens it without consuming a slot")
 		# Migrate an already-open v0.7.2 draft, preserving its remaining draft tools.
 		fused.cards = [fused.content.cards.filter(func(c): return c.id == pair.parts[0])[0]]
 		fused.pending_levels = 2
@@ -2830,7 +2834,7 @@ func _test_long_runs() -> void:
 		var ranked := Sim.new(2753)
 		var card: Dictionary = ranked.content.cards.filter(func(c): return c.id == id)[0]
 		ranked.cards = [card]
-		check(ranked.choose_card(0) and ranked.upgrades[id] == 2 and ranked.active_slots == ["aegis"], "Passive picks never consume an active slot: " + id)
+		check(ranked.choose_card(0) and ranked.upgrades[id] == 3 and ranked.active_slots == ["aegis"], "Passive picks never consume an active slot: " + id)
 	var target := {"id":99, "p":Vector2(270,200), "kind":"boss", "hp":1000.0, "max_hp":1000.0}
 	sim = Sim.new()
 	sim.upgrades.boss_hunter = 10
@@ -2997,11 +3001,11 @@ func _test_fusion_thresholds() -> void:
 		sim.upgrades[b] = 1
 		check(sim.fusion_hint(b).is_empty(), "A rank-1 partner must not be advertised as an immediate fusion")
 		sim.upgrades[b] = 3
-		check(not sim.fusion_hint(b).is_empty(), "The 3-to-5 pick previews the resulting fusion")
+		check(not sim.fusion_hint(b).is_empty(), "The 3-to-6 pick previews the resulting fusion")
 		var copy := Sim.new()
 		check(copy.restore(sim.snapshot()) and copy.active_slots == sim.active_slots, "Resume keeps a pair separate until upgraded")
 		_install(copy,b)
-		check(str(pair.id) in copy.active_slots and copy.upgrades[a] == 5 and copy.upgrades[b] == 5, "A real rank-5 draft pick triggers fusion")
+		check(str(pair.id) in copy.active_slots and copy.upgrades[a] == 5 and copy.upgrades[b] == 6, "A real rank-5 draft pick triggers fusion")
 		check(copy.effects.any(func(e): return e.kind == "fusion-formed" and e.fusion == pair.id), "Forming a fusion emits its own presentation event")
 		copy.cards.clear()
 		check(copy.activate(pair.id) and copy.effects.any(func(e): return e.kind == "fusion-cast" and e.fusion == pair.id), "Every fusion emits its distinct cast effect")
@@ -3018,7 +3022,7 @@ func _test_fusion_thresholds() -> void:
 	full.upgrades.emp = 1
 	full.upgrades.flak = 1
 	_install(full,"nova")
-	check(full.upgrades.nova == 6 and full.active_slots.size() == 3 and "nova_aegis" in full.active_slots, "Crossing 5 from 4 also fuses on a full bar")
+	check(full.upgrades.nova == 7 and full.active_slots.size() == 3 and "nova_aegis" in full.active_slots, "Crossing 5 from 4 also fuses on a full bar")
 
 	var old_bar := Sim.new(2803, {"rerolls":2})
 	old_bar.active_slots = ["aegis","emp","flak","mend"]

@@ -1955,7 +1955,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	var id: String = str(card.id)
 	var tag: String = str(card.tag)
 	var current: int = int(sim.upgrades.get(id, 0))
-	var next_rank: int = mini(int(card.max), current + (1 if tag == "ABILITY" and current == 0 else 2))
+	var next_rank: int = current + Simulation.rank_gain(card, current)
 	var milestone: int = 5 if current < 5 else 10
 	var reaches_milestone: bool = current < milestone and next_rank >= milestone and tag != "RECOVERY"
 	var is_new_ability := tag == "ABILITY" and current == 0

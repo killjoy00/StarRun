@@ -14,7 +14,12 @@ const MAXED_DRAFT_CORES := 5
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
-const START_WORLD_LEVELS := [1, 18, 47, 85]
+# Level a typical flight has reached at the start of each world (catch-up).
+const START_WORLD_LEVELS := [1, 11, 28, 50]
+## Ranks per pick. Fewer, bigger level-ups: a pick adds 3 ranks (0-3-6-10;
+## the pick that would stop at 9 goes to 10), a new ability starts at 1
+## (1-4-7-10). Before: 2 ranks per pick and about 1.7x as many level-ups.
+const RANKS_PER_PICK := 3
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -983,7 +988,7 @@ const FUSION_RANK := 5
 func fusion_target(id: String) -> String:
 	# Preview only a pick that will actually complete a rank-5 pair.
 	var current := int(upgrades.get(id, 0))
-	var after_pick := mini(10, current + (1 if current == 0 else 2))
+	var after_pick := current + rank_gain({"tag": "ABILITY", "max": 10}, current)
 	for fusion in content.fusions:
 		if id in fusion.parts:
 			if _new_build_decisions() and str(fusion.id) in fusion_declined:
@@ -2271,8 +2276,10 @@ func advance_stage() -> bool:
 	next_spawn = wave_now() + 1.5
 	next_hazard = wave_now() + 15.0
 	heavy_ready_at = time + 10.0
-	if not secret_entered:
-		pending_levels += 1 + (1 if route_choice == "bounty" else 0)
+	# No free level-up between worlds: the drafts in the world are plenty.
+	# The Bounty route still pays its extra pick.
+	if not secret_entered and route_choice == "bounty":
+		pending_levels += 1
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	if skipping_worlds():
 		_queue_skipped_world()
@@ -3445,7 +3452,19 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func xp_needed() -> int:
-	return 25 + (level - 1) * 9
+	# About 60% as many level-ups as the old 25 + 9 per level, each worth
+	# 3 ranks instead of 2, so a flight's total ranks stay about the same.
+	return 35 + (level - 1) * 27
+
+## Ranks a card adds when picked at its current rank.
+static func rank_gain(card: Dictionary, before: int) -> int:
+	var cap := int(card.get("max", 10))
+	if str(card.get("tag", "")) == "ABILITY" and before == 0:
+		return 1
+	var after := before + RANKS_PER_PICK
+	if after == cap - 1:
+		after = cap
+	return maxi(0, mini(cap, after) - before)
 
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
@@ -4149,8 +4168,7 @@ func choose_card(index: int) -> bool:
 				return false
 			active_slots.append(id)
 		var before: int = int(upgrades[id])
-		var increment: int = 1 if card.tag == "ABILITY" and before == 0 else 2
-		upgrades[id] = mini(int(card.max), before + increment)
+		upgrades[id] = before + rank_gain(card, before)
 		var gained := int(upgrades[id]) - before
 		if id == "hull":
 			max_hull += 18 * gained
