@@ -1805,7 +1805,9 @@ func _show_cards(play_sound: bool = true) -> void:
 	var body: VBoxContainer = view.body
 	var capped: bool = sim.cards.any(func(card): return str(card.id) == "core_cache")
 	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
-	var eyebrow := ("Catch-up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else "Level %d  ·  Stage %d" % [sim.level, sim.stage]
+	# Ordinary drafts keep every card on a short phone without scrolling, so
+	# only catch-up drafts spend a line on the eyebrow.
+	var eyebrow := ("Catch-up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else ""
 	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
