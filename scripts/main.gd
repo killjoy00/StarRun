@@ -1302,12 +1302,11 @@ func _start_world_picker(body: VBoxContainer, difficulty_id: String) -> void:
 		option.disabled = not open
 		option.custom_minimum_size.y = 44
 		option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		option.tooltip_text = ("Start at World %d" % world) if open else ("Clear World %d on this difficulty to unlock" % (world - 1))
+		option.tooltip_text = ("Start at World %d" % world) if open else ("Beat World %d to unlock" % (world - 1))
 		option.pressed.connect(_set_start_world.bind(world))
 		worlds.add_child(option)
 	if chosen_world > 1:
-		var skipped := "World 1" if chosen_world == 2 else "Worlds 1-%d" % (chosen_world - 1)
-		Kit.label(body, "Skips %s. You pick their upgrades and prototypes before the first wave. Skipped worlds pay no Cores, and only runs from World 1 count as beating all four worlds." % skipped, 14, Kit.MUTED, true)
+		Kit.label(body, "You still get the upgrades from the worlds you skip. Skipped worlds give no Cores.", 14, Kit.MUTED, true)
 
 func _chosen_start_world() -> int:
 	return clampi(int(profile.get("start_world", 1)), 1, Progress.max_start_world(profile, str(profile.get("difficulty", "normal"))))
@@ -1807,7 +1806,7 @@ func _show_cards(play_sound: bool = true) -> void:
 	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
 	# Ordinary drafts keep every card on a short phone without scrolling, so
 	# only catch-up drafts spend a line on the eyebrow.
-	var eyebrow := ("Catch-up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else ""
+	var eyebrow := ("Free upgrades  ·  %d left" % (sim.catch_up_levels + 1)) if sim.catch_up_levels > 0 else ""
 	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
@@ -1830,9 +1829,9 @@ func _show_cards(play_sound: bool = true) -> void:
 		if sim.banishes_left > 0:
 			_draft_tool("Remove", "%d left" % sim.banishes_left, _toggle_banish, "Take one upgrade out of this run's pool")
 	if sim.catch_up_levels > 0 and not banish_mode:
-		var auto_button := _ui_button(view.bottom, "Auto-pick the rest  ·  %d" % (sim.catch_up_levels + 1), _auto_catch_up, "secondary", 48)
+		var auto_button := _ui_button(view.bottom, "Pick the rest for me  ·  %d" % (sim.catch_up_levels + 1), _auto_catch_up, "secondary", 48)
 		auto_button.name = "AutoPickCatchUp"
-		auto_button.tooltip_text = "Pick this and the remaining catch-up upgrades for you: guns first, then a free ability slot, then defense."
+		auto_button.tooltip_text = "Picks guns first, then abilities, then defense."
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 	if play_sound:
@@ -2493,7 +2492,7 @@ func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	var step_text := ("Skipped World %d · prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Between worlds · step 1 of 2"
+	var step_text := ("World %d prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Between worlds · step 1 of 2"
 	_page_header(view.top, step_text, "Choose a prototype")
 	# This explanation scrolls with the options rather than crowding the
 	# fixed header on a short phone.
