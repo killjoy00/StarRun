@@ -124,7 +124,9 @@ func _run() -> void:
 		await _frame()
 		scroll = scene.reading_scroll
 		var hand: Array = scene.sim.cards.duplicate(true)
-		var overflows: bool = scroll.get_child(0).size.y > scroll.size.y + 1.0
+		# Any overflow is scrollable, even a single pixel; a 1px tolerance
+		# misread a 652px draft in a 651px view as fitting.
+		var overflows: bool = scroll.get_child(0).size.y > scroll.size.y + 0.5
 		await _drag(scene.card_buttons[1].get_global_rect().get_center(), -150)
 		check((scroll.scroll_vertical > 0) == overflows, "A held draft card scrolls whenever its contents exceed the view")
 		check(scene.mode == "cards" and scene.sim.cards == hand, "A draft drag must not choose an upgrade")
