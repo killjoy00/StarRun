@@ -3430,9 +3430,9 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 		# Fortress plating: Bulwark died to Harvester beams and missiles in
 		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
-		# 30% (was 20%) now that Bulwark starts with Deflector, not Aegis.
+		# 50% (was 20%) now that Bulwark starts with Deflector, not Aegis.
 		if ship_id == "bulwark":
-			reduced *= 0.70
+			reduced *= 0.50
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
