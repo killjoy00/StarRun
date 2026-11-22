@@ -1921,20 +1921,17 @@ func _test_daily_fair_drafts() -> void:
 	var regular := Sim.new(int(setup.seed))
 	regular._offer_cards(false)
 	check(not regular.draft_rng_ready, "Regular runs do not use the Daily offer sequence")
-	# Daily with the Hangar: its own best score, never the leaderboard best.
-	var profile := {"cores":0, "achievements":{}, "daily_records":{}}
-	Progress.start_daily(profile, "2026-11-22")
-	var boosted := Sim.new(int(setup.seed), {"hull":3}, str(setup.ship), str(setup.pilot), "normal")
-	boosted.daily_day = "2026-11-22"
-	boosted.daily_attempt = 1
-	boosted.daily_hangar = true
-	boosted.kills = 50
-	boosted.ended = true
-	var settled: Dictionary = Progress.settle(profile, boosted)
-	var record: Dictionary = profile.daily_records["2026-11-22"]
-	check(int(record.get("best_score_hangar", -1)) == int(settled.score) and int(record.get("best_score", -1)) == -1, "A Hangar Daily keeps its own best and never sets the leaderboard best")
-	check(int(settled.earned) > 0, "The first finished Daily of the day pays Cores with or without the Hangar")
-	check(Progress.daily_share_text(boosted).contains("(with Hangar)"), "Shared Hangar Daily scores say so")
+	# The Daily's set Hangar: a fixed mid-level Hangar, the same for everyone.
+	var set_hangar: Dictionary = Progress.daily_hangar()
+	var spent := 0
+	var full := 0
+	for item in Catalog.HANGAR:
+		for rank in range(int(item.max)):
+			var cost: int = Catalog.price(str(item.id), rank)
+			full += cost
+			if rank < int(set_hangar.get(str(item.id), 0)):
+				spent += cost
+	check(spent > 0 and spent <= full * Progress.DAILY_HANGAR_SHARE / 100 and Progress.daily_hangar() == set_hangar, "The Daily's set Hangar is a fixed share of a full Hangar")
 
 func _test_start_world() -> void:
 	# Starting at World 3: two Prototype picks, one route, then catch-up drafts.

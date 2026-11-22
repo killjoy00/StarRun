@@ -165,3 +165,30 @@ static func ship(id: String) -> Dictionary:
 		if item.id == id:
 			return item
 	return SHIPS[0]
+
+## A Hangar bought with a share of a full Hangar's Cores (32 = 32%), the way
+## a player spreading upgrades would: always the cheapest next rank. Used for
+## the Daily's set Hangar and the balance bot's partial Hangars.
+static func share_hangar(share: int) -> Dictionary:
+	var result := {}
+	var total := 0
+	for item in HANGAR:
+		result[str(item.id)] = 0
+		for rank in range(int(item.max)):
+			total += price(str(item.id), rank)
+	var budget := total * clampi(share, 0, 100) / 100
+	while true:
+		var best_id := ""
+		var best_price := 1 << 30
+		for item in HANGAR:
+			var id: String = str(item.id)
+			if int(result[id]) < int(item.max):
+				var next_price := price(id, int(result[id]))
+				if next_price < best_price:
+					best_price = next_price
+					best_id = id
+		if best_id.is_empty() or best_price > budget:
+			break
+		budget -= best_price
+		result[best_id] = int(result[best_id]) + 1
+	return result

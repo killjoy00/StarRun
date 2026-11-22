@@ -29,6 +29,14 @@ const ACHIEVEMENTS = [
 static func utc_day() -> String:
 	return Time.get_date_string_from_system(true)
 
+## Every Daily flies with the same set Hangar: what a player owns about
+## halfway through progression (32% of a full Hangar's cost), so the first
+## boss is beatable and scores stay comparable. Owned upgrades never apply.
+const DAILY_HANGAR_SHARE := 32
+
+static func daily_hangar() -> Dictionary:
+	return Catalog.share_hangar(DAILY_HANGAR_SHARE)
+
 static func daily_seed(day: String) -> int:
 	# Numeric YYYYMMDD is stable across platforms, locales and time zones.
 	return int(day.replace("-", "")) * 31 + 1741
@@ -143,9 +151,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
 	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{}}
-	# A Daily flown with the Hangar keeps its own best score. Only the
-	# no-Hangar best is ever posted to the shared leaderboard.
-	var best_key := "best_score_hangar" if bool(sim.daily_hangar) else "best_score"
+	var best_key := "best_score"
 	if daily:
 		result.score = daily_score(sim)
 		result.best_score = int(record.get(best_key, -1))
@@ -236,6 +242,6 @@ static func daily_share_text(sim: RefCounted) -> String:
 	var ship: Dictionary = Catalog.ship(str(sim.ship_id))
 	var pilot: Dictionary = Catalog.pilot(str(sim.pilot_id))
 	var outcome := "FOUR WORLDS CLEARED" if bool(sim.won) else "Worlds cleared: %d/4" % mini(int(sim.stage_clears),4)
-	return "Star/Run · Daily %s UTC\nScore: %d%s\n%s\nShip: %s · Pilot: %s\nSame seed. How far can you get?\n#StarRun" % [
-		str(sim.daily_day), daily_score(sim), " (with Hangar)" if bool(sim.daily_hangar) else "", outcome, str(ship.name), str(pilot.name)
+	return "Star/Run · Daily %s UTC\nScore: %d\n%s\nShip: %s · Pilot: %s\nSame seed. How far can you get?\n#StarRun" % [
+		str(sim.daily_day), daily_score(sim), outcome, str(ship.name), str(pilot.name)
 	]
