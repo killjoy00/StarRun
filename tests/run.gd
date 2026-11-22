@@ -523,7 +523,7 @@ func _test_ship_pilot_identity_tuning() -> void:
 		sim._update_weapons()
 	var haven_seeker: Array = haven.shots.filter(func(s): return s.weapon == "seeker")
 	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
-	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.12), "Haven's support Seeker Pods gain 12 percent weapon damage, but no Pulse is installed")
+	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.20), "Haven's support Seeker Pods gain 20 percent weapon damage, but no Pulse is installed")
 	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
 	# Insane matched seeds exposed a Haven early-wave DPS and survivability gap.
 	# Improve support pod cadence and the signature Mend, without a Pulse starter.
