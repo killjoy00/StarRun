@@ -11,6 +11,7 @@ const DAILY_EXCLUDED_CARDS := ["guard_drones"]
 const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
 const START_WORLD_LEVELS := [1, 18, 47, 85]
@@ -49,6 +50,10 @@ var daily_attempt := 0 # Distinguishes replays with the same fixed UTC seed.
 var stage := 1
 var start_world := 1 # Worlds before this were skipped at launch; they pay no Cores.
 var catch_up_levels := 0 # Level-ups from skipped worlds not yet drafted.
+# Dailies draw upgrade offers from their own sequence, so combat (kills,
+# timing, ability use) never changes what is offered. Same picks, same offers.
+var draft_rng := RandomNumberGenerator.new()
+var draft_rng_ready := false
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
 var encounter_index := 0
@@ -191,7 +196,7 @@ var salvage_window_cores := 0
 var arc_timer := 0.0
 var lance_timer := 0.0
 var rerolls_left := 0
-var pilot_rerolls_left := 0 # Tactician bonus lasts one flight; Hangar uses refill each stage.
+var pilot_rerolls_left := 0 # Tactician bonus, part of the per-run total.
 var banishes_left := 0
 var skips_left := 0
 var banished: Array = []
@@ -247,6 +252,8 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	artifact_id = selected_artifact if not Catalog.artifact(selected_artifact).is_empty() and str(Catalog.artifact(selected_artifact).id) == selected_artifact else "standard"
 	seed_value = run_seed
 	rng.seed = run_seed
+	# Seeded from the run seed, never randomly: saves and replays stay exact.
+	draft_rng.seed = int(run_seed) * 2654435761 + 97
 	# Normal World 1 needs an actual encounter inside the first fifteen seconds.
 	# Advanced modes retain their deliberately different progression gates.
 	next_encounter_at = (12.0 + float(run_seed % 5)) if difficulty == "normal" else (55.0 + float(run_seed % 23))
@@ -275,7 +282,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 		for weapon in ["pulse", "seeker", "arc", "lance"]:
 			upgrades[weapon] = 0
 	pilot_rerolls_left = 1 if pilot_id == "tactician" else 0
-	rerolls_left = meta.rerolls + pilot_rerolls_left
+	rerolls_left = int(meta.rerolls) * REROLLS_PER_RANK + pilot_rerolls_left
 	banishes_left = meta.banishes
 	skips_left = meta.skips
 
@@ -1395,7 +1402,7 @@ func prototype_spec(id: String) -> Dictionary:
 		var mutation: Dictionary = Catalog.mutation(id.trim_prefix("market:"))
 		if mutation.is_empty():
 			return {}
-		return {"id":id, "name":"BLACK MARKET · " + str(mutation.name), "role":"ILLEGAL TRADE", "benefit":str(mutation.description), "cost":str(mutation.market_cost)}
+		return {"id":id, "name":str(mutation.name), "role":"ILLEGAL TRADE", "benefit":str(mutation.description), "cost":str(mutation.market_cost)}
 	for spec in content.prototypes:
 		if spec.id == id:
 			return spec
@@ -2174,7 +2181,6 @@ func advance_stage() -> bool:
 	escort_left = 0.0
 	escort_timer = 0.0
 	ion_mines.clear()
-	rerolls_left = int(meta.rerolls) + pilot_rerolls_left
 	encounter_index = 0
 	encounter_queue.clear()
 	spawn_rhythm_slot = 0
@@ -2726,7 +2732,7 @@ func _focus_reroll() -> void:
 	if cards.any(func(card): return int(upgrades.get(card.id,0)) > 0): return
 	var available: Array = content.cards.filter(func(card): return int(upgrades.get(card.id,0)) > 0 and int(upgrades[card.id]) < int(card.max) and card.id not in banished and fused_into(str(card.id)).is_empty() and (fusion_spec(str(card.id)).is_empty() or card.id in active_slots) and stage >= int(card.get("min_stage",1)))
 	if not available.is_empty() and not cards.is_empty():
-		cards[-1] = available[rng.randi_range(0,available.size()-1)].duplicate(true)
+		cards[-1] = available[_draft_rand(0,available.size()-1)].duplicate(true)
 
 func _update_weapons() -> void:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
@@ -2752,6 +2758,9 @@ func _update_weapons() -> void:
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
 		if ship_id == "haven":
 			seeker_interval = 0.50 if pilot_id == "hunter" else 0.55
+		elif ship_id == "wraith":
+			# Without a Pulse, Wraith needs a quicker volley to clear early swarms.
+			seeker_interval = 0.56 if pilot_id == "hunter" else 0.62
 		seeker_timer += seeker_interval
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
 		var target_id := -1
@@ -3421,8 +3430,9 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 		# Fortress plating: Bulwark died to Harvester beams and missiles in
 		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
+		# 30% (was 20%) now that Bulwark starts with Deflector, not Aegis.
 		if ship_id == "bulwark":
-			reduced *= 0.80
+			reduced *= 0.70
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":
@@ -3945,7 +3955,13 @@ func _inject_build_aware_offer(pool: Array) -> void:
 	var slot: int = 1 if str(cards[1].tag) not in ["RECOVERY", "MUTATION"] else 0
 	if str(cards[slot].tag) in ["RECOVERY", "MUTATION"]:
 		return
-	cards[slot] = candidates[rng.randi_range(0, candidates.size() - 1)].duplicate(true)
+	cards[slot] = candidates[_draft_rand(0, candidates.size() - 1)].duplicate(true)
+
+func _draft_rand(low: int, high: int) -> int:
+	if daily_day.is_empty():
+		return rng.randi_range(low, high)
+	draft_rng_ready = true
+	return draft_rng.randi_range(low, high)
 
 func _offer_cards(consume_level: bool = true) -> void:
 	var pool: Array = []
@@ -3980,7 +3996,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 	cards.clear()
 	# Draw once, checkpoint the exact hand. RNG state is part of the save.
 	while cards.size() < 3 + int(meta.extra_card) and not pool.is_empty():
-		var index := rng.randi_range(0, pool.size() - 1)
+		var index := _draft_rand(0, pool.size() - 1)
 		cards.append(pool.pop_at(index))
 	# At every even early level, show a discoverable synergy partner alongside
 	# independent upgrades. No automatic installation or extra active slot.
@@ -3988,13 +4004,13 @@ func _offer_cards(consume_level: bool = true) -> void:
 		var has_new := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		var learnable := pool.filter(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0)
 		if not has_new and not learnable.is_empty():
-			cards[-1] = learnable[rng.randi_range(0, learnable.size() - 1)]
+			cards[-1] = learnable[_draft_rand(0, learnable.size() - 1)]
 		var has_partner := cards.any(func(c): return c.tag == "ABILITY" and upgrades[c.id] == 0 and (not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty()))
 		var partners := learnable.filter(func(c): return not fusion_hint(str(c.id)).is_empty() or not synergy_hint(str(c.id)).is_empty())
 		if not has_partner and not partners.is_empty():
 			var options: Array = partners.filter(func(p): return not cards.any(func(c): return c.id == p.id))
 			if not options.is_empty():
-				cards[0] = options[rng.randi_range(0, options.size() - 1)]
+				cards[0] = options[_draft_rand(0, options.size() - 1)]
 	# Once an active is invested to rank 3, occasionally surface its
 	# still-missing fusion partner as a *choice*, not a free installation.
 	# Preserve the free-slot, banish, and max-rank rules from the actual pool.
@@ -4013,15 +4029,15 @@ func _offer_cards(consume_level: bool = true) -> void:
 					if str(option.id) == candidate and not cards.any(func(c): return str(c.id) == candidate):
 						missing_partners.append(option)
 		if not missing_partners.is_empty():
-			cards[cards.size() - 1] = missing_partners[rng.randi_range(0, missing_partners.size() - 1)]
+			cards[cards.size() - 1] = missing_partners[_draft_rand(0, missing_partners.size() - 1)]
 	_inject_build_aware_offer(pool)
 	# Rare, opt-in transformation: at a four-level milestone in later
 	# worlds, one normal card may be replaced by a matching weapon mutation.
 	# Never inject a weapon the player does not own.
-	if stage >= 2 and level % 4 == 0 and mutations.is_empty() and not cards.is_empty() and rng.randi_range(0, 2) == 0:
+	if stage >= 2 and level % 4 == 0 and mutations.is_empty() and not cards.is_empty() and _draft_rand(0, 2) == 0:
 		var candidates: Array = mutation_pool
 		if not candidates.is_empty():
-			cards[cards.size() - 1] = candidates[rng.randi_range(0, candidates.size() - 1)]
+			cards[cards.size() - 1] = candidates[_draft_rand(0, candidates.size() - 1)]
 	if hull < max_hull * 0.40 and not cards.is_empty():
 		var has_defense := false
 		for card in cards:
@@ -4150,10 +4166,10 @@ func payout() -> int:
 	return base + choice_cores
 
 func snapshot() -> Dictionary:
-	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
+	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -4167,6 +4183,8 @@ func restore(state: Dictionary) -> bool:
 			# The checkpoint is reusable data, not live simulation state. Never
 			# borrow its arrays/dictionaries: mutating a restored boss, bullet,
 			# reward or merchant could otherwise mutate the original checkpoint.
+			if key == "draft_rng":
+				continue
 			if key in ["upgrades", "cooldowns", "meta", "damage_dealt", "pilot_procs", "engine_procs"]:
 				var merged: Dictionary = get(key).duplicate(true)
 				merged.merge(state[key].duplicate(true), true)
@@ -4207,6 +4225,8 @@ func restore(state: Dictionary) -> bool:
 	endless_stage_spec.clear()
 	_build_course()
 	rng.state = state.rng
+	if state.has("draft_rng"):
+		draft_rng.state = int(state.draft_rng)
 	# Old drafts may contain consumed components, or a new partner that used to
 	# bypass a full bar when fusions happened at rank 1. Rebuild those once.
 	if cards.any(func(card): return not fused_into(str(card.id)).is_empty() or (card.tag == "ABILITY" and int(upgrades[card.id]) == 0 and not _can_learn_active(str(card.id)))):

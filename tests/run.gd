@@ -55,6 +55,7 @@ func _run() -> void:
 	_test_threat_catalog()
 	_test_extended_hangar()
 	_test_start_world()
+	_test_daily_fair_drafts()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -540,7 +541,7 @@ func _test_ship_pilot_identity_tuning() -> void:
 	for sim in [haven_hunter, wraith_hunter]:
 		sim._add_enemy("drone", Vector2(270, 175))
 		sim._update_weapons()
-	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.62), "Hunter retains the pilot lock-on advantage with Haven's support pod cadence")
+	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.56), "Hunter keeps the pilot lock-on advantage on Haven and Wraith's quicker Seekers")
 	var haven_mender := Sim.new(88239, {}, "haven", "rookie")
 	var regular_mender := Sim.new(88239, {}, "vanguard", "rookie")
 	regular_mender.upgrades.mend = 1
@@ -1648,7 +1649,8 @@ func _test_hangar_and_tactics() -> void:
 	sim._offer_cards()
 	check(sim.cards.size() == 4, "Expanded uplink must offer four choices")
 	var pending: int = sim.pending_levels
-	check(sim.reroll_cards() and sim.rerolls_left == 0 and sim.pending_levels == pending, "Reroll must spend one use without spending another level")
+	var before_reroll: int = sim.rerolls_left
+	check(sim.reroll_cards() and sim.rerolls_left == before_reroll - 1 and sim.pending_levels == pending, "Reroll must spend one use without spending another level")
 	var removed: String = sim.cards[0].id
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
@@ -1880,6 +1882,67 @@ func _test_active_pool() -> void:
 	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_daily_fair_drafts() -> void:
+	# Daily offers come from their own sequence: combat cannot change them,
+	# so the same picks see the same offers, however the run is flown.
+	var setup: Dictionary = Progress.daily_setup("2026-11-22")
+	var hands: Array = []
+	for cast in [false, true]:
+		var sim := Sim.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), "normal")
+		sim.daily_day = "2026-11-22"
+		var seen: Array = []
+		for i in range(60 * 200):
+			if sim.ended or sim.stage_transition_queued or seen.size() >= 6:
+				break
+			if not sim.cards.is_empty():
+				seen.append(sim.cards.map(func(c): return str(c.id)))
+				sim.choose_card(0)
+				continue
+			if cast:
+				for id in sim.active_slots:
+					sim.activate(str(id))
+			sim.step()
+		hands.append(seen)
+	check(hands[0].size() >= 4 and hands[0] == hands[1].slice(0, hands[0].size()), "Daily offers match for the same picks whether or not abilities are used")
+	var mid := Sim.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), "normal")
+	mid.daily_day = "2026-11-22"
+	mid._offer_cards(false)
+	var saved := mid.snapshot()
+	mid.cards.clear()
+	mid._offer_cards(false)
+	var next_hand: Array = mid.cards.map(func(c): return str(c.id))
+	var resumed := Sim.new()
+	resumed.restore(saved)
+	resumed.cards.clear()
+	resumed._offer_cards(false)
+	check(resumed.cards.map(func(c): return str(c.id)) == next_hand, "Resuming a Daily continues the same offer sequence")
+	# Regular runs still draw offers from the run's main sequence.
+	var regular := Sim.new(int(setup.seed))
+	regular._offer_cards(false)
+	check(not regular.draft_rng_ready, "Regular runs do not use the Daily offer sequence")
+	# The Daily's Hangar: generated from the date, the same for everyone that
+	# day, with a grade from Light to Elite and no Core-payout upgrades.
+	var full := 0
+	for item in Catalog.HANGAR:
+		for rank in range(int(item.max)):
+			full += Catalog.price(str(item.id), rank)
+	var grades := {}
+	var sets := {}
+	for d in range(1, 29):
+		var day := "2026-12-%02d" % d
+		var grade: Dictionary = Progress.daily_hangar_grade(day)
+		var set_hangar: Dictionary = Progress.daily_hangar(day)
+		grades[str(grade.name)] = true
+		sets[str(set_hangar)] = true
+		var spent := 0
+		for item in Catalog.HANGAR:
+			for rank in range(int(set_hangar.get(str(item.id), 0))):
+				spent += Catalog.price(str(item.id), rank)
+		check(spent > 0 and spent <= full * int(grade.share) / 100, "A Daily Hangar spends no more than its grade's share (" + day + ")")
+		check(Progress.DAILY_HANGAR_SKIPPED.all(func(id): return int(set_hangar.get(id, 0)) == 0), "Daily Hangars never include Core-payout upgrades (" + day + ")")
+		check(Progress.daily_hangar(day) == set_hangar, "A day's Hangar is the same every time it is generated (" + day + ")")
+	check(grades.size() >= 3 and sets.size() >= 25, "Daily Hangars vary from day to day, light to elite")
 
 func _test_start_world() -> void:
 	# Starting at World 3: two Prototype picks, one route, then catch-up drafts.
@@ -2678,41 +2741,40 @@ func _balance(seeds: int) -> Dictionary:
 	return result
 
 func _test_stage_rerolls_and_shield_breaks() -> void:
-	for rank in [0, 1, 3]:
+	# Rerolls are a per-run total: 3 per Hangar rank, plus the Tactician's one.
+	for rank in [0, 1, 6]:
 		for pilot in ["rookie", "tactician"]:
 			var sim := Sim.new(2401, {"rerolls": rank}, "vanguard", pilot)
+			var total: int = rank * Sim.REROLLS_PER_RANK + (1 if pilot == "tactician" else 0)
+			check(sim.rerolls_left == total, "A run starts with 3 rerolls per rank plus the pilot bonus")
+			sim._offer_cards(false)
+			var used := 0
 			for stage_number in range(1, 5):
-				var expected: int = rank + (1 if pilot == "tactician" and stage_number == 1 else 0)
-				check(sim.rerolls_left == expected, "Only purchased stage rerolls replenish; pilot bonus is once per flight")
-				sim._offer_cards(false)
-				for use in range(expected):
-					check(sim.reroll_cards(), "Every granted reroll can replace the hand")
-				check(not sim.reroll_cards(), "Exhausted rerolls cannot replace the hand")
+				if stage_number == 1 and total > 0:
+					check(sim.reroll_cards(), "A granted reroll replaces the hand")
+					used += 1
 				var saved := sim.snapshot()
 				var resumed := Sim.new()
-				check(resumed.restore(saved) and resumed.rerolls_left == 0 and resumed.pilot_rerolls_left == 0, "Resume must not replenish spent rerolls")
+				check(resumed.restore(saved) and resumed.rerolls_left == total - used, "Resume keeps the remaining rerolls")
 				check(resumed.pilot_id == pilot, "Resume must retain the pilot whose reroll allowance was saved")
 				sim = resumed
 				sim.cards.clear()
 				sim._spawn_boss()
 				_defeat_boss_fixture(sim)
 				if stage_number < 4:
-					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Rerolls refill through the real boss/intermission transition")
-					var allowance: int = sim.rerolls_left
-					check(not sim.advance_stage() and sim.rerolls_left == allowance, "Repeated stage advance cannot grant more rerolls")
-	var unused := Sim.new(2402, {"rerolls": 2}, "vanguard", "tactician")
-	unused._offer_cards(false)
-	unused.reroll_cards()
-	check(unused.rerolls_left == 2 and unused.pilot_rerolls_left == 1, "Use renewable stage rerolls before the pilot reserve")
-	unused.cards.clear()
-	unused._spawn_boss()
-	_defeat_boss_fixture(unused)
-	unused._enter_stage_two()
-	check(unused.rerolls_left == 3 and unused.pilot_rerolls_left == 1, "Unused stage uses do not accumulate; unused pilot reserve remains")
-	var legacy := unused.snapshot()
+					check(sim.begin_intermission() and sim.choose_prototype(0) and sim.choose_route("repair") and sim.advance_stage(), "Boss and intermission transition still works")
+					check(sim.rerolls_left == total - used, "Rerolls do not refill at a new world")
+					check(not sim.advance_stage() and sim.rerolls_left == total - used, "Repeated stage advance cannot grant rerolls")
+			sim._offer_cards(false)
+			for spend in range(total - used):
+				check(sim.reroll_cards(), "Every remaining reroll can be spent later in the run")
+			check(not sim.reroll_cards(), "Exhausted rerolls cannot replace the hand")
+	var legacy_run := Sim.new(2402, {"rerolls": 2}, "vanguard", "tactician")
+	legacy_run.rerolls_left = 3
+	var legacy := legacy_run.snapshot()
 	legacy.erase("pilot_rerolls_left")
 	var migrated := Sim.new()
-	check(migrated.restore(legacy) and migrated.rerolls_left == unused.rerolls_left, "Older checkpoints keep their current allowance without a free refill")
+	check(migrated.restore(legacy) and migrated.rerolls_left == 3, "Older checkpoints keep their current allowance without a free refill")
 	var shielded := Sim.new(2403)
 	shielded._hit(2, "chaff", "test")
 	check(not shielded.effects.any(func(e): return e.kind == "shield-break"), "Ordinary shield hits do not show a break")

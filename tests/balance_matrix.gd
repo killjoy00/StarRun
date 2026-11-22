@@ -490,28 +490,7 @@ func _hangar(style: String) -> Dictionary:
 		# A share of the Cores of a full Hangar ("half" = 50%, "p25" = 25%),
 		# spent the way a player spreading upgrades would: always buy the
 		# cheapest next rank available.
-		var total := 0
-		for item in Catalog.HANGAR:
-			for rank in range(int(item.max)):
-				total += Catalog.price(str(item.id), rank)
-		var share := 50 if style == "half" else clampi(int(style.substr(1)), 0, 100)
-		var budget := total * share / 100
-		for item in Catalog.HANGAR:
-			result[str(item.id)] = 0
-		while true:
-			var best_id := ""
-			var best_price := 1 << 30
-			for item in Catalog.HANGAR:
-				var id: String = str(item.id)
-				if int(result[id]) < int(item.max):
-					var next_price := Catalog.price(id, int(result[id]))
-					if next_price < best_price:
-						best_price = next_price
-						best_id = id
-			if best_id.is_empty() or best_price > budget:
-				break
-			budget -= best_price
-			result[best_id] = int(result[best_id]) + 1
+		result = Catalog.share_hangar(50 if style == "half" else int(style.substr(1)))
 	elif style == "mid":
 		for item in Catalog.HANGAR:
 			var id: String = str(item.id)

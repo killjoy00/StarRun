@@ -29,6 +29,61 @@ const ACHIEVEMENTS = [
 static func utc_day() -> String:
 	return Time.get_date_string_from_system(true)
 
+## Every Daily generates its own Hangar from the date: the same for
+## everyone that day, different each day. A grade sets how much of a full
+## Hangar it gets; the ranks are bought in a seeded random order (cheaper
+## ranks more likely), so days lean different ways. Owned upgrades never
+## apply. Items that only raise Core payouts are left out.
+# Shares of a full Hangar's cost. The original (pre-extension) ranks are
+# about 21% of it, so Light buys about a third of them, Standard most, Heavy
+# all of them plus some extended ranks, Elite deep into the extended ranks.
+const DAILY_HANGAR_GRADES := [["Light", 3, 7], ["Standard", 9, 16], ["Heavy", 22, 40], ["Elite", 50, 80]]
+const DAILY_HANGAR_SKIPPED := ["cores", "stipend", "bounty"]
+
+static func daily_hangar_grade(day: String) -> Dictionary:
+	var generator := RandomNumberGenerator.new()
+	generator.seed = daily_seed(day) * 7 + 4111
+	var grade: Array = DAILY_HANGAR_GRADES[generator.randi_range(0, DAILY_HANGAR_GRADES.size() - 1)]
+	return {"name":str(grade[0]), "share":generator.randi_range(int(grade[1]), int(grade[2])), "seed":generator.randi()}
+
+static func daily_hangar(day: String) -> Dictionary:
+	var grade: Dictionary = daily_hangar_grade(day)
+	var generator := RandomNumberGenerator.new()
+	generator.seed = int(grade.seed)
+	var result := {}
+	var total := 0
+	for item in Catalog.HANGAR:
+		result[str(item.id)] = 0
+		for rank in range(int(item.max)):
+			total += Catalog.price(str(item.id), rank)
+	var budget: int = total * int(grade.share) / 100
+	while true:
+		var options: Array = []
+		var weights: Array = []
+		var weight_sum := 0.0
+		for item in Catalog.HANGAR:
+			var id: String = str(item.id)
+			if id in DAILY_HANGAR_SKIPPED or int(result[id]) >= int(item.max):
+				continue
+			var cost: int = Catalog.price(id, int(result[id]))
+			if cost <= budget:
+				options.append(id)
+				var weight := 1.0 / sqrt(float(maxi(1, cost)))
+				weights.append(weight)
+				weight_sum += weight
+		if options.is_empty():
+			break
+		var roll := generator.randf() * weight_sum
+		var pick: String = options[-1]
+		for index in range(options.size()):
+			roll -= float(weights[index])
+			if roll <= 0.0:
+				pick = options[index]
+				break
+		budget -= Catalog.price(pick, int(result[pick]))
+		result[pick] = int(result[pick]) + 1
+	return result
+
 static func daily_seed(day: String) -> int:
 	# Numeric YYYYMMDD is stable across platforms, locales and time zones.
 	return int(day.replace("-", "")) * 31 + 1741
@@ -143,9 +198,10 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
 	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{}}
+	var best_key := "best_score"
 	if daily:
 		result.score = daily_score(sim)
-		result.best_score = int(record.get("best_score", -1))
+		result.best_score = int(record.get(best_key, -1))
 	# Double-finish and crash/retry must not pay out or grant progress twice.
 	if str(profile.last_settled_run_key) == unique_key:
 		return result
@@ -155,8 +211,8 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 			record = {"attempts":maxi(1,int(sim.daily_attempt)),"completed":0,"best_score":-1,"best_stage":0,"won":false,"rewarded":false}
 		record.completed = int(record.get("completed",0)) + 1
 		var score: int = int(result.score)
-		if score > int(record.get("best_score",-1)):
-			record.best_score = score
+		if score > int(record.get(best_key,-1)):
+			record[best_key] = score
 			result.new_best = true
 		record.best_stage = maxi(int(record.get("best_stage",0)),int(sim.stage_clears))
 		record.won = bool(record.get("won",false)) or bool(sim.won)
@@ -165,7 +221,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 			record.rewarded = true
 		records[day] = record
 		profile.daily_records = records
-		result.best_score = int(record.best_score)
+		result.best_score = int(record.get(best_key, -1))
 	else:
 		if int(profile.get("last_paid_run",-1)) != int(sim.seed_value):
 			earned = int(sim.payout())

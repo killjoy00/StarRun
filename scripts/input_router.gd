@@ -8,7 +8,10 @@ static func key(host, event: InputEvent) -> void:
 		host._toggle_fullscreen()
 		host.get_viewport().set_input_as_handled()
 		return
-	if event.keycode == KEY_ESCAPE and back(host):
+	if host.mode == "boss_intro" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
+		host._skip_boss_intro()
+		host.get_viewport().set_input_as_handled()
+	elif event.keycode == KEY_ESCAPE and back(host):
 		host.get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_P and host.mode in ["playing", "paused", "build"]:
 		host._toggle_pause()

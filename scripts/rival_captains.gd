@@ -48,6 +48,20 @@ static func trait_name(id: String) -> String:
 		"mine_scatter": return "Mine Scatter"
 	return "Unknown threat"
 
+## One line of made-up backstory per captain, picked from a list of 300 by
+## the captain's id so the same captain always reads the same way.
+static var _flavor_lines: Array = []
+
+static func flavor(record: Dictionary) -> String:
+	if _flavor_lines.is_empty():
+		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string("res://data/rival_flavor.json"))
+		if parsed is Dictionary:
+			_flavor_lines = parsed.get("lines", [])
+	if _flavor_lines.is_empty():
+		return ""
+	var key: int = absi(int(record.get("id", 0)) * 7919 + int(record.get("portrait_seed", 0)))
+	return str(_flavor_lines[key % _flavor_lines.size()])
+
 static func counterplay(id: String) -> String:
 	match id:
 		"charged_barrage": return "Stop the double beam with Aegis, EMP or a fast kill."

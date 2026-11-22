@@ -35,8 +35,8 @@ const PILOTS := [
 const SHIPS := [
 	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced. Starts with Pulse and Seeker. Gets stronger after each world: more damage and less status damage.", "hull":108, "shield":52, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
 	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"Fast. Fires 25% faster and starts with 2 Pulse ranks. Low hull and shield.", "hull":85, "shield":40, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
-	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 20% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
-	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
+	{"id":"bulwark", "signature":"deflector", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 30% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":1.0},
+	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder and reload faster.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
 	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Lightning. Starts with Arc instead of Seeker. Arc is 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
 	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Drone carrier. Drones are 25% stronger, and Wing and Guard drones launch one extra drone. Seekers hit 30% harder and reload 20% faster. No Pulse, 25% less status damage.", "hull":125, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
 ]
@@ -57,10 +57,10 @@ const HANGAR := [
 	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 6% more damage, healing and duration per rank.", "max":10, "tier_from":5, "tier_step":5, "tier_scale":10, "cost":7, "step":3},
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Get 5 shield every time you use an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per run, become immune for 1.5 seconds when your hull gets low. +0.5 seconds at rank 2.", "max":2, "cost":12, "step":8},
-	{"id":"extra_card", "name":"Expanded uplink", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
-	{"id":"rerolls", "name":"Reroll uplinks", "group":"Tactics", "description":"1 reroll per world per rank. Unused rerolls don't carry over.", "max":3, "cost":7, "step":3},
-	{"id":"banishes", "name":"Banish protocols", "group":"Tactics", "description":"Remove an upgrade from this run so it never shows up. 1 use per rank.", "max":3, "cost":7, "step":3},
-	{"id":"skips", "name":"Repair fallback", "group":"Tactics", "description":"Skip an upgrade pick to repair 12 hull. 1 use per rank per run.", "max":3, "cost":5, "step":2},
+	{"id":"extra_card", "name":"Extra choice", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
+	{"id":"rerolls", "name":"Rerolls", "group":"Tactics", "description":"1 reroll per rank for the whole run. A reroll swaps the upgrade choices for new ones.", "max":6, "cost":5, "step":2},
+	{"id":"banishes", "name":"Removes", "group":"Tactics", "description":"Take an upgrade out of this run so it never shows up. 1 per rank.", "max":3, "cost":7, "step":3},
+	{"id":"skips", "name":"Skips", "group":"Tactics", "description":"Skip an upgrade pick and repair 12 hull. 1 per rank.", "max":3, "cost":5, "step":2},
 	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "tier_scale":10, "cost":6, "step":2},
 	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"8% more Cores after every run per rank.", "max":5, "cost":6, "step":2},
 	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every run pays at least 2 more Cores per rank.", "max":3, "cost":8, "step":3},
@@ -76,8 +76,8 @@ const HANGAR := [
 	{"id":"signature_rank","name":"Pilot drills","group":"Abilities","description":"Your ship's starting ability gets 1 extra rank.","max":2,"cost":16,"step":10},
 	{"id":"cast_repair","name":"Field patch kit","group":"Abilities","description":"Each ability use repairs 1 hull per rank.","max":3,"cost":18,"step":8},
 	{"id":"opening_charge","name":"Hot start","group":"Abilities","description":"The first use of each ability in a world recharges 10% faster per rank.","max":3,"cost":18,"step":8},
-	{"id":"reroll_focus","name":"Focused uplink","group":"Tactics","description":"Rerolls always include an upgrade you already have, if one is left.","max":1,"cost":35,"step":0},
-	{"id":"banish_relay","name":"Banish relay","group":"Tactics","description":"Get back 1 Remove per rank each new world.","max":2,"cost":20,"step":12},
+	{"id":"reroll_focus","name":"Focused rerolls","group":"Tactics","description":"Rerolls always include an upgrade you already have, if one is left.","max":1,"cost":35,"step":0},
+	{"id":"banish_relay","name":"Remove refill","group":"Tactics","description":"Get 1 Remove back per rank at each new world.","max":2,"cost":20,"step":12},
 	{"id":"skip_patch","name":"Repair stores","group":"Tactics","description":"Skipping an upgrade pick repairs 6 more hull per rank.","max":3,"cost":8,"step":4},
 	{"id":"module_salvage","name":"Component salvage","group":"Salvage","description":"Each boss part you destroy pays 1 more Core per rank.","max":3,"cost":18,"step":8},
 	{"id":"clean_clear","name":"Clean contract","group":"Salvage","description":"Beat a world with more than 60% hull for 3 more Cores per rank.","max":3,"cost":18,"step":8},
@@ -165,3 +165,30 @@ static func ship(id: String) -> Dictionary:
 		if item.id == id:
 			return item
 	return SHIPS[0]
+
+## A Hangar bought with a share of a full Hangar's Cores (32 = 32%), the way
+## a player spreading upgrades would: always the cheapest next rank. Used for
+## the Daily's set Hangar and the balance bot's partial Hangars.
+static func share_hangar(share: int) -> Dictionary:
+	var result := {}
+	var total := 0
+	for item in HANGAR:
+		result[str(item.id)] = 0
+		for rank in range(int(item.max)):
+			total += price(str(item.id), rank)
+	var budget := total * clampi(share, 0, 100) / 100
+	while true:
+		var best_id := ""
+		var best_price := 1 << 30
+		for item in HANGAR:
+			var id: String = str(item.id)
+			if int(result[id]) < int(item.max):
+				var next_price := price(id, int(result[id]))
+				if next_price < best_price:
+					best_price = next_price
+					best_id = id
+		if best_id.is_empty() or best_price > budget:
+			break
+		budget -= best_price
+		result[best_id] = int(result[best_id]) + 1
+	return result

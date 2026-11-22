@@ -171,7 +171,7 @@ func _run() -> void:
 		check(not scene.hud.visible and not scene.ability_a.visible, "Combat HUD must not show through the title screen")
 		check(_contains_text(scene.overlay, "Star/Run"), "The title must display the requested Star/Run wordmark")
 		check(_contains_text(scene.overlay, "Daily ·") and _contains_text(scene.overlay, "UTC"), "The title must still show the Daily date and UTC reset")
-		check(_contains_text(scene.overlay, "Normal, no Hangar"), "The Daily must clearly disclose its fixed difficulty and lack of Hangar upgrades")
+		check(_contains_text(scene.overlay, "Normal") and _contains_text(scene.overlay, " Hangar"), "The Daily must clearly disclose its fixed difficulty and the day's Hangar grade")
 		check(not _contains_text(scene.overlay, "BUILD  /  REACT  /  REPEAT"), "The title must not add a marketing slogan above the playable choices")
 		var wordmark: Control = scene.overlay.find_child("StarRunWordmark", true, false)
 		var title_wallet: Control = scene.overlay.find_child("TitleWallet", true, false)
@@ -450,7 +450,8 @@ func _run() -> void:
 	scene._launch_daily()
 	check(scene.sim.daily_day == daily_id and scene.sim.daily_attempt == 1, "Daily launch stores an immutable UTC date and attempt")
 	check(scene.sim.seed_value == int(daily_expected.seed) and scene.sim.ship_id == str(daily_expected.ship) and scene.sim.pilot_id == str(daily_expected.pilot), "A Daily always uses the global day's ship, pilot, seed and difficulty")
-	check(scene.sim.difficulty == "normal" and scene.sim.meta.damage == 0 and scene.sim.meta.hull == 0, "Daily ignores owned Hangar bonuses without wiping the real profile")
+	var daily_set: Dictionary = scene.Progress.daily_hangar(daily_id)
+	check(scene.sim.difficulty == "normal" and daily_set.keys().all(func(k): return int(scene.sim.meta.get(k, 0)) == int(daily_set[k])), "Daily flies the set Hangar, not owned upgrades, without wiping the real profile")
 	var daily_snapshot: Dictionary = scene.sim.snapshot()
 	scene._show_menu()
 	scene._resume_run()
@@ -476,7 +477,7 @@ func _run() -> void:
 	check(scene.sim.won and scene.mode == "results" and scene.profile.daily_records.has(daily_id), "Settling the Daily saves the best result locally")
 	check(scene.profile.achievements.has("daily_first"), "Finishing a Daily earns its permanent achievement")
 	check(_contains_text(scene.reading_scroll, "DAILY CHALLENGE"), "Daily results show score, UTC identity and personal best")
-	check(_contains_text(scene.reading_scroll, "Copy Daily score"), "Non-iOS results explicitly offer clipboard fallback")
+	check(_contains_text(scene.reading_scroll, "Copy score"), "Non-iOS results explicitly offer clipboard fallback")
 	scene._share_daily_result()
 	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Desktop clipboard fallback shows a confirmation toast")
 	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Share payload preserves the saved Daily UTC date")
@@ -607,7 +608,7 @@ func _run() -> void:
 		scene.sim.damage_dealt.engine_storm = 218.0
 		scene._show_results()
 		await process_frame
-		check(_contains_text(scene.overlay, "YOUR BUILD AT WORK") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
+		check(_contains_text(scene.overlay, "YOUR BUILD") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
 		check(_contains_text(scene.overlay, "218 direct damage"), "Debrief displays measured engine damage and does not invent a damage multiplier")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Build-impact debrief stays inside narrow-phone safe area")
 	# World 1 -> 2: the last Prototype and Route choices must actually
