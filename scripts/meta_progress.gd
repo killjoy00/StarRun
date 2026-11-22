@@ -29,13 +29,60 @@ const ACHIEVEMENTS = [
 static func utc_day() -> String:
 	return Time.get_date_string_from_system(true)
 
-## Every Daily flies with the same set Hangar: what a player owns about
-## halfway through progression (32% of a full Hangar's cost), so the first
-## boss is beatable and scores stay comparable. Owned upgrades never apply.
-const DAILY_HANGAR_SHARE := 32
+## Every Daily generates its own Hangar from the date: the same for
+## everyone that day, different each day. A grade sets how much of a full
+## Hangar it gets; the ranks are bought in a seeded random order (cheaper
+## ranks more likely), so days lean different ways. Owned upgrades never
+## apply. Items that only raise Core payouts are left out.
+# Shares of a full Hangar's cost. The original (pre-extension) ranks are
+# about 21% of it, so Light buys about a third of them, Standard most, Heavy
+# all of them plus some extended ranks, Elite deep into the extended ranks.
+const DAILY_HANGAR_GRADES := [["Light", 3, 7], ["Standard", 9, 16], ["Heavy", 22, 40], ["Elite", 50, 80]]
+const DAILY_HANGAR_SKIPPED := ["cores", "stipend", "bounty"]
 
-static func daily_hangar() -> Dictionary:
-	return Catalog.share_hangar(DAILY_HANGAR_SHARE)
+static func daily_hangar_grade(day: String) -> Dictionary:
+	var generator := RandomNumberGenerator.new()
+	generator.seed = daily_seed(day) * 7 + 4111
+	var grade: Array = DAILY_HANGAR_GRADES[generator.randi_range(0, DAILY_HANGAR_GRADES.size() - 1)]
+	return {"name":str(grade[0]), "share":generator.randi_range(int(grade[1]), int(grade[2])), "seed":generator.randi()}
+
+static func daily_hangar(day: String) -> Dictionary:
+	var grade: Dictionary = daily_hangar_grade(day)
+	var generator := RandomNumberGenerator.new()
+	generator.seed = int(grade.seed)
+	var result := {}
+	var total := 0
+	for item in Catalog.HANGAR:
+		result[str(item.id)] = 0
+		for rank in range(int(item.max)):
+			total += Catalog.price(str(item.id), rank)
+	var budget: int = total * int(grade.share) / 100
+	while true:
+		var options: Array = []
+		var weights: Array = []
+		var weight_sum := 0.0
+		for item in Catalog.HANGAR:
+			var id: String = str(item.id)
+			if id in DAILY_HANGAR_SKIPPED or int(result[id]) >= int(item.max):
+				continue
+			var cost: int = Catalog.price(id, int(result[id]))
+			if cost <= budget:
+				options.append(id)
+				var weight := 1.0 / sqrt(float(maxi(1, cost)))
+				weights.append(weight)
+				weight_sum += weight
+		if options.is_empty():
+			break
+		var roll := generator.randf() * weight_sum
+		var pick: String = options[-1]
+		for index in range(options.size()):
+			roll -= float(weights[index])
+			if roll <= 0.0:
+				pick = options[index]
+				break
+		budget -= Catalog.price(pick, int(result[pick]))
+		result[pick] = int(result[pick]) + 1
+	return result
 
 static func daily_seed(day: String) -> int:
 	# Numeric YYYYMMDD is stable across platforms, locales and time zones.

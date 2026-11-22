@@ -1921,17 +1921,28 @@ func _test_daily_fair_drafts() -> void:
 	var regular := Sim.new(int(setup.seed))
 	regular._offer_cards(false)
 	check(not regular.draft_rng_ready, "Regular runs do not use the Daily offer sequence")
-	# The Daily's set Hangar: a fixed mid-level Hangar, the same for everyone.
-	var set_hangar: Dictionary = Progress.daily_hangar()
-	var spent := 0
+	# The Daily's Hangar: generated from the date, the same for everyone that
+	# day, with a grade from Light to Elite and no Core-payout upgrades.
 	var full := 0
 	for item in Catalog.HANGAR:
 		for rank in range(int(item.max)):
-			var cost: int = Catalog.price(str(item.id), rank)
-			full += cost
-			if rank < int(set_hangar.get(str(item.id), 0)):
-				spent += cost
-	check(spent > 0 and spent <= full * Progress.DAILY_HANGAR_SHARE / 100 and Progress.daily_hangar() == set_hangar, "The Daily's set Hangar is a fixed share of a full Hangar")
+			full += Catalog.price(str(item.id), rank)
+	var grades := {}
+	var sets := {}
+	for d in range(1, 29):
+		var day := "2026-12-%02d" % d
+		var grade: Dictionary = Progress.daily_hangar_grade(day)
+		var set_hangar: Dictionary = Progress.daily_hangar(day)
+		grades[str(grade.name)] = true
+		sets[str(set_hangar)] = true
+		var spent := 0
+		for item in Catalog.HANGAR:
+			for rank in range(int(set_hangar.get(str(item.id), 0))):
+				spent += Catalog.price(str(item.id), rank)
+		check(spent > 0 and spent <= full * int(grade.share) / 100, "A Daily Hangar spends no more than its grade's share (" + day + ")")
+		check(Progress.DAILY_HANGAR_SKIPPED.all(func(id): return int(set_hangar.get(id, 0)) == 0), "Daily Hangars never include Core-payout upgrades (" + day + ")")
+		check(Progress.daily_hangar(day) == set_hangar, "A day's Hangar is the same every time it is generated (" + day + ")")
+	check(grades.size() >= 3 and sets.size() >= 25, "Daily Hangars vary from day to day, light to elite")
 
 func _test_start_world() -> void:
 	# Starting at World 3: two Prototype picks, one route, then catch-up drafts.

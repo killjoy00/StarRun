@@ -1048,7 +1048,7 @@ func _show_menu() -> void:
 	Kit.label(daily_content, "Daily · %s UTC" % str(daily.day), 18, Kit.TEXT)
 	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
 	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
-	Kit.label(daily_content, "%s · %s · Normal · Set Hangar, same for everyone" % [_name_part(str(daily_ship.name), 0), _name_part(str(daily_pilot.name), 0)], 14, Kit.MUTED, true)
+	Kit.label(daily_content, "%s · %s · Normal · %s Hangar" % [_name_part(str(daily_ship.name), 0), _name_part(str(daily_pilot.name), 0), str(Progress.daily_hangar_grade(str(daily.day)).name)], 14, Kit.MUTED, true)
 	var daily_text := "Play daily"
 	var best_today: int = int(record.get("best_score", -1))
 	if best_today >= 0:
@@ -2865,8 +2865,8 @@ func _new_run() -> void:
 	_start_flight()
 
 func _new_daily_run() -> void:
-	# One shared run for each UTC day: same seed, ship, pilot and set Hangar
-	# for everyone. The player's own upgrades never apply.
+	# One shared run for each UTC day: same seed, ship, pilot and the day's
+	# generated Hangar for everyone. The player's own upgrades never apply.
 	var setup: Dictionary = Progress.daily_setup(Progress.utc_day())
 	banish_mode = false
 	build_show_all = false
@@ -2876,7 +2876,7 @@ func _new_daily_run() -> void:
 	profile.runs += 1
 	var attempt: int = Progress.start_daily(profile, str(setup.day))
 	_save_profile()
-	sim = Simulation.new(int(setup.seed), Progress.daily_hangar(), str(setup.ship), str(setup.pilot), str(setup.difficulty))
+	sim = Simulation.new(int(setup.seed), Progress.daily_hangar(str(setup.day)), str(setup.ship), str(setup.pilot), str(setup.difficulty))
 	sim.daily_day = str(setup.day)
 	sim.daily_attempt = attempt
 	_start_flight()
