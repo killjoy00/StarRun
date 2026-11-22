@@ -2832,7 +2832,7 @@ func _show_beam_tutorial() -> void:
 	column.add_theme_constant_override("separation", 9)
 	panel.add_child(column)
 	Kit.caps(column, "TIP  ·  BIG BEAM", Kit.AMBER, 14)
-	Kit.label(column, "The red line shows where a big beam will hit. Destroy the marked enemy to stop it, or use Aegis when it fires.", 17, Kit.TEXT, true)
+	Kit.label(column, "The red line shows where a big beam will hit. Destroy the marked enemy to stop it%s." % (", or use Aegis when it fires" if "aegis" in sim.active_slots else ""), 17, Kit.TEXT, true)
 	_ui_button(column, "Got it · back to the fight", _resume_beam_tutorial, "primary", 48)
 	var slot: int = sim.active_slots.find("aegis")
 	if slot >= 0 and slot < Catalog.ACTIVE_SLOTS:
