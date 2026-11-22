@@ -4,7 +4,7 @@ const Catalog = preload("res://scripts/catalog.gd")
 const CUE_GROUPS := {
 	"aegis":"shield", "deflector":"shield", "barrier":"shield", "capacitor":"shield", "mend":"shield",
 	"barrage":"missile", "strike":"missile", "prism":"energy", "focus":"energy", "siphon":"energy",
-	"flak":"mine", "ion_mine":"mine", "wing_drones":"drone", "decoy":"drone",
+	"flak":"mine", "ion_mine":"mine", "wing_drones":"drone", "guard_drones":"drone", "decoy":"drone",
 	"emp":"pulse", "jammer":"pulse", "nova":"pulse", "overload":"pulse",
 	"overdrive":"engine", "chrono":"energy", "reboot":"engine", "salvage":"drone"
 }

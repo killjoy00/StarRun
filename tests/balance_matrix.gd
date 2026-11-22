@@ -463,7 +463,7 @@ func _cast(sim: RefCounted, strategy: String) -> void:
 			use_now = injured and (boss or crowd)
 		elif ability in ["capacitor", "deflector", "barrier", "reflective_wall"]:
 			use_now = vulnerable or near_hit
-		elif ability in ["prism", "overload", "chrono", "reactor_surge"]:
+		elif ability in ["prism", "overload", "chrono", "reactor_surge", "guard_drones"]:
 			use_now = sim.bullets.size() >= 12
 		elif ability in ["decoy", "focus", "wing_drones", "ion_mine",
 			"barrage", "overdrive", "strike", "railstorm",

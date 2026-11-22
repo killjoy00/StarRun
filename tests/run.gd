@@ -69,6 +69,7 @@ func _run() -> void:
 	_test_fusion_thresholds()
 	_test_expanded_hangar()
 	_test_support_actives()
+	_test_drone_build()
 	_test_late_world_ability_counters()
 	_test_contextual_active_balance()
 	_test_five_balance_followups()
@@ -3057,6 +3058,66 @@ func _test_expanded_hangar() -> void:
 	legacy.erase("ion_mines")
 	var restored := Sim.new()
 	check(restored.restore(legacy) and restored.meta.arc_start == 0 and restored.ion_mines.is_empty(), "Older saves default new purchases and support state safely")
+
+func _test_drone_build() -> void:
+	# Guard drones shoot down small bullets near the ship, one per drone per volley.
+	var guard := Sim.new(3070)
+	guard.active_slots.append("guard_drones")
+	guard.upgrades.guard_drones = 1
+	var origin: Vector2 = guard.ship_position()
+	for i in range(5):
+		guard.bullets.append({"p":origin + Vector2(20 + i * 10, -40), "v":Vector2.ZERO, "kind":"chaff", "damage":6.0})
+	guard.bullets.append({"p":origin + Vector2(0, -60), "v":Vector2.ZERO, "kind":"ordnance", "damage":20.0})
+	check(guard.activate("guard_drones") and guard.guard_count == 2 and guard.guard_left > 5.0, "Guard drones launch two drones")
+	guard._update_guards()
+	check(guard.bullets.size() == 4 and guard.bullets.any(func(b): return b.kind == "ordnance"), "Each guard drone shoots down one small bullet per volley; missiles get through")
+	var far := Sim.new(3071)
+	far.active_slots.append("guard_drones")
+	far.upgrades.guard_drones = 10
+	far.bullets.append({"p":far.ship_position() + Vector2(0, -400), "v":Vector2.ZERO, "kind":"chaff", "damage":6.0})
+	check(far.activate("guard_drones") and far.guard_count == 4, "Guard drone rank 10 adds a fourth drone")
+	far._update_guards()
+	check(far.bullets.size() == 1, "Guard drones only cover the area around the ship")
+	var carrier := Sim.new(3072, {}, "haven")
+	# Haven starts with Repair drones; a second drone ability would start
+	# SWARM (+40%). Measure Haven's own bonus alone first.
+	carrier.active_slots = ["guard_drones"]
+	carrier.upgrades.guard_drones = 1
+	check(carrier.activate("guard_drones") and carrier.guard_count == 3 and is_equal_approx(carrier.guard_left, 6.0 * 1.25 * carrier.ability_power()), "Haven launches an extra guard drone that stays up 25% longer")
+	var drone_carrier := Sim.new(3072, {}, "haven")
+	drone_carrier.active_slots.append("guard_drones")
+	drone_carrier.upgrades.guard_drones = 1
+	check(drone_carrier.synergy_active("swarm") and drone_carrier.activate("guard_drones") and is_equal_approx(drone_carrier.guard_left, carrier.guard_left * 1.40), "Haven's starting Repair drones plus Guard drones start SWARM")
+	var restored := Sim.new()
+	check(restored.restore(carrier.snapshot()) and restored.guard_count == 3 and is_equal_approx(restored.guard_left, carrier.guard_left), "Guard drones survive save and restore")
+	# SWARM: any two drone abilities.
+	var swarm := Sim.new(3073)
+	swarm.active_slots = ["aegis", "wing_drones"]
+	swarm.upgrades.wing_drones = 1
+	check(not swarm.synergy_active("swarm") and not swarm.synergy_hint("guard_drones").is_empty(), "One drone ability hints at SWARM but does not start it")
+	var base_power: float = swarm.weapon_power()
+	swarm.active_slots.append("guard_drones")
+	swarm.upgrades.guard_drones = 1
+	check(swarm.synergy_active("swarm") and is_equal_approx(swarm.weapon_power(), base_power * 0.90), "Two drone abilities start SWARM, which costs 10% gun damage")
+	check(swarm.activate("wing_drones") and is_equal_approx(swarm.escort_left, (6.0 * swarm.ability_power()) * 1.40), "SWARM drones last 40% longer")
+	var plain := Sim.new(3073)
+	plain.active_slots = ["aegis", "wing_drones"]
+	plain.upgrades.wing_drones = 1
+	plain.activate("wing_drones")
+	check(is_equal_approx(swarm.cooldowns.wing_drones, plain.cooldowns.wing_drones * 0.85), "SWARM drone abilities recharge 15% faster")
+	var lone := Sim.new(3074)
+	lone.active_slots = ["guard_drones"]
+	lone.upgrades.guard_drones = 1
+	check(not lone.synergy_active("swarm"), "A single drone ability is not a SWARM")
+	# The Daily keeps its original draft pool.
+	var daily := Sim.new(3075)
+	daily.daily_day = "2026-11-22"
+	var offered := false
+	for i in range(60):
+		daily.level = i + 2
+		daily._offer_cards(false)
+		offered = offered or daily.cards.any(func(c): return str(c.id) == "guard_drones")
+	check(not offered, "Guard drones are never offered in the Daily")
 
 func _test_support_actives() -> void:
 	for rank in [1,5,10]:

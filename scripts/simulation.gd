@@ -5,6 +5,10 @@ const WIDTH := 540.0
 const HEIGHT := 960.0
 const SAVE_VERSION := 1
 const DAILY_ORIGINAL_MUTATIONS := ["piercing_pulse", "split_seeker", "arc_reactor"]
+# Cards added after the Daily shipped stay out of its draft pool so a Daily
+# seed draws the same hands on every app version.
+const DAILY_EXCLUDED_CARDS := ["guard_drones"]
+const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
 # Starting later: the level a player has, on average, when they reach each
@@ -144,6 +148,9 @@ var escort_timer := 0.0
 var escort_count := 0
 var escort_damage := 0.0
 var ion_mines: Array = []
+var guard_left := 0.0
+var guard_timer := 0.0
+var guard_count := 0
 var aftercast_left := 0.0
 var overdrive_left := 0.0
 var chrono_left := 0.0
@@ -1286,6 +1293,10 @@ func _active_rank_cooldown(id: String) -> float:
 func active_synergies() -> Array:
 	var found: Array = []
 	for spec in content.synergies:
+		if bool(spec.get("any_two", false)):
+			if spec.first.filter(func(id): return _source_active(str(id))).size() >= 2:
+				found.append(spec)
+			continue
 		var has_first := false
 		var has_second := false
 		for id in spec.first:
@@ -1309,6 +1320,10 @@ func synergy_hint(ability: String) -> String:
 		return ""
 	for spec in content.synergies:
 		if synergy_active(str(spec.id)):
+			continue
+		if bool(spec.get("any_two", false)):
+			if ability in spec.first and spec.first.any(func(other): return str(other) != ability and _source_active(str(other))):
+				return str(spec.name) + ": " + str(spec.description)
 			continue
 		var belongs_first: bool = ability in spec.first
 		var belongs_second: bool = ability in spec.second
@@ -2575,9 +2590,54 @@ func _launch_escorts(count: int, duration: float, damage: float) -> void:
 		count += 1
 		damage *= 1.25
 	escort_count = count
-	escort_left = duration
+	escort_left = duration * drone_duration_scale()
 	escort_damage = damage
 	escort_timer = 0.0
+
+## Drones last longer with the SWARM drone synergy.
+func drone_duration_scale() -> float:
+	return 1.40 if synergy_active("swarm") else 1.0
+
+## Guard drones circle the ship and shoot down small enemy bullets close to
+## it. Haven launches one more and keeps them up 25% longer.
+func _launch_guards(count: int, duration: float) -> void:
+	if ship_id == "haven":
+		count += 1
+		duration *= 1.25
+	guard_count = count
+	guard_left = duration * drone_duration_scale()
+	guard_timer = 0.0
+
+func guard_position(index: int) -> Vector2:
+	var angle := time * 2.4 + index * TAU / maxf(1.0, float(guard_count))
+	return ship_position() + Vector2.from_angle(angle) * 58.0
+
+func _update_guards() -> void:
+	if guard_left <= 0.0:
+		return
+	guard_left = maxf(0.0, guard_left - DT)
+	guard_timer -= DT
+	if guard_timer > 0.0:
+		return
+	guard_timer += 0.30
+	var center := ship_position()
+	for i in range(guard_count):
+		var best := -1
+		var best_distance := 170.0 * 170.0
+		for index in range(bullets.size()):
+			var bullet: Dictionary = bullets[index]
+			if not _is_small_shot(str(bullet.kind)):
+				continue
+			var distance: float = bullet.p.distance_squared_to(center)
+			if distance < best_distance:
+				best_distance = distance
+				best = index
+		if best < 0:
+			return
+		var downed: Dictionary = bullets[best]
+		prevented += float(downed.get("damage", 1.0))
+		effects.append({"kind":"guard-shot", "p":downed.p, "from":guard_position(i), "life":0.18, "max_life":0.18, "born":tick})
+		bullets.remove_at(best)
 
 func _deploy_ion_mines(count: int, damage: float, radius: float) -> void:
 	var target := _nearest(ship_position())
@@ -2601,6 +2661,7 @@ func _engineer_service_window() -> void:
 func _update_support() -> void:
 	if artifact_id == "drone_armada" and escort_left <= 0.0:
 		_launch_escorts(3, 9999.0, 10.0)
+	_update_guards()
 	# Hunter selects a REAL high-priority enemy. The same mark drives
 	# auto-targeting, damage, and visible ring cues; no manual aiming.
 	if pilot_id == "hunter":
@@ -2795,6 +2856,8 @@ func weapon_power() -> float:
 		power *= 0.88
 	if synergy_active("salvager"):
 		power *= 0.82
+	if synergy_active("swarm"):
+		power *= 0.90
 	for prototype in prototypes:
 		match str(prototype):
 			"bastion_lattice": power *= 0.88
@@ -3460,6 +3523,8 @@ func activate(ability: String) -> bool:
 		_counter_archive_attack()
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
 	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
+	if ability in DRONE_ABILITIES and synergy_active("swarm"):
+		cooldowns[ability] *= 0.85
 	if not stage_casts.has(ability):
 		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10
 		stage_casts[ability] = true
@@ -3534,7 +3599,7 @@ func activate(ability: String) -> bool:
 	elif ability == "chrono":
 		chrono_left = (4.0 + (upgrades.chrono - 1) * 0.5) * effect_strength
 	elif ability == "mend":
-		mend_left = 4.0
+		mend_left = 4.0 * drone_duration_scale()
 		# This ship invests in field repair instead of the second starting gun.
 		mend_rate = (24 + (upgrades.mend - 1) * 6) * effect_strength * (1.25 if ship_id == "haven" else 1.0) / 4.0
 		# Repair drones are the support counter to the status damage in
@@ -3657,6 +3722,8 @@ func activate(ability: String) -> bool:
 				cooldowns[id] = maxf(0.0, cooldowns[id] * 0.4 - 2.0 * upgrades.reboot * effect_strength)
 	elif ability == "wing_drones":
 		_launch_escorts(2 + int(rank_at("wing_drones",5)) + int(rank_at("wing_drones",10)), (6.0 + (upgrades.wing_drones-1)*0.35) * effect_strength, (12.0 + upgrades.wing_drones*2.5) * effect_strength)
+	elif ability == "guard_drones":
+		_launch_guards(2 + int(rank_at("guard_drones",5)) + int(rank_at("guard_drones",10)), (6.0 + (upgrades.guard_drones-1)*0.4) * effect_strength)
 	elif ability == "ion_mine":
 		_deploy_ion_mines(2 if rank_at("ion_mine",10) else 1, (150.0+upgrades.ion_mine*24.0)*effect_strength, 190.0 if rank_at("ion_mine",5) else 150.0)
 	elif ability == "salvage":
@@ -3897,6 +3964,8 @@ func _offer_cards(consume_level: bool = true) -> void:
 			continue
 		if artifact_id == "drone_armada" and card.tag in ["WEAPON", "MUTATION"]:
 			continue
+		if not daily_day.is_empty() and str(card.id) in DAILY_EXCLUDED_CARDS:
+			continue
 		if not fused_into(str(card.id)).is_empty():
 			continue
 		if not fusion_spec(str(card.id)).is_empty() and str(card.id) not in active_slots:
@@ -4086,7 +4155,7 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
-	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
