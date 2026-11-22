@@ -174,6 +174,8 @@ var mend_left := 0.0
 var mend_rate := 0.0
 var emergency_used := false
 var second_wind_used := false
+## Cores from one Salvage window are capped; dense later worlds made it pay thousands.
+var salvage_window_cores := 0
 var arc_timer := 0.0
 var lance_timer := 0.0
 var rerolls_left := 0
@@ -873,6 +875,14 @@ func stage_damage_scale() -> float:
 # World 1 and endless are untouched to protect the opening progression gate.
 func enemy_health_multiplier() -> float:
 	return 0.90 if stage in [2, 3, 4] else 1.0
+
+## Hard and Insane share Normal's tougher Worlds 2-4 waves; ordinary enemies
+## there get a little less health so a full Hangar still wins often enough.
+## Bosses and World 1 are unaffected.
+func advanced_wave_health() -> float:
+	if stage not in [2, 3, 4]:
+		return 1.0
+	return {"normal": 1.0, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:
 	return 1.05 if stage in [2, 3, 4] else 1.0
@@ -1642,7 +1652,7 @@ func _crowd_count() -> int:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * shooter_health_pressure(kind)
+	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * advanced_wave_health() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
@@ -3179,7 +3189,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		effects.append({"kind":"elite-broken", "p":enemy.p, "source":squad_id, "life":1.25, "max_life":1.25, "born":tick})
 		_log("FORMATION BROKEN - %d escorts disrupted" % disrupted)
 	if salvage_left > 0.0 and not bool(enemy.get("no_reward", false)) and not secret_entered and enemy.kind != "archive_courier" and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)):
-		bonus_cores += 1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0)
+		var salvage_pay: int = mini(1 + int(upgrades.salvage / 2) + (1 if synergy_active("salvager") else 0), maxi(0, salvage_core_cap() - salvage_window_cores))
+		salvage_window_cores += salvage_pay
+		bonus_cores += salvage_pay
 	# Boss components are targets, but only the core can end a stage or pay a contract.
 	var is_boss := _is_boss(str(enemy.kind))
 	effects.append({"kind": "explosion", "p": enemy.p, "life": 1.5 if is_boss else 0.5, "max_life": 1.5 if is_boss else 0.5, "born": tick, "boss": is_boss})
@@ -3555,6 +3567,7 @@ func activate(ability: String) -> bool:
 		_deploy_ion_mines(2 if rank_at("ion_mine",10) else 1, (150.0+upgrades.ion_mine*24.0)*effect_strength, 190.0 if rank_at("ion_mine",5) else 150.0)
 	elif ability == "salvage":
 		salvage_left = (10.0 + upgrades.salvage * 1.0) * effect_strength
+		salvage_window_cores = 0
 	if ability not in ["aegis", "nova", "ion_mine"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
@@ -3636,6 +3649,7 @@ func _activate_fusion(id: String, strength: float) -> void:
 				shots.append({"p":ship_position() + Vector2((n % 3 - 1) * 9, -28), "v":Vector2.UP.rotated((n - 7) * 0.10) * 710.0, "damage":40.0 * strength, "weapon":"barrage", "fusion":id, "target":int(target.id)})
 		"scrap_converter":
 			salvage_left = maxf(salvage_left, 16.0 * strength)
+			salvage_window_cores = 0
 			var target: Dictionary = _nearest(ship_position())
 			if not target.is_empty():
 				visual.targets.append(target.p)
@@ -3943,10 +3957,16 @@ func _log(message: String) -> void:
 	if events.size() > 120:
 		events.pop_front()
 
+func salvage_core_cap() -> int:
+	return 20 + 4 * int(upgrades.salvage)
+
 func payout() -> int:
 	if secret_entered:
 		return secret_payout
-	var base: int = int((5 + int(kills / 6) + meta.stipend * 2 + (15 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
+	# A flat amount per run and per world cleared carries more of the reward
+	# than kills, so early losing runs still move the Hangar forward and a
+	# win is worth about six early losses rather than twenty.
+	var base: int = int((30 + int(kills / 30) + meta.stipend * 2 + (20 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
 	if synergy_active("salvager"):
@@ -3964,7 +3984,7 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
-	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 

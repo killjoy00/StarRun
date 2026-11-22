@@ -1156,20 +1156,21 @@ func _test_course() -> void:
 
 func _test_defenses() -> void:
 	var sim := Sim.new(9)
+	var base_hull := float(Catalog.ship("vanguard").hull)
 	sim.shield = 0
 	sim.upgrades.armor = 5
 	sim._hit(1, "chaff", "test")
-	check(is_equal_approx(sim.hull, 99.75), "Armor must retain the 25% damage floor")
+	check(is_equal_approx(sim.hull, base_hull - 0.25), "Armor must retain the 25% damage floor")
 	sim._hit(30, "heavy", "test")
-	check(is_equal_approx(sim.hull, 69.75), "Heavy damage must bypass armor")
+	check(is_equal_approx(sim.hull, base_hull - 30.25), "Heavy damage must bypass armor")
 	sim.activate("aegis")
 	sim._hit(30, "heavy", "test")
-	check(is_equal_approx(sim.hull, 69.75) and sim.prevented == 30, "Aegis must block heavy damage")
+	check(is_equal_approx(sim.hull, base_hull - 30.25) and sim.prevented == 30, "Aegis must block heavy damage")
 	check(not sim.activate("aegis"), "Aegis cannot be activated twice on cooldown")
 	var shield_sim := Sim.new()
 	shield_sim.shield = 1
 	shield_sim._hit(5, "chaff", "test")
-	check(shield_sim.shield_offline == 3.0 and shield_sim.hull == 96.0, "Shield break must apply overflow and downtime")
+	check(shield_sim.shield_offline == 3.0 and shield_sim.hull == float(Catalog.ship("vanguard").hull) - 4.0, "Shield break must apply overflow and downtime")
 	for i in range(180):
 		shield_sim.step()
 	check(shield_sim.shield < 0.1, "Broken shield must not regenerate during its offline window")
@@ -1316,7 +1317,7 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 	var held := Sim.new(18802, saved_hangar)
 	var resumed := Sim.new(1)
 	check(resumed.restore(held.snapshot()) and resumed.snapshot() == held.snapshot(), "Expanded Hangar track values and newly introduced tracks round-trip in existing save schema")
-	check(is_equal_approx(held.max_hull, 170.0) and is_equal_approx(held.max_shield, 106.0), "One more Hull and Shield capacitor rank increases actual starting survival")
+	check(is_equal_approx(held.max_hull, float(Catalog.ship("vanguard").hull) + 70.0) and is_equal_approx(held.max_shield, float(Catalog.ship("vanguard").shield) + 56.0), "One more Hull and Shield capacitor rank increases actual starting survival")
 	# On the same stage, the new boss-specific difficulty curve must rise
 	# faster than the ordinary enemy difficulty curve, without new enemies.
 	for stage_number in [1, 2, 3, 4]:
@@ -1639,7 +1640,7 @@ func _test_hangar_and_tactics() -> void:
 	for id in hangar:
 		hangar[id] = 1
 	var sim := Sim.new(555, hangar)
-	check(sim.max_hull == 110 and sim.max_shield == 58, "Hangar defenses must apply at launch")
+	check(sim.max_hull == float(Catalog.ship("vanguard").hull) + 10.0 and sim.max_shield == float(Catalog.ship("vanguard").shield) + 8.0, "Hangar defenses must apply at launch")
 	check(sim.upgrades.pulse == 2 and sim.upgrades.seeker == 2, "Starting weapon upgrades must apply to new flights")
 	check(sim.weapon_power() > 1 and sim.payout() > Sim.new().payout(), "Armory and salvage tracks must change actual damage and rewards")
 	sim._offer_cards()
@@ -1882,7 +1883,7 @@ func _test_extended_hangar() -> void:
 	# Ranks below the original cap keep their original price; extended ranks cost more.
 	var hull: Dictionary = Catalog.entry("hull")
 	check(int(hull.max) == 15 and int(hull.tier_from) == 7, "Hull plating extends to 15 ranks")
-	check(Catalog.legacy_price("hull", 6) == 5 and Catalog.legacy_price("hull", 7) == 9 and Catalog.legacy_price("hull", 14) == 37, "Extended hull ranks cost more the higher they go; original ranks keep their price")
+	check(Catalog.legacy_price("hull", 6) == 5 and Catalog.legacy_price("hull", 7) == 90 and Catalog.legacy_price("hull", 14) == 370, "Extended hull ranks cost about a win each and rise; original ranks keep their price")
 	var full := Catalog.defaults()
 	for item in Catalog.HANGAR:
 		full[str(item.id)] = int(item.max)
@@ -2920,9 +2921,9 @@ func _test_expanded_hangar() -> void:
 	var armor := Sim.new(3002,{"beam_plating":4})
 	armor.shield = 0
 	armor._hit(20,"heavy","test beam")
-	check(is_equal_approx(armor.hull,82.4), "Ablative panels reduce an actual beam hit by 12%")
+	check(is_equal_approx(armor.hull, float(Catalog.ship("vanguard").hull) - 17.6), "Ablative panels reduce an actual beam hit by 12%")
 	var restart := Sim.new(3003,{"shield_restart":4})
-	restart._hit(50,"heavy","break")
+	restart._hit(80,"heavy","break")
 	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.2), "Restart circuit shortens shield-break downtime")
 	var sealed := Sim.new(3004,{"hazard_seals":4})
 	sealed._hit(1,"heat","heat")
@@ -2961,7 +2962,8 @@ func _test_expanded_hangar() -> void:
 	warp.stage_casts.aegis = true
 	warp._launch_escorts(2,6,10)
 	warp._deploy_ion_mines(1,100,150)
-	check(warp.advance_stage() and is_equal_approx(warp.hull,32.0) and warp.banishes_left == 3, "Warp repairs and Banish relay pay at the new world")
+	# Redline repairs 10% plus 4% per Docking crew rank (three ranks): 22% of max hull.
+	check(warp.advance_stage() and is_equal_approx(warp.hull, 10.0 + warp.max_hull * 0.22) and warp.banishes_left == 3, "Warp repairs and Banish relay pay at the new world")
 	check(warp.stage_casts.is_empty() and warp.ion_mines.is_empty() and warp.escort_left == 0, "Warp resets first casts and clears support from the previous battlefield")
 	var focused := Sim.new(3009,{"reroll_focus":1})
 	focused.rerolls_left = 100

@@ -67,6 +67,26 @@ See [rival design and testing](docs/RIVAL_CAPTAINS.md).
 - **Plain text.** Cards, ships, pilots, Hangar upgrades, menus, warnings and achievements were rewritten in short, plain sentences, and the game says "run" instead of mixing "run" and "flight".
 - **Limits.** Very strong builds (for example mid-Hangar Kestrel) still clear later-world waves almost as fast as they arrive; packs cannot fix that without adding XP or health. Worlds 2–4 packs were tried and held back: the Arcwing Archive route won 5 of 8 seeds with them against 7 of 8 without. Two rejected designs: larger packs on empty screens (every member needs a shot, so packs outlived the ship they replaced and Kestrel's World 1 clears fell from 8 to 2 of 16), and overkill that spills between packmates (packs died too fast and kills rose).
 
+## Difficulty targets and a longer Hangar
+
+The game is meant to be hard, and the Hangar is how you get through it. Targets for Normal, full four-world campaign:
+
+| Hangar | Target |
+|---|---|
+| None | Never finishes the campaign |
+| Mid (what a player owns at the midpoint of progression, about run 50: 32% of the full Hangar cost) | Wins 40–60% |
+| Max | Wins most runs (70%+) |
+
+- **Progression length.** Target: a full Hangar in about 100 runs, a first win around runs 25–35. There is no published industry figure for this; community and wiki numbers for Hades (about 35,000 Darkness to max the Mirror, 90–100 hours to complete) and Vampire Survivors (roughly 170,000–200,000 coins for all PowerUps) suggest similar games take something like 50–150 runs, and 25 felt short. `tools/progression_model.py` simulates a player from zero using the bot's measured Cores per run.
+- **Cores per run.** 30 per run, plus 1 per 30 kills, plus 20 per world cleared (and 5 × clears²), times the Salvage rig bonus. A World 1 loss pays about 60 and a full win about 400, so early runs still move the Hangar forward and winning does not finish it in a few runs. Salvage's bonus Cores are capped per use (20 + 4 per rank); in dense later worlds one Salvage window was paying thousands.
+- **Hangar prices.** Original ranks keep their price. Extended ranks (past each upgrade's old cap) cost 10x, about a win each; Second wind and the three weapon tunings cost 5x. A full Hangar costs 31,396 Cores.
+- **Longer Hangar.** Eleven core upgrades have extra ranks (for example hull 7 → 15, damage 5 → 12). Ranks up to the old cap keep their old price; extended ranks cost more the higher they go. New options: Second wind (once per run, survive a killing blow with 25% hull) and Pulse, Coil and Lens tuning (+5% damage per rank for that gun). 
+- **Harder Worlds 2–4, even steps.** Compared with the 1.3 release: World 2 has 1.8x spawns and 3x enemy health, World 3 2.2x spawns, 4.9x health and 3.1x enemy damage, World 4 2x spawns and 3x health. World 1 and boss health are unchanged. The shape was chosen so a mid-Hangar player dies about equally often in each later world (bot, 8 seeds per ship: World 2 19%, World 3 15%, World 4 12% of the runs that reach it; mid Hangar wins 60%, max 85%, no Hangar never); before, World 3 killed almost nobody and World 2 was a wall (46%). World 3 needed more enemy damage rather than health: 60% more health only crowded the screen. On Hard and Insane, ordinary enemies in Worlds 2–4 have 15% less health than Normal's values.
+- **Vanguard** has 115 hull and 55 shield (was 100 / 50); it was the weakest ship at half Hangar (2 of 8 wins).
+- **Measured** (scripted bot, six ships × 8 seeds each): no Hangar 0/48, half 27/48 (56%), max 44/48 (92%). Enemies on screen at half Hangar went from under 1 to about 9 / 11 / 18 in Worlds 2 / 3 / 4. Ship spread is wide at half Hangar (Kestrel and Arcwing 7/8, Vanguard 2/8), which is worth tuning separately. These are bot results, not human win rates.
+- **Experiments.** `.github/workflows/difficulty-experiment.yml` runs all six ships at none / half / max Hangar in parallel (about 10 minutes) with per-world spawn, health and damage multipliers and a difficulty input, and reports win rates against the targets plus density per world. Start it from the Actions tab (Run workflow).
+- **CI gates.** A full-Hangar Arcwing must win the campaign and clear the Archive; no Hangar must never finish Normal (six ships × 2 seeds).
+
 ## Reliability and balance pass
 
 - **Ships:** Kestrel now has 85 hull / 40 shield (was 70 / 30). Bulwark takes 20% less beam and missile damage and gets +20% automatic damage against bosses (was +12%). Vanguard gains *veteran systems* after each cleared world: +15% / +20% / +25% weapon and ability power and 10% / 15% / 20% status resistance. In scripted no-Hangar Normal World 1 runs on the same 8 seeds, Kestrel went from 2 to 4 clears and Bulwark from 1 to 4, against Vanguard's 5; the Hard/Insane no-Hangar World 1 gate still records zero clears for all six pilots.

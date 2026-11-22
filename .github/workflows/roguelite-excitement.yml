@@ -44,7 +44,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          godot --headless --path . --script tests/archive_campaign.gd -- --ship=arcwing --pilot=rookie --difficulty=normal --matched --require-win 2>&1 | tee /tmp/roguelite-archive-regression.log
+          godot --headless --path . --script tests/archive_campaign.gd -- --ship=arcwing --pilot=rookie --difficulty=normal --hangar=max --matched --require-win 2>&1 | tee /tmp/roguelite-archive-regression.log
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/roguelite-archive-regression.log; then
             exit 1
           fi

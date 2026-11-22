@@ -78,13 +78,13 @@ func _run() -> void:
 			world_tuning[arg.get_slice("=", 0).trim_prefix("--")] = values
 		elif arg == "--require-no-campaign-wins":
 			require_no_campaign_wins = true
-	if build_style not in ["baseline", "focused", "shielded"] or hangar_style not in ["none", "mid", "half", "max"] or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
+	if build_style not in ["baseline", "focused", "shielded"] or not (hangar_style in ["none", "mid", "half", "max"] or (hangar_style.begins_with("p") and hangar_style.substr(1).is_valid_int())) or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
 		return
 	if not world_tuning.is_empty():
 		print("WORLD_TUNING ", JSON.stringify(world_tuning))
-	if hangar_style == "half":
+	if hangar_style == "half" or hangar_style.begins_with("p"):
 		print("HANGAR_PROFILE ", JSON.stringify(_hangar("half")))
 	if require_no_world1_clears and (stage_limit != 1 or hangar_style != "none" or only_difficulty not in ["hard", "insane"]):
 		push_error("No-Hangar World 1 gate applies only to Hard/Insane with stage-limit=1")
@@ -336,7 +336,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		"overlap_seconds":snappedf(overlap_seconds,0.1),
 		"unanswered_overlap_seconds":snappedf(unanswered_overlap_seconds,0.1),
 		"density":density_by_phase,
-		"final":{"level":sim.level,"kills":sim.kills,"status":status, "build":build_style}
+		"final":{"level":sim.level,"kills":sim.kills,"status":status, "build":build_style, "cores":sim.payout(), "seconds":snappedf(sim.time,1.0)}
 	}
 
 # Count only overlapping threats aimed near the autopilot's future lane.
@@ -464,14 +464,16 @@ func _hangar(style: String) -> Dictionary:
 	if style == "max":
 		for item in Catalog.HANGAR:
 			result[str(item.id)] = int(item.max)
-	elif style == "half":
-		# Half the Cores of a full Hangar, spent the way a player spreading
-		# upgrades would: always buy the cheapest next rank available.
+	elif style == "half" or (style.begins_with("p") and style.substr(1).is_valid_int()):
+		# A share of the Cores of a full Hangar ("half" = 50%, "p25" = 25%),
+		# spent the way a player spreading upgrades would: always buy the
+		# cheapest next rank available.
 		var total := 0
 		for item in Catalog.HANGAR:
 			for rank in range(int(item.max)):
 				total += Catalog.price(str(item.id), rank)
-		var budget := total / 2
+		var share := 50 if style == "half" else clampi(int(style.substr(1)), 0, 100)
+		var budget := total * share / 100
 		for item in Catalog.HANGAR:
 			result[str(item.id)] = 0
 		while true:
