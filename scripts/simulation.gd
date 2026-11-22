@@ -2568,6 +2568,12 @@ func escort_position(index: int) -> Vector2:
 	return Vector2(clampf(p.x,12,528),p.y)
 
 func _launch_escorts(count: int, duration: float, damage: float) -> void:
+	# Haven is the drone carrier: every drone wing it launches (Wing drones,
+	# the Storm Carrier fusion, Drone Armada) gets one more drone that hits
+	# 25% harder, as its Repair drones heal 25% more.
+	if ship_id == "haven":
+		count += 1
+		damage *= 1.25
 	escort_count = count
 	escort_left = duration
 	escort_damage = damage
@@ -2708,7 +2714,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.20 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.30 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []

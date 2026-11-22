@@ -524,7 +524,7 @@ func _test_ship_pilot_identity_tuning() -> void:
 		sim._update_weapons()
 	var haven_seeker: Array = haven.shots.filter(func(s): return s.weapon == "seeker")
 	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
-	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.20), "Haven's support Seeker Pods gain 20 percent weapon damage, but no Pulse is installed")
+	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.30), "Haven's support Seeker Pods gain 30 percent weapon damage, but no Pulse is installed")
 	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
 	# Insane matched seeds exposed a Haven early-wave DPS and survivability gap.
 	# Improve support pod cadence and the signature Mend, without a Pulse starter.
@@ -3067,6 +3067,13 @@ func _test_support_actives() -> void:
 		drone.enemies[0].hp = 10000.0
 		drone.enemies[0].max_hp = 10000.0
 		check(drone.activate("wing_drones") and drone.escort_count == 2+int(rank>=5)+int(rank>=10), "Drone milestones add real escorts at rank " + str(rank))
+		var carrier := Sim.new(3050, {}, "haven")
+		carrier.active_slots.append("wing_drones")
+		carrier.upgrades.wing_drones = rank
+		var plain := Sim.new(3050)
+		plain.active_slots = ["wing_drones"]
+		plain.upgrades.wing_drones = rank
+		check(carrier.activate("wing_drones") and plain.activate("wing_drones") and carrier.escort_count == plain.escort_count + 1 and is_equal_approx(carrier.escort_damage, plain.escort_damage * 1.25), "Haven's Wing drones launch one extra drone that hits 25% harder at rank " + str(rank))
 		for frame in range(40):
 			drone._update_support()
 			drone._update_shots()
