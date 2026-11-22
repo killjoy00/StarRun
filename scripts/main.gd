@@ -2629,7 +2629,7 @@ func _show_route_choice() -> void:
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.body, "Next: World %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
-		{"id": "repair", "tag": "Safe", "gain": "Repair 70% hull. Next world: 35% less damage taken, abilities recharge 15% faster, +15% gun damage while shield is over half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
+		{"id": "repair", "tag": "Safe", "gain": "Repair 70% hull. Next world: 35% less damage taken, abilities recharge 15% faster, +15% gun damage while shield is above half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull. Start at half shield. Take 20% more hull damage.", "accent": Kit.AMBER},
 		{"id": "bounty", "tag": "Greedy", "gain": "One extra upgrade, +50%% XP, +%d Cores for the boss. Repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "More enemies, and 30% tougher.", "accent": Kit.DANGER},
 	]
@@ -2682,7 +2682,7 @@ func _show_results() -> void:
 		var day_record: Dictionary = profile.daily_records.get(sim.daily_day, {})
 		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score",-1))
 		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
-		_info_card(body, "Daily  ·  %s" % sim.daily_day, "Score %s  ·  Best %s%s\nCores only for your first daily run of the day." % [_num(score), _num(best), "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+		_info_card(body, "Daily challenge  ·  %s" % sim.daily_day, "Score %s  ·  Best %s%s\nCores only for your first daily run of the day." % [_num(score), _num(best), "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
 		_ui_button(body, "Share score" if daily_share_service != null else "Copy score", _share_daily_result, "secondary", 50)
 		if game_center.supports_game_center():
 			_ui_button(body, "Leaderboard", _show_game_center_leaderboard, "secondary", 48)
@@ -2730,8 +2730,9 @@ func _show_results() -> void:
 	var weapon_names := {"pulse":"Pulse", "seeker":"Seekers", "arc":"Arc", "lance":"Lance", "nova":"Nova", "barrage":"Barrage"}
 	for key in sim.damage_dealt:
 		var value := float(sim.damage_dealt[key])
-		if value > 0.0:
-			dealt_rows.append([str(weapon_names.get(key, str(key).capitalize())), value])
+		# Engine damage is listed with the build below.
+		if value > 0.0 and not str(key).begins_with("engine_"):
+			dealt_rows.append([str(weapon_names.get(key, str(key).replace("_", " ").capitalize())), value])
 	dealt_rows.sort_custom(func(a, b): return a[1] > b[1])
 	_bar_rows(body, "Damage dealt", dealt_rows.slice(0, 5), Kit.AMBER)
 	_bar_rows(body, "Damage taken", taken_rows.slice(0, 5), Kit.DANGER)
@@ -2749,6 +2750,8 @@ func _show_results() -> void:
 		build_lines.append("Pair: " + str(link.name))
 	for engine in sim.active_engines():
 		build_lines.append("Engine: " + str(engine.name) + (" (max)" if int(engine.tier) == 3 else ""))
+	for impact in sim.build_impact_rows(2):
+		build_lines.append("%s: %s" % [str(impact.name), str(impact.detail)])
 	for weapon in sim.weapon_evolutions:
 		for option in sim.content.weapon_evolutions.get(str(weapon), []):
 			if str(option.id) == str(sim.weapon_evolutions[weapon]):

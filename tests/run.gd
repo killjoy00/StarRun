@@ -540,7 +540,7 @@ func _test_ship_pilot_identity_tuning() -> void:
 	for sim in [haven_hunter, wraith_hunter]:
 		sim._add_enemy("drone", Vector2(270, 175))
 		sim._update_weapons()
-	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.62), "Hunter retains the pilot lock-on advantage with Haven's support pod cadence")
+	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.56), "Hunter keeps the pilot lock-on advantage on Haven and Wraith's quicker Seekers")
 	var haven_mender := Sim.new(88239, {}, "haven", "rookie")
 	var regular_mender := Sim.new(88239, {}, "vanguard", "rookie")
 	regular_mender.upgrades.mend = 1

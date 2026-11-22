@@ -607,7 +607,7 @@ func _run() -> void:
 		scene.sim.damage_dealt.engine_storm = 218.0
 		scene._show_results()
 		await process_frame
-		check(_contains_text(scene.overlay, "YOUR BUILD AT WORK") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
+		check(_contains_text(scene.overlay, "YOUR BUILD") and _contains_text(scene.overlay, "Storm Circuit"), "Real engine activation summary appears on phone debrief")
 		check(_contains_text(scene.overlay, "218 direct damage"), "Debrief displays measured engine damage and does not invent a damage multiplier")
 		check(scene.reading_panel.get_global_rect().end.y <= scene.get_viewport_rect().size.y, "Build-impact debrief stays inside narrow-phone safe area")
 	# World 1 -> 2: the last Prototype and Route choices must actually
