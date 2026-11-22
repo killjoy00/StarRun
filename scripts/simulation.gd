@@ -252,6 +252,8 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	artifact_id = selected_artifact if not Catalog.artifact(selected_artifact).is_empty() and str(Catalog.artifact(selected_artifact).id) == selected_artifact else "standard"
 	seed_value = run_seed
 	rng.seed = run_seed
+	# Seeded from the run seed, never randomly: saves and replays stay exact.
+	draft_rng.seed = int(run_seed) * 2654435761 + 97
 	# Normal World 1 needs an actual encounter inside the first fifteen seconds.
 	# Advanced modes retain their deliberately different progression gates.
 	next_encounter_at = (12.0 + float(run_seed % 5)) if difficulty == "normal" else (55.0 + float(run_seed % 23))
@@ -3958,9 +3960,7 @@ func _inject_build_aware_offer(pool: Array) -> void:
 func _draft_rand(low: int, high: int) -> int:
 	if daily_day.is_empty():
 		return rng.randi_range(low, high)
-	if not draft_rng_ready:
-		draft_rng.seed = int(seed_value) * 2654435761 + 97
-		draft_rng_ready = true
+	draft_rng_ready = true
 	return draft_rng.randi_range(low, high)
 
 func _offer_cards(consume_level: bool = true) -> void:
