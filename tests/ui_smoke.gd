@@ -481,9 +481,8 @@ func _run() -> void:
 	scene._share_daily_result()
 	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Desktop clipboard fallback shows a confirmation toast")
 	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Share payload preserves the saved Daily UTC date")
-	check(scene.result_awards.has("daily_first") and scene.toast_queue.size() > 0, "New achievements queue nonblocking unlock notifications")
-	scene._advance_toast(4.0)
-	check(scene.toast_panel.visible and scene.toast_title.text == "ACHIEVEMENT UNLOCKED", "Queued achievement notification appears after copy toast dismisses")
+	check(scene.result_awards.has("daily_first") and scene.toast_queue.is_empty(), "New achievements do not pop up over the results header")
+	check(_contains_text(scene.reading_scroll, str(scene.Progress.achievement("daily_first").name)), "New achievements are listed on the results screen")
 	# Simulate the native iOS singleton in headless CI without needing an iPhone.
 	var native_share := NativeShareMock.new()
 	scene.daily_share_service = native_share

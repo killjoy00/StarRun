@@ -3306,10 +3306,8 @@ func _finish() -> void:
 	if _save_profile():
 		services.delete_run()
 	_show_results()
-	for id in result_awards:
-		var item: Dictionary = Progress.achievement(str(id))
-		if not item.is_empty():
-			_queue_toast("Achievement unlocked", str(item.name))
+	# New achievements are listed on the results screen itself; a popup on
+	# top covered its "What took you down" header.
 	if not result_awards.is_empty():
 		sound.play("card")
 	game_center.sync()

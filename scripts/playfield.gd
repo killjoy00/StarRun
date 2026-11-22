@@ -196,6 +196,7 @@ func _draw() -> void:
 		_draw_boss_ceremony(host.stage_clear_clock)
 	elif host.mode == "warp":
 		_draw_warp(host.warp_clock)
+	_draw_boss_panel()
 	# Minimal edge framing lets the artwork breathe while bars stay readable.
 	for edge in [0, 1]:
 		draw_rect(Rect2(edge * 520, 0, 20, 960), Color(0.01, 0.025, 0.04, 0.18))
@@ -210,6 +211,22 @@ func _draw() -> void:
 	_bar(Rect2(18, 941, 504, 3), float(sim.xp) / sim.xp_needed(), AMBER)
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
+
+## The boss health bar, name and phase line sit above every lane and shot.
+## Beam lanes used to be drawn over it and could cover the phase text.
+func _draw_boss_panel() -> void:
+	for enemy in sim.enemies:
+		var kind: String = str(enemy.kind)
+		if not kind.begins_with("boss") or kind == "boss_module":
+			continue
+		draw_rect(Rect2(40,11,460,86),Color(0.03,0.035,0.05,0.92))
+		_bar(Rect2(60,21,420,7),enemy.hp/enemy.max_hp,AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(60,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 420, 17, AMBER)
+		var phase_label: String = sim.boss_phase_label()
+		if kind in ["boss3", "boss4"]:
+			phase_label = "PHASE %d/3 · %s" % [sim.late_boss_phase + 1, phase_label]
+		draw_string(ThemeDB.fallback_font, Vector2(60,80), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 420, 15, CYAN if sim.stage == 2 else AMBER)
+		return
 
 func _visual_theme_id() -> String:
 	return ["debris", "storm", "forge", "void"][(sim.stage - 1) % 4]
@@ -573,13 +590,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 					draw_line(Vector2(side*61,-82), Vector2(side*90,-43), Color(shield_color, 0.85), 3.0, true)
 		draw_set_transform(Vector2.ZERO)
 	if boss:
-		draw_rect(Rect2(65,11,410,82),Color(0.03,0.035,0.05,0.86))
-		_bar(Rect2(80,21,380,7),enemy.hp/enemy.max_hp,AMBER)
-		draw_string(ThemeDB.fallback_font, Vector2(80,52), sim.boss_name().to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 380, 16, AMBER)
-		var phase_label: String = sim.boss_phase_label()
-		if kind in ["boss3", "boss4"]:
-			phase_label = "PHASE %d/3 · %s" % [sim.late_boss_phase + 1, phase_label]
-		draw_string(ThemeDB.fallback_font, Vector2(80,78), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
+		pass # The boss panel is drawn last, above beam lanes, by _draw_boss_panel().
 	else:
 		var elite_role: String = str(enemy.get("elite_role", ""))
 		# World 1 strike wings carry no marker: an arc over their tail read

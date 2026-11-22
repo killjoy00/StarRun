@@ -21,7 +21,7 @@ const SCREENS := [
 	"cards", "cards-banish", "cards-maxed", "cards-catch-up", "prototypes-skipped", "evolution", "fusion", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
-	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
+	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "boss-1-charging", "endless-clear",
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
 	"archive-boss-intro", "archive-boss-lock", "archive-ending"
 ]
@@ -303,6 +303,15 @@ func _prepare(scene, screen: String) -> void:
 				scene.sim._damage_enemy(scene.sim.enemies[0], 100.0, "pulse")
 				scene.sim.enemies.clear()
 			# The screenshot harness disables automatic processing.
+			scene.world._process(0.0)
+		"boss-1-charging":
+			# The Harvester's phase label ("BEAM CHARGING - INTERRUPT") must fit.
+			scene.sim._spawn_boss()
+			scene.boss_intro_stage = scene.sim.stage
+			scene.mode = "playing"
+			scene._clear_overlay()
+			var core: Dictionary = scene.sim._boss_core()
+			scene.sim.charges = [{"source": int(core.id), "x": float(core.p.x), "remaining": 1.2, "duration": 1.8, "damage": 30.0}]
 			scene.world._process(0.0)
 		"endless-clear":
 			scene.sim.endless_enabled = true
