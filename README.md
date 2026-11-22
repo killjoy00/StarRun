@@ -74,7 +74,7 @@ See [rival design and testing](docs/RIVAL_CAPTAINS.md).
 - **Daily: fair offers.** Daily upgrade offers come from their own random sequence (saved with the run), so kills, timing and ability use never change them: the same picks see the same offers. Before, only the first two hands matched between players.
 - **Rerolls.** 1 per Hangar rank for the whole run, up to 6 ranks, cheaper (was 1 per rank refilled each world, 3 ranks). Tactics items are renamed Rerolls, Removes, Skips, Extra choice, Focused rerolls and Remove refill.
 - **Wraith** Seekers reload faster (0.62 s, was 0.70). No-Hangar Normal World 1 clears (bot, 12 seeds): 4 to 8 of 12, against 5 to 10 for other ships. Mid Hangar campaign wins 4/8 to 6/8.
-- **Bulwark** starts with Deflector instead of Aegis (two ships started with Aegis) and takes 50% less beam and missile damage (was 20%). Hard and Insane no-Hangar World 1 stay at zero clears.
+- **Bulwark** starts with Deflector instead of Aegis (two ships started with Aegis) and takes 30% less beam and missile damage (was 20%) and fires at the normal rate (was 10% slower). Mid Hangar campaign wins 4/8 (bot, 8 seeds; 2/8 without the fire rate change). Hard and Insane no-Hangar World 1 stay at zero clears.
 - **Screens.** Run end: Cores first, stat tiles, bar charts for damage dealt and taken, a short build list. Between worlds: "World 1 of 4 cleared", "Pick a prototype", "Pick a route". Achievements: "Earned Nov 22, 2026". Rivals: one line of made-up backstory per captain (300 lines) instead of a tip. How to play no longer mentions the hidden signals.
 
 ## Start at a later world
