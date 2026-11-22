@@ -223,7 +223,7 @@ func _run() -> void:
 		scene._show_rival_intro()
 		await process_frame
 		var picture: Control = scene.overlay.find_child("RivalCutscenePortrait", true, false)
-		check(scene.mode == "rival_intro" and _contains_text(scene.overlay, "RIVAL SIGHTED!") and _contains_text(scene.overlay, "!  HOSTILE CAPTAIN"), "Rival reveal displays warning, portrait and exclamation without advancing gameplay")
+		check(scene.mode == "rival_intro" and _contains_text(scene.overlay, "RIVAL SIGHTED!") and _contains_text(scene.overlay, "!  RIVAL"), "Rival reveal displays warning, portrait and exclamation without advancing gameplay")
 		check(picture != null and picture.size.x >= 100 and scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0, "Portrait warning fits mobile and desktop safe areas")
 		scene._dismiss_rival_stinger()
 		check(scene.mode == "playing" and not scene.sim.rival_intro_pending, "Engage resumes combat and persists cutscene acknowledgment")
@@ -235,7 +235,7 @@ func _run() -> void:
 		scene._dismiss_rival_stinger()
 		scene._show_rival_journal()
 		await process_frame
-		check(scene.mode == "rival_journal" and _contains_text(scene.overlay, "Retired captains (1)") and _contains_text(scene.overlay, str(record.name)), "Journal shows the named captain and retirement history")
+		check(scene.mode == "rival_journal" and _contains_text(scene.overlay, "Beaten (1)") and _contains_text(scene.overlay, str(record.name)), "Journal shows the named captain and retirement history")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y + 1.0 and scene.reading_scroll.size.y > 100, "Journal scroll and footer remain inside the phone display")
 		var merchant := Sim.new(55020)
 		scene.sim = merchant

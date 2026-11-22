@@ -1201,7 +1201,7 @@ func _rival_identity(parent: Node, record: Dictionary, note: String) -> void:
 	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text_column.add_theme_constant_override("separation", 6)
 	row.add_child(text_column)
-	Kit.caps(text_column, "!  HOSTILE CAPTAIN", Kit.DANGER, 14)
+	Kit.caps(text_column, "!  RIVAL", Kit.DANGER, 14)
 	Kit.label(text_column, str(record.get("name","Unknown captain")), 21, Kit.TEXT, true)
 	Kit.label(text_column, RivalCaptains.trait_name(str(record.get("trait",""))), 17, Kit.AMBER, true)
 	Kit.label(content, note, 16, Kit.MUTED, true)
@@ -1211,29 +1211,29 @@ func _show_rival_journal() -> void:
 	RivalCaptains.prepare(profile)
 	mode = "rival_journal"
 	var view := _page(1.0, true, 520.0)
-	_page_header(view.top, "LOCAL DOSSIER", "Rival captains", _show_menu)
-	Kit.label(view.top, "Enemy captains who beat you. Saved on this device only.", 15, Kit.MUTED, true)
+	_page_header(view.top, "RIVALS", "Rival captains", _show_menu)
+	Kit.label(view.top, "Captains who killed you. Beat them for a trophy.", 15, Kit.MUTED, true)
 	var active: Dictionary = profile.rival_active
 	if active.is_empty():
-		_info_card(view.body, "No active rival", "If an enemy captain beats you, they may come back in a later run.", Kit.MUTED)
+		_info_card(view.body, "No rival right now", "A captain who kills you may come back in a later run.", Kit.MUTED)
 	else:
-		_section(view.body, "Still at large", Kit.DANGER)
-		_rival_identity(view.body, active, "Defeated you: %d  ·  Sightings: %d  ·  Escapes: %d\nFirst encountered in World %d" % [int(active.get("defeat_count",1)), int(active.get("times_encountered",0)), int(active.get("times_escaped",0)), int(active.get("world_created",1))])
+		_section(view.body, "Hunting you", Kit.DANGER)
+		_rival_identity(view.body, active, "Killed you: %d  ·  Seen: %d  ·  Got away: %d" % [int(active.get("defeat_count",1)), int(active.get("times_encountered",0)), int(active.get("times_escaped",0))])
 	var history: Array = profile.rival_archive
-	_section(view.body, "Retired captains (%d)" % history.size(), Kit.AMBER)
+	_section(view.body, "Beaten (%d)" % history.size(), Kit.AMBER)
 	if history.is_empty():
-		Kit.label(view.body, "No rivals beaten yet. Beat a captain to earn a trophy.", 16, Kit.MUTED, true)
+		Kit.label(view.body, "None yet.", 16, Kit.MUTED, true)
 	for i in range(history.size()-1, -1, -1):
 		var retired: Dictionary = history[i]
-		_rival_identity(view.body, retired, "BEATEN  !  ·  Beat you %d time(s)  ·  Met %d time(s)\nTrophy saved on this device." % [int(retired.get("defeat_count",1)),int(retired.get("times_encountered",0))])
+		_rival_identity(view.body, retired, "Killed you: %d  ·  Seen: %d" % [int(retired.get("defeat_count",1)),int(retired.get("times_encountered",0))])
 	_focus(_ui_button(reading_footer, "Back to Star/Run", _show_menu, "primary", 54, true))
 
 func _rival_stinger(title: String, note: String, reward: bool = false) -> void:
 	mode = "rival_retired" if reward else "rival_intro"
 	rival_stinger_clock = 0.0
 	var view := _page(0.97, true, 490.0)
-	_page_header(view.top, "!  INCOMING TRANSMISSION  !", title)
-	Kit.label(view.top, "A captain who beat you before is back." if not reward else "The score is settled.", 16, Kit.AMBER, true)
+	_page_header(view.top, "!  RIVAL  !", title)
+	Kit.label(view.top, "They killed you before." if not reward else "You got them.", 16, Kit.AMBER, true)
 	_rival_identity(view.body, sim.rival_record, note)
 	var action := _ui_button(reading_footer, "Continue", _dismiss_rival_stinger, "primary", 60, true)
 	_focus(action)
@@ -1246,14 +1246,14 @@ func _show_rival_intro() -> void:
 		return
 	if RivalCaptains.note_encounter(profile, sim):
 		_save_profile()
-	_rival_stinger("RIVAL SIGHTED!", "This captain ended one of your runs.\nWins against you: %d  ·  World %d  ·  Destroy them or outlast them." % [int(sim.rival_record.get("defeat_count",1)),int(sim.stage)])
+	_rival_stinger("RIVAL SIGHTED!", "Kill them for a trophy, or survive until they leave.")
 
 func _show_rival_retired() -> void:
 	if not sim.rival_retire_pending or sim.rival_record.is_empty():
 		return
 	if RivalCaptains.retire(profile, sim):
 		_save_profile()
-	_rival_stinger("RIVAL DEFEATED!", "Captain beaten. A trophy was added to your Rivals list.", true)
+	_rival_stinger("RIVAL DEFEATED!", "Trophy added to Rivals.", true)
 
 func _dismiss_rival_stinger() -> void:
 	if mode not in ["rival_intro", "rival_retired"]:
@@ -1404,7 +1404,6 @@ func _show_briefing(launch_after: bool = false) -> void:
 		["Abilities", "Tap the four buttons at the bottom to use abilities. Each one recharges after use."],
 		["Level up", "Pick an upgrade each time you level up. Two matching abilities at rank 5 can fuse into one."],
 		["Four bosses", "Beat four worlds. Spend the Cores you earn on permanent upgrades in the Hangar."],
-		["Unknown signals", "Look for hidden signals in Worlds 2 to 4. Find two before the last boss to unlock a secret world."],
 	]
 	for i in range(steps.size()):
 		var row := HBoxContainer.new()
@@ -1425,7 +1424,7 @@ func _show_briefing(launch_after: bool = false) -> void:
 		Kit.label(text, str(steps[i][0]), 17, Color.WHITE)
 		Kit.label(text, str(steps[i][1]), 15, Kit.MUTED, true)
 	if not _touch_first():
-		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, R opens a signal, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
+		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
 	_focus(_ui_button(box, "Launch" if briefing_launch else "Got it", _briefing_done, "primary", 56))
 
 func _briefing_done() -> void:

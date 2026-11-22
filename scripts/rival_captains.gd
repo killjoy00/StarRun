@@ -50,12 +50,12 @@ static func trait_name(id: String) -> String:
 
 static func counterplay(id: String) -> String:
 	match id:
-		"charged_barrage": return "Interrupt the telegraphed dual beam with Aegis, EMP or a fast kill."
-		"interceptor_screen": return "Destroy the captain first, or clear the two escorts."
-		"reactive_shield": return "Burst damage wakes a brief shield; pressure them between pulses."
-		"hunter_lock": return "A fast beam warning: time your defensive ability."
-		"mine_scatter": return "Flak and wide-area attacks can clear the mine field."
-	return "Prioritize the captain."
+		"charged_barrage": return "Stop the double beam with Aegis, EMP or a fast kill."
+		"interceptor_screen": return "Kill the captain first, or its two escorts."
+		"reactive_shield": return "Big hits raise a shield. Hit between pulses."
+		"hunter_lock": return "Quick beam warning. Use a defense ability in time."
+		"mine_scatter": return "Flak and blasts clear the mines."
+	return "Kill the captain first."
 
 static func for_launch(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	prepare(profile)
