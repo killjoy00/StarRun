@@ -54,6 +54,7 @@ func _run() -> void:
 	_test_loadouts()
 	_test_threat_catalog()
 	_test_extended_hangar()
+	_test_start_world()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -1878,6 +1879,61 @@ func _test_active_pool() -> void:
 	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_start_world() -> void:
+	# Starting at World 3: two Prototype picks, one route, then catch-up drafts.
+	var sim := Sim.new(6100, {}, "vanguard")
+	check(sim.begin_at_world(3) and sim.stage == 1 and sim.intermission_step == "prototype" and sim.skipping_worlds(), "A later start opens on a skipped world's Prototype pick")
+	check(sim.skip_prototype() and sim.stage == 2 and sim.intermission_step == "prototype" and sim.stage_clears == 2, "A skipped world's Prototype pick moves straight to the next skipped world")
+	check(sim.skip_prototype() and sim.intermission_step == "route", "The last skipped world asks for the route into the start world")
+	check(sim.choose_route("bounty") and sim.advance_stage() and sim.stage == 3 and not sim.skipping_worlds() and sim.route_choice == "bounty", "The chosen route applies to the start world")
+	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 3, "Catch-up gives the start world's level-ups, one per warp and the bounty pick")
+	check(sim.payout() == 30 + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
+	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.20), "Vanguard's veteran bonus counts the skipped worlds")
+	sim._offer_cards()
+	check(sim.level == 2 and sim.cards.size() >= 3, "Each catch-up draft raises the level by one")
+	var saved := sim.snapshot()
+	var copy := Sim.new()
+	check(copy.restore(saved) and copy.start_world == 3 and copy.catch_up_levels == sim.catch_up_levels, "Start world and catch-up survive save and restore")
+	check(sim.auto_finish_catch_up() and sim.catch_up_levels == 0 and sim.level == int(Sim.START_WORLD_LEVELS[2]) and sim.cards.is_empty(), "Auto-pick finishes every catch-up draft")
+	check(not sim.auto_finish_catch_up(), "Auto-pick is only for catch-up drafts")
+	# A world actually played after a later start pays what it would in a full run.
+	sim.stage_clears = 3
+	var full := Sim.new(6101, {}, "vanguard")
+	full.stage_clears = 3
+	full.kills = sim.kills
+	full.choice_cores = sim.choice_cores
+	check(sim.payout() - full.payout() == -(20 * 2 + 5 * 4), "Only Worlds 1-2 are missing from a World 3 start's payout")
+	var late := Sim.new(6102)
+	late.step()
+	check(not late.begin_at_world(2) and not Sim.new(6103).begin_at_world(1) and not Sim.new(6104).begin_at_world(5), "Later starts only before the first tick and for Worlds 2-4")
+	var daily := Sim.new(6105)
+	daily.daily_day = "2026-11-22"
+	check(not daily.begin_at_world(2), "The Daily always starts at World 1")
+	# Unlocks: one past the best world cleared on that difficulty or a harder one.
+	var profile := {"cores":0, "achievements":{}, "daily_records":{}}
+	Progress.prepare(profile)
+	check(Progress.max_start_world(profile, "normal") == 1, "No later start before World 1 is cleared")
+	var cleared := Sim.new(6106, {}, "vanguard", "rookie", "hard")
+	cleared.stage_clears = 2
+	cleared.ended = true
+	Progress.settle(profile, cleared)
+	check(Progress.max_start_world(profile, "hard") == 3 and Progress.max_start_world(profile, "normal") == 3 and Progress.max_start_world(profile, "insane") == 1, "Clears unlock that difficulty and easier ones")
+	var old := {"cores":0, "achievements":{}, "daily_records":{}, "achievement_stats":{"max_world_clears":2, "hard_wins":0, "insane_wins":1}}
+	Progress.prepare(old)
+	check(Progress.max_start_world(old, "normal") == 4 and Progress.max_start_world(old, "hard") == 4 and Progress.max_start_world(old, "insane") == 4, "Older profiles keep their progress")
+	var older := {"cores":0, "achievements":{}, "daily_records":{}, "achievement_stats":{"max_world_clears":2}}
+	Progress.prepare(older)
+	check(Progress.max_start_world(older, "normal") == 3 and Progress.max_start_world(older, "hard") == 1, "Older profiles credit their best clears to Normal")
+	# A win from a later start is not a full four-world win.
+	var short_win := Sim.new(6107, {}, "vanguard")
+	short_win.begin_at_world(2)
+	short_win.stage_clears = 4
+	short_win.won = true
+	short_win.ended = true
+	var winner := {"cores":0, "achievements":{}, "daily_records":{}}
+	Progress.settle(winner, short_win)
+	check(int(winner.achievement_stats.victories) == 0 and not winner.achievements.has("fourth_boss") and int(winner.achievement_stats.world_clears.normal) == 4, "A win from World 2 does not count as beating all four worlds")
 
 func _test_extended_hangar() -> void:
 	# Ranks below the original cap keep their original price; extended ranks cost more.

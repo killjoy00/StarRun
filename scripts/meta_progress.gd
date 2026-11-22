@@ -175,14 +175,14 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	stats.finished_runs = int(stats.finished_runs) + 1
 	var secret: bool = sim.secret_entered and not daily
 	var worlds: int = mini(int(sim.stage_clears), 4) if secret else int(sim.stage_clears)
-	stats.max_world_clears = maxi(int(stats.max_world_clears), worlds)
+	# A win only counts as beating all four worlds when the flight started
+	# at World 1, so a later start can earn the World 1-3 boss awards at most.
+	var full_run: bool = int(sim.start_world) <= 1
+	stats.max_world_clears = maxi(int(stats.max_world_clears), worlds if full_run else mini(worlds, 3))
 	stats.max_world_any = maxi(int(stats.max_world_any), worlds)
 	var by_difficulty: Dictionary = stats.world_clears
 	by_difficulty[str(sim.difficulty)] = maxi(int(by_difficulty.get(str(sim.difficulty), 0)), mini(worlds, 4))
 	stats.world_clears = by_difficulty
-	# A win only counts as beating all four worlds when the flight started
-	# at World 1.
-	var full_run: bool = int(sim.start_world) <= 1
 	if secret and bool(sim.won) and int(sim.stage_clears) == 5:
 		stats.archive_cleared = true
 	stats.max_prototypes = maxi(int(stats.max_prototypes),int(sim.prototypes.size()))

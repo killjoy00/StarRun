@@ -751,6 +751,9 @@ func _page_header(top: VBoxContainer, eyebrow: String, title: String, back: Call
 	row.add_child(titles)
 	if not eyebrow.is_empty():
 		var over := Kit.caps(titles, eyebrow, Kit.AMBER, 13)
+		# One line, trimmed: a wrapping label with clip_text collapses to
+		# zero height, which hid every page eyebrow.
+		over.autowrap_mode = TextServer.AUTOWRAP_OFF
 		over.clip_text = true
 		over.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var heading := Kit.label(titles, title, 26, Color.WHITE, true)
@@ -1802,7 +1805,7 @@ func _show_cards(play_sound: bool = true) -> void:
 	var body: VBoxContainer = view.body
 	var capped: bool = sim.cards.any(func(card): return str(card.id) == "core_cache")
 	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
-	var eyebrow := ("Catching up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else "Level %d  ·  Stage %d" % [sim.level, sim.stage]
+	var eyebrow := ("Catch-up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else "Level %d  ·  Stage %d" % [sim.level, sim.stage]
 	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
@@ -2536,7 +2539,7 @@ func _show_route_choice() -> void:
 	var view := _page(0.95, true, 540.0, 24.0)
 	_page_header(view.top, "Between worlds · step 2 of 2", "Choose your route")
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
-	Kit.label(view.body, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
+	Kit.label(view.body, "Next: World %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
 		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull and refill shield. Next world: take 35% less damage, abilities recharge 15% faster, +15% gun damage while shield is above half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull and start at half shield. Hull damage is 20% higher.", "accent": Kit.AMBER},
