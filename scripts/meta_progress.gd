@@ -63,7 +63,8 @@ static func prepare(profile: Dictionary) -> void:
 		"finished_runs":0, "max_world_clears":0, "victories":0,
 		"hard_wins":0, "insane_wins":0, "victory_ships":[],
 		"fusion_runs":0, "max_prototypes":0, "max_beams_cancelled":0,
-		"max_damage_prevented":0, "daily_days":[], "max_world_any":0, "archive_cleared":false
+		"max_damage_prevented":0, "daily_days":[], "max_world_any":0, "archive_cleared":false,
+		"world_clears":{}
 	}
 	var old: Variant = profile.get("achievement_stats", {})
 	if old is Dictionary:
@@ -72,9 +73,27 @@ static func prepare(profile: Dictionary) -> void:
 		defaults.victory_ships = []
 	if not defaults.daily_days is Array:
 		defaults.daily_days = []
+	if not defaults.world_clears is Dictionary:
+		defaults.world_clears = {}
+	# Profiles from before start-world select: best clears were tracked for
+	# all difficulties together. Credit them to Normal, and a Hard or
+	# Insane win to that difficulty.
+	if defaults.world_clears.is_empty():
+		defaults.world_clears = {"normal":mini(int(defaults.max_world_clears), 4), "hard":4 if int(defaults.hard_wins) > 0 else 0, "insane":4 if int(defaults.insane_wins) > 0 else 0}
 	profile.achievement_stats = defaults
 	if not profile.has("last_settled_run_key"):
 		profile.last_settled_run_key = ""
+
+## Highest world a regular flight may start at on this difficulty: one past
+## the best world cleared there. Clears on a harder difficulty count too.
+static func max_start_world(profile: Dictionary, difficulty: String) -> int:
+	prepare(profile)
+	var clears: Dictionary = profile.achievement_stats.world_clears
+	var order: Array = Catalog.DIFFICULTIES
+	var best := 0
+	for index in range(maxi(0, order.find(difficulty)), order.size()):
+		best = maxi(best, int(clears.get(str(order[index]), 0)))
+	return clampi(best + 1, 1, 4)
 
 static func start_daily(profile: Dictionary, day: String) -> int:
 	prepare(profile)
@@ -156,8 +175,14 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	stats.finished_runs = int(stats.finished_runs) + 1
 	var secret: bool = sim.secret_entered and not daily
 	var worlds: int = mini(int(sim.stage_clears), 4) if secret else int(sim.stage_clears)
-	stats.max_world_clears = maxi(int(stats.max_world_clears), worlds)
+	# A win only counts as beating all four worlds when the flight started
+	# at World 1, so a later start can earn the World 1-3 boss awards at most.
+	var full_run: bool = int(sim.start_world) <= 1
+	stats.max_world_clears = maxi(int(stats.max_world_clears), worlds if full_run else mini(worlds, 3))
 	stats.max_world_any = maxi(int(stats.max_world_any), worlds)
+	var by_difficulty: Dictionary = stats.world_clears
+	by_difficulty[str(sim.difficulty)] = maxi(int(by_difficulty.get(str(sim.difficulty), 0)), mini(worlds, 4))
+	stats.world_clears = by_difficulty
 	if secret and bool(sim.won) and int(sim.stage_clears) == 5:
 		stats.archive_cleared = true
 	stats.max_prototypes = maxi(int(stats.max_prototypes),int(sim.prototypes.size()))
@@ -165,7 +190,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	stats.max_damage_prevented = maxi(int(stats.max_damage_prevented),roundi(float(sim.prevented)))
 	if sim.active_slots.any(func(slot): return not sim.fusion_spec(str(slot)).is_empty()):
 		stats.fusion_runs = int(stats.fusion_runs) + 1
-	if bool(sim.won) or (secret and worlds == 4):
+	if full_run and (bool(sim.won) or (secret and worlds == 4)):
 		stats.victories = int(stats.victories) + 1
 		if str(sim.difficulty) == "hard":
 			stats.hard_wins = int(stats.hard_wins) + 1

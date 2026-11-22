@@ -7,6 +7,9 @@ const SAVE_VERSION := 1
 const DAILY_ORIGINAL_MUTATIONS := ["piercing_pulse", "split_seeker", "arc_reactor"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+# Starting later: the level a player has, on average, when they reach each
+# world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
+const START_WORLD_LEVELS := [1, 18, 47, 85]
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -40,6 +43,8 @@ var difficulty := "normal"
 var daily_day := "" # Empty for standard flights; immutable UTC start date for Daily runs.
 var daily_attempt := 0 # Distinguishes replays with the same fixed UTC seed.
 var stage := 1
+var start_world := 1 # Worlds before this were skipped at launch; they pay no Cores.
+var catch_up_levels := 0 # Level-ups from skipped worlds not yet drafted.
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
 var encounter_index := 0
@@ -1394,6 +1399,7 @@ func choose_prototype(index: int) -> bool:
 		_apply_mutation_cost(mutation_id)
 		intermission_step = "route"
 		_log("Trader deal - got " + str(Catalog.mutation(mutation_id).name))
+		_after_skipped_prototype()
 		return true
 	if id in prototypes:
 		return false
@@ -1404,6 +1410,7 @@ func choose_prototype(index: int) -> bool:
 		shield = minf(max_shield, shield + old_capacity * 0.60)
 	intermission_step = "route"
 	_log("Prototype installed: " + str(prototype_spec(id).name))
+	_after_skipped_prototype()
 	return true
 
 func skip_prototype() -> bool:
@@ -1412,6 +1419,7 @@ func skip_prototype() -> bool:
 	choice_cores += PROTOTYPE_SKIP_CORES
 	intermission_step = "route"
 	_log("Took +%d Cores" % PROTOTYPE_SKIP_CORES)
+	_after_skipped_prototype()
 	return true
 
 func choose_route(id: String) -> bool:
@@ -1834,6 +1842,84 @@ func configure_rival(record: Dictionary) -> bool:
 	rival_spawn_at = 127.0 if rival_stage == 1 else 78.0
 	return true
 
+## Start a regular flight at a later world. The skipped worlds still give
+## what clearing them would: their level-ups (drafted before the first
+## wave), one Prototype pick each and the warp itself. They pay no Cores.
+func begin_at_world(world: int) -> bool:
+	if world < 2 or world > stage_count() or tick != 0 or stage != 1 or start_world != 1 or not daily_day.is_empty() or endless_enabled:
+		return false
+	start_world = world
+	# Level rises one step per catch-up draft, as it would from XP, so the
+	# draft rules that key off the level behave the same as in a full run.
+	catch_up_levels = int(START_WORLD_LEVELS[world - 1]) - 1
+	pending_levels += catch_up_levels
+	if not rival_record.is_empty() and rival_stage < world:
+		rival_stage = world
+		rival_spawn_at = 78.0
+	_queue_skipped_world()
+	return true
+
+func skipping_worlds() -> bool:
+	return stage < start_world
+
+func _queue_skipped_world() -> void:
+	stage_clears = stage
+	stage_transition_queued = true
+	begin_intermission()
+
+## A skipped world's intermission is a Prototype pick only. The route is
+## chosen once, for the world the flight actually starts in.
+func _after_skipped_prototype() -> void:
+	if stage + 1 >= start_world:
+		return
+	route_choice = "repair"
+	intermission_step = "ready"
+	advance_stage()
+
+## Default pick for catch-up drafts: guns first, then a free ability slot,
+## then defense. Same order the balance bot uses.
+const AUTO_PICK_ORDER := ["seeker", "pulse", "arc", "lance", "regen", "hull",
+	"armor", "munitions", "autoloader", "coolant", "shield", "targeting",
+	"repair_bots", "harvester", "amplifier", "nova", "aegis",
+	"barrage", "overdrive", "chrono", "mend", "repair"]
+
+func auto_pick_index() -> int:
+	var best := 0
+	var best_priority := 100
+	for index in range(cards.size()):
+		var card: Dictionary = cards[index]
+		var id: String = str(card.id)
+		var priority: int = AUTO_PICK_ORDER.find(id)
+		if priority < 0:
+			priority = 90
+		if not fusion_spec(id).is_empty():
+			priority = 4 if int(upgrades.get(id, 0)) < 5 else 14
+		if card.tag == "ABILITY" and int(upgrades.get(id, 0)) == 0 and active_slots.size() < Catalog.ACTIVE_SLOTS:
+			priority = 0 if id in ["nova", "emp", "flak", "capacitor", "siphon", "jammer"] else 2
+		if hull < max_hull * 0.35 and id in ["hull", "repair"]:
+			priority = -1
+		if priority < best_priority:
+			best = index
+			best_priority = priority
+	return best
+
+## Resolve the current hand and every remaining catch-up draft with the
+## default pick. Build decisions (fusions, evolutions) take their defaults.
+func auto_finish_catch_up() -> bool:
+	if cards.is_empty() or catch_up_levels <= 0:
+		return false
+	var guard := 0
+	while guard < 400:
+		guard += 1
+		if not cards.is_empty():
+			if not choose_card(auto_pick_index()):
+				break
+			_auto_resolve_build_choices()
+		if catch_up_levels <= 0 or pending_levels <= 0:
+			break
+		_offer_cards()
+	return true
+
 func _try_spawn_rival() -> bool:
 	if rival_spawned or rival_record.is_empty() or not daily_day.is_empty() or boss_spawned or stage != rival_stage or _crowd_count() >= _enemy_limit() - 3:
 		return false
@@ -2118,6 +2204,8 @@ func advance_stage() -> bool:
 	if not secret_entered:
 		pending_levels += 1 + (1 if route_choice == "bounty" else 0)
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
+	if skipping_worlds():
+		_queue_skipped_world()
 	return true
 
 # Historical test shim; regular gameplay always uses both decisions.
@@ -2620,7 +2708,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.12 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.20 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -2729,7 +2817,7 @@ func ability_power() -> float:
 func vanguard_veteran_bonus() -> float:
 	if ship_id != "vanguard":
 		return 1.0
-	return 1.0 + [0.0, 0.15, 0.20, 0.25][clampi(stage_clears, 0, 3)]
+	return 1.0 + [0.0, 0.10, 0.15, 0.20][clampi(stage_clears, 0, 3)]
 
 func hull_damage_multiplier() -> float:
 	var factor := 1.0
@@ -3811,6 +3899,9 @@ func _offer_cards(consume_level: bool = true) -> void:
 			if card.tag == "ABILITY" and upgrades[card.id] == 0 and not _can_learn_active(str(card.id)):
 				continue
 			pool.append(card.duplicate(true))
+	if consume_level and catch_up_levels > 0:
+		catch_up_levels -= 1
+		level += 1
 	cards.clear()
 	# Draw once, checkpoint the exact hand. RNG state is part of the save.
 	while cards.size() < 3 + int(meta.extra_card) and not pool.is_empty():
@@ -3966,7 +4057,12 @@ func payout() -> int:
 	# A flat amount per run and per world cleared carries more of the reward
 	# than kills, so early losing runs still move the Hangar forward and a
 	# win is worth about six early losses rather than twenty.
-	var base: int = int((30 + int(kills / 30) + meta.stipend * 2 + (20 * stage_clears + 5 * stage_clears * stage_clears + meta.bounty * 5 * stage_clears) + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
+	# Worlds skipped at launch pay nothing; each world played pays what it
+	# would in a full run (later worlds are worth more).
+	var skipped: int = mini(start_world - 1, stage_clears)
+	var played: int = stage_clears - skipped
+	var world_pay: int = 20 * played + 5 * (stage_clears * stage_clears - skipped * skipped) + meta.bounty * 5 * played
+	var base: int = int((30 + int(kills / 30) + meta.stipend * 2 + world_pay + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
 	if pilot_id == "scavenger":
 		base += maxi(1, int(round(base * 0.15)))
 	if synergy_active("salvager"):
@@ -3982,7 +4078,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

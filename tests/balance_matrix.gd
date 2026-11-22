@@ -15,6 +15,7 @@ const MAX_STAGE_SECONDS := 540.0
 ## enemy damage, e.g. --spawn=1,1.5,1.5,1.5. Applied to each run's own copy of
 ## the stage data, so experiments need no edits to data/content.json.
 var world_tuning := {}
+var start_world := 1 # --start-world=N: skip to World N with catch-up drafts.
 
 func _initialize() -> void:
 	call_deferred("_run")
@@ -76,6 +77,8 @@ func _run() -> void:
 				quit(2)
 				return
 			world_tuning[arg.get_slice("=", 0).trim_prefix("--")] = values
+		elif arg.begins_with("--start-world="):
+			start_world = clampi(int(arg.get_slice("=", 1)), 1, 4)
 		elif arg == "--require-no-campaign-wins":
 			require_no_campaign_wins = true
 	if build_style not in ["baseline", "focused", "shielded"] or not (hangar_style in ["none", "mid", "half", "max"] or (hangar_style.begins_with("p") and hangar_style.substr(1).is_valid_int())) or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
@@ -84,6 +87,8 @@ func _run() -> void:
 		return
 	if not world_tuning.is_empty():
 		print("WORLD_TUNING ", JSON.stringify(world_tuning))
+	if start_world > 1:
+		print("START_WORLD ", start_world)
 	if hangar_style == "half" or hangar_style.begins_with("p"):
 		print("HANGAR_PROFILE ", JSON.stringify(_hangar("half")))
 	if require_no_world1_clears and (stage_limit != 1 or hangar_style != "none" or only_difficulty not in ["hard", "insane"]):
@@ -230,6 +235,8 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		for world in range(4):
 			var spec: Dictionary = sim.content.stages[world]
 			spec[key] = float(spec.get(key, 1.0)) * float(world_tuning[knob][world])
+	if start_world > 1 and not sim.begin_at_world(start_world):
+		push_error("begin_at_world(%d) refused" % start_world)
 	var timed_out := false
 	var fault := false
 	var stage_reports: Array = []
@@ -242,6 +249,21 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	for _frame in range(4 * 60 * 600):
 		if sim.ended:
 			status = "won" if sim.won else "dead"
+			break
+		if sim.stage_transition_queued and sim.skipping_worlds():
+			# Skipped at launch: Prototype picks only, then the one route.
+			if sim.intermission_step == "prototype":
+				if not sim.choose_prototype(_choose_prototype(sim, build_style)):
+					fault = true
+					break
+				continue
+			if sim.intermission_step == "route":
+				if not sim.choose_route("repair") or not sim.advance_stage():
+					fault = true
+					break
+				routes.append("repair")
+				continue
+			fault = true
 			break
 		if sim.stage_transition_queued:
 			stage_reports.append(_stage_report(sim, "cleared"))

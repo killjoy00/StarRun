@@ -26,7 +26,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard"}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard", "start_world": 1}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -751,6 +751,9 @@ func _page_header(top: VBoxContainer, eyebrow: String, title: String, back: Call
 	row.add_child(titles)
 	if not eyebrow.is_empty():
 		var over := Kit.caps(titles, eyebrow, Kit.AMBER, 13)
+		# One line, trimmed: a wrapping label with clip_text collapses to
+		# zero height, which hid every page eyebrow.
+		over.autowrap_mode = TextServer.AUTOWRAP_OFF
 		over.clip_text = true
 		over.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var heading := Kit.label(titles, title, 26, Color.WHITE, true)
@@ -1065,6 +1068,7 @@ func _show_menu() -> void:
 		segment.tooltip_text = _difficulty_text(str(id))
 		segment.pressed.connect(_set_difficulty.bind(str(id)))
 		segments.add_child(segment)
+	_start_world_picker(body, current)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
 	var row := HBoxContainer.new()
@@ -1273,6 +1277,47 @@ func _set_artifact(id: String) -> void:
 	# Stay on the tab so all rule descriptions remain readable.
 	loadout_tab = "Artifacts"
 	_show_loadout()
+
+## After a world is cleared on a difficulty, the next flight there may
+## start one world later. Hidden until World 1 has been cleared.
+func _start_world_picker(body: VBoxContainer, difficulty_id: String) -> void:
+	var unlocked: int = Progress.max_start_world(profile, difficulty_id)
+	if unlocked < 2:
+		return
+	var chosen_world: int = _chosen_start_world()
+	Kit.label(body, "Start at", 14, Kit.MUTED)
+	var worlds := HBoxContainer.new()
+	worlds.name = "StartWorldPicker"
+	worlds.add_theme_constant_override("separation", 6)
+	body.add_child(worlds)
+	for world in range(1, 5):
+		var option := Button.new()
+		option.name = "StartWorld%d" % world
+		option.text = "World %d" % world if not _compact_ui() else "W%d" % world
+		var open: bool = world <= unlocked
+		Kit.style_button(option, "selected" if world == chosen_world else "secondary", 16, 10, 6.0)
+		if world != chosen_world:
+			for state in ["font_color", "font_hover_color", "font_focus_color", "font_disabled_color"]:
+				option.add_theme_color_override(state, Kit.MUTED if open else Kit.LINE)
+		option.disabled = not open
+		option.custom_minimum_size.y = 44
+		option.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		option.tooltip_text = ("Start at World %d" % world) if open else ("Clear World %d on this difficulty to unlock" % (world - 1))
+		option.pressed.connect(_set_start_world.bind(world))
+		worlds.add_child(option)
+	if chosen_world > 1:
+		var skipped := "World 1" if chosen_world == 2 else "Worlds 1-%d" % (chosen_world - 1)
+		Kit.label(body, "Skips %s. You pick their upgrades and prototypes before the first wave. Skipped worlds pay no Cores, and only runs from World 1 count as beating all four worlds." % skipped, 14, Kit.MUTED, true)
+
+func _chosen_start_world() -> int:
+	return clampi(int(profile.get("start_world", 1)), 1, Progress.max_start_world(profile, str(profile.get("difficulty", "normal"))))
+
+func _set_start_world(world: int) -> void:
+	if world != int(profile.get("start_world", 1)):
+		profile.start_world = world
+		_save_profile()
+		sound.play("card")
+	_show_menu()
 
 func _set_difficulty(id: String) -> void:
 	if id in Catalog.DIFFICULTIES and id != str(profile.get("difficulty", "normal")):
@@ -1760,7 +1805,10 @@ func _show_cards(play_sound: bool = true) -> void:
 	var body: VBoxContainer = view.body
 	var capped: bool = sim.cards.any(func(card): return str(card.id) == "core_cache")
 	var title := "Remove an upgrade" if banish_mode else ("Choose a reward" if capped else "Choose an upgrade")
-	_page_header(top, "Level %d  ·  Stage %d" % [sim.level, sim.stage], title)
+	# Ordinary drafts keep every card on a short phone without scrolling, so
+	# only catch-up drafts spend a line on the eyebrow.
+	var eyebrow := ("Catch-up  ·  %d more after this" % sim.catch_up_levels) if sim.catch_up_levels > 0 else ""
+	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
 	elif capped:
@@ -1781,10 +1829,31 @@ func _show_cards(play_sound: bool = true) -> void:
 			_draft_tool("Skip", "+%d hull" % (12 + int(sim.meta.skip_patch) * 6), _draft_action.bind("skip", 0), "Skip and repair %d hull" % (12 + int(sim.meta.skip_patch) * 6))
 		if sim.banishes_left > 0:
 			_draft_tool("Remove", "%d left" % sim.banishes_left, _toggle_banish, "Take one upgrade out of this run's pool")
+	if sim.catch_up_levels > 0 and not banish_mode:
+		var auto_button := _ui_button(view.bottom, "Auto-pick the rest  ·  %d" % (sim.catch_up_levels + 1), _auto_catch_up, "secondary", 48)
+		auto_button.name = "AutoPickCatchUp"
+		auto_button.tooltip_text = "Pick this and the remaining catch-up upgrades for you: guns first, then a free ability slot, then defense."
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
 	if play_sound:
 		sound.play("card")
+
+func _auto_catch_up() -> void:
+	if mode != "cards" or draft_guard > 0.0 or not sim.auto_finish_catch_up():
+		return
+	sound.play("card")
+	if not sim.pending_build_choices.is_empty():
+		_show_build_choice()
+	elif not sim.cards.is_empty():
+		_show_cards(false)
+	elif sim.pending_levels > 0:
+		sim._offer_cards()
+		_show_cards(false)
+	else:
+		_clear_overlay()
+		mode = "playing"
+		accumulator = -0.25
+		_save_run()
 
 func _draft_tool(title: String, detail: String, action: Callable, tooltip: String) -> void:
 	var tool := _ui_button(reading_footer, "%s\n%s" % [title, detail], action, "secondary", 58, true)
@@ -2424,7 +2493,8 @@ func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	_page_header(view.top, "Between worlds · step 1 of 2", "Choose a prototype")
+	var step_text := ("Skipped World %d · prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Between worlds · step 1 of 2"
+	_page_header(view.top, step_text, "Choose a prototype")
 	# This explanation scrolls with the options rather than crowding the
 	# fixed header on a short phone.
 	Kit.label(view.body, "Each Prototype is a big bonus with a cost. Or skip it and take %d Cores." % Simulation.PROTOTYPE_SKIP_CORES, 15, Kit.MUTED, true)
@@ -2471,7 +2541,7 @@ func _show_route_choice() -> void:
 	var view := _page(0.95, true, 540.0, 24.0)
 	_page_header(view.top, "Between worlds · step 2 of 2", "Choose your route")
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
-	Kit.label(view.body, "Next: Stage %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
+	Kit.label(view.body, "Next: World %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
 		{"id": "repair", "tag": "Defensive", "gain": "Repair 70% hull and refill shield. Next world: take 35% less damage, abilities recharge 15% faster, +15% gun damage while shield is above half.", "cost": "No extra XP or Cores.", "accent": Kit.CYAN},
 		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull and start at half shield. Hull damage is 20% higher.", "accent": Kit.AMBER},
@@ -2667,6 +2737,9 @@ func _new_run() -> void:
 	var returning: Dictionary = RivalCaptains.for_launch(profile, sim)
 	if not returning.is_empty():
 		sim.configure_rival(returning)
+	var start_world: int = _chosen_start_world()
+	if start_world > 1:
+		sim.begin_at_world(start_world)
 	_start_flight()
 
 func _new_daily_run() -> void:
@@ -3040,14 +3113,22 @@ func _choose_prototype(index: int) -> void:
 		return
 	sound.play("card")
 	_save_run()
-	_show_route_choice()
+	_next_intermission_step()
 
 func _skip_prototype() -> void:
 	if mode != "prototype" or not sim.skip_prototype():
 		return
 	sound.play("card")
 	_save_run()
-	_show_route_choice()
+	_next_intermission_step()
+
+# When a flight starts at a later world, each skipped world has its own
+# Prototype pick before the one route choice.
+func _next_intermission_step() -> void:
+	if sim.intermission_step == "prototype":
+		_show_prototypes()
+	else:
+		_show_route_choice()
 
 func _choose_route(id: String) -> void:
 	if mode != "route" or not sim.choose_route(id):

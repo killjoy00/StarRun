@@ -15,10 +15,10 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 
 const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
-	"menu", "achievements", "daily-results", "settings", "briefing",
+	"menu", "menu-start-world", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
 	"ships", "pilots", "artifacts", "combat-1", "combat-4",
-	"cards", "cards-banish", "cards-maxed", "evolution", "fusion", "paused", "build",
+	"cards", "cards-banish", "cards-maxed", "cards-catch-up", "prototypes-skipped", "evolution", "fusion", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
 	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "endless-clear",
@@ -114,6 +114,23 @@ func _prepare(scene, screen: String) -> void:
 	match screen:
 		"menu":
 			scene._show_menu()
+		"menu-start-world":
+			scene.profile.achievement_stats.world_clears = {"normal":3}
+			scene.profile.start_world = 3
+			scene._show_menu()
+			scene.profile.achievement_stats.world_clears = {"normal":0}
+			scene.profile.start_world = 1
+		"cards-catch-up":
+			scene.sim.begin_at_world(3)
+			scene.sim.skip_prototype()
+			scene.sim.skip_prototype()
+			scene.sim.choose_route("repair")
+			scene.sim.advance_stage()
+			scene.sim._offer_cards()
+			scene._show_cards(false)
+		"prototypes-skipped":
+			scene.sim.begin_at_world(3)
+			scene._show_prototypes()
 		"achievements":
 			scene._show_achievements()
 		"daily-results":
