@@ -717,7 +717,7 @@
       "description": "Heat weakens your guns. Slag bombs explode. Splitters multiply.",
       "transition": "VOID CITADEL",
       "reward_label": "Foundry dismantled",
-      "damage_scale": 6.16,
+      "damage_scale": 8.624,
       "fire_scale": 1.35,
       "module_scale": 3.25
     },
