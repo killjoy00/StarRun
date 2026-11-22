@@ -1889,7 +1889,7 @@ func _test_start_world() -> void:
 	check(sim.choose_route("bounty") and sim.advance_stage() and sim.stage == 3 and not sim.skipping_worlds() and sim.route_choice == "bounty", "The chosen route applies to the start world")
 	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 3, "Catch-up gives the start world's level-ups, one per warp and the bounty pick")
 	check(sim.payout() == 30 + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
-	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.20), "Vanguard's veteran bonus counts the skipped worlds")
+	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.15), "Vanguard's veteran bonus counts the skipped worlds")
 	sim._offer_cards()
 	check(sim.level == 2 and sim.cards.size() >= 3, "Each catch-up draft raises the level by one")
 	var saved := sim.snapshot()

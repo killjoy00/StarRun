@@ -2817,7 +2817,7 @@ func ability_power() -> float:
 func vanguard_veteran_bonus() -> float:
 	if ship_id != "vanguard":
 		return 1.0
-	return 1.0 + [0.0, 0.15, 0.20, 0.25][clampi(stage_clears, 0, 3)]
+	return 1.0 + [0.0, 0.10, 0.15, 0.20][clampi(stage_clears, 0, 3)]
 
 func hull_damage_multiplier() -> float:
 	var factor := 1.0
