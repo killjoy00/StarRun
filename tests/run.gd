@@ -1855,7 +1855,7 @@ func _bot(sim: RefCounted, strategy: String) -> void:
 
 
 func _test_active_pool() -> void:
-	check(Catalog.ABILITIES.size() == 22 and Catalog.ACTIVE_SLOTS == 4, "Twenty-two abilities must compete for four active slots")
+	check(Catalog.ABILITIES.size() == 23 and Catalog.ACTIVE_SLOTS == 4, "Twenty-three abilities must compete for four active slots")
 	var seen := {}
 	for id in Catalog.ABILITIES:
 		check(not seen.has(id), "Ability IDs must be unique")
