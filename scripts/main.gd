@@ -26,7 +26,7 @@ const MUTED := Color("8797ad")
 var sim: RefCounted
 var services := Services.new()
 var sound: Node
-var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard", "start_world": 1}
+var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard", "start_world": 1, "daily_hangar": false}
 var mode := "menu"
 var accumulator := 0.0
 var visual_time := 0.0
@@ -1048,10 +1048,17 @@ func _show_menu() -> void:
 	Kit.label(daily_content, "Daily · %s UTC" % str(daily.day), 18, Kit.TEXT)
 	var daily_ship: Dictionary = Catalog.ship(str(daily.ship))
 	var daily_pilot: Dictionary = Catalog.pilot(str(daily.pilot))
-	Kit.label(daily_content, "%s · %s · Normal, no Hangar" % [_name_part(str(daily_ship.name), 0), _name_part(str(daily_pilot.name), 0)], 14, Kit.MUTED, true)
+	var with_hangar: bool = bool(profile.get("daily_hangar", false))
+	Kit.label(daily_content, "%s · %s · Normal" % [_name_part(str(daily_ship.name), 0), _name_part(str(daily_pilot.name), 0)], 14, Kit.MUTED, true)
+	var hangar_toggle := _ui_button(daily_content, "Hangar upgrades: On" if with_hangar else "Hangar upgrades: Off", _toggle_daily_hangar, "ghost", 40)
+	hangar_toggle.name = "DailyHangarToggle"
+	hangar_toggle.tooltip_text = "On: use your upgrades. Off: everyone starts equal, and only Off scores go on the leaderboard."
+	if with_hangar:
+		Kit.label(daily_content, "Own best score. Not on the leaderboard.", 13, Kit.MUTED, true)
 	var daily_text := "Play daily"
-	if int(record.get("best_score", -1)) >= 0:
-		daily_text = "Replay · Best %d" % int(record.best_score)
+	var best_today: int = int(record.get("best_score_hangar" if with_hangar else "best_score", -1))
+	if best_today >= 0:
+		daily_text = "Replay · Best %s" % _num(best_today)
 	var daily_actions := HBoxContainer.new()
 	daily_actions.add_theme_constant_override("separation", 6)
 	daily_content.add_child(daily_actions)
@@ -1407,6 +1414,12 @@ func _set_start_world(world: int) -> void:
 		profile.start_world = world
 		_save_profile()
 		sound.play("card")
+	_show_menu()
+
+func _toggle_daily_hangar() -> void:
+	profile.daily_hangar = not bool(profile.get("daily_hangar", false))
+	_save_profile()
+	sound.play("card")
 	_show_menu()
 
 func _set_difficulty(id: String) -> void:
@@ -2680,11 +2693,11 @@ func _show_results() -> void:
 	_ui_button(body, "Hangar", _show_hangar, "amber", 48)
 	if not sim.daily_day.is_empty():
 		var day_record: Dictionary = profile.daily_records.get(sim.daily_day, {})
-		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score",-1))
+		var best: int = result_daily_best if result_daily_best >= 0 else int(day_record.get("best_score_hangar" if sim.daily_hangar else "best_score",-1))
 		var score: int = result_daily_score if result_daily_score >= 0 else Progress.daily_score(sim)
-		_info_card(body, "Daily challenge  ·  %s" % sim.daily_day, "Score %s  ·  Best %s%s\nCores only for your first daily run of the day." % [_num(score), _num(best), "  ·  NEW BEST" if result_new_best else ""], Kit.AMBER)
+		_info_card(body, "Daily challenge  ·  %s%s" % [sim.daily_day, "  ·  Hangar on" if sim.daily_hangar else ""], "Score %s  ·  Best %s%s\n%s" % [_num(score), _num(best), "  ·  NEW BEST" if result_new_best else "", "With Hangar: not on the leaderboard. Cores only for your first daily run of the day." if sim.daily_hangar else "Cores only for your first daily run of the day."], Kit.AMBER)
 		_ui_button(body, "Share score" if daily_share_service != null else "Copy score", _share_daily_result, "secondary", 50)
-		if game_center.supports_game_center():
+		if game_center.supports_game_center() and not sim.daily_hangar:
 			_ui_button(body, "Leaderboard", _show_game_center_leaderboard, "secondary", 48)
 	# Rival news.
 	if not result_rival_news.is_empty():
@@ -2864,8 +2877,10 @@ func _new_run() -> void:
 	_start_flight()
 
 func _new_daily_run() -> void:
-	# One shared run configuration for each UTC day, regardless of purchases.
+	# One shared run configuration for each UTC day. With the Hangar toggle
+	# on, the player's upgrades apply and the score is kept off the leaderboard.
 	var setup: Dictionary = Progress.daily_setup(Progress.utc_day())
+	var with_hangar: bool = bool(profile.get("daily_hangar", false))
 	banish_mode = false
 	build_show_all = false
 	result_earned_cores = -1
@@ -2874,8 +2889,9 @@ func _new_daily_run() -> void:
 	profile.runs += 1
 	var attempt: int = Progress.start_daily(profile, str(setup.day))
 	_save_profile()
-	sim = Simulation.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), str(setup.difficulty))
+	sim = Simulation.new(int(setup.seed), profile.hangar if with_hangar else {}, str(setup.ship), str(setup.pilot), str(setup.difficulty))
 	sim.daily_day = str(setup.day)
+	sim.daily_hangar = with_hangar
 	sim.daily_attempt = attempt
 	_start_flight()
 

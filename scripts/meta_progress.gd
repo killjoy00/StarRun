@@ -143,9 +143,12 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
 	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{}}
+	# A Daily flown with the Hangar keeps its own best score. Only the
+	# no-Hangar best is ever posted to the shared leaderboard.
+	var best_key := "best_score_hangar" if bool(sim.daily_hangar) else "best_score"
 	if daily:
 		result.score = daily_score(sim)
-		result.best_score = int(record.get("best_score", -1))
+		result.best_score = int(record.get(best_key, -1))
 	# Double-finish and crash/retry must not pay out or grant progress twice.
 	if str(profile.last_settled_run_key) == unique_key:
 		return result
@@ -155,8 +158,8 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 			record = {"attempts":maxi(1,int(sim.daily_attempt)),"completed":0,"best_score":-1,"best_stage":0,"won":false,"rewarded":false}
 		record.completed = int(record.get("completed",0)) + 1
 		var score: int = int(result.score)
-		if score > int(record.get("best_score",-1)):
-			record.best_score = score
+		if score > int(record.get(best_key,-1)):
+			record[best_key] = score
 			result.new_best = true
 		record.best_stage = maxi(int(record.get("best_stage",0)),int(sim.stage_clears))
 		record.won = bool(record.get("won",false)) or bool(sim.won)
@@ -165,7 +168,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 			record.rewarded = true
 		records[day] = record
 		profile.daily_records = records
-		result.best_score = int(record.best_score)
+		result.best_score = int(record.get(best_key, -1))
 	else:
 		if int(profile.get("last_paid_run",-1)) != int(sim.seed_value):
 			earned = int(sim.payout())
@@ -233,6 +236,6 @@ static func daily_share_text(sim: RefCounted) -> String:
 	var ship: Dictionary = Catalog.ship(str(sim.ship_id))
 	var pilot: Dictionary = Catalog.pilot(str(sim.pilot_id))
 	var outcome := "FOUR WORLDS CLEARED" if bool(sim.won) else "Worlds cleared: %d/4" % mini(int(sim.stage_clears),4)
-	return "Star/Run · Daily %s UTC\nScore: %d\n%s\nShip: %s · Pilot: %s\nSame seed. How far can you get?\n#StarRun" % [
-		str(sim.daily_day), daily_score(sim), outcome, str(ship.name), str(pilot.name)
+	return "Star/Run · Daily %s UTC\nScore: %d%s\n%s\nShip: %s · Pilot: %s\nSame seed. How far can you get?\n#StarRun" % [
+		str(sim.daily_day), daily_score(sim), " (with Hangar)" if bool(sim.daily_hangar) else "", outcome, str(ship.name), str(pilot.name)
 	]

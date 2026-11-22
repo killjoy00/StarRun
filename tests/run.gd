@@ -55,6 +55,7 @@ func _run() -> void:
 	_test_threat_catalog()
 	_test_extended_hangar()
 	_test_start_world()
+	_test_daily_fair_drafts()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -1881,6 +1882,59 @@ func _test_active_pool() -> void:
 	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_daily_fair_drafts() -> void:
+	# Daily offers come from their own sequence: combat cannot change them,
+	# so the same picks see the same offers, however the run is flown.
+	var setup: Dictionary = Progress.daily_setup("2026-11-22")
+	var hands: Array = []
+	for cast in [false, true]:
+		var sim := Sim.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), "normal")
+		sim.daily_day = "2026-11-22"
+		var seen: Array = []
+		for i in range(60 * 200):
+			if sim.ended or sim.stage_transition_queued or seen.size() >= 6:
+				break
+			if not sim.cards.is_empty():
+				seen.append(sim.cards.map(func(c): return str(c.id)))
+				sim.choose_card(0)
+				continue
+			if cast:
+				for id in sim.active_slots:
+					sim.activate(str(id))
+			sim.step()
+		hands.append(seen)
+	check(hands[0].size() >= 4 and hands[0] == hands[1].slice(0, hands[0].size()), "Daily offers match for the same picks whether or not abilities are used")
+	var mid := Sim.new(int(setup.seed), {}, str(setup.ship), str(setup.pilot), "normal")
+	mid.daily_day = "2026-11-22"
+	mid._offer_cards(false)
+	var saved := mid.snapshot()
+	mid.cards.clear()
+	mid._offer_cards(false)
+	var next_hand: Array = mid.cards.map(func(c): return str(c.id))
+	var resumed := Sim.new()
+	resumed.restore(saved)
+	resumed.cards.clear()
+	resumed._offer_cards(false)
+	check(resumed.cards.map(func(c): return str(c.id)) == next_hand, "Resuming a Daily continues the same offer sequence")
+	# Regular runs still draw offers from the run's main sequence.
+	var regular := Sim.new(int(setup.seed))
+	regular._offer_cards(false)
+	check(not regular.draft_rng_ready, "Regular runs do not use the Daily offer sequence")
+	# Daily with the Hangar: its own best score, never the leaderboard best.
+	var profile := {"cores":0, "achievements":{}, "daily_records":{}}
+	Progress.start_daily(profile, "2026-11-22")
+	var boosted := Sim.new(int(setup.seed), {"hull":3}, str(setup.ship), str(setup.pilot), "normal")
+	boosted.daily_day = "2026-11-22"
+	boosted.daily_attempt = 1
+	boosted.daily_hangar = true
+	boosted.kills = 50
+	boosted.ended = true
+	var settled: Dictionary = Progress.settle(profile, boosted)
+	var record: Dictionary = profile.daily_records["2026-11-22"]
+	check(int(record.get("best_score_hangar", -1)) == int(settled.score) and int(record.get("best_score", -1)) == -1, "A Hangar Daily keeps its own best and never sets the leaderboard best")
+	check(int(settled.earned) > 0, "The first finished Daily of the day pays Cores with or without the Hangar")
+	check(Progress.daily_share_text(boosted).contains("(with Hangar)"), "Shared Hangar Daily scores say so")
 
 func _test_start_world() -> void:
 	# Starting at World 3: two Prototype picks, one route, then catch-up drafts.

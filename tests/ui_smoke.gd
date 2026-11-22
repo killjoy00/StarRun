@@ -171,7 +171,7 @@ func _run() -> void:
 		check(not scene.hud.visible and not scene.ability_a.visible, "Combat HUD must not show through the title screen")
 		check(_contains_text(scene.overlay, "Star/Run"), "The title must display the requested Star/Run wordmark")
 		check(_contains_text(scene.overlay, "Daily ·") and _contains_text(scene.overlay, "UTC"), "The title must still show the Daily date and UTC reset")
-		check(_contains_text(scene.overlay, "Normal, no Hangar"), "The Daily must clearly disclose its fixed difficulty and lack of Hangar upgrades")
+		check(_contains_text(scene.overlay, "Normal") and _contains_text(scene.overlay, "Hangar upgrades: Off"), "The Daily must clearly disclose its fixed difficulty and whether Hangar upgrades apply")
 		check(not _contains_text(scene.overlay, "BUILD  /  REACT  /  REPEAT"), "The title must not add a marketing slogan above the playable choices")
 		var wordmark: Control = scene.overlay.find_child("StarRunWordmark", true, false)
 		var title_wallet: Control = scene.overlay.find_child("TitleWallet", true, false)
