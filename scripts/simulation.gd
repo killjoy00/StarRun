@@ -11,7 +11,7 @@ const DAILY_EXCLUDED_CARDS := ["guard_drones"]
 const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
-const REROLLS_PER_RANK := 3 # Hangar rerolls are a per-run total; they do not refill each world.
+const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
 const START_WORLD_LEVELS := [1, 18, 47, 85]
@@ -2752,6 +2752,9 @@ func _update_weapons() -> void:
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
 		if ship_id == "haven":
 			seeker_interval = 0.50 if pilot_id == "hunter" else 0.55
+		elif ship_id == "wraith":
+			# Without a Pulse, Wraith needs a quicker volley to clear early swarms.
+			seeker_interval = 0.56 if pilot_id == "hunter" else 0.62
 		seeker_timer += seeker_interval
 		# Priority is readable and build-controlled: charging source, missile, nearest enemy.
 		var target_id := -1

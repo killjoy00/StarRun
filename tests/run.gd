@@ -2680,7 +2680,7 @@ func _balance(seeds: int) -> Dictionary:
 
 func _test_stage_rerolls_and_shield_breaks() -> void:
 	# Rerolls are a per-run total: 3 per Hangar rank, plus the Tactician's one.
-	for rank in [0, 1, 3]:
+	for rank in [0, 1, 6]:
 		for pilot in ["rookie", "tactician"]:
 			var sim := Sim.new(2401, {"rerolls": rank}, "vanguard", pilot)
 			var total: int = rank * Sim.REROLLS_PER_RANK + (1 if pilot == "tactician" else 0)

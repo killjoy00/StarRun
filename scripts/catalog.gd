@@ -36,7 +36,7 @@ const SHIPS := [
 	{"id":"vanguard", "signature":"aegis", "name":"Vanguard", "cost":0, "description":"Balanced. Starts with Pulse and Seeker. Gets stronger after each world: more damage and less status damage.", "hull":108, "shield":52, "pulse":1, "seeker":1, "arc":0, "mend":0, "movement":1.0, "fire_rate":1.0},
 	{"id":"kestrel", "signature":"overdrive", "name":"Kestrel · Interceptor", "cost":45, "description":"Fast. Fires 25% faster and starts with 2 Pulse ranks. Low hull and shield.", "hull":85, "shield":40, "pulse":2, "seeker":0, "arc":0, "mend":0, "movement":1.30, "fire_rate":1.25},
 	{"id":"bulwark", "signature":"deflector", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 20% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
-	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
+	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder and reload faster.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
 	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Lightning. Starts with Arc instead of Seeker. Arc is 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
 	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Drone carrier. Drones are 25% stronger, and Wing and Guard drones launch one extra drone. Seekers hit 30% harder and reload 20% faster. No Pulse, 25% less status damage.", "hull":125, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
 ]
@@ -58,7 +58,7 @@ const HANGAR := [
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Get 5 shield every time you use an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per run, become immune for 1.5 seconds when your hull gets low. +0.5 seconds at rank 2.", "max":2, "cost":12, "step":8},
 	{"id":"extra_card", "name":"Extra choice", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
-	{"id":"rerolls", "name":"Rerolls", "group":"Tactics", "description":"3 rerolls per rank for the whole run. A reroll swaps the upgrade choices for new ones.", "max":3, "cost":7, "step":3},
+	{"id":"rerolls", "name":"Rerolls", "group":"Tactics", "description":"1 reroll per rank for the whole run. A reroll swaps the upgrade choices for new ones.", "max":6, "cost":5, "step":2},
 	{"id":"banishes", "name":"Removes", "group":"Tactics", "description":"Take an upgrade out of this run so it never shows up. 1 per rank.", "max":3, "cost":7, "step":3},
 	{"id":"skips", "name":"Skips", "group":"Tactics", "description":"Skip an upgrade pick and repair 12 hull. 1 per rank.", "max":3, "cost":5, "step":2},
 	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "tier_scale":10, "cost":6, "step":2},

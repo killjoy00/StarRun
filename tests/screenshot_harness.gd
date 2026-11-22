@@ -17,7 +17,7 @@ const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
 	"menu", "menu-start-world", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
-	"ships", "pilots", "artifacts", "combat-1", "combat-4", "combat-drones",
+	"ships", "pilots", "artifacts", "combat-1", "combat-4", "combat-drones", "boss-intro",
 	"cards", "cards-banish", "cards-maxed", "cards-catch-up", "prototypes-skipped", "evolution", "fusion", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
@@ -212,6 +212,12 @@ func _prepare(scene, screen: String) -> void:
 		"ships", "pilots", "artifacts":
 			scene.loadout_tab = {"ships":"Ships", "pilots":"Pilots", "artifacts":"Artifacts"}[screen]
 			scene._show_loadout()
+		"boss-intro":
+			scene.sim.stage = 2
+			scene.sim._spawn_boss()
+			scene.mode = "playing"
+			scene._show_boss_intro()
+			scene.boss_intro_clock = 1.0
 		"combat-drones":
 			scene.sim = Sim.new(84101, scene.profile.hangar, "haven")
 			scene.sim.stage = 2

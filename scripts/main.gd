@@ -97,6 +97,15 @@ var result_daily_best := -1
 var result_new_best := false
 var result_rival_news: Dictionary = {}
 var rival_stinger_clock := 0.0
+var boss_intro_clock := 0.0
+var boss_intro_stage := 0 # The world whose boss intro has played; not replayed on resume.
+const BOSS_INTRO_SECONDS := 2.6
+const BOSS_TAGLINES := {
+	"Harvester": "Strips wrecks for parts. Yours are next.",
+	"Storm Carrier": "A flying storm with a hangar full of drones.",
+	"Crucible Engine": "The furnace that runs the Foundry. It runs hot.",
+	"Void Regent": "Rules the Citadel. Nobody has seen it lose.",
+}
 var opening_last_phase := ""
 # Restrained one-shot audio/haptic responses to meaningful build payoffs.
 var spectacle_audio_wait := 0.0
@@ -1261,6 +1270,81 @@ func _show_rival_retired() -> void:
 	if RivalCaptains.retire(profile, sim):
 		_save_profile()
 	_rival_stinger("RIVAL DEFEATED!", "Trophy added to Rivals.", true)
+
+## A short title card when a world's boss arrives: the sim pauses, warning
+## stripes slide in and the boss name drops in. Tap to skip.
+func _show_boss_intro() -> void:
+	boss_intro_stage = sim.stage
+	mode = "boss_intro"
+	boss_intro_clock = 0.0
+	_clear_overlay()
+	var screen := get_viewport_rect().size
+	var shade := ColorRect.new()
+	shade.name = "BossIntro"
+	shade.color = Color(0.01, 0.0, 0.02, 0.0)
+	shade.size = screen
+	shade.mouse_filter = Control.MOUSE_FILTER_STOP
+	shade.gui_input.connect(_on_shade_input.bind(_skip_boss_intro))
+	overlay.add_child(shade)
+	var center_y := screen.y * 0.40
+	var stripes: Array = []
+	for i in range(2):
+		var band := Label.new()
+		band.text = "WARNING   ·   ".repeat(12)
+		band.add_theme_font_override("font", Kit.font(2, 0.25))
+		band.add_theme_font_size_override("font_size", 15)
+		band.add_theme_color_override("font_color", Color("1a0a06"))
+		var plate := StyleBoxFlat.new()
+		plate.bg_color = Kit.DANGER
+		band.add_theme_stylebox_override("normal", plate)
+		band.clip_text = true
+		band.size = Vector2(screen.x, 28)
+		band.position = Vector2(0.0, center_y + (-104.0 if i == 0 else 96.0))
+		# Grows in from opposite edges; it never extends past the screen.
+		band.pivot_offset = Vector2(0.0 if i == 0 else screen.x, 14.0)
+		band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		overlay.add_child(band)
+		stripes.append(band)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 4)
+	stack.position = Vector2(16, center_y - 58.0)
+	stack.size = Vector2(screen.x - 32, 0)
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	overlay.add_child(stack)
+	var eyebrow := Kit.caps(stack, ("World %d boss" % sim.stage) if not sim.endless_enabled else ("Endless world %d boss" % sim.stage), Kit.DANGER, 15)
+	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var name_label := Kit.label(stack, sim.boss_name(), 42, Color.WHITE)
+	name_label.add_theme_font_override("font", Kit.font(0, 0.8))
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var tagline := Kit.label(stack, str(BOSS_TAGLINES.get(sim.boss_name(), "Big, angry and in your way.")), 16, Color("ffd9b0"), true)
+	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if profile.reduced:
+		shade.color.a = 0.62
+	else:
+		var tween := create_tween().set_parallel(true)
+		tween.tween_property(shade, "color:a", 0.62, 0.25)
+		for band in stripes:
+			band.scale.x = 0.0
+			tween.tween_property(band, "scale:x", 1.0, 0.45).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		stack.modulate.a = 0.0
+		stack.position.y -= 40.0
+		tween.tween_property(stack, "modulate:a", 1.0, 0.35).set_delay(0.25)
+		tween.tween_property(stack, "position:y", center_y - 58.0, 0.45).set_delay(0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	sound.play("warning")
+	_haptic(160)
+
+func _skip_boss_intro() -> void:
+	if mode == "boss_intro" and boss_intro_clock >= 0.4:
+		_dismiss_boss_intro()
+
+func _dismiss_boss_intro() -> void:
+	if mode != "boss_intro":
+		return
+	mode = "playing"
+	boss_intro_clock = 0.0
+	_clear_overlay()
+	accumulator = 0.0
+	_surface_pending_flight_choice()
 
 func _dismiss_rival_stinger() -> void:
 	if mode not in ["rival_intro", "rival_retired"]:
@@ -2862,6 +2946,7 @@ func _start_flight() -> void:
 	accumulator = 0.0
 	last_hull = sim.hull
 	last_boss_kills = sim.stage_clears
+	boss_intro_stage = sim.stage if sim.boss_spawned else 0
 	previous_warning = false
 	previous_ready.clear()
 	for id in sim.active_slots:
@@ -2903,6 +2988,10 @@ func _process(delta: float) -> void:
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
+	if mode == "boss_intro":
+		boss_intro_clock += delta
+		if boss_intro_clock >= (1.4 if profile.reduced else BOSS_INTRO_SECONDS):
+			_dismiss_boss_intro()
 	if mode in ["rival_intro", "rival_retired"]:
 		rival_stinger_clock += delta
 		if rival_stinger_clock >= 3.6:
@@ -2937,6 +3026,8 @@ func _process(delta: float) -> void:
 			_opening_first30_beat()
 			if sim.ended:
 				_finish()
+			elif sim.boss_spawned and boss_intro_stage != sim.stage and not sim.secret_entered and not sim.stage_transition_queued:
+				_show_boss_intro()
 			elif sim.rival_retire_pending:
 				_show_rival_retired()
 			elif sim.rival_intro_pending:
@@ -2998,7 +3089,7 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "boss_intro", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
 	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
