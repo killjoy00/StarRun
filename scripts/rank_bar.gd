@@ -3,7 +3,7 @@ extends Control
 ## readable on a phone. Original ranks fill cyan; extended ranks (past the
 ## old cap, `tier_from`) fill amber after a small notch. Short trees get a
 ## tick per rank; long trees a tick every five. The next rank is outlined
-## when the player can afford it.
+## in white when the player can afford it (orange only marks pricier ranks).
 
 const TRACK := Color("213447")
 const BASE := Color("43e8d8")
@@ -51,7 +51,7 @@ func _draw() -> void:
 		draw_line(Vector2(notch, -2), Vector2(notch, height + 2), EXTENDED, 2.0)
 	if next_available and filled < total:
 		var rect := Rect2(_rank_x(filled), 0, _rank_x(filled + 1) - _rank_x(filled), height)
-		draw_rect(rect.grow(0.5), Color("ffc078"), false, 1.5)
+		draw_rect(rect.grow(0.5), Color.WHITE, false, 1.5)
 
 func _box(color: Color, radius: float) -> StyleBoxFlat:
 	var box := StyleBoxFlat.new()
