@@ -1248,7 +1248,7 @@ func _rival_stinger(title: String, note: String, reward: bool = false) -> void:
 	mode = "rival_retired" if reward else "rival_intro"
 	rival_stinger_clock = 0.0
 	var view := _page(0.97, true, 490.0)
-	_page_header(view.top, "!  RIVAL  !", title)
+	_page_header(view.top, "", title)
 	Kit.label(view.top, "They killed you before." if not reward else "You got them.", 16, Kit.AMBER, true)
 	_rival_identity(view.body, sim.rival_record, note)
 	var action := _ui_button(reading_footer, "Continue", _dismiss_rival_stinger, "primary", 60, true)
