@@ -17,7 +17,7 @@ const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
 	"menu", "menu-start-world", "achievements", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
-	"ships", "pilots", "artifacts", "combat-1", "combat-4",
+	"ships", "pilots", "artifacts", "combat-1", "combat-4", "combat-drones",
 	"cards", "cards-banish", "cards-maxed", "cards-catch-up", "prototypes-skipped", "evolution", "fusion", "paused", "build",
 	"stage-clear", "prototypes", "route",
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
@@ -212,6 +212,23 @@ func _prepare(scene, screen: String) -> void:
 		"ships", "pilots", "artifacts":
 			scene.loadout_tab = {"ships":"Ships", "pilots":"Pilots", "artifacts":"Artifacts"}[screen]
 			scene._show_loadout()
+		"combat-drones":
+			scene.sim = Sim.new(84101, scene.profile.hangar, "haven")
+			scene.sim.stage = 2
+			scene.sim.active_slots = ["mend", "wing_drones", "guard_drones"]
+			scene.sim.upgrades.wing_drones = 5
+			scene.sim.upgrades.guard_drones = 5
+			for i in range(30):
+				scene.sim.step()
+			scene.sim.time = 1.0
+			scene.sim.activate("wing_drones")
+			scene.sim.activate("guard_drones")
+			var center: Vector2 = scene.sim.ship_position()
+			for i in range(8):
+				scene.sim.bullets.append({"p":center + Vector2(-90 + i * 25, -120), "v":Vector2(0, 160), "kind":"chaff", "damage":6.0})
+			scene.sim._update_guards()
+			scene.mode = "playing"
+			scene._clear_overlay()
 		"combat-1", "combat-4":
 			scene.sim.stage = 4 if screen == "combat-4" else 1
 			scene.sim.boss_spawned = screen == "combat-4"

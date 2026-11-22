@@ -582,10 +582,8 @@ func _draw_enemy(enemy: Dictionary) -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(80,78), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 380, 13, CYAN if sim.stage == 2 else AMBER)
 	else:
 		var elite_role: String = str(enemy.get("elite_role", ""))
-		# Normal World 1 strike wings share a cyan chevron, distinct from
-		# later amber elite-leader priority markers.
-		if bool(enemy.get("strike_wing", false)) and p.y >= 0.0 and p.y <= 885.0:
-			draw_arc(p, 37.0, PI * 1.12, PI * 1.88, 20, Color(CYAN, 0.80), 2.2, true)
+		# World 1 strike wings carry no marker: an arc over their tail read
+		# as a shield on the wrong side, and the banner already names them.
 		if sim.pilot_id == "hunter" and int(enemy.id) == sim.hunter_target_id and sim.hunter_mark_left > 0.0 and p.y >= 0.0 and p.y <= 885.0:
 			draw_arc(p, 48.0, 0.0, TAU, 32, Color("ffb96e"), 2.8, true)
 			draw_string(ThemeDB.fallback_font, p + Vector2(-26,-60), "HUNT", HORIZONTAL_ALIGNMENT_LEFT, 78, 13, AMBER)
@@ -979,6 +977,13 @@ func _draw_effect(effect: Dictionary) -> void:
 	elif effect.kind == "wing_drones":
 		for side in [-1,1]:
 			draw_arc(p+Vector2(side*46,8),18+age*24,-PI,0,24,Color(CYAN,alpha),2,true)
+	elif effect.kind == "guard_drones":
+		draw_arc(p,58.0,0,TAU,40,Color(CYAN,alpha*0.8),2.0+age*2.0,true)
+	elif effect.kind == "guard-shot":
+		# Tracer from the guard drone to the bullet it shot down.
+		var origin: Vector2 = effect.get("from", p)
+		draw_line(origin,p,Color(CYAN,alpha),2.0,true)
+		draw_circle(p,3.0+age*5.0,Color(Color.WHITE,alpha*0.8))
 	elif effect.kind == "fusion-cast":
 		_draw_fusion_cast(effect, alpha, age)
 	elif effect.kind == "fusion-formed":
@@ -1234,6 +1239,13 @@ func _draw_support() -> void:
 			FusionArt.outline(self,hull,Color("a9d8e1"),1.4)
 			draw_line(p+Vector2(0,-7),p+Vector2(0,3),CYAN,2.2,true)
 			draw_line(p+Vector2(0,10),p+Vector2(0,19),Color("badcf4"),2,true)
+	if sim.guard_left > 0.0:
+		for i in range(sim.guard_count):
+			var g: Vector2 = sim.guard_position(i)
+			var diamond := PackedVector2Array([g+Vector2(0,-8),g+Vector2(7,0),g+Vector2(0,8),g+Vector2(-7,0)])
+			draw_colored_polygon(diamond,Color("244450"))
+			FusionArt.outline(self,diamond,CYAN,1.4)
+			draw_circle(g,2.2,Color.WHITE)
 	for mine in sim.ion_mines:
 		var p: Vector2 = mine.p
 		var progress: float = clampf(1.0-mine.fuse/1.8,0.0,1.0)

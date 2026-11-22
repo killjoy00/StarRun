@@ -21,7 +21,7 @@ const MUTATIONS := [
 	{"id":"capacitor_lance", "requires":"lance", "name":"Capacitor Lance", "description":"Your first Lance kill each shot cuts 0.65 seconds off its recharge.", "market_cost":"Lose 25% max shield.", "hull_factor":1.0, "shield_factor":0.75},
 ]
 const REWARD_MULTIPLIERS := {"normal": 1.0, "hard": 1.75, "insane": 2.5}
-const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine"]
+const ABILITIES := ["aegis", "nova", "barrage", "overdrive", "chrono", "mend", "flak", "emp", "deflector", "strike", "prism", "barrier", "capacitor", "focus", "decoy", "jammer", "siphon", "overload", "reboot", "salvage", "wing_drones", "ion_mine", "guard_drones"]
 
 # These unlocks are permanent profile purchases, independent of refundable Hangar ranks.
 const PILOTS := [
@@ -38,7 +38,7 @@ const SHIPS := [
 	{"id":"bulwark", "signature":"aegis", "name":"Bulwark · Fortress", "cost":50, "description":"Tank. Huge hull and shield, built-in armor, 20% less beam and missile damage, +20% damage to bosses. Slow. Pulse only.", "hull":160, "shield":80, "pulse":1, "seeker":0, "arc":0, "mend":0, "movement":0.75, "fire_rate":0.90},
 	{"id":"wraith", "signature":"barrage", "name":"Wraith · Missile boat", "cost":65, "description":"Missiles. No Pulse. Starts with 2 Seeker ranks that hit 35% harder.", "hull":85, "shield":40, "pulse":0, "seeker":2, "arc":0, "mend":0, "movement":1.12, "fire_rate":1.0},
 	{"id":"arcwing", "signature":"nova", "name":"Arcwing · Chain fighter", "cost":75, "description":"Lightning. Starts with Arc instead of Seeker. Arc is 30% stronger.", "hull":80, "shield":45, "pulse":1, "seeker":0, "arc":1, "mend":0, "movement":1.18, "fire_rate":1.05},
-	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Support. Drones heal 25% more. Seekers hit 20% harder and reload 20% faster. Extra shield, no Pulse, 25% less status damage.", "hull":125, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
+	{"id":"haven", "signature":"mend", "name":"Haven · Support carrier", "cost":90, "description":"Drone carrier. Drones are 25% stronger, and Wing and Guard drones launch one extra drone. Seekers hit 30% harder and reload 20% faster. No Pulse, 25% less status damage.", "hull":125, "shield":65, "pulse":0, "seeker":1, "arc":0, "mend":1, "movement":0.87, "fire_rate":0.95}
 ]
 
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]

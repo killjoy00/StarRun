@@ -33,6 +33,12 @@ func _draw() -> void:
 				var p := Vector2(side*7,0)
 				draw_colored_polygon(PackedVector2Array([p+Vector2(0,-10),p+Vector2(5,6),p,p+Vector2(-5,6)]),CYAN)
 				draw_line(p+Vector2(0,6),p+Vector2(0,11),Color.WHITE,1.6,true)
+		"guard_drones":
+			draw_arc(Vector2.ZERO,9.0,0,TAU,24,Color(CYAN,0.6),1.4,true)
+			for i in range(3):
+				var g := Vector2.from_angle(-PI/2 + i*TAU/3)*9.0
+				draw_colored_polygon(PackedVector2Array([g+Vector2(0,-4),g+Vector2(4,0),g+Vector2(0,4),g+Vector2(-4,0)]),CYAN)
+			draw_circle(Vector2.ZERO,2.5,Color.WHITE)
 		"ion_mine":
 			draw_colored_polygon(FusionArt.polygon(Vector2.ZERO,7,4),VIOLET)
 			for i in range(4):

@@ -87,6 +87,10 @@
       "name": "Wing drones",
       "cooldown": 18
     },
+    "guard_drones": {
+      "name": "Guard drones",
+      "cooldown": 16
+    },
     "ion_mine": {
       "name": "Ion mine",
       "cooldown": 15
@@ -664,6 +668,15 @@
       "rank10": "Adds a fourth drone"
     },
     {
+      "id": "guard_drones",
+      "name": "Guard drones",
+      "tag": "ABILITY",
+      "description": "Drones circle your ship and shoot down small bullets near you.",
+      "max": 10,
+      "rank5": "Adds a third drone",
+      "rank10": "Adds a fourth drone"
+    },
+    {
       "id": "ion_mine",
       "name": "Ion mine",
       "tag": "ABILITY",
@@ -1057,6 +1070,22 @@
         "mend"
       ],
       "description": "Earn 25% more Cores, plus more from kills. Guns do 18% less damage."
+    },
+    {
+      "id": "swarm",
+      "name": "SWARM",
+      "first": [
+        "mend",
+        "wing_drones",
+        "guard_drones"
+      ],
+      "second": [
+        "mend",
+        "wing_drones",
+        "guard_drones"
+      ],
+      "any_two": true,
+      "description": "Any two drone abilities: drones last 40% longer and drone abilities recharge 15% faster. Guns do 10% less damage."
     }
   ],
   "weapon_evolutions": {
