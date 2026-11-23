@@ -523,36 +523,35 @@ func _test_ship_pilot_identity_tuning() -> void:
 		sim._add_enemy("drone", Vector2(270,180))
 		sim._damage_enemy(sim.enemies[0], 5.0, "pulse")
 	check(is_equal_approx(float(drone_siege.damage_dealt.pulse), float(drone_base.damage_dealt.pulse)), "Bulwark does not gain extra damage against ordinary waves")
+	# Haven (Hive carrier): permanent drones are its guns.
 	var haven := Sim.new(88234, {}, "haven", "rookie")
-	var regular := Sim.new(88234, {}, "vanguard", "rookie")
-	for sim in [haven,regular]:
-		sim._add_enemy("drone", Vector2(270,175))
-		sim._update_weapons()
-	var haven_seeker: Array = haven.shots.filter(func(s): return s.weapon == "seeker")
-	var normal_seeker: Array = regular.shots.filter(func(s): return s.weapon == "seeker")
-	check(haven_seeker.size() == 1 and normal_seeker.size() == 1 and is_equal_approx(float(haven_seeker[0].damage) / float(normal_seeker[0].damage), 1.30), "Haven's support Seeker Pods gain 30 percent weapon damage, but no Pulse is installed")
-	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.mend) == 1, "Haven retains its signature support loadout")
-	# Insane matched seeds exposed a Haven early-wave DPS and survivability gap.
-	# Improve support pod cadence and the signature Mend, without a Pulse starter.
-	var haven_pods := Sim.new(88237, {}, "haven", "rookie")
-	var vanguard_pods := Sim.new(88237, {}, "vanguard", "rookie")
-	for sim in [haven_pods, vanguard_pods]:
-		sim._add_enemy("drone", Vector2(270, 175))
-		sim._update_weapons()
-	check(is_equal_approx(haven_pods.seeker_timer + Sim.DT * 0.95, 0.55) and is_equal_approx(vanguard_pods.seeker_timer + Sim.DT, 0.70), "Haven pods reload faster without globally accelerating every ship")
-	var haven_hunter := Sim.new(88238, {}, "haven", "hunter")
+	check(int(haven.upgrades.pulse) == 0 and int(haven.upgrades.seeker) == 0 and int(haven.upgrades.mend) == 0 and haven.active_slots == ["wing_drones"], "Haven starts with Wing drones and no Pulse, Seeker or Repair drones")
+	check(haven.hive_count() == 2 and Sim.new(88234).hive_count() == 0, "Haven flies with two permanent drones; other ships have none")
+	haven._add_enemy("drone", Vector2(270, 175))
+	haven._update_support()
+	var hive_shots: Array = haven.shots.filter(func(s): return s.weapon == "escort")
+	check(hive_shots.size() == 2 and is_equal_approx(float(hive_shots[0].damage), haven.hive_damage()), "Both Hive drones fire at the nearest enemy without a cast")
+	var low: float = haven.hive_damage()
+	haven.level = 10
+	haven.stage = 3
+	check(haven.hive_damage() > low * 3.0, "Hive drones get stronger with level and world")
+	haven.upgrades.guard_drones = 1
+	check(haven.hive_count() == 3, "Each drone ability adds a permanent drone")
+	haven.upgrades.mend = 1
+	check(haven.hive_count() == 4, "Guard and Repair drones bring the Hive to four")
+	var resumed_hive := Sim.new()
+	check(resumed_hive.restore(haven.snapshot()) and resumed_hive.hive_count() == 4 and is_equal_approx(resumed_hive.hive_timer, haven.hive_timer), "Hive drones survive save and restore")
 	var wraith_hunter := Sim.new(88238, {}, "wraith", "hunter")
-	for sim in [haven_hunter, wraith_hunter]:
-		sim._add_enemy("drone", Vector2(270, 175))
-		sim._update_weapons()
-	check(is_equal_approx(haven_hunter.seeker_timer + Sim.DT * 0.95, 0.50) and is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.56), "Hunter keeps the pilot lock-on advantage on Haven and Wraith's quicker Seekers")
+	wraith_hunter._add_enemy("drone", Vector2(270, 175))
+	wraith_hunter._update_weapons()
+	check(is_equal_approx(wraith_hunter.seeker_timer + Sim.DT, 0.56), "Hunter keeps the pilot lock-on advantage on Wraith's quicker Seekers")
 	var haven_mender := Sim.new(88239, {}, "haven", "rookie")
 	var regular_mender := Sim.new(88239, {}, "vanguard", "rookie")
-	regular_mender.upgrades.mend = 1
-	regular_mender.active_slots.append("mend")
-	check(haven_mender.activate("mend") and regular_mender.activate("mend"), "Both ships can activate a naturally available Repair Drone")
-	check(is_equal_approx(haven_mender.mend_rate / regular_mender.mend_rate, 1.25), "Haven signature Repair Drones heal 25 percent more than the general card")
-	check(int(haven_pods.upgrades.pulse) == 0, "Haven still has no Pulse starter after its support buffs")
+	for mender in [haven_mender, regular_mender]:
+		mender.upgrades.mend = 1
+		mender.active_slots.append("mend")
+	check(haven_mender.activate("mend") and regular_mender.activate("mend"), "Both ships can activate a drafted Repair Drone")
+	check(is_equal_approx(haven_mender.mend_rate / regular_mender.mend_rate, 1.25), "Haven's Repair Drones heal 25 percent more than the general card")
 
 	var engineer := Sim.new(88235, {}, "vanguard", "engineer")
 	var rookie := Sim.new(88235, {}, "vanguard", "rookie")
@@ -1596,7 +1595,7 @@ func _test_new_abilities() -> void:
 	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
 	var haven := Sim.new(4, {}, "haven")
-	check(haven.active_slots == ["mend"], "Haven starts with its repair signature")
+	check(haven.active_slots == ["wing_drones"], "Haven starts with its Wing drones signature")
 	var healing := Sim.new()
 	_install(healing, "mend")
 	healing.hull = 40
@@ -1712,7 +1711,7 @@ func _test_loadouts() -> void:
 	var lightning := Sim.new(222, {}, "arcwing", "rookie")
 	check(lightning.upgrades.arc == 1 and lightning.upgrades.seeker == 0, "Arcwing must start with Arc Coil instead of missiles")
 	var support := Sim.new(222, {}, "haven", "tactician")
-	check(support.upgrades.mend == 1 and support.rerolls_left == 1, "Support carrier and tactician start with useful tools")
+	check(support.upgrades.wing_drones == 1 and support.hive_count() == 2 and support.rerolls_left == 1, "Hive carrier and tactician start with useful tools")
 	var salvager := Sim.new(222, {}, "vanguard", "scavenger")
 	check(salvager.payout() > base.payout(), "Salvager gets a measurable currency bonus")
 	var checkpoint := support.snapshot()
@@ -3141,7 +3140,7 @@ func _test_expanded_hangar() -> void:
 	check(starting.upgrades.arc == 1 and starting.upgrades.lance == 1, "Purchased starting weapons are installed")
 	check(Sim.new(3001,{"arc_start":1},"arcwing").upgrades.arc == 2, "Charged coil also improves an Arcwing’s starting weapon")
 	check(starting.upgrades.aegis == 3 and starting.active_slots == ["aegis"], "Pilot drills upgrades the signature without filling another slot")
-	check(Sim.new(3001,{"signature_rank":2},"haven").upgrades.mend == 3, "Pilot drills follows the selected ship")
+	check(Sim.new(3001,{"signature_rank":2},"haven").upgrades.wing_drones == 3, "Pilot drills follows the selected ship")
 	var armor := Sim.new(3002,{"beam_plating":4})
 	armor.shield = 0
 	armor._hit(20,"heavy","test beam")
@@ -3477,22 +3476,11 @@ func _test_late_world_ability_counters() -> void:
 	ion_repair.shield_offline = 4.0
 	check(ion_repair.activate("mend") and ion_repair.shield_offline == 0.0, "Repair drones reboot ion-disabled shields from World 2 onward")
 
-	for kind in ["ion","corrosion","disrupt","heat","gravity","void"]:
-		var standard := Sim.new(9371)
-		standard.stage = 3
-		standard.time = 240.0
-		var haven := Sim.new(9371, {}, "haven")
-		haven.stage = 3
-		haven.time = 240.0
-		standard._hit(10.0, kind, "test")
-		haven._hit(10.0, kind, "test")
-		check(is_equal_approx(float(haven.damage_taken[kind]), float(standard.damage_taken[kind]) * 0.75), "Haven's specialist armor absorbs exactly 25% of " + kind + " status-round damage")
-	var standard_dot := Sim.new(9372)
-	standard_dot.stage = 2
-	standard_dot.corrosion_left = 1.0
-	var haven_dot := Sim.new(9372, {}, "haven")
-	haven_dot.stage = 2
-	haven_dot.corrosion_left = 1.0
-	standard_dot.step()
-	haven_dot.step()
-	check(is_equal_approx(float(haven_dot.damage_taken.corrosion),float(standard_dot.damage_taken.corrosion) * 0.75), "Haven's corrosion resistance also applies to ongoing hull damage, not just the original hit")
+	# The Hive carrier has no status-damage resistance (the old Seeker Haven did).
+	var standard_ion := Sim.new(9371)
+	var hive_ion := Sim.new(9371, {}, "haven")
+	for target in [standard_ion, hive_ion]:
+		target.stage = 3
+		target.time = 240.0
+		target._hit(10.0, "ion", "test")
+	check(is_equal_approx(float(hive_ion.damage_taken.ion), float(standard_ion.damage_taken.ion)), "Haven takes normal status damage")

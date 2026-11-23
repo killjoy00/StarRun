@@ -27,6 +27,12 @@ const RANKS_PER_PICK := 3
 const LANCER_LANCE_INTERVAL := 0.45
 const LANCER_LANCE_DAMAGE := 2.00
 const BULWARK_DAMAGE := 1.15
+## Haven Hive drones: a shot every HIVE_INTERVAL seconds from each drone.
+const HIVE_INTERVAL := 0.5
+const HIVE_BASE := 7.0
+const HIVE_PER_LEVEL := 1.4
+const HIVE_PER_WORLD := 0.6
+const HIVE_MAX := 4
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -240,6 +246,8 @@ var next_spawn := 1.0
 ## Everything scheduled "N seconds into the world" runs on this clock.
 ## Stored as an offset from real time (wave_now() = time + wave_drift).
 var wave_drift := 0.0
+## Haven (Hive carrier): permanent drones that shoot for it all run.
+var hive_timer := 0.0
 const FLOW_FAST := 1.6
 ## Worlds 2-4 open gently: the clock is capped while the first ships arrive.
 const OPENING_RAMP := 35.0
@@ -421,8 +429,6 @@ func step() -> void:
 	if corrosion_left > 0.0:
 		var corrosion_damage := DT * 1.4 * stage_damage_scale() * enemy_damage_multiplier() * stage_risk * stage_defense
 		corrosion_damage *= status_damage_multiplier()
-		if ship_id == "haven":
-			corrosion_damage *= 0.75
 		if aegis_left > 0.0:
 			# Aegis is full immunity: it stops the corrosion tick like any other hit.
 			prevented += corrosion_damage
@@ -2677,6 +2683,28 @@ func _update_charges() -> void:
 				_hit(charge.damage, "heavy", attacker)
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
+## Haven's permanent drones: 1, plus 1 for each drone ability it owns
+## (Wing drones, its starting ability, makes 2; Guard and Repair drones
+## add one each, up to 4).
+func hive_count() -> int:
+	if ship_id != "haven":
+		return 0
+	var owned := 0
+	for id in DRONE_ABILITIES:
+		if int(upgrades.get(id, 0)) > 0:
+			owned += 1
+	return mini(HIVE_MAX, 1 + owned)
+
+## Each Hive drone shot: grows with level and world, boosted by anything that
+## boosts all guns (weapon_power) and by Haven's 25% drone bonus.
+func hive_damage() -> float:
+	return (HIVE_BASE + level * HIVE_PER_LEVEL) * weapon_power() * (1.0 + HIVE_PER_WORLD * float(stage - 1)) * 1.25
+
+func hive_position(index: int) -> Vector2:
+	var side := -1.0 if index % 2 == 0 else 1.0
+	var p := ship_position() + Vector2(side * (30.0 + (index / 2) * 18.0), 26.0 + (index / 2) * 14.0)
+	return Vector2(clampf(p.x, 12, 528), p.y)
+
 func escort_position(index: int) -> Vector2:
 	var side := -1.0 if index % 2 == 0 else 1.0
 	var p := ship_position() + Vector2(side * (46.0 + (index / 2) * 22.0), 8.0 + (index / 2) * 22.0)
@@ -2802,6 +2830,16 @@ func _update_support() -> void:
 				var target := _nearest(p)
 				if not target.is_empty() and shots.size() < 500:
 					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() * (1.0 + 0.75 * float(stage - 1)) if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id), "homing":artifact_id == "drone_armada"})
+	var hive := hive_count()
+	if hive > 0:
+		hive_timer -= DT
+		if hive_timer <= 0.0:
+			hive_timer += HIVE_INTERVAL
+			for i in range(hive):
+				var hp := hive_position(i)
+				var hive_target := _nearest(hp)
+				if not hive_target.is_empty() and shots.size() < 500:
+					shots.append({"p":hp, "v":(hive_target.p - hp).normalized() * 720.0, "damage":hive_damage(), "weapon":"escort", "target":int(hive_target.id)})
 	var armed: Array = []
 	for mine in ion_mines:
 		mine.fuse -= DT
@@ -2850,9 +2888,7 @@ func _update_weapons() -> void:
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		# Haven clears early waves with rapid support pods instead of a Pulse starter.
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
-		if ship_id == "haven":
-			seeker_interval = 0.50 if pilot_id == "hunter" else 0.55
-		elif ship_id == "wraith":
+		if ship_id == "wraith":
 			# Without a Pulse, Wraith needs a quicker volley to clear early swarms.
 			seeker_interval = 0.56 if pilot_id == "hunter" else 0.62
 		seeker_timer += seeker_interval
@@ -2878,7 +2914,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else (1.30 if ship_id == "haven" else 1.0)) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -3541,8 +3577,6 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	# later worlds; direct beams, chaff, mines and escaped enemies still hurt.
 	if kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		reduced *= status_damage_multiplier()
-	if ship_id == "haven" and kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
-		reduced *= 0.75
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 		# Fortress plating: Bulwark died to Harvester beams and missiles in
@@ -4295,7 +4329,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
