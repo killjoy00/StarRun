@@ -22,10 +22,11 @@ const START_WORLD_LEVELS := [1, 13, 32, 57]
 ## about 1.5x as many level-ups.
 const RANKS_PER_PICK := 3
 ## Lancer: its lance is its only starting gun, so it fires about twice as
-## often and hits harder. At +15% / +35% it cleared no-Hangar World 1 in 0 of
+## often and hits twice as hard. At +15% / +35% it cleared no-Hangar World 1 in 0 of
 ## 12 runs (Vanguard 7 of 12): one beam every 2 s left the screen unanswered.
 const LANCER_LANCE_INTERVAL := 0.45
-const LANCER_LANCE_DAMAGE := 1.60
+const LANCER_LANCE_DAMAGE := 2.00
+const BULWARK_DAMAGE := 1.20
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -2937,6 +2938,10 @@ func weapon_power() -> float:
 		power *= 1.50
 	if daredevil_active():
 		power *= 1.25
+	# Bulwark: 20% more damage. Its damage reduction kept it alive in World 1
+	# but it still lost later worlds on kill speed (1 of 8 mid-Hangar wins).
+	if ship_id == "bulwark":
+		power *= BULWARK_DAMAGE
 	power *= vanguard_veteran_bonus()
 	if merchant_pact_power > 0.0:
 		power *= 1.0 + merchant_pact_power
