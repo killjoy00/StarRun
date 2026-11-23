@@ -109,7 +109,7 @@ func _run() -> void:
 		scene._show_loadout()
 		await _frame()
 		var portraits := scene.reading_scroll.find_children("*", "Control", true, false).filter(func(c): return c.get_script() == preload("res://scripts/pilot_portrait.gd"))
-		check(portraits.size() == 6, "All pilots use face portraits")
+		check(portraits.size() == preload("res://scripts/catalog.gd").PILOTS.size(), "All pilots use face portraits")
 		await _drag(portraits[0].get_global_rect().get_center(), -150)
 		check(scene.reading_scroll.scroll_vertical > 60 and scene.profile.cores == wallet and scene.confirm_key.is_empty(), "Holding a pilot portrait scrolls without selecting or purchasing")
 		scene.sim = Sim.new(2750)
@@ -139,7 +139,7 @@ func _run() -> void:
 		await process_frame
 		_press(p, false)
 		await _frame()
-		check(scene.sim.upgrades.insulation == 6 and scene.mode == "playing", "A normal tap still picks the intended upgrade")
+		check(scene.sim.upgrades.insulation == 7 and scene.mode == "playing", "A normal tap still picks the intended upgrade")
 		scene.mode = "playing"
 		scene._show_build()
 		scene.build_show_all = true
