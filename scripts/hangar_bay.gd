@@ -6,7 +6,8 @@ const SHIPS = {
 	"bulwark": preload("res://assets/art/bulwark.svg"),
 	"wraith": preload("res://assets/art/wraith.svg"),
 	"arcwing": preload("res://assets/art/arcwing.svg"),
-	"haven": preload("res://assets/art/haven.svg")
+	"haven": preload("res://assets/art/haven.svg"),
+	"lancer": preload("res://assets/art/lancer.webp")
 }
 const Catalog = preload("res://scripts/catalog.gd")
 var ship_id := "vanguard"
@@ -60,6 +61,7 @@ static func tint_for(id: String) -> Color:
 		"wraith": return Color("ffcf92")
 		"arcwing": return Color("cbb8ff")
 		"haven": return Color("a8f4d0")
+		"lancer": return Color("ffd98a")
 	return Color.WHITE
 
 func _draw_flight(w: float, h: float) -> void:

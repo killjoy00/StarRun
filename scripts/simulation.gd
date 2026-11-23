@@ -14,7 +14,13 @@ const MAXED_DRAFT_CORES := 5
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
-const START_WORLD_LEVELS := [1, 18, 47, 85]
+# Level a typical flight has reached at the start of each world (catch-up).
+const START_WORLD_LEVELS := [1, 13, 32, 57]
+## Ranks per pick. Fewer, bigger level-ups: a pick adds 3 ranks (0-3-6-10;
+## the pick that would stop at 9 goes to 10), a new ability starts at 1
+## (1-4-7-10) and is 25% stronger at rank 1. Before: 2 ranks per pick and
+## about 1.5x as many level-ups.
+const RANKS_PER_PICK := 3
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -76,6 +82,10 @@ var build_choices_active := true
 var weapon_evolutions: Dictionary = {}
 var pending_build_choices: Array = []
 var fusion_declined: Array = []
+## Discovery codex: everything this flight has shown the player, as
+## "kind:id" keys (card, fusion, evolution, link, synergy, engine).
+## Merged into the profile when the flight settles.
+var codex_seen: Dictionary = {}
 var evolution_lifeline_tick := -1
 # Visual feedback is rate-limited per specialization; no combat/draft RNG used.
 var evolution_cue_next_tick: Dictionary = {}
@@ -216,6 +226,18 @@ var pending_levels := 0
 var ended := false
 var won := false
 var next_spawn := 1.0
+## Adaptive spawn pace. Each world's enemies follow a fixed schedule; this
+## clock walks that schedule faster when the field is nearly clear and
+## never slower than real time. A player mowing through gets the next ships
+## (and the boss) sooner. The ships,
+## XP and enemy health in a world do not change, only when they arrive.
+## Everything scheduled "N seconds into the world" runs on this clock.
+## Stored as an offset from real time (wave_now() = time + wave_drift).
+var wave_drift := 0.0
+const FLOW_FAST := 1.6
+## Worlds 2-4 open gently: the clock is capped while the first ships arrive.
+const OPENING_RAMP := 35.0
+const OPENING_FLOW := 0.6
 var pulse_timer := 0.0
 var seeker_timer := 0.0
 var heavy_ready_at := 10.0
@@ -268,7 +290,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
 	upgrades.arc = int(chassis.arc) + int(meta.arc_start)
-	upgrades.lance = int(meta.lance_start)
+	upgrades.lance = int(chassis.get("lance", 0)) + int(meta.lance_start)
 	upgrades.mend = int(chassis.mend)
 	var signature: String = chassis.signature
 	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0))) + int(meta.signature_rank)
@@ -377,8 +399,9 @@ func step() -> void:
 		next_encounter_at = 55.0 + float(seed_value % 23)
 	tick += 1
 	time = tick * DT
+	var recharge_step := DT * (1.20 if daredevil_active() else 1.0)
 	for key in cooldowns:
-		cooldowns[key] = maxf(0.0, cooldowns[key] - DT)
+		cooldowns[key] = maxf(0.0, cooldowns[key] - recharge_step)
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
@@ -434,37 +457,38 @@ func step() -> void:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
 	_update_signal()
-	if not boss_spawned and time - stage_start >= (HiddenSector.BOSS_AT if secret_entered else float(content.boss_at)):
+	wave_drift += DT * (spawn_flow() - 1.0)
+	if not boss_spawned and wave_elapsed() >= (HiddenSector.BOSS_AT if secret_entered else float(content.boss_at)):
 		_spawn_boss()
 		if secret_intro_pending:
 			return
-	if time >= next_spawn and not boss_spawned:
+	if wave_now() >= next_spawn and not boss_spawned:
 		# Keep the genuine XP-bearing spawn cadence intact. The separate
 		# short-lived visual scout contacts create opening beats without
 		# starving slower ships or shifting the entire late-world build.
 		_spawn_enemy()
-		var stage_time := time - stage_start
+		var stage_time := wave_elapsed()
 		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		next_spawn = time + pace * _spawn_rhythm_factor() / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		next_spawn = wave_now() + pace * _spawn_rhythm_factor() / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 		if _uses_spawn_rhythm():
 			spawn_rhythm_slot += 1
 	if _regular_world1_opening() and not boss_spawned:
 		_spawn_opening_scout_screen()
-	if _regular_world1_opening() and not boss_spawned and time >= next_pressure_wave_at:
+	if _regular_world1_opening() and not boss_spawned and wave_now() >= next_pressure_wave_at:
 		_spawn_world1_pressure()
-		next_pressure_wave_at = time + 7.5
-	if not secret_entered and time >= next_hazard and not boss_spawned:
+		next_pressure_wave_at = wave_now() + 7.5
+	if not secret_entered and wave_now() >= next_hazard and not boss_spawned:
 		_spawn_hazard()
-		next_hazard = time + rng.randf_range(15.0, 23.0)
-	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and time >= merchant_next_at:
+		next_hazard = wave_now() + rng.randf_range(15.0, 23.0)
+	if merchant_enabled and merchant_state.is_empty() and not boss_spawned and stage in [2, 3] and wave_now() >= merchant_next_at:
 		_try_merchant_signal()
-	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and time - stage_start >= rival_spawn_at and merchant_state.is_empty() and signal_status not in ["offer", "cast", "courier"]:
+	if not boss_spawned and not rival_spawned and not rival_record.is_empty() and stage == rival_stage and wave_elapsed() >= rival_spawn_at and merchant_state.is_empty() and signal_status not in ["offer", "cast", "courier"]:
 		# A live decision/coordinate countdown wins over an incoming rival.
 		# The rival clock stays due and is retried when the interaction clears.
 		_try_spawn_rival()
-	if not secret_entered and time >= next_encounter_at and not boss_spawned:
+	if not secret_entered and wave_now() >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
-		next_encounter_at = time + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
+		next_encounter_at = wave_now() + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
 	_update_enemies()
 	if secret_entered:
 		_update_archive_attack()
@@ -636,6 +660,39 @@ func _enemy_limit() -> int:
 		return 11
 	return mini(55, 20 + (stage - 1) * 5)
 
+## Seconds into the current world on the adaptive spawn clock.
+func wave_now() -> float:
+	return time + wave_drift
+
+func wave_elapsed() -> float:
+	return wave_now() - stage_start
+
+## How fast the spawn schedule advances this tick (see wave_drift).
+## The field target is 30% of the crowd cap: at or below a third of that the
+## schedule runs at FLOW_FAST, at the target and above it runs at real
+## speed. A crowded field never slows arrivals: that would rescue a player
+## who is falling behind and flatten the difficulty.
+func spawn_flow() -> float:
+	if secret_entered or boss_spawned:
+		return 1.0
+	# World 1's scripted opener (scouts, warning, first formation) keeps its beats.
+	if not world1_opening_phase().is_empty():
+		return 1.0
+	var target: float = maxf(2.0, float(_enemy_limit()) * 0.30)
+	var count := float(_crowd_count())
+	var flow: float
+	if count <= target * 0.35:
+		flow = FLOW_FAST
+	elif count <= target:
+		flow = lerpf(FLOW_FAST, 1.0, (count - target * 0.35) / (target * 0.65))
+	else:
+		flow = 1.0
+	if stage >= 2:
+		var opened := time - stage_start
+		if opened < OPENING_RAMP:
+			flow = minf(flow, lerpf(OPENING_FLOW, 1.0, opened / OPENING_RAMP))
+	return flow
+
 func _has_mutation(id: String) -> bool:
 	return id in mutations
 
@@ -726,7 +783,7 @@ func _make_merchant_offers() -> Array:
 	return result.slice(0, 5)
 
 func _try_merchant_signal() -> bool:
-	if not merchant_enabled or not daily_day.is_empty() or not merchant_state.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages or boss_spawned or time < merchant_next_at:
+	if not merchant_enabled or not daily_day.is_empty() or not merchant_state.is_empty() or merchant_visits >= 2 or stage not in [2,3] or stage in merchant_seen_stages or boss_spawned or wave_now() < merchant_next_at:
 		return false
 	# Never interrupt a countdown or cover another required decision. Keep
 	# merchant_next_at pending so the hail can happen once the event clears.
@@ -886,7 +943,7 @@ func stage_damage_scale() -> float:
 	if stage in [2, 3, 4] and not boss_spawned:
 		var entry_factor := 0.75 if stage == 2 else (0.82 if stage == 3 else 0.65)
 		var full_at := 155.0 if stage == 2 else (170.0 if stage == 3 else 195.0)
-		var ramp: float = clampf((time - stage_start - 25.0) / (full_at - 25.0), 0.0, 1.0)
+		var ramp: float = clampf((wave_elapsed() - 25.0) / (full_at - 25.0), 0.0, 1.0)
 		scale *= lerpf(entry_factor, 1.0, ramp)
 	return scale
 
@@ -935,7 +992,7 @@ const FUSION_RANK := 5
 func fusion_target(id: String) -> String:
 	# Preview only a pick that will actually complete a rank-5 pair.
 	var current := int(upgrades.get(id, 0))
-	var after_pick := mini(10, current + (1 if current == 0 else 2))
+	var after_pick := current + rank_gain({"tag": "ABILITY", "max": 10}, current)
 	for fusion in content.fusions:
 		if id in fusion.parts:
 			if _new_build_decisions() and str(fusion.id) in fusion_declined:
@@ -965,10 +1022,32 @@ func _queue_weapon_evolutions() -> void:
 			continue
 		if not pending_build_choices.any(func(c): return str(c.kind) == "evolution" and str(c.id) == weapon):
 			pending_build_choices.append({"kind":"evolution", "id":weapon})
+			for option in content.weapon_evolutions.get(weapon, []):
+				codex_seen["evolution:" + str(option.id)] = true
 
 func _fusion_is_eligible(id: String) -> bool:
 	var spec: Dictionary = fusion_spec(id)
 	return not spec.is_empty() and str(spec.parts[0]) in active_slots and str(spec.parts[1]) in active_slots and int(upgrades[str(spec.parts[0])]) >= FUSION_RANK and int(upgrades[str(spec.parts[1])]) >= FUSION_RANK
+
+## Record what the build has now: owned upgrades, fusions, evolutions,
+## and every active team-up (passive pair, synergy, build engine).
+func note_codex() -> void:
+	for card in content.cards:
+		if int(upgrades.get(str(card.id), 0)) > 0:
+			codex_seen[("fusion:" if not fusion_spec(str(card.id)).is_empty() else "card:") + str(card.id)] = true
+	for id in mutations:
+		codex_seen["card:" + str(id)] = true
+	for weapon in weapon_evolutions:
+		codex_seen["evolution:" + str(weapon_evolutions[weapon])] = true
+	for link in content.passive_links:
+		if passive_link_active(str(link.id)):
+			codex_seen["link:" + str(link.id)] = true
+	for synergy in content.synergies:
+		if synergy_active(str(synergy.id)):
+			codex_seen["synergy:" + str(synergy.id)] = true
+	for engine in content.get("build_engines", []):
+		if engine_tier(str(engine.id)) >= 1:
+			codex_seen["engine:" + str(engine.id)] = true
 
 func _commit_fusion(id: String) -> bool:
 	if not _fusion_is_eligible(id):
@@ -985,6 +1064,7 @@ func _commit_fusion(id: String) -> bool:
 	cooldowns[id] = current_cd
 	effects.append({"kind":"fusion-formed", "fusion":id, "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
 	_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(spec.name) + ". One slot freed.")
+	codex_seen["fusion:" + id] = true
 	return true
 
 func resolve_build_choice(value: String) -> bool:
@@ -1016,6 +1096,7 @@ func resolve_build_choice(value: String) -> bool:
 	else:
 		return false
 	pending_build_choices.pop_front()
+	note_codex()
 	# Two eligible fusion recipes can share a component. Accepting one
 	# consumes it; stale overlapping offers must not block resume or bots.
 	var valid: Array = []
@@ -1056,6 +1137,7 @@ func _try_fuse() -> void:
 			# One offer only. Keeping two separate actives is a valid build.
 			if id not in fusion_declined and not pending_build_choices.any(func(c): return str(c.kind) == "fusion" and str(c.id) == id):
 				pending_build_choices.append({"kind":"fusion", "id":id})
+				codex_seen["fusion:" + id] = true
 		else:
 			# W1, published Dailies, and pre-overhaul saves keep auto-fusion.
 			_commit_fusion(id)
@@ -1277,7 +1359,9 @@ func _active_rank_scale(id: String) -> float:
 	var total := 0.0
 	for source in sources:
 		var rank: int = int(upgrades.get(str(source), 0))
-		total += 1.0 + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
+		# A fresh rank-1 ability is 25% stronger, so learning one is worth a
+		# pick now that the next pick takes it straight to rank 4.
+		total += 1.0 + (0.25 if rank == 1 else 0.0) + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
 	var inherited := total / maxf(1.0, float(sources.size()))
 	if not spec.is_empty():
 		inherited *= 1.0 + maxf(0, int(upgrades[id]) - 1) * 0.04 + (0.20 if rank_at(id, 5) else 0.0) + (0.25 if rank_at(id, 10) else 0.0)
@@ -1458,7 +1542,7 @@ func can_enter_secret() -> bool:
 func _update_signal() -> void:
 	if not daily_day.is_empty() or stage not in [2, 3, 4] or signal_count >= HiddenSector.REQUIRED_SIGNALS:
 		return
-	if signal_status.is_empty() and time - stage_start >= HiddenSector.signal_time(seed_value, stage):
+	if signal_status.is_empty() and wave_elapsed() >= HiddenSector.signal_time(seed_value, stage):
 		signal_until = stage_start + 195.0
 		signal_status = "offer" if time < signal_until else "missed"
 	elif signal_status in ["offer", "cast", "courier"] and time >= signal_until:
@@ -1548,7 +1632,7 @@ func _spawn_enemy() -> void:
 	if _crowd_count() >= _enemy_limit():
 		return
 	# Each authored enemy ecology recurs, but endless mixes threats from later worlds.
-	var stage_time := time - stage_start
+	var stage_time := wave_elapsed()
 	var pool: Array = []
 	match ((stage - 1) % int(content.stage_count)) + 1:
 		1:
@@ -1682,7 +1766,7 @@ func _crowd_count() -> int:
 
 func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
-	var scaling := (1.0 + (time - stage_start) / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * advanced_wave_health() * shooter_health_pressure(kind)
+	var scaling := (1.0 + wave_elapsed() / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * advanced_wave_health() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
 	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
@@ -1792,7 +1876,7 @@ func _spawn_world1_strike_wing() -> void:
 	# Three enemies ARRIVE TOGETHER instead of in widely separated singles.
 	# Advance the next ordinary spawn by three slots: no three extra XP-bearing
 	# kills on top of the regular wave schedule, no change to Hard/Insane.
-	var elapsed: float = time - stage_start
+	var elapsed: float = wave_elapsed()
 	var pattern: int = (seed_value + encounter_index * 5) % 3
 	var formation: Array = ["gunship", "drone", "interceptor"]
 	if elapsed >= 48.0:
@@ -1811,7 +1895,7 @@ func _spawn_world1_strike_wing() -> void:
 			member.hp = member.max_hp
 			member.fire = 1.85 + index * 0.20
 	var pace := maxf(0.55, 1.65 - elapsed / 260.0)
-	next_spawn = maxf(next_spawn, time) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+	next_spawn = maxf(next_spawn, wave_now()) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("THREE-SHIP ATTACK")
 
 func _visible_world1_enemies() -> int:
@@ -2194,8 +2278,9 @@ func advance_stage() -> bool:
 	engine_prism_hits = 0
 	engine_fortress_charge = 0.0
 	engine_salvage_charge = 0.0
-	next_encounter_at = time + 55.0 + float((seed_value + stage * 13) % 23)
-	next_pressure_wave_at = time + 8.0
+	wave_drift = 0.0
+	next_encounter_at = wave_now() + 55.0 + float((seed_value + stage * 13) % 23)
+	next_pressure_wave_at = wave_now() + 8.0
 	pressure_waves = 0
 	endless_stage_spec.clear()
 	stage_start = time
@@ -2219,14 +2304,17 @@ func advance_stage() -> bool:
 	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
 	safeguard_used = false
 	shieldstorm_pulse_used = false
-	next_spawn = time + 1.5
-	next_hazard = time + 15.0
+	next_spawn = wave_now() + 1.5
+	next_hazard = wave_now() + 15.0
 	heavy_ready_at = time + 10.0
-	if not secret_entered:
-		pending_levels += 1 + (1 if route_choice == "bounty" else 0)
+	# No free level-up between worlds: the drafts in the world are plenty.
+	# The Bounty route still pays its extra pick.
+	if not secret_entered and route_choice == "bounty":
+		pending_levels += 1
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	if skipping_worlds():
 		_queue_skipped_world()
+	note_codex()
 	return true
 
 # Historical test shim; regular gameplay always uses both decisions.
@@ -2306,7 +2394,7 @@ func _update_enemies() -> void:
 				damage *= boss_projectile_damage_multiplier()
 			# Late World 1 beam pressure is answerable by Aegis/EMP/Nova/Jammer.
 			# This changes damage, not XP or the visible charge warning.
-			if stage == 1 and time - stage_start >= 110.0:
+			if stage == 1 and wave_elapsed() >= 110.0:
 				damage *= 1.20
 				if difficulty == "hard":
 					damage *= 1.30
@@ -2328,7 +2416,7 @@ func _update_enemies() -> void:
 			var beam_interval := 7.5 if stage == 1 else (6.0 if stage == 2 else (5.7 if stage == 3 else (4.4 if _alive_modules("pylon") == 0 else 5.8)))
 			# Early Citadel lancer beams were stacking before new builds could adapt.
 			# The boss retains its original heavy cadence and two-lane pylon phase.
-			if stage == 4 and not boss_spawned and time - stage_start < 135.0:
+			if stage == 4 and not boss_spawned and wave_elapsed() < 135.0:
 				beam_interval = maxf(beam_interval, 7.8)
 			heavy_ready_at = time + beam_interval
 			_log("%s charging a big beam" % kind.replace("_", " "))
@@ -2371,12 +2459,12 @@ func _update_enemies() -> void:
 			# Boss attacks begin unchanged; the first telegraph stays readable.
 			# Fire more often late in the opener on advanced difficulties.
 			# Extra enemy kills would grant XP and weaken this pressure curve.
-			if stage == 1 and time - stage_start >= 65.0 and not kind.begins_with("boss"):
+			if stage == 1 and wave_elapsed() >= 65.0 and not kind.begins_with("boss"):
 				if difficulty == "hard":
 					enemy.fire *= 0.65
 				elif difficulty == "insane":
 					enemy.fire *= 0.55
-			if stage == 1 and time - stage_start >= 110.0:
+			if stage == 1 and wave_elapsed() >= 110.0:
 				if kind == "boss":
 					if time - boss_spawn_time >= 18.0:
 						enemy.fire *= 0.80
@@ -2812,7 +2900,7 @@ func _update_weapons() -> void:
 		# Kills earlier this tick leave dead enemies in the array until the
 		# projectile pass. Do not consume a full lance cycle without firing.
 		if not target.is_empty():
-			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
+			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0)) * (0.85 if ship_id == "lancer" else 1.0)
 			lance_refund_ready = true
 			var echo_used := false
 			var end: Vector2 = origin + (target.p - origin).normalized() * 1200
@@ -2822,7 +2910,7 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0)
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (1.35 if ship_id == "lancer" else 1.0)
 					_damage_enemy(enemy, strike_damage, "lance")
 					if _has_mutation("refracting_lance") and not echo_used:
 						for other in enemies:
@@ -2833,10 +2921,17 @@ func _update_weapons() -> void:
 								echo_used = true
 								break
 
+## Kade (Daredevil): below half hull, guns hit 25% harder and abilities
+## recharge 20% faster.
+func daredevil_active() -> bool:
+	return pilot_id == "daredevil" and hull < max_hull * 0.5
+
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
+	if daredevil_active():
+		power *= 1.25
 	power *= vanguard_veteran_bonus()
 	if merchant_pact_power > 0.0:
 		power *= 1.0 + merchant_pact_power
@@ -3396,7 +3491,19 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func xp_needed() -> int:
-	return 25 + (level - 1) * 9
+	# About two thirds as many level-ups as the old 25 + 9 per level, each
+	# worth 3 ranks instead of 2 (World 1: about 12 instead of 17).
+	return 28 + (level - 1) * 21
+
+## Ranks a card adds when picked at its current rank.
+static func rank_gain(card: Dictionary, before: int) -> int:
+	var cap := int(card.get("max", 10))
+	if str(card.get("tag", "")) == "ABILITY" and before == 0:
+		return 1
+	var after := before + RANKS_PER_PICK
+	if after == cap - 1:
+		after = cap
+	return maxi(0, mini(cap, after) - before)
 
 func _hit(amount: float, kind: String, source: String) -> void:
 	if ended:
@@ -4049,6 +4156,10 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append({"id": "core_cache", "name": "Salvage Cores", "tag": "RECOVERY", "description": "Bank %d Cores for the end of this flight." % MAXED_DRAFT_CORES, "max": 99})
 	if consume_level:
 		pending_levels -= 1
+	for card in cards:
+		if str(card.tag) != "RECOVERY":
+			codex_seen["card:" + str(card.id)] = true
+
 
 func reroll_cards() -> bool:
 	if cards.is_empty() or rerolls_left <= 0:
@@ -4078,6 +4189,12 @@ func skip_cards() -> bool:
 	return true
 
 func choose_card(index: int) -> bool:
+	var chosen := _choose_card(index)
+	if chosen:
+		note_codex()
+	return chosen
+
+func _choose_card(index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	var id: String = cards[index].id
@@ -4100,8 +4217,7 @@ func choose_card(index: int) -> bool:
 				return false
 			active_slots.append(id)
 		var before: int = int(upgrades[id])
-		var increment: int = 1 if card.tag == "ABILITY" and before == 0 else 2
-		upgrades[id] = mini(int(card.max), before + increment)
+		upgrades[id] = before + rank_gain(card, before)
 		var gained := int(upgrades[id]) - before
 		if id == "hull":
 			max_hull += 18 * gained
@@ -4169,7 +4285,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
@@ -4200,6 +4316,9 @@ func restore(state: Dictionary) -> bool:
 	# Preserve an older save's remaining uses; start stage refills at its next warp.
 	if not state.has("pilot_rerolls_left"):
 		pilot_rerolls_left = mini(rerolls_left, 1) if pilot_id == "tactician" else 0
+	# Older saves ran every schedule on real time.
+	if not state.has("wave_drift"):
+		wave_drift = 0.0
 	movement_version = int(state.get("movement_version", 1))
 	if not state.has("active_slots"):
 		active_slots.clear()

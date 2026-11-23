@@ -305,7 +305,8 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 				density_by_phase[phase] = {
 					"samples":0, "bullet_sum":0, "boss_bullet_sum":0,
 					"charge_sum":0, "max_visible":0, "over_20":0, "over_40":0,
-					"enemy_sum":0, "empty_enemy_samples":0, "max_visible_enemies":0
+					"enemy_sum":0, "empty_enemy_samples":0, "max_visible_enemies":0,
+					"fill_sum":0.0, "flow_sum":0.0
 				}
 			var visible := 0
 			var boss_owned := 0
@@ -322,6 +323,8 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 					visible_enemies += 1
 			var record: Dictionary = density_by_phase[phase]
 			record.enemy_sum += visible_enemies
+			record.fill_sum += float(sim._crowd_count()) / maxf(1.0, float(sim._enemy_limit()))
+			record.flow_sum += float(sim.spawn_flow()) if sim.has_method("spawn_flow") else 1.0
 			record.empty_enemy_samples += int(visible_enemies == 0)
 			record.max_visible_enemies = maxi(int(record.max_visible_enemies), visible_enemies)
 			record.samples += 1

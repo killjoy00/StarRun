@@ -70,7 +70,7 @@ func _run():
 		scene._show_loadout()
 		await _frame()
 		var faces := scene.overlay.find_children("*","Control",true,false).filter(func(c): return c is Portrait)
-		check(faces.size() == 6, "Pilot selection displays every portrait")
+		check(faces.size() == Catalog.PILOTS.size(), "Pilot selection displays every portrait")
 		for face in faces:
 			check(face.size.x >= 64 and face.get_global_rect().end.x < dimensions.x, "Pilot faces remain large and inside the phone card")
 		root.get_texture().get_image().save_png("/tmp/starrun-visuals/pilots-%d.png" % dimensions.x)

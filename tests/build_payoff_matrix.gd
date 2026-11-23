@@ -151,7 +151,7 @@ func _run() -> void:
 	var ships: Array = []
 	for record in Catalog.SHIPS:
 		ships.append(str(record.id))
-	check(ships.size() == 6, "all six current ship chassis are in the matrix")
+	check(ships.size() == 7 and "lancer" in ships, "all seven current ship chassis are in the matrix")
 	var evolution_cells := 0
 	var engine_cells := 0
 	for ship_index in range(ships.size()):
@@ -166,7 +166,7 @@ func _run() -> void:
 				_engine_cell(ship, stage, str(spec.id),
 					980000 + ship_index * 10000 + stage * 1000 + engine_cells)
 				engine_cells += 1
-	check(evolution_cells == 144 and engine_cells == 108, "6 ships × 3 worlds × 8 evolutions and 6 engines")
+	check(evolution_cells == ships.size() * 3 * 8 and engine_cells == ships.size() * 3 * 6, "%d ships × 3 worlds × 8 evolutions and 6 engines" % ships.size())
 	# The debrief credits observed mechanisms only and never attributes
 	# generic escort damage to the Salvage engine.
 	var recap := Sim.new(990000)

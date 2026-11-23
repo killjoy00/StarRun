@@ -13,6 +13,7 @@ const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
+const Codex = preload("res://scripts/codex.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const RivalPortrait = preload("res://scripts/rival_portrait.gd")
@@ -51,6 +52,7 @@ var ability_b: Button
 var ability_buttons: Dictionary = {} # Four UI slots, keyed by slot index.
 var hangar_category := "Hull"
 var loadout_tab := "Ships"
+var codex_tab := "Upgrades"
 var speed_options := [0.5, 1.0, 2.0, 3.0]
 var game_speed := 1.0
 var speed_button: Button
@@ -96,6 +98,7 @@ var result_daily_score := -1
 var result_daily_best := -1
 var result_new_best := false
 var result_rival_news: Dictionary = {}
+var result_unlocked: Array = []
 var rival_stinger_clock := 0.0
 var boss_intro_clock := 0.0
 var boss_intro_stage := 0 # The world whose boss intro has played; not replayed on resume.
@@ -544,6 +547,8 @@ func _layout() -> void:
 		_show_menu()
 	elif mode == "achievements":
 		_show_achievements()
+	elif mode == "codex":
+		_show_codex()
 	elif mode == "cards":
 		_show_cards()
 	elif mode == "paused":
@@ -1087,6 +1092,7 @@ func _show_menu() -> void:
 	_ui_button(row, "Hangar", _show_hangar, "ghost", 46, true)
 	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 46, true)
 	awards_button.tooltip_text = "Achievements and milestones"
+	_ui_button(row, "Codex", _show_codex, "ghost", 46, true).tooltip_text = "Every upgrade, fusion and team-up you have found"
 	_ui_button(row, "Rivals", _show_rival_journal, "ghost", 46, true)
 	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
 	var primary: Button
@@ -1189,6 +1195,34 @@ func _show_achievements() -> void:
 		var status_text := ("Earned %s" % _pretty_day(str(unlocked.get(id, "")))) if is_unlocked else ("%d / %d" % [done, int(item.target)])
 		_info_card(view.body, str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
 	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+## Discovery codex. Entries stay hidden until a flight shows them.
+func _show_codex() -> void:
+	var prior: int = reading_scroll.scroll_vertical if mode == "codex" and is_instance_valid(reading_scroll) else 0
+	mode = "codex"
+	Progress.prepare(profile)
+	var view := _page(1.0, true, 540.0)
+	_page_header(view.top, "FOUND IN FLIGHT", "Codex", _show_menu)
+	Kit.label(view.top, "%d of %d found" % [Codex.found_count(profile), Codex.total()], 15, Kit.MUTED, true)
+	_tabs(view.top, Codex.TABS, codex_tab, _codex_tab)
+	var found: Dictionary = profile.codex
+	var entries: Array = Codex.entries(codex_tab)
+	Kit.label(view.body, "%d of %d %s" % [Codex.found_count(profile, codex_tab), entries.size(), codex_tab.to_lower()], 15, Kit.MUTED, true)
+	for entry in entries:
+		if found.has(str(entry.key)):
+			_info_card(view.body, "%s  ·  %s" % [str(entry.name), str(entry.tag)], str(entry.detail), Kit.CYAN)
+		else:
+			_info_card(view.body, "???", str(entry.hint), Kit.MUTED)
+	_keep_scroll(reading_scroll, prior)
+	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+func _codex_tab(value: String) -> void:
+	if value not in Codex.TABS:
+		return
+	codex_tab = value
+	if is_instance_valid(reading_scroll):
+		reading_scroll.scroll_vertical = 0
+	_show_codex()
 
 ## "2026-11-22" -> "Nov 22, 2026". Anything else is shown as stored.
 func _pretty_day(day: String) -> String:
@@ -1717,6 +1751,7 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 	var owned: bool = id in profile[owned_key]
 	var equipped: bool = profile[key] == id
 	var cost: int = int(entry.cost)
+	var buyable: bool = bool(entry.get("buy_only", false))
 	var armed := confirm_key == key + ":" + id
 	var card := _tap_card(parent, _loadout_tap.bind(key, id), Kit.CYAN, equipped)
 	var row := HBoxContainer.new()
@@ -1761,6 +1796,8 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 		Kit.glyph(chip.get_child(0), "check", Kit.CYAN, 14)
 	elif owned:
 		_chip(head, "Equip", Kit.TEXT)
+	elif not buyable:
+		_chip(head, "Locked", Kit.DIM)
 	elif armed:
 		_chip(head, "Tap to confirm", Kit.AMBER, true)
 	else:
@@ -1784,7 +1821,19 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 		for stat in values:
 			Kit.meter(stats, float(stat[1]), Kit.CYAN, 5)
 		Kit.label(info, "Starts with " + str(sim.content.abilities[str(entry.signature)].name), 15, Kit.CYAN)
-	if not owned and int(profile.cores) < cost:
+	if not owned and not buyable and Progress.UNLOCKS.has(id):
+		var rule: Dictionary = Progress.UNLOCKS[id]
+		var done: int = mini(int(rule.target), Progress.unlock_progress(profile, id))
+		Kit.label(info, "Unlock: %s" % str(rule.text), 15, Kit.AMBER, true)
+		var meter_row := HBoxContainer.new()
+		meter_row.add_theme_constant_override("separation", 8)
+		meter_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		info.add_child(meter_row)
+		var meter := Kit.meter(meter_row, float(done) / maxf(1.0, float(rule.target)), Kit.AMBER, 5)
+		meter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		Kit.label(meter_row, "%s / %s" % [_num(done), _num(int(rule.target))], 14, Kit.MUTED)
+	elif not owned and int(profile.cores) < cost:
 		Kit.label(info, "Need %d more cores" % (cost - int(profile.cores)), 14, Kit.DIM)
 	elif armed:
 		Kit.label(info, "Unlock for %d cores? Tap again to confirm." % cost, 15, Kit.AMBER, true)
@@ -1798,10 +1847,13 @@ func _loadout_tap(key: String, id: String) -> void:
 		return
 	var entries: Array = Catalog.SHIPS if key == "ship" else Catalog.PILOTS
 	var cost := 0
+	var buyable := false
 	for candidate in entries:
 		if candidate.id == id:
 			cost = int(candidate.cost)
-	if int(profile.cores) < cost:
+			buyable = bool(candidate.get("buy_only", false))
+	# Ships and pilots with an unlock condition are earned in play, not bought.
+	if not buyable or int(profile.cores) < cost:
 		return
 	# Unlocks are permanent purchases, so they take a second tap to confirm.
 	var token := key + ":" + id
@@ -1955,7 +2007,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	var id: String = str(card.id)
 	var tag: String = str(card.tag)
 	var current: int = int(sim.upgrades.get(id, 0))
-	var next_rank: int = mini(int(card.max), current + (1 if tag == "ABILITY" and current == 0 else 2))
+	var next_rank: int = current + Simulation.rank_gain(card, current)
 	var milestone: int = 5 if current < 5 else 10
 	var reaches_milestone: bool = current < milestone and next_rank >= milestone and tag != "RECOVERY"
 	var is_new_ability := tag == "ABILITY" and current == 0
@@ -2702,6 +2754,13 @@ func _show_results() -> void:
 		_rival_identity(body, sim.rival_record, "RIVAL BEATEN  ·  Trophy added.")
 	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
 		_ui_button(body, "Rivals", _show_rival_journal, "secondary", 48)
+	if not result_unlocked.is_empty():
+		var unlocked_names := PackedStringArray()
+		for id in result_unlocked:
+			var ship: Dictionary = Catalog.ship(str(id))
+			unlocked_names.append(str(ship.name) if str(ship.id) == str(id) else str(Catalog.pilot(str(id)).name))
+		_info_card(body, "Unlocked", "\n".join(unlocked_names), Kit.AMBER)
+		_ui_button(body, "Ships & pilots", _show_loadout, "secondary", 48)
 	if not result_awards.is_empty():
 		var names := PackedStringArray()
 		for id in result_awards:
@@ -3303,13 +3362,12 @@ func _finish() -> void:
 	result_daily_best = int(settlement.best_score)
 	result_new_best = bool(settlement.new_best)
 	result_rival_news = settlement.get("rival_news", {})
+	result_unlocked = settlement.get("unlocked", [])
 	if _save_profile():
 		services.delete_run()
 	_show_results()
-	for id in result_awards:
-		var item: Dictionary = Progress.achievement(str(id))
-		if not item.is_empty():
-			_queue_toast("Achievement unlocked", str(item.name))
+	# New achievements are listed on the results screen itself; a popup on
+	# top covered its "What took you down" header.
 	if not result_awards.is_empty():
 		sound.play("card")
 	game_center.sync()
@@ -3503,7 +3561,7 @@ func _select_loadout(key: String, id: String) -> void:
 		return
 	var owned_key := "ships_owned" if key == "ship" else "pilots_owned"
 	if id not in profile[owned_key]:
-		if profile.cores < int(item.cost):
+		if not bool(item.get("buy_only", false)) or profile.cores < int(item.cost):
 			return
 		profile.cores -= int(item.cost)
 		profile[owned_key].append(id)

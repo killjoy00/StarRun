@@ -1,5 +1,5 @@
 name: Difficulty experiment
-# Full Normal campaigns for all six ships at no / half / max Hangar, in
+# Full Normal campaigns for all seven ships at no / half / max Hangar, in
 # parallel, with per-world spawn, health and damage multipliers. Measures
 # win rates against the difficulty targets (no Hangar never finishes, half
 # Hangar (p32, the midpoint of progression) wins 40-60%, max Hangar wins
@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven]
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven, lancer]
         hangar: ${{ fromJSON(needs.config.outputs.hangars) }}
         chunk: ${{ fromJSON(needs.config.outputs.chunks) }}
     steps:

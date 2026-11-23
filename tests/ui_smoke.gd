@@ -277,6 +277,14 @@ func _run() -> void:
 		await process_frame
 		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.size.y > 100 and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Achievements page must wrap and scroll at every viewport")
+		scene.profile.codex = {"card:pulse":true, "fusion:nova_aegis":true}
+		scene.codex_tab = "Upgrades"
+		scene._show_codex()
+		await process_frame
+		check(scene.mode == "codex" and _contains_text(scene.reading_scroll, "PULSE CANNON") and _contains_text(scene.reading_scroll, "Not found yet"), "The codex shows found entries and hides the rest")
+		scene._codex_tab("Fusions")
+		await process_frame
+		check(scene.codex_tab == "Fusions" and _contains_text(scene.reading_scroll, "NOVA GUARD") and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Codex tabs switch and wrap on every viewport")
 		scene._show_menu()
 		for sheet in ["settings", "briefing", "pause"]:
 			if sheet == "settings":
@@ -303,13 +311,23 @@ func _run() -> void:
 		check(scene.mode == "loadout", "Loadout selector must open from the Hangar")
 		scene.profile.ships_owned = ["vanguard"]
 		scene.profile.ship = "vanguard"
+		var wallet: int = scene.profile.cores
 		scene._loadout_tap("ship", "wraith")
-		check(scene.profile.ship != "wraith" and "wraith" not in scene.profile.ships_owned, "Permanent unlocks must not spend cores on the first tap")
 		scene._loadout_tap("ship", "wraith")
-		check(scene.profile.ship == "wraith" and "wraith" in scene.profile.ships_owned, "Unlocking a ship must equip and persist ownership")
+		scene._select_loadout("ship", "wraith")
+		check("wraith" not in scene.profile.ships_owned and scene.profile.cores == wallet, "Earned ships cannot be bought with Cores")
+		scene._loadout_tab("Ships")
+		await process_frame
+		check(_contains_text(scene.reading_scroll, "Unlock: Get Seeker pods to rank 10 in one run"), "Locked ships show how to earn them")
+		scene._loadout_tap("ship", "lancer")
+		check(scene.profile.ship != "lancer" and "lancer" not in scene.profile.ships_owned, "Permanent unlocks must not spend cores on the first tap")
+		scene._loadout_tap("ship", "lancer")
+		check(scene.profile.ship == "lancer" and "lancer" in scene.profile.ships_owned and scene.profile.cores == wallet - 120, "Buying the Lancer must equip and persist ownership")
 		scene._loadout_tab("Pilots")
 		scene._select_loadout("pilot", "hunter")
-		check(scene.profile.pilot == "hunter" and "hunter" in scene.profile.pilots_owned, "Unlocking a pilot must equip and persist ownership")
+		check(scene.profile.pilot != "hunter" and "hunter" not in scene.profile.pilots_owned, "Earned pilots cannot be bought with Cores")
+		scene._select_loadout("pilot", "daredevil")
+		check(scene.profile.pilot == "daredevil" and "daredevil" in scene.profile.pilots_owned, "Buying Kade must equip and persist ownership")
 		scene._show_hangar()
 		var paid: int = scene.profile.cores
 		scene._purchase("shield")
@@ -351,7 +369,7 @@ func _run() -> void:
 		check(scene.mode == "playing" and scene.sim.choice_cores == core_before + 5, "The maxed draft Core reward works through the actual UI action")
 		scene.sim.cards.clear()
 		scene._new_run()
-		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
+		check(scene.sim.ship_id == "lancer" and scene.sim.pilot_id == "daredevil" and scene.sim.upgrades.lance >= 1, "A new flight must use the equipped hull and pilot")
 		scene._show_build()
 		await process_frame
 		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")
@@ -427,7 +445,7 @@ func _run() -> void:
 	scene._resume_run()
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
 	scene._choose_route("overclock")
-	check(scene.sim.stage == 2 and scene.mode == "cards" and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with reduced shields and its stronger weapons")
+	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with its stronger weapons and no free draft")
 	scene.sim.cards.clear()
 	scene.mode = "playing"
 	scene._show_build()
@@ -481,9 +499,8 @@ func _run() -> void:
 	scene._share_daily_result()
 	check(scene.toast_panel.visible and scene.toast_detail.text.contains("copied"), "Desktop clipboard fallback shows a confirmation toast")
 	check(scene.Progress.daily_share_text(scene.sim).contains(daily_id), "Share payload preserves the saved Daily UTC date")
-	check(scene.result_awards.has("daily_first") and scene.toast_queue.size() > 0, "New achievements queue nonblocking unlock notifications")
-	scene._advance_toast(4.0)
-	check(scene.toast_panel.visible and scene.toast_title.text == "ACHIEVEMENT UNLOCKED", "Queued achievement notification appears after copy toast dismisses")
+	check(scene.result_awards.has("daily_first") and scene.toast_queue.is_empty(), "New achievements do not pop up over the results header")
+	check(_contains_text(scene.reading_scroll, str(scene.Progress.achievement("daily_first").name)), "New achievements are listed on the results screen")
 	# Simulate the native iOS singleton in headless CI without needing an iPhone.
 	var native_share := NativeShareMock.new()
 	scene.daily_share_service = native_share
