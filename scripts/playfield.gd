@@ -15,6 +15,7 @@ const SHIPS := {
 	"wraith": preload("res://assets/art/wraith.svg"),
 	"arcwing": preload("res://assets/art/arcwing.svg"),
 	"haven": preload("res://assets/art/haven.svg"),
+	"lancer": preload("res://assets/art/lancer.svg"),
 	"drone": preload("res://assets/art/drone.png"),
 	"gunship": preload("res://assets/art/gunship.png"),
 	"sniper": preload("res://assets/art/sniper.png"),

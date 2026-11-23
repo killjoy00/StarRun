@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 128 128">
+<defs>
+<linearGradient id="metal" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#e8eef2"/><stop offset=".34" stop-color="#8d9cab"/><stop offset=".62" stop-color="#3a4a5a"/><stop offset="1" stop-color="#1a2734"/></linearGradient>
+<linearGradient id="armor" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#ffd98a"/><stop offset=".45" stop-color="#b9781e"/><stop offset="1" stop-color="#2a2016"/></linearGradient>
+<linearGradient id="prism" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffffff"/><stop offset=".4" stop-color="#ffe7a6"/><stop offset="1" stop-color="#ffb347"/></linearGradient>
+<linearGradient id="engine" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#ffffff"/><stop offset=".36" stop-color="#ffcf7c"/><stop offset="1" stop-color="#ffcf7c" stop-opacity="0"/></linearGradient>
+</defs>
+<g stroke-linejoin="round" stroke-linecap="round">
+<path d="M64 1L73 30L79 58L104 74L116 98L98 104L82 96L76 118L64 112L52 118L46 96L30 104L12 98L24 74L49 58L55 30Z" fill="#17120c" stroke="#0b0d14" stroke-width="5"/>
+<path d="M50 62L26 77L18 95L32 99L48 90Z M78 62L102 77L110 95L96 99L80 90Z" fill="url(#armor)" stroke="#ffe0a0" stroke-width="2"/>
+<path d="M36 80L46 74L46 86L34 92Z M92 80L82 74L82 86L94 92Z" fill="#7a4d12" stroke="#ffc36b" stroke-width="1.2"/>
+<path d="M64 5L72 32L76 96L64 108L52 96L56 32Z" fill="url(#metal)" stroke="#fff3d6" stroke-width="2.2"/>
+<path d="M64 4L69 18L64 27L59 18Z" fill="url(#prism)" stroke="#ffffff" stroke-width="1.2"/>
+<path d="M60 40L64 34L68 40L68 62L64 67L60 62Z" fill="#ffbf55" stroke="#fff0c8" stroke-width="1.4"/>
+<path d="M59 74L69 74L71 92L64 98L57 92Z" fill="#3b2a12" stroke="#ffd58a" stroke-width="1.4"/>
+<path d="M56 104L64 126L72 104Z" fill="url(#engine)"/>
+<path d="M40 96L46 112L50 98Z M88 96L82 112L78 98Z" fill="url(#engine)" opacity=".8"/>
+</g>
+</svg>

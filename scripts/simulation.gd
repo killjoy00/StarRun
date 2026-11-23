@@ -290,7 +290,7 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
 	upgrades.arc = int(chassis.arc) + int(meta.arc_start)
-	upgrades.lance = int(meta.lance_start)
+	upgrades.lance = int(chassis.get("lance", 0)) + int(meta.lance_start)
 	upgrades.mend = int(chassis.mend)
 	var signature: String = chassis.signature
 	upgrades[signature] = maxi(1, int(upgrades.get(signature, 0))) + int(meta.signature_rank)
@@ -399,8 +399,9 @@ func step() -> void:
 		next_encounter_at = 55.0 + float(seed_value % 23)
 	tick += 1
 	time = tick * DT
+	var recharge_step := DT * (1.20 if daredevil_active() else 1.0)
 	for key in cooldowns:
-		cooldowns[key] = maxf(0.0, cooldowns[key] - DT)
+		cooldowns[key] = maxf(0.0, cooldowns[key] - recharge_step)
 	aegis_left = maxf(0.0, aegis_left - DT)
 	overdrive_left = maxf(0.0, overdrive_left - DT)
 	chrono_left = maxf(0.0, chrono_left - DT)
@@ -2899,7 +2900,7 @@ func _update_weapons() -> void:
 		# Kills earlier this tick leave dead enemies in the array until the
 		# projectile pass. Do not consume a full lance cycle without firing.
 		if not target.is_empty():
-			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0))
+			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0)) * (0.85 if ship_id == "lancer" else 1.0)
 			lance_refund_ready = true
 			var echo_used := false
 			var end: Vector2 = origin + (target.p - origin).normalized() * 1200
@@ -2909,7 +2910,7 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0)
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (1.35 if ship_id == "lancer" else 1.0)
 					_damage_enemy(enemy, strike_damage, "lance")
 					if _has_mutation("refracting_lance") and not echo_used:
 						for other in enemies:
@@ -2920,10 +2921,17 @@ func _update_weapons() -> void:
 								echo_used = true
 								break
 
+## Kade (Daredevil): below half hull, guns hit 25% harder and abilities
+## recharge 20% faster.
+func daredevil_active() -> bool:
+	return pilot_id == "daredevil" and hull < max_hull * 0.5
+
 func weapon_power() -> float:
 	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
+	if daredevil_active():
+		power *= 1.25
 	power *= vanguard_veteran_bonus()
 	if merchant_pact_power > 0.0:
 		power *= 1.0 + merchant_pact_power

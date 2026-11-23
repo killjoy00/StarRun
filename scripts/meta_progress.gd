@@ -38,6 +38,53 @@ static func utc_day() -> String:
 # Shares of a full Hangar's cost. The original (pre-extension) ranks are
 # about 21% of it, so Light buys about a third of them, Standard most, Heavy
 # all of them plus some extended ranks, Elite deep into the extended ranks.
+## Ships and pilots earned through play. Everything not listed here (and not
+## free) is bought with Cores: those entries are marked buy_only in Catalog.
+const UNLOCKS := {
+	"kestrel": {"text":"Beat World 1", "stat":"max_world_any", "target":1},
+	"bulwark": {"text":"Block 500 damage in one run", "stat":"max_damage_prevented", "target":500},
+	"wraith": {"text":"Get Seeker pods to rank 10 in one run", "stat":"max_rank_seeker", "target":10},
+	"arcwing": {"text":"Get Arc coil to rank 10 in one run", "stat":"max_rank_arc", "target":10},
+	"haven": {"text":"Turn on SWARM (two drone abilities) in a run", "stat":"swarm", "target":1},
+	"engineer": {"text":"Finish 5 runs", "stat":"finished_runs", "target":5},
+	"ace": {"text":"Destroy 1,000 enemies in total", "stat":"total_kills", "target":1000},
+	"hunter": {"text":"Defeat a rival captain", "stat":"rivals_defeated", "target":1},
+	"tactician": {"text":"Stop 5 charging beams in one run", "stat":"max_beams_cancelled", "target":5},
+	"scavenger": {"text":"Finish the Daily on 3 different days", "stat":"daily_days", "target":3}
+}
+
+static func unlock_progress(profile: Dictionary, id: String) -> int:
+	var rule: Dictionary = UNLOCKS.get(id, {})
+	if rule.is_empty():
+		return 0
+	var stats: Dictionary = profile.get("achievement_stats", {})
+	match str(rule.stat):
+		"daily_days":
+			var days: Variant = stats.get("daily_days", [])
+			return days.size() if days is Array else 0
+		"rivals_defeated":
+			var trophies: Variant = profile.get("rival_trophies", [])
+			return trophies.size() if trophies is Array else 0
+		"swarm":
+			var found: Variant = profile.get("codex", {})
+			return 1 if found is Dictionary and found.has("synergy:swarm") else 0
+	return int(stats.get(str(rule.stat), 0))
+
+## Grant every ship and pilot whose condition is met. Returns the new ones.
+static func apply_unlocks(profile: Dictionary) -> Array:
+	var added: Array = []
+	for id in UNLOCKS:
+		var is_ship: bool = Catalog.SHIPS.any(func(s): return str(s.id) == id)
+		var key := "ships_owned" if is_ship else "pilots_owned"
+		var owned: Variant = profile.get(key, [])
+		if not owned is Array:
+			owned = []
+		if id not in owned and unlock_progress(profile, id) >= int(UNLOCKS[id].target):
+			owned.append(id)
+			added.append(id)
+			profile[key] = owned
+	return added
+
 const DAILY_HANGAR_GRADES := [["Light", 3, 7], ["Standard", 9, 16], ["Heavy", 22, 40], ["Elite", 50, 80]]
 const DAILY_HANGAR_SKIPPED := ["cores", "stipend", "bounty"]
 
@@ -91,8 +138,10 @@ static func daily_seed(day: String) -> int:
 
 static func daily_setup(day: String) -> Dictionary:
 	var ordinal: int = int(day.replace("-", ""))
-	var ships: Array = Catalog.SHIPS
-	var pilots: Array = Catalog.PILOTS
+	# Buy-only ships and pilots are not in the rotation, so adding one never
+	# changes which ship or pilot a past or current day uses.
+	var ships: Array = Catalog.SHIPS.filter(func(s): return not bool(s.get("buy_only", false)))
+	var pilots: Array = Catalog.PILOTS.filter(func(p): return not bool(p.get("buy_only", false)))
 	return {
 		"day":day, "seed":daily_seed(day),
 		"ship":str(ships[posmod(ordinal, ships.size())].id),
@@ -122,7 +171,7 @@ static func prepare(profile: Dictionary) -> void:
 		"hard_wins":0, "insane_wins":0, "victory_ships":[],
 		"fusion_runs":0, "max_prototypes":0, "max_beams_cancelled":0,
 		"max_damage_prevented":0, "daily_days":[], "max_world_any":0, "archive_cleared":false,
-		"world_clears":{}
+		"world_clears":{}, "total_kills":0, "max_rank_seeker":0, "max_rank_arc":0
 	}
 	var old: Variant = profile.get("achievement_stats", {})
 	if old is Dictionary:
@@ -141,6 +190,8 @@ static func prepare(profile: Dictionary) -> void:
 	profile.achievement_stats = defaults
 	if not profile.has("last_settled_run_key"):
 		profile.last_settled_run_key = ""
+	# Older profiles get whatever their past runs already earned.
+	apply_unlocks(profile)
 
 ## Highest world a regular flight may start at on this difficulty: one past
 ## the best world cleared there. Clears on a harder difficulty count too.
@@ -200,7 +251,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var unique_key := ("daily:%s:%d" % [day, int(sim.daily_attempt)]) if daily else ("flight:%d" % int(sim.seed_value))
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
-	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{},"codex_new":0}
+	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{},"codex_new":0,"unlocked":[]}
 	# Codex discoveries merge idempotently, so a repeated settle is harmless.
 	if sim.has_method("note_codex"):
 		sim.note_codex()
@@ -251,6 +302,9 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	stats.max_prototypes = maxi(int(stats.max_prototypes),int(sim.prototypes.size()))
 	stats.max_beams_cancelled = maxi(int(stats.max_beams_cancelled),int(sim.beams_cancelled))
 	stats.max_damage_prevented = maxi(int(stats.max_damage_prevented),roundi(float(sim.prevented)))
+	stats.total_kills = int(stats.total_kills) + int(sim.kills)
+	stats.max_rank_seeker = maxi(int(stats.max_rank_seeker), int(sim.upgrades.get("seeker", 0)))
+	stats.max_rank_arc = maxi(int(stats.max_rank_arc), int(sim.upgrades.get("arc", 0)))
 	if sim.active_slots.any(func(slot): return not sim.fusion_spec(str(slot)).is_empty()):
 		stats.fusion_runs = int(stats.fusion_runs) + 1
 	if full_run and (bool(sim.won) or (secret and worlds == 4)):
@@ -279,6 +333,7 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	profile.last_settled_run_key = unique_key
 	result.earned = earned
 	result.awarded = awarded
+	result.unlocked = apply_unlocks(profile)
 	return result
 
 static func achievement(id: String) -> Dictionary:

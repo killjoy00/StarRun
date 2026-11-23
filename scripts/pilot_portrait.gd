@@ -6,7 +6,8 @@ const FACES := {
 	"engineer":preload("res://assets/pilots/engineer.webp"),
 	"hunter":preload("res://assets/pilots/hunter.webp"),
 	"scavenger":preload("res://assets/pilots/scavenger.webp"),
-	"tactician":preload("res://assets/pilots/tactician.webp")}
+	"tactician":preload("res://assets/pilots/tactician.webp"),
+	"daredevil":preload("res://assets/pilots/daredevil.svg")}
 var pilot_id := "rookie"
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE

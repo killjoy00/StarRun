@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 128 128">
+<defs>
+<linearGradient id="bg" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#2a1420"/><stop offset="1" stop-color="#0c0a14"/></linearGradient>
+<linearGradient id="helmet" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#e9edf2"/><stop offset=".5" stop-color="#8b97a6"/><stop offset="1" stop-color="#2b3340"/></linearGradient>
+<linearGradient id="visor" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#ffb08a"/><stop offset=".45" stop-color="#e8452f"/><stop offset="1" stop-color="#4a0d14"/></linearGradient>
+<linearGradient id="suit" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#3a2a33"/><stop offset="1" stop-color="#14121a"/></linearGradient>
+</defs>
+<rect width="128" height="128" fill="url(#bg)"/>
+<path d="M0 128L8 100C18 88 38 84 64 84C90 84 110 88 120 100L128 128Z" fill="url(#suit)" stroke="#59404c" stroke-width="2"/>
+<path d="M44 92L64 104L84 92" fill="none" stroke="#e8452f" stroke-width="4" stroke-linecap="round"/>
+<path d="M30 60C30 34 44 18 64 18C84 18 98 34 98 60C98 78 90 90 64 92C38 90 30 78 30 60Z" fill="url(#helmet)" stroke="#f3f6fa" stroke-width="2"/>
+<path d="M36 52C38 40 48 34 64 34C80 34 90 40 92 52L88 66C80 72 48 72 40 66Z" fill="url(#visor)" stroke="#ffd0b8" stroke-width="1.6"/>
+<path d="M44 46C50 41 58 40 66 41" fill="none" stroke="#fff3ea" stroke-width="2.4" stroke-linecap="round" opacity=".8"/>
+<path d="M52 24L64 20L76 24L72 30L56 30Z" fill="#e8452f"/>
+<path d="M30 62L22 64L22 74L32 72Z M98 62L106 64L106 74L96 72Z" fill="#5d6876" stroke="#c7d0da" stroke-width="1.2"/>
+</svg>

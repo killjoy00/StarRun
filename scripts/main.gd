@@ -98,6 +98,7 @@ var result_daily_score := -1
 var result_daily_best := -1
 var result_new_best := false
 var result_rival_news: Dictionary = {}
+var result_unlocked: Array = []
 var rival_stinger_clock := 0.0
 var boss_intro_clock := 0.0
 var boss_intro_stage := 0 # The world whose boss intro has played; not replayed on resume.
@@ -1750,6 +1751,7 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 	var owned: bool = id in profile[owned_key]
 	var equipped: bool = profile[key] == id
 	var cost: int = int(entry.cost)
+	var buyable: bool = bool(entry.get("buy_only", false))
 	var armed := confirm_key == key + ":" + id
 	var card := _tap_card(parent, _loadout_tap.bind(key, id), Kit.CYAN, equipped)
 	var row := HBoxContainer.new()
@@ -1794,6 +1796,8 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 		Kit.glyph(chip.get_child(0), "check", Kit.CYAN, 14)
 	elif owned:
 		_chip(head, "Equip", Kit.TEXT)
+	elif not buyable:
+		_chip(head, "Locked", Kit.DIM)
 	elif armed:
 		_chip(head, "Tap to confirm", Kit.AMBER, true)
 	else:
@@ -1817,7 +1821,19 @@ func _loadout_card(parent: Node, entry: Dictionary, ships: bool) -> void:
 		for stat in values:
 			Kit.meter(stats, float(stat[1]), Kit.CYAN, 5)
 		Kit.label(info, "Starts with " + str(sim.content.abilities[str(entry.signature)].name), 15, Kit.CYAN)
-	if not owned and int(profile.cores) < cost:
+	if not owned and not buyable and Progress.UNLOCKS.has(id):
+		var rule: Dictionary = Progress.UNLOCKS[id]
+		var done: int = mini(int(rule.target), Progress.unlock_progress(profile, id))
+		Kit.label(info, "Unlock: %s" % str(rule.text), 15, Kit.AMBER, true)
+		var meter_row := HBoxContainer.new()
+		meter_row.add_theme_constant_override("separation", 8)
+		meter_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		info.add_child(meter_row)
+		var meter := Kit.meter(meter_row, float(done) / maxf(1.0, float(rule.target)), Kit.AMBER, 5)
+		meter.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		meter.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		Kit.label(meter_row, "%s / %s" % [_num(done), _num(int(rule.target))], 14, Kit.MUTED)
+	elif not owned and int(profile.cores) < cost:
 		Kit.label(info, "Need %d more cores" % (cost - int(profile.cores)), 14, Kit.DIM)
 	elif armed:
 		Kit.label(info, "Unlock for %d cores? Tap again to confirm." % cost, 15, Kit.AMBER, true)
@@ -1831,10 +1847,13 @@ func _loadout_tap(key: String, id: String) -> void:
 		return
 	var entries: Array = Catalog.SHIPS if key == "ship" else Catalog.PILOTS
 	var cost := 0
+	var buyable := false
 	for candidate in entries:
 		if candidate.id == id:
 			cost = int(candidate.cost)
-	if int(profile.cores) < cost:
+			buyable = bool(candidate.get("buy_only", false))
+	# Ships and pilots with an unlock condition are earned in play, not bought.
+	if not buyable or int(profile.cores) < cost:
 		return
 	# Unlocks are permanent purchases, so they take a second tap to confirm.
 	var token := key + ":" + id
@@ -2735,6 +2754,13 @@ func _show_results() -> void:
 		_rival_identity(body, sim.rival_record, "RIVAL BEATEN  ·  Trophy added.")
 	if not result_rival_news.is_empty() or sim.rival_outcome == "retired":
 		_ui_button(body, "Rivals", _show_rival_journal, "secondary", 48)
+	if not result_unlocked.is_empty():
+		var unlocked_names := PackedStringArray()
+		for id in result_unlocked:
+			var ship: Dictionary = Catalog.ship(str(id))
+			unlocked_names.append(str(ship.name) if str(ship.id) == str(id) else str(Catalog.pilot(str(id)).name))
+		_info_card(body, "Unlocked", "\n".join(unlocked_names), Kit.AMBER)
+		_ui_button(body, "Ships & pilots", _show_loadout, "secondary", 48)
 	if not result_awards.is_empty():
 		var names := PackedStringArray()
 		for id in result_awards:
@@ -3336,6 +3362,7 @@ func _finish() -> void:
 	result_daily_best = int(settlement.best_score)
 	result_new_best = bool(settlement.new_best)
 	result_rival_news = settlement.get("rival_news", {})
+	result_unlocked = settlement.get("unlocked", [])
 	if _save_profile():
 		services.delete_run()
 	_show_results()
@@ -3534,7 +3561,7 @@ func _select_loadout(key: String, id: String) -> void:
 		return
 	var owned_key := "ships_owned" if key == "ship" else "pilots_owned"
 	if id not in profile[owned_key]:
-		if profile.cores < int(item.cost):
+		if not bool(item.get("buy_only", false)) or profile.cores < int(item.cost):
 			return
 		profile.cores -= int(item.cost)
 		profile[owned_key].append(id)
