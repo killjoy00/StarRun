@@ -31,6 +31,7 @@ def main() -> int:
     # Per world: runs that entered it and runs that cleared it, per Hangar level.
     entered = collections.defaultdict(lambda: [0, 0, 0, 0])
     cleared = collections.defaultdict(lambda: [0, 0, 0, 0])
+    ship_cleared = collections.defaultdict(lambda: [0, 0, 0, 0])
     difficulty = "normal"
     start = "1"
     for path in sys.argv[1:]:
@@ -59,6 +60,7 @@ def main() -> int:
                         continue
                     entered[hangar][index] += 1
                     cleared[hangar][index] += int(stage["status"] == "cleared")
+                    ship_cleared[(hangar, ship)][index] += int(stage["status"] == "cleared")
                 wins[hangar] += int(won)
                 runs[hangar] += 1
                 per_ship[(hangar, ship)][0] += int(won)
@@ -88,6 +90,23 @@ def main() -> int:
         )
         target = "never" if hangar == "none" else (f"{low:.0%}-{high:.0%}" if hangar in TARGETS else "-")
         print(f"| {hangar} | {wins[hangar]}/{runs[hangar]} ({rate:.0%}) {'OK' if hit else 'MISS'} | {target} | {ships} | {worlds} |")
+    print("\nWorld completion: share of all runs that cleared each world (W4 = campaign win).")
+    print("Per ship: worlds cleared out of its runs, W1/W2/W3/W4.\n")
+    print("| Hangar | W1 | W2 | W3 | W4 | Per ship (W1/W2/W3/W4 of runs) |")
+    print("|---|---|---|---|---|---|")
+    for hangar in ["none"] + sorted((h for h in runs if h.startswith("p")), key=lambda h: int(h[1:])) + ["half", "max", "mid"]:
+        if not runs[hangar]:
+            continue
+        total = runs[hangar]
+        cells = [
+            f"{cleared[hangar][index]}/{total} ({cleared[hangar][index] / total:.0%})" if entered[hangar][index] else "-"
+            for index in range(4)
+        ]
+        ships = ", ".join(
+            f"{ship} {'/'.join(str(c) for c in ship_cleared[(h, ship)])} of {n}"
+            for (h, ship), (_, n) in sorted(per_ship.items()) if h == hangar
+        )
+        print(f"| {hangar} | " + " | ".join(cells) + f" | {ships} |")
     print("\nDeaths per world: share of runs that reached a world and died in it.")
     print("Even progression means similar numbers in each world.\n")
     print("| Hangar | W1 | W2 | W3 | W4 |")
