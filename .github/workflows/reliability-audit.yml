@@ -77,6 +77,31 @@ jobs:
           if-no-files-found: ignore
           retention-days: 30
 
+  world1_floor:
+    # No ship may be unable to clear Normal World 1 without the Hangar. The
+    # first Lancer (one beam every 2 s) cleared 0 of 12; most ships clear 3-8.
+    name: No-Hangar World 1 floor / ${{ matrix.ship }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven, lancer]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import
+        run: godot --headless --path . --editor --import --quit
+      - name: At least 1 of 12 no-Hangar Normal World 1 clears
+        shell: bash
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/balance_matrix.gd -- \
+            --ship=${{ matrix.ship }} --difficulty=normal --hangar=none --strategy=timed \
+            --stage-limit=1 --seeds=12 --require-world1-clears=1 2>&1 | tee world1-floor.log
+          grep 'BALANCE_MATRIX ' world1-floor.log >> "$GITHUB_STEP_SUMMARY"
+
   fragile_ships:
     name: Empty-Hangar World 1 / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest

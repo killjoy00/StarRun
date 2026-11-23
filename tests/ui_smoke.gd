@@ -119,6 +119,27 @@ func _run() -> void:
 		scene._update_hud()
 		check(scene.cooldown_meters[0].visible and scene.ability_buttons[0].get_node("AbilityStatus").text.contains("s"), "Cooldown progress appears when the equipped ability is recovering")
 		scene.sim.cooldowns[signature] = 0.0
+		# Every ability and fusion name shows in full in a slot (no "OVERLOA").
+		var slots_before: Array = scene.sim.active_slots.duplicate()
+		var upgrades_before: Dictionary = scene.sim.upgrades.duplicate()
+		var names_fit := true
+		var names_whole := true
+		for ability_id in scene.sim.content.abilities:
+			scene.sim.active_slots = [str(ability_id)]
+			scene.sim.upgrades[str(ability_id)] = maxi(1, int(scene.sim.upgrades.get(str(ability_id), 0)))
+			scene._update_hud()
+			var slot_label: Label = scene.ability_buttons[0].get_node("AbilityName")
+			var shown_font: Font = slot_label.get_theme_font("font")
+			var shown_size: int = slot_label.get_theme_font_size("font_size")
+			var expected: String = scene.CombatHud._short_ability_name(scene.sim, str(ability_id)) if (scene._compact_ui() or scene.ability_buttons[0].size.x < 175.0) else str(scene.sim.content.abilities[ability_id].name).to_upper()
+			names_whole = names_whole and slot_label.text == expected
+			var too_wide: bool = shown_font.get_string_size(slot_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, shown_size).x > slot_label.size.x + 0.5
+			if too_wide or slot_label.text != expected:
+				print("SLOT_NAME_MISFIT %s %s size=%d width=%.1f" % [str(ability_id), slot_label.text, shown_size, slot_label.size.x])
+			names_fit = names_fit and not too_wide and shown_size >= 11
+		check(names_whole and names_fit, "Every ability name shows in full in its slot (no cut-off letters)")
+		scene.sim.active_slots = slots_before
+		scene.sim.upgrades = upgrades_before
 		scene._update_hud()
 		if logical.x < 760:
 			check(scene.hud.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Combat heading must not overlap Build")
@@ -273,6 +294,23 @@ func _run() -> void:
 		scene.services.delete_run()
 		scene._show_menu()
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
+		await process_frame
+		var nav_fits := true
+		var nav_count := 0
+		for nav_name in ["MenuNavTop", "MenuNavBottom"]:
+			var nav := scene.find_child(nav_name, true, false)
+			if nav == null:
+				nav_fits = false
+				continue
+			for button in nav.get_children():
+				if button is Button:
+					nav_count += 1
+					var font: Font = button.get_theme_font("font")
+					var font_size: int = button.get_theme_font_size("font_size")
+					var style: StyleBox = button.get_theme_stylebox("normal")
+					var needed: float = font.get_string_size(button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + style.get_margin(SIDE_LEFT) + style.get_margin(SIDE_RIGHT)
+					nav_fits = nav_fits and needed <= button.size.x + 0.5
+		check(nav_fits and nav_count == 5, "Title navigation labels are never cut off (Hangar, Codex, Awards, Rivals, Guide)")
 		scene._show_achievements()
 		await process_frame
 		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")

@@ -1086,15 +1086,21 @@ func _show_menu() -> void:
 	_start_world_picker(body, current)
 	# A short navigation rail stays above the thumb-reachable primary action.
 	var saved: Dictionary = services.read_save(Services.RUN)
+	# Two short rows: five labels in one row were cut off ("Hanga...") on phones.
 	var row := HBoxContainer.new()
+	row.name = "MenuNavTop"
 	row.add_theme_constant_override("separation", 6)
 	bottom.add_child(row)
-	_ui_button(row, "Hangar", _show_hangar, "ghost", 46, true)
-	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 46, true)
+	_ui_button(row, "Hangar", _show_hangar, "ghost", 42, true)
+	_ui_button(row, "Codex", _show_codex, "ghost", 42, true).tooltip_text = "Every upgrade, fusion and team-up you have found"
+	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 42, true)
 	awards_button.tooltip_text = "Achievements and milestones"
-	_ui_button(row, "Codex", _show_codex, "ghost", 46, true).tooltip_text = "Every upgrade, fusion and team-up you have found"
-	_ui_button(row, "Rivals", _show_rival_journal, "ghost", 46, true)
-	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
+	var row2 := HBoxContainer.new()
+	row2.name = "MenuNavBottom"
+	row2.add_theme_constant_override("separation", 6)
+	bottom.add_child(row2)
+	_ui_button(row2, "Rivals", _show_rival_journal, "ghost", 42, true)
+	_ui_button(row2, "Guide", _show_briefing.bind(false), "ghost", 42, true)
 	var primary: Button
 	if saved.is_empty():
 		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
