@@ -29,7 +29,7 @@ const LANCER_LANCE_DAMAGE := 2.00
 const BULWARK_DAMAGE := 1.15
 ## Haven Hive drones: a shot every HIVE_INTERVAL seconds from each drone.
 const HIVE_INTERVAL := 0.5
-const HIVE_BASE := 7.0
+const HIVE_BASE := 5.5
 const HIVE_PER_LEVEL := 1.4
 const HIVE_PER_WORLD := 0.6
 const HIVE_MAX := 4
@@ -2832,7 +2832,7 @@ func _update_support() -> void:
 					shots.append({"p":p,"v":(target.p-p).normalized()*700.0,"damage":((9.0 + level * 1.8) * weapon_power() * (1.0 + 0.75 * float(stage - 1)) if artifact_id == "drone_armada" else escort_damage),"weapon":"escort","target":int(target.id), "homing":artifact_id == "drone_armada"})
 	var hive := hive_count()
 	if hive > 0:
-		hive_timer -= DT
+		hive_timer -= DT * gun_rate()
 		if hive_timer <= 0.0:
 			hive_timer += HIVE_INTERVAL
 			for i in range(hive):
@@ -2866,7 +2866,9 @@ func _focus_reroll() -> void:
 	if not available.is_empty() and not cards.is_empty():
 		cards[-1] = available[_draft_rand(0,available.size()-1)].duplicate(true)
 
-func _update_weapons() -> void:
+## How fast the ship's guns reload: Autoloader, Hangar fire rate, Overdrive,
+## the ship's own fire rate, Redline, Afterburn and gravity wells.
+func gun_rate() -> float:
 	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
 	if rank_at("autoloader", 5): rate += 0.15
 	if rank_at("autoloader", 10): rate += 0.25
@@ -2874,6 +2876,10 @@ func _update_weapons() -> void:
 		rate *= 1.0 + passive_bonus("afterburn", 0.03, 0.10, 0.15)
 	if gravity_left > 0.0:
 		rate *= 0.72
+	return rate
+
+func _update_weapons() -> void:
+	var rate := gun_rate()
 	pulse_timer -= DT * rate
 	seeker_timer -= DT * rate
 	arc_timer -= DT * rate * (1.15 if passive_link_active("arc_feed") else 1.0)
