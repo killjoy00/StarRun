@@ -1587,12 +1587,12 @@ func _test_new_abilities() -> void:
 	sim.cards.clear()
 	for id in ["barrage", "overdrive", "chrono"]:
 		_install(sim, id)
-		check(sim.upgrades[id] == 2 and sim.activate(id), "Learning %s must occupy a slot at rank 2 and allow casting" % id)
+		check(sim.upgrades[id] == 1 and sim.activate(id), "Learning %s must occupy a slot and allow casting" % id)
 	check(sim.active_slots.size() == 4, "A ship starts with one active and can draft exactly three more")
 	_install(sim, "mend")
 	check(sim.upgrades.mend == 0 and sim.active_slots.size() == 4, "A fifth unowned ability must never be equipped")
 	sim.cards.clear() # Discard the deliberately injected, ineligible fifth-slot offer.
-	check(sim.shots.size() == 9, "Barrage must create nine guided rockets at rank 2")
+	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
 	var haven := Sim.new(4, {}, "haven")
 	check(haven.active_slots == ["mend"], "Haven starts with its repair signature")
@@ -1603,7 +1603,7 @@ func _test_new_abilities() -> void:
 	healing.activate("mend")
 	for i in range(240):
 		healing.step()
-	check(is_equal_approx(healing.hull, 70.0), "Repair drones must restore the promised hull over four seconds (rank 2)")
+	check(is_equal_approx(healing.hull, 70.0), "Repair drones restore 30 hull over four seconds at rank 1 (24, +25% fresh-ability boost)")
 	var normal := Sim.new()
 	var slowed := Sim.new()
 	_install(slowed, "chrono")
@@ -1924,7 +1924,7 @@ func _test_spawn_flow_and_level_pace() -> void:
 	check(is_equal_approx(sim.spawn_flow(), Sim.FLOW_FAST), "An empty field pulls the next ships in faster")
 	for i in range(int(sim._enemy_limit())):
 		sim._add_enemy("drone", Vector2(100 + i, 100))
-	check(is_equal_approx(sim.spawn_flow(), Sim.FLOW_SLOW), "A crowded field slows new arrivals")
+	check(is_equal_approx(sim.spawn_flow(), 1.0), "A crowded field never slows arrivals below real time")
 	sim.enemies.clear()
 	sim.time = 5.0
 	check(sim.spawn_flow() < 0.7, "Worlds 2-4 open gently")
@@ -1935,7 +1935,12 @@ func _test_spawn_flow_and_level_pace() -> void:
 	drifting.stage = 2
 	drifting.wave_drift = 30.0
 	check(is_equal_approx(drifting.wave_elapsed(), drifting.time + 30.0) and Sim.new().restore(drifting.snapshot()), "The spawn clock is saved with the flight")
-	check(Sim.rank_gain({"tag":"SYSTEM", "max":10}, 0) == 3 and Sim.rank_gain({"tag":"SYSTEM", "max":10}, 6) == 4 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 0) == 2 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 5) == 3 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 8) == 2, "Picks go 0-3-6-10, abilities 2-5-8-10")
+	check(Sim.rank_gain({"tag":"SYSTEM", "max":10}, 0) == 3 and Sim.rank_gain({"tag":"SYSTEM", "max":10}, 6) == 4 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 0) == 1 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 1) == 3 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 7) == 3, "Picks go 0-3-6-10, abilities 1-4-7-10")
+	var fresh := Sim.new(7404)
+	fresh.upgrades.nova = 1
+	var learned: float = fresh._active_rank_scale("nova")
+	fresh.upgrades.nova = 4
+	check(is_equal_approx(learned, 1.25) and is_equal_approx(fresh._active_rank_scale("nova"), 1.0), "A rank-1 ability is 25% stronger until its next pick")
 	var paced := Sim.new(7403)
 	var total := 0
 	for level in range(1, int(Sim.START_WORLD_LEVELS[1])):
@@ -3209,7 +3214,7 @@ func _test_drone_build() -> void:
 	# SWARM (+40%). Measure Haven's own bonus alone first.
 	carrier.active_slots = ["guard_drones"]
 	carrier.upgrades.guard_drones = 1
-	check(carrier.activate("guard_drones") and carrier.guard_count == 3 and is_equal_approx(carrier.guard_left, 6.0 * 1.25 * carrier.ability_power()), "Haven launches an extra guard drone that stays up 25% longer")
+	check(carrier.activate("guard_drones") and carrier.guard_count == 3 and is_equal_approx(carrier.guard_left, 6.0 * 1.25 * carrier.ability_power() * carrier._active_rank_scale("guard_drones")), "Haven launches an extra guard drone that stays up 25% longer")
 	var drone_carrier := Sim.new(3072, {}, "haven")
 	drone_carrier.active_slots.append("guard_drones")
 	drone_carrier.upgrades.guard_drones = 1
@@ -3225,7 +3230,7 @@ func _test_drone_build() -> void:
 	swarm.active_slots.append("guard_drones")
 	swarm.upgrades.guard_drones = 1
 	check(swarm.synergy_active("swarm") and is_equal_approx(swarm.weapon_power(), base_power * 0.90), "Two drone abilities start SWARM, which costs 10% gun damage")
-	check(swarm.activate("wing_drones") and is_equal_approx(swarm.escort_left, (6.0 * swarm.ability_power()) * 1.40), "SWARM drones last 40% longer")
+	check(swarm.activate("wing_drones") and is_equal_approx(swarm.escort_left, (6.0 * swarm.ability_power() * swarm._active_rank_scale("wing_drones")) * 1.40), "SWARM drones last 40% longer")
 	var plain := Sim.new(3073)
 	plain.active_slots = ["aegis", "wing_drones"]
 	plain.upgrades.wing_drones = 1
@@ -3363,7 +3368,7 @@ func _test_contextual_active_balance() -> void:
 	drained.enemies = [{"id":1, "kind":"shieldguard", "hp":1000.0, "max_hp":1000.0, "p":Vector2(270,500), "xp":0}]
 	check(drained.activate("siphon"), "Energy Siphon can strike an armored target")
 	var actual: float = float(drained.damage_dealt.get("siphon",0.0))
-	check(actual > 0.0 and is_equal_approx(drained.hull, 40.0 + minf(25.0, actual * 0.30)), "Siphon healing uses actual damage after target armor, not advertised raw damage")
+	check(actual > 0.0 and is_equal_approx(drained.hull, 40.0 + minf(25.0 * drained.ability_power() * drained._active_rank_scale("siphon"), actual * 0.30)), "Siphon healing uses actual damage after target armor, not advertised raw damage")
 	var late_siphon := Sim.new(5304)
 	late_siphon.stage = 4
 	late_siphon.active_slots = ["siphon"]

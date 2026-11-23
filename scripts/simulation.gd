@@ -17,9 +17,9 @@ const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not re
 # Level a typical flight has reached at the start of each world (catch-up).
 const START_WORLD_LEVELS := [1, 12, 30, 53]
 ## Ranks per pick. Fewer, bigger level-ups: a pick adds 3 ranks (0-3-6-10;
-## the pick that would stop at 9 goes to 10), a new ability starts at 2
-## (2-5-8-10). Before: 2 ranks per pick (abilities started at 1) and about
-## 1.6x as many level-ups.
+## the pick that would stop at 9 goes to 10), a new ability starts at 1
+## (1-4-7-10) and is 25% stronger at rank 1. Before: 2 ranks per pick and
+## about 1.6x as many level-ups.
 const RANKS_PER_PICK := 3
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
@@ -228,14 +228,13 @@ var won := false
 var next_spawn := 1.0
 ## Adaptive spawn pace. Each world's enemies follow a fixed schedule; this
 ## clock walks that schedule faster when the field is nearly clear and
-## slower when it is crowded. A player mowing through gets the next ships
-## (and the boss) sooner; a swamped player gets breathing room. The ships,
+## never slower than real time. A player mowing through gets the next ships
+## (and the boss) sooner. The ships,
 ## XP and enemy health in a world do not change, only when they arrive.
 ## Everything scheduled "N seconds into the world" runs on this clock.
 ## Stored as an offset from real time (wave_now() = time + wave_drift).
 var wave_drift := 0.0
 const FLOW_FAST := 1.6
-const FLOW_SLOW := 0.7
 ## Worlds 2-4 open gently: the clock is capped while the first ships arrive.
 const OPENING_RAMP := 35.0
 const OPENING_FLOW := 0.6
@@ -669,8 +668,9 @@ func wave_elapsed() -> float:
 
 ## How fast the spawn schedule advances this tick (see wave_drift).
 ## The field target is 30% of the crowd cap: at or below a third of that the
-## schedule runs at FLOW_FAST, at the target it runs at real speed, and at
-## 1.6x the target or more it slows to FLOW_SLOW.
+## schedule runs at FLOW_FAST, at the target and above it runs at real
+## speed. A crowded field never slows arrivals: that would rescue a player
+## who is falling behind and flatten the difficulty.
 func spawn_flow() -> float:
 	if secret_entered or boss_spawned:
 		return 1.0
@@ -684,10 +684,8 @@ func spawn_flow() -> float:
 		flow = FLOW_FAST
 	elif count <= target:
 		flow = lerpf(FLOW_FAST, 1.0, (count - target * 0.35) / (target * 0.65))
-	elif count <= target * 1.6:
-		flow = lerpf(1.0, FLOW_SLOW, (count - target) / (target * 0.6))
 	else:
-		flow = FLOW_SLOW
+		flow = 1.0
 	if stage >= 2:
 		var opened := time - stage_start
 		if opened < OPENING_RAMP:
@@ -1360,7 +1358,9 @@ func _active_rank_scale(id: String) -> float:
 	var total := 0.0
 	for source in sources:
 		var rank: int = int(upgrades.get(str(source), 0))
-		total += 1.0 + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
+		# A fresh rank-1 ability is 25% stronger, so learning one is worth a
+		# pick now that the next pick takes it straight to rank 4.
+		total += 1.0 + (0.25 if rank == 1 else 0.0) + (0.20 if rank >= 5 else 0.0) + (0.25 if rank >= 10 else 0.0)
 	var inherited := total / maxf(1.0, float(sources.size()))
 	if not spec.is_empty():
 		inherited *= 1.0 + maxf(0, int(upgrades[id]) - 1) * 0.04 + (0.20 if rank_at(id, 5) else 0.0) + (0.25 if rank_at(id, 10) else 0.0)
@@ -3491,7 +3491,7 @@ func xp_needed() -> int:
 static func rank_gain(card: Dictionary, before: int) -> int:
 	var cap := int(card.get("max", 10))
 	if str(card.get("tag", "")) == "ABILITY" and before == 0:
-		return 2
+		return 1
 	var after := before + RANKS_PER_PICK
 	if after == cap - 1:
 		after = cap
