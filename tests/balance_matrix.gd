@@ -36,6 +36,7 @@ func _run() -> void:
 	var seed_offset := 0
 	var stage_limit := 4
 	var require_no_world1_clears := false
+	var require_world1_clears := 0 # --require-world1-clears=N: Normal no-Hangar floor.
 	var require_no_campaign_wins := false
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -60,6 +61,8 @@ func _run() -> void:
 			seed_offset = maxi(0, int(arg.get_slice("=", 1)))
 		elif arg.begins_with("--stage-limit="):
 			stage_limit = int(arg.get_slice("=", 1))
+		elif arg.begins_with("--require-world1-clears="):
+			require_world1_clears = maxi(0, int(arg.get_slice("=", 1)))
 		elif arg == "--require-no-world1-clears":
 			require_no_world1_clears = true
 		elif arg == "--trace":
@@ -226,7 +229,9 @@ func _run() -> void:
 	# Difficulty target: with no Hangar upgrades, Normal must never be finished.
 	if require_no_campaign_wins and campaign_wins > 0:
 		push_error("A run without Hangar upgrades finished the campaign (%d wins)" % campaign_wins)
-	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) or (require_no_campaign_wins and campaign_wins > 0) else 0)
+	if require_world1_clears > 0 and world1_clears < require_world1_clears:
+		push_error("World 1 floor: %d clears, need at least %d" % [world1_clears, require_world1_clears])
+	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) or (require_no_campaign_wins and campaign_wins > 0) or (require_world1_clears > 0 and world1_clears < require_world1_clears) else 0)
 
 func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard") -> Dictionary:
 	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty, artifact_id)

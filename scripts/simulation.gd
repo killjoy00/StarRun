@@ -21,6 +21,11 @@ const START_WORLD_LEVELS := [1, 13, 32, 57]
 ## (1-4-7-10) and is 25% stronger at rank 1. Before: 2 ranks per pick and
 ## about 1.5x as many level-ups.
 const RANKS_PER_PICK := 3
+## Lancer: its lance is its only starting gun, so it fires about twice as
+## often and hits harder. At +15% / +35% it cleared no-Hangar World 1 in 0 of
+## 12 runs (Vanguard 7 of 12): one beam every 2 s left the screen unanswered.
+const LANCER_LANCE_INTERVAL := 0.45
+const LANCER_LANCE_DAMAGE := 1.60
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
 const PACK_HP_TOTAL := 1.08
@@ -2900,7 +2905,7 @@ func _update_weapons() -> void:
 		# Kills earlier this tick leave dead enemies in the array until the
 		# projectile pass. Do not consume a full lance cycle without firing.
 		if not target.is_empty():
-			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0)) * (0.85 if ship_id == "lancer" else 1.0)
+			lance_timer = 2.4 * (0.60 if rank_at("lance", 10) else (0.78 if rank_at("lance", 5) else 1.0)) * (LANCER_LANCE_INTERVAL if ship_id == "lancer" else 1.0)
 			lance_refund_ready = true
 			var echo_used := false
 			var end: Vector2 = origin + (target.p - origin).normalized() * 1200
@@ -2910,7 +2915,7 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (1.35 if ship_id == "lancer" else 1.0)
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (LANCER_LANCE_DAMAGE if ship_id == "lancer" else 1.0)
 					_damage_enemy(enemy, strike_damage, "lance")
 					if _has_mutation("refracting_lance") and not echo_used:
 						for other in enemies:
@@ -3537,9 +3542,9 @@ func _hit(amount: float, kind: String, source: String) -> void:
 		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 		# Fortress plating: Bulwark died to Harvester beams and missiles in
 		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
-		# 30% (was 20%) now that Bulwark starts with Deflector, not Aegis.
+		# 50% (was 30%; 20% before Bulwark traded Aegis for Deflector).
 		if ship_id == "bulwark":
-			reduced *= 0.70
+			reduced *= 0.50
 	if kind == "ion":
 		shield_offline = maxf(shield_offline, 4.0 * status_duration_scale())
 	elif kind == "heat":

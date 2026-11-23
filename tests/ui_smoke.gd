@@ -273,6 +273,23 @@ func _run() -> void:
 		scene.services.delete_run()
 		scene._show_menu()
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_footer.get_child(0).size.y >= 56, "Title must fit with a large launch button at the bottom")
+		await process_frame
+		var nav_fits := true
+		var nav_count := 0
+		for nav_name in ["MenuNavTop", "MenuNavBottom"]:
+			var nav := scene.find_child(nav_name, true, false)
+			if nav == null:
+				nav_fits = false
+				continue
+			for button in nav.get_children():
+				if button is Button:
+					nav_count += 1
+					var font: Font = button.get_theme_font("font")
+					var font_size: int = button.get_theme_font_size("font_size")
+					var style: StyleBox = button.get_theme_stylebox("normal")
+					var needed: float = font.get_string_size(button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x + style.get_margin(SIDE_LEFT) + style.get_margin(SIDE_RIGHT)
+					nav_fits = nav_fits and needed <= button.size.x + 0.5
+		check(nav_fits and nav_count == 5, "Title navigation labels are never cut off (Hangar, Codex, Awards, Rivals, Guide)")
 		scene._show_achievements()
 		await process_frame
 		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")
