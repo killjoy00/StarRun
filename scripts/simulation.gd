@@ -964,13 +964,15 @@ func stage_damage_scale() -> float:
 func enemy_health_multiplier() -> float:
 	return 0.90 if stage in [2, 3, 4] else 1.0
 
-## Hard and Insane share Normal's tougher Worlds 2-4 waves; ordinary enemies
-## there get a little less health so a full Hangar still wins often enough.
-## Bosses and World 1 are unaffected.
+## Ordinary enemies in Worlds 2-4, per difficulty. Normal: 6% more health,
+## which brought mid-Hangar campaign wins from 66% to 55% (target 40-60%)
+## with max Hangar at 84%. Hard and Insane share Normal's tougher waves, so
+## their enemies get a little less health there. Bosses and World 1 are
+## unaffected.
 func advanced_wave_health() -> float:
 	if stage not in [2, 3, 4]:
 		return 1.0
-	return {"normal": 1.0, "hard": 0.85, "insane": 0.85}[difficulty]
+	return {"normal": 1.06, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:
 	return 1.05 if stage in [2, 3, 4] else 1.0

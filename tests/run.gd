@@ -1024,7 +1024,7 @@ func _test_elite_squad_counterplay() -> void:
 	var wing: Dictionary = squad.enemies[1]
 	check(str(leader.get("elite_role", "")) == "leader" and str(wing.get("elite_role", "")) == "wing", "Leader and escort roles are explicit for visuals and auto-targeting")
 	check(int(wing.elite_squad) == int(leader.id) and squad._elite_leader_active(wing), "Wing firing bonus depends on a specific living leader")
-	var raw_leader_hp: float = float(squad.content.enemies[str(leader.kind)].hp) * float(squad.stage_spec().health_scale) * squad.threat_scale() * squad.stage_risk * squad.enemy_health_multiplier() * squad.shooter_health_pressure(str(leader.kind))
+	var raw_leader_hp: float = float(squad.content.enemies[str(leader.kind)].hp) * float(squad.stage_spec().health_scale) * squad.threat_scale() * squad.stage_risk * squad.enemy_health_multiplier() * squad.advanced_wave_health() * squad.shooter_health_pressure(str(leader.kind))
 	check(is_equal_approx(float(leader.max_hp), raw_leader_hp * 1.20), "Elite leader has a visible but restrained 20 percent health bonus")
 	wing.p = Vector2(280.0, 175.0)
 	wing.fire = 0.0
@@ -1261,7 +1261,7 @@ func _test_shooter_health_screen_pressure() -> void:
 	var tested := Sim.new(71231)
 	tested.stage = 2
 	tested._add_enemy("ion_frigate", Vector2(270, 90))
-	var original: float = float(tested.content.enemies.ion_frigate.hp) * float(tested.stage_spec().health_scale) * tested.threat_scale() * tested.stage_risk * tested.enemy_health_multiplier()
+	var original: float = float(tested.content.enemies.ion_frigate.hp) * float(tested.stage_spec().health_scale) * tested.threat_scale() * tested.stage_risk * tested.enemy_health_multiplier() * tested.advanced_wave_health()
 	check(is_equal_approx(float(tested.enemies[0].max_hp), original * 1.12), "Normal World 2 ion frigate gets 12 percent more HP without changing any other scaling")
 	check(int(tested.enemies[0].xp) == int(tested.content.enemies.ion_frigate.xp), "Tougher shooters retain the same XP reward")
 	check(tested.shooter_first_fire_window("ion_frigate") == Vector2(0.95, 1.80), "World 2 target shooters receive the shorter and readable first shot window")
@@ -1278,7 +1278,7 @@ func _test_shooter_health_screen_pressure() -> void:
 	var stationary := Sim.new(71233)
 	stationary.stage = 4
 	stationary._add_enemy("gravity_sentinel", Vector2(270,100))
-	var original_health: float = float(stationary.content.enemies.gravity_sentinel.hp) * float(stationary.stage_spec().health_scale) * stationary.threat_scale() * stationary.stage_risk * stationary.enemy_health_multiplier()
+	var original_health: float = float(stationary.content.enemies.gravity_sentinel.hp) * float(stationary.stage_spec().health_scale) * stationary.threat_scale() * stationary.stage_risk * stationary.enemy_health_multiplier() * stationary.advanced_wave_health()
 	check(is_equal_approx(float(stationary.enemies[0].max_hp), original_health * 1.15), "Targeted later world HP increase applies to real spawned sentinel")
 	check(Sim.new(33).restore(stationary.snapshot()), "Experimental HP and its spawned enemy states use the existing checkpoint save format")
 	# Faster opening shots must be visible, not wasted above the viewport.
@@ -2537,8 +2537,9 @@ func _test_route_prototype_balance_grid() -> void:
 		balanced.stage = late_stage
 		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
 		balanced._add_enemy("drone", Vector2(250, 100))
-		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90
-		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction" % late_stage)
+		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * 1.06
+		check(is_equal_approx(balanced.advanced_wave_health(), 1.06), "World %d Normal regular enemies have 6%% more wave health" % late_stage)
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction and Normal's 6%% wave health" % late_stage)
 		balanced._spawn_boss()
 		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply their own durability pressure on top of regular health scaling" % late_stage)
