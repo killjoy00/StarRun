@@ -4,6 +4,7 @@ const Services = preload("res://scripts/platform_services.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const Rivals = preload("res://scripts/rival_captains.gd")
+const Codex = preload("res://scripts/codex.gd")
 var failures := 0
 var assertions := 0
 
@@ -56,6 +57,8 @@ func _run() -> void:
 	_test_extended_hangar()
 	_test_start_world()
 	_test_daily_fair_drafts()
+	_test_codex()
+	_test_spawn_flow_and_level_pace()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
 	_test_boss_components_and_phases()
@@ -1584,12 +1587,12 @@ func _test_new_abilities() -> void:
 	sim.cards.clear()
 	for id in ["barrage", "overdrive", "chrono"]:
 		_install(sim, id)
-		check(sim.upgrades[id] == 1 and sim.activate(id), "Learning %s must occupy a slot and allow casting" % id)
+		check(sim.upgrades[id] == 2 and sim.activate(id), "Learning %s must occupy a slot at rank 2 and allow casting" % id)
 	check(sim.active_slots.size() == 4, "A ship starts with one active and can draft exactly three more")
 	_install(sim, "mend")
 	check(sim.upgrades.mend == 0 and sim.active_slots.size() == 4, "A fifth unowned ability must never be equipped")
 	sim.cards.clear() # Discard the deliberately injected, ineligible fifth-slot offer.
-	check(sim.shots.size() == 7, "Barrage must create seven guided rockets at level 1")
+	check(sim.shots.size() == 9, "Barrage must create nine guided rockets at rank 2")
 	check(sim.overdrive_left >= 4 and sim.chrono_left >= 4, "Timed abilities must persist after activation")
 	var haven := Sim.new(4, {}, "haven")
 	check(haven.active_slots == ["mend"], "Haven starts with its repair signature")
@@ -1600,7 +1603,7 @@ func _test_new_abilities() -> void:
 	healing.activate("mend")
 	for i in range(240):
 		healing.step()
-	check(is_equal_approx(healing.hull, 64.0), "Repair drones must restore the promised hull over four seconds")
+	check(is_equal_approx(healing.hull, 70.0), "Repair drones must restore the promised hull over four seconds (rank 2)")
 	var normal := Sim.new()
 	var slowed := Sim.new()
 	_install(slowed, "chrono")
@@ -1882,6 +1885,63 @@ func _test_active_pool() -> void:
 	check(not sim.cards.any(func(card): return card.tag == "ABILITY" and sim.upgrades[card.id] == 0 and not sim._can_learn_active(str(card.id))), "A full bar cannot offer a new rank-1 ability")
 	var checkpoint := sim.snapshot()
 	check(Sim.new().restore(checkpoint), "Four-slot builds must restore")
+
+func _test_codex() -> void:
+	var sim := Sim.new(7301, {}, "vanguard")
+	sim.level = 3
+	sim._offer_cards(false)
+	var offered: Array = sim.cards.map(func(c): return "card:" + str(c.id))
+	check(offered.all(func(k): return sim.codex_seen.has(k)), "Cards offered in a draft are found in the codex")
+	_install(sim, "armor")
+	_install(sim, "hull")
+	check(sim.codex_seen.has("card:armor") and sim.codex_seen.has("link:reinforced_plating"), "Owned upgrades and active passive pairs are found")
+	var fused := Sim.new(7302)
+	_fuse_pair(fused, fused.content.fusions[0])
+	check(fused.codex_seen.has("fusion:" + str(fused.content.fusions[0].id)), "A formed fusion is found")
+	var resumed := Sim.new()
+	check(resumed.restore(sim.snapshot()) and resumed.codex_seen == sim.codex_seen, "Codex finds survive a resumed flight")
+	var profile := {"cores":0, "achievements":{}, "daily_records":{}}
+	sim.ended = true
+	var first: Dictionary = Progress.settle(profile, sim)
+	check(int(first.codex_new) > 0 and profile.codex.has("card:armor") and profile.codex.has("link:reinforced_plating"), "Settling a flight saves its finds to the profile")
+	var count: int = profile.codex.size()
+	Progress.settle(profile, sim)
+	check(profile.codex.size() == count, "Settling twice does not duplicate finds")
+	check(Codex.found_count(profile) == count and Codex.total() >= 90, "The codex counts every found entry against the full list")
+	var keys := {}
+	for tab in Codex.TABS:
+		for entry in Codex.entries(tab):
+			check(not keys.has(entry.key), "Codex keys are unique: " + str(entry.key))
+			keys[entry.key] = true
+	check(keys.has("fusion:nova_aegis") and keys.has("evolution:duelist") and keys.has("engine:storm_circuit") and keys.has("card:piercing_pulse"), "Codex lists fusions, evolutions, engines and mutations")
+
+func _test_spawn_flow_and_level_pace() -> void:
+	var sim := Sim.new(7401)
+	sim.stage = 2
+	sim.stage_start = 0.0
+	sim.time = 60.0
+	sim.enemies.clear()
+	check(is_equal_approx(sim.spawn_flow(), Sim.FLOW_FAST), "An empty field pulls the next ships in faster")
+	for i in range(int(sim._enemy_limit())):
+		sim._add_enemy("drone", Vector2(100 + i, 100))
+	check(is_equal_approx(sim.spawn_flow(), Sim.FLOW_SLOW), "A crowded field slows new arrivals")
+	sim.enemies.clear()
+	sim.time = 5.0
+	check(sim.spawn_flow() < 0.7, "Worlds 2-4 open gently")
+	sim.boss_spawned = true
+	check(is_equal_approx(sim.spawn_flow(), 1.0), "The boss fight runs on real time")
+	# Same ships per world: a fast clearer spends the same schedule sooner.
+	var drifting := Sim.new(7402)
+	drifting.stage = 2
+	drifting.wave_drift = 30.0
+	check(is_equal_approx(drifting.wave_elapsed(), drifting.time + 30.0) and Sim.new().restore(drifting.snapshot()), "The spawn clock is saved with the flight")
+	check(Sim.rank_gain({"tag":"SYSTEM", "max":10}, 0) == 3 and Sim.rank_gain({"tag":"SYSTEM", "max":10}, 6) == 4 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 0) == 2 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 5) == 3 and Sim.rank_gain({"tag":"ABILITY", "max":10}, 8) == 2, "Picks go 0-3-6-10, abilities 2-5-8-10")
+	var paced := Sim.new(7403)
+	var total := 0
+	for level in range(1, int(Sim.START_WORLD_LEVELS[1])):
+		paced.level = level
+		total += paced.xp_needed()
+	check(total > 1500 and total < 1800, "World 1's XP reaches the World 2 catch-up level on the new curve")
 
 func _test_daily_fair_drafts() -> void:
 	# Daily offers come from their own sequence: combat cannot change them,

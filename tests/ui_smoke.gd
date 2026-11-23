@@ -277,6 +277,14 @@ func _run() -> void:
 		await process_frame
 		check(scene.mode == "achievements" and _contains_text(scene.reading_scroll, "FIRST DEBRIEF"), "The achievements page lists locked milestones")
 		check(scene.reading_panel.get_global_rect().end.y <= logical.y and scene.reading_scroll.size.y > 100 and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Achievements page must wrap and scroll at every viewport")
+		scene.profile.codex = {"card:pulse":true, "fusion:nova_aegis":true}
+		scene.codex_tab = "Upgrades"
+		scene._show_codex()
+		await process_frame
+		check(scene.mode == "codex" and _contains_text(scene.reading_scroll, "PULSE CANNON") and _contains_text(scene.reading_scroll, "Not found yet"), "The codex shows found entries and hides the rest")
+		scene._codex_tab("Fusions")
+		await process_frame
+		check(scene.codex_tab == "Fusions" and _contains_text(scene.reading_scroll, "NOVA GUARD") and scene.reading_scroll.horizontal_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED, "Codex tabs switch and wrap on every viewport")
 		scene._show_menu()
 		for sheet in ["settings", "briefing", "pause"]:
 			if sheet == "settings":

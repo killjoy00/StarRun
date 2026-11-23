@@ -13,6 +13,7 @@ const Kit = preload("res://scripts/menu_kit.gd")
 const PilotPortrait = preload("res://scripts/pilot_portrait.gd")
 const Progress = preload("res://scripts/meta_progress.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
+const Codex = preload("res://scripts/codex.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const RivalPortrait = preload("res://scripts/rival_portrait.gd")
@@ -51,6 +52,7 @@ var ability_b: Button
 var ability_buttons: Dictionary = {} # Four UI slots, keyed by slot index.
 var hangar_category := "Hull"
 var loadout_tab := "Ships"
+var codex_tab := "Upgrades"
 var speed_options := [0.5, 1.0, 2.0, 3.0]
 var game_speed := 1.0
 var speed_button: Button
@@ -544,6 +546,8 @@ func _layout() -> void:
 		_show_menu()
 	elif mode == "achievements":
 		_show_achievements()
+	elif mode == "codex":
+		_show_codex()
 	elif mode == "cards":
 		_show_cards()
 	elif mode == "paused":
@@ -1087,6 +1091,7 @@ func _show_menu() -> void:
 	_ui_button(row, "Hangar", _show_hangar, "ghost", 46, true)
 	var awards_button := _ui_button(row, "Awards", _show_achievements, "ghost", 46, true)
 	awards_button.tooltip_text = "Achievements and milestones"
+	_ui_button(row, "Codex", _show_codex, "ghost", 46, true).tooltip_text = "Every upgrade, fusion and team-up you have found"
 	_ui_button(row, "Rivals", _show_rival_journal, "ghost", 46, true)
 	_ui_button(row, "Guide", _show_briefing.bind(false), "ghost", 46, true)
 	var primary: Button
@@ -1189,6 +1194,34 @@ func _show_achievements() -> void:
 		var status_text := ("Earned %s" % _pretty_day(str(unlocked.get(id, "")))) if is_unlocked else ("%d / %d" % [done, int(item.target)])
 		_info_card(view.body, str(item.name), "%s\n%s" % [str(item.description), status_text], Kit.AMBER if is_unlocked else Kit.MUTED)
 	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+## Discovery codex. Entries stay hidden until a flight shows them.
+func _show_codex() -> void:
+	var prior: int = reading_scroll.scroll_vertical if mode == "codex" and is_instance_valid(reading_scroll) else 0
+	mode = "codex"
+	Progress.prepare(profile)
+	var view := _page(1.0, true, 540.0)
+	_page_header(view.top, "FOUND IN FLIGHT", "Codex", _show_menu)
+	Kit.label(view.top, "%d of %d found" % [Codex.found_count(profile), Codex.total()], 15, Kit.MUTED, true)
+	_tabs(view.top, Codex.TABS, codex_tab, _codex_tab)
+	var found: Dictionary = profile.codex
+	var entries: Array = Codex.entries(codex_tab)
+	Kit.label(view.body, "%d of %d %s" % [Codex.found_count(profile, codex_tab), entries.size(), codex_tab.to_lower()], 15, Kit.MUTED, true)
+	for entry in entries:
+		if found.has(str(entry.key)):
+			_info_card(view.body, "%s  ·  %s" % [str(entry.name), str(entry.tag)], str(entry.detail), Kit.CYAN)
+		else:
+			_info_card(view.body, "???", str(entry.hint), Kit.MUTED)
+	_keep_scroll(reading_scroll, prior)
+	_focus(_ui_button(view.footer, "Back to Star/Run", _show_menu, "primary", 54, true))
+
+func _codex_tab(value: String) -> void:
+	if value not in Codex.TABS:
+		return
+	codex_tab = value
+	if is_instance_valid(reading_scroll):
+		reading_scroll.scroll_vertical = 0
+	_show_codex()
 
 ## "2026-11-22" -> "Nov 22, 2026". Anything else is shown as stored.
 func _pretty_day(day: String) -> String:

@@ -15,10 +15,11 @@ const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not re
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
 # Level a typical flight has reached at the start of each world (catch-up).
-const START_WORLD_LEVELS := [1, 11, 28, 50]
+const START_WORLD_LEVELS := [1, 12, 30, 53]
 ## Ranks per pick. Fewer, bigger level-ups: a pick adds 3 ranks (0-3-6-10;
-## the pick that would stop at 9 goes to 10), a new ability starts at 1
-## (1-4-7-10). Before: 2 ranks per pick and about 1.7x as many level-ups.
+## the pick that would stop at 9 goes to 10), a new ability starts at 2
+## (2-5-8-10). Before: 2 ranks per pick (abilities started at 1) and about
+## 1.6x as many level-ups.
 const RANKS_PER_PICK := 3
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
@@ -81,6 +82,10 @@ var build_choices_active := true
 var weapon_evolutions: Dictionary = {}
 var pending_build_choices: Array = []
 var fusion_declined: Array = []
+## Discovery codex: everything this flight has shown the player, as
+## "kind:id" keys (card, fusion, evolution, link, synergy, engine).
+## Merged into the profile when the flight settles.
+var codex_seen: Dictionary = {}
 var evolution_lifeline_tick := -1
 # Visual feedback is rate-limited per specialization; no combat/draft RNG used.
 var evolution_cue_next_tick: Dictionary = {}
@@ -1018,10 +1023,32 @@ func _queue_weapon_evolutions() -> void:
 			continue
 		if not pending_build_choices.any(func(c): return str(c.kind) == "evolution" and str(c.id) == weapon):
 			pending_build_choices.append({"kind":"evolution", "id":weapon})
+			for option in content.weapon_evolutions.get(weapon, []):
+				codex_seen["evolution:" + str(option.id)] = true
 
 func _fusion_is_eligible(id: String) -> bool:
 	var spec: Dictionary = fusion_spec(id)
 	return not spec.is_empty() and str(spec.parts[0]) in active_slots and str(spec.parts[1]) in active_slots and int(upgrades[str(spec.parts[0])]) >= FUSION_RANK and int(upgrades[str(spec.parts[1])]) >= FUSION_RANK
+
+## Record what the build has now: owned upgrades, fusions, evolutions,
+## and every active team-up (passive pair, synergy, build engine).
+func note_codex() -> void:
+	for card in content.cards:
+		if int(upgrades.get(str(card.id), 0)) > 0:
+			codex_seen[("fusion:" if not fusion_spec(str(card.id)).is_empty() else "card:") + str(card.id)] = true
+	for id in mutations:
+		codex_seen["card:" + str(id)] = true
+	for weapon in weapon_evolutions:
+		codex_seen["evolution:" + str(weapon_evolutions[weapon])] = true
+	for link in content.passive_links:
+		if passive_link_active(str(link.id)):
+			codex_seen["link:" + str(link.id)] = true
+	for synergy in content.synergies:
+		if synergy_active(str(synergy.id)):
+			codex_seen["synergy:" + str(synergy.id)] = true
+	for engine in content.get("build_engines", []):
+		if engine_tier(str(engine.id)) >= 1:
+			codex_seen["engine:" + str(engine.id)] = true
 
 func _commit_fusion(id: String) -> bool:
 	if not _fusion_is_eligible(id):
@@ -1038,6 +1065,7 @@ func _commit_fusion(id: String) -> bool:
 	cooldowns[id] = current_cd
 	effects.append({"kind":"fusion-formed", "fusion":id, "p":ship_position(), "life":1.2, "max_life":1.2, "born":tick})
 	_log(str(content.abilities[first].name) + " + " + str(content.abilities[second].name) + " became " + str(spec.name) + ". One slot freed.")
+	codex_seen["fusion:" + id] = true
 	return true
 
 func resolve_build_choice(value: String) -> bool:
@@ -1069,6 +1097,7 @@ func resolve_build_choice(value: String) -> bool:
 	else:
 		return false
 	pending_build_choices.pop_front()
+	note_codex()
 	# Two eligible fusion recipes can share a component. Accepting one
 	# consumes it; stale overlapping offers must not block resume or bots.
 	var valid: Array = []
@@ -1109,6 +1138,7 @@ func _try_fuse() -> void:
 			# One offer only. Keeping two separate actives is a valid build.
 			if id not in fusion_declined and not pending_build_choices.any(func(c): return str(c.kind) == "fusion" and str(c.id) == id):
 				pending_build_choices.append({"kind":"fusion", "id":id})
+				codex_seen["fusion:" + id] = true
 		else:
 			# W1, published Dailies, and pre-overhaul saves keep auto-fusion.
 			_commit_fusion(id)
@@ -2283,6 +2313,7 @@ func advance_stage() -> bool:
 	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
 	if skipping_worlds():
 		_queue_skipped_world()
+	note_codex()
 	return true
 
 # Historical test shim; regular gameplay always uses both decisions.
@@ -3452,15 +3483,15 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func xp_needed() -> int:
-	# About 60% as many level-ups as the old 25 + 9 per level, each worth
+	# About 62% as many level-ups as the old 25 + 9 per level, each worth
 	# 3 ranks instead of 2, so a flight's total ranks stay about the same.
-	return 35 + (level - 1) * 27
+	return 30 + (level - 1) * 24
 
 ## Ranks a card adds when picked at its current rank.
 static func rank_gain(card: Dictionary, before: int) -> int:
 	var cap := int(card.get("max", 10))
 	if str(card.get("tag", "")) == "ABILITY" and before == 0:
-		return 1
+		return 2
 	var after := before + RANKS_PER_PICK
 	if after == cap - 1:
 		after = cap
@@ -4117,6 +4148,10 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append({"id": "core_cache", "name": "Salvage Cores", "tag": "RECOVERY", "description": "Bank %d Cores for the end of this flight." % MAXED_DRAFT_CORES, "max": 99})
 	if consume_level:
 		pending_levels -= 1
+	for card in cards:
+		if str(card.tag) != "RECOVERY":
+			codex_seen["card:" + str(card.id)] = true
+
 
 func reroll_cards() -> bool:
 	if cards.is_empty() or rerolls_left <= 0:
@@ -4146,6 +4181,12 @@ func skip_cards() -> bool:
 	return true
 
 func choose_card(index: int) -> bool:
+	var chosen := _choose_card(index)
+	if chosen:
+		note_codex()
+	return chosen
+
+func _choose_card(index: int) -> bool:
 	if index < 0 or index >= cards.size():
 		return false
 	var id: String = cards[index].id
@@ -4236,7 +4277,7 @@ func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)

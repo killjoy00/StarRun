@@ -15,7 +15,7 @@ class MemoryServices extends "res://scripts/platform_services.gd":
 
 const SIZES := [Vector2i(375, 667), Vector2i(390, 844), Vector2i(1280, 800)]
 const SCREENS := [
-	"menu", "menu-start-world", "achievements", "daily-results", "settings", "briefing",
+	"menu", "menu-start-world", "achievements", "codex", "codex-team-ups", "daily-results", "settings", "briefing",
 	"hangar-hull", "hangar-weapons", "hangar-abilities",
 	"ships", "pilots", "artifacts", "combat-1", "combat-4", "combat-drones", "boss-intro",
 	"cards", "cards-banish", "cards-maxed", "cards-catch-up", "prototypes-skipped", "evolution", "fusion", "paused", "build",
@@ -133,6 +133,10 @@ func _prepare(scene, screen: String) -> void:
 			scene._show_prototypes()
 		"achievements":
 			scene._show_achievements()
+		"codex", "codex-team-ups":
+			scene.profile.codex = {"card:pulse":true, "card:seeker":true, "card:armor":true, "card:aegis":true, "fusion:nova_aegis":true, "link:reinforced_plating":true, "synergy:fortress":true, "engine:execution_network":true, "card:piercing_pulse":true}
+			scene.codex_tab = "Team-ups" if screen == "codex-team-ups" else "Upgrades"
+			scene._show_codex()
 		"daily-results":
 			scene.sim.daily_day = "2026-11-15"
 			scene.sim.daily_attempt = 1

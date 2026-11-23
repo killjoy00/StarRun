@@ -46,7 +46,7 @@ static func back(host) -> bool:
 		host._close_sheet()
 	elif host.mode == "loadout":
 		host._loadout_back()
-	elif host.mode == "hangar":
+	elif host.mode in ["hangar", "codex", "achievements"]:
 		host._show_menu()
 	else:
 		return false

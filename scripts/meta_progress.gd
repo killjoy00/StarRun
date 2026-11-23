@@ -4,6 +4,7 @@ extends RefCounted
 ## for everyone. Replays improve a local best, but do not farm Core rewards.
 const Catalog = preload("res://scripts/catalog.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
+const Codex = preload("res://scripts/codex.gd")
 
 const ACHIEVEMENTS = [
 	{"id":"first_finish","name":"First Debrief","description":"Finish your first run, win or lose.","category":"FLIGHT","target":1},
@@ -110,6 +111,8 @@ static func prepare(profile: Dictionary) -> void:
 		profile.achievements = {}
 	if not profile.has("achievements"):
 		profile.achievements = {}
+	if not profile.get("codex", {}) is Dictionary or not profile.has("codex"):
+		profile.codex = {}
 	if not profile.get("daily_records", {}) is Dictionary:
 		profile.daily_records = {}
 	if not profile.has("daily_records"):
@@ -197,7 +200,11 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	var unique_key := ("daily:%s:%d" % [day, int(sim.daily_attempt)]) if daily else ("flight:%d" % int(sim.seed_value))
 	var records: Dictionary = profile.daily_records
 	var record: Dictionary = records.get(day, {})
-	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{}}
+	var result := {"earned":0,"awarded":[],"daily":daily,"score":-1,"best_score":-1,"new_best":false,"rival_news":{},"codex_new":0}
+	# Codex discoveries merge idempotently, so a repeated settle is harmless.
+	if sim.has_method("note_codex"):
+		sim.note_codex()
+		result.codex_new = Codex.record(profile, sim.codex_seen)
 	var best_key := "best_score"
 	if daily:
 		result.score = daily_score(sim)
