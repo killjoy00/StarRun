@@ -1251,6 +1251,15 @@ func _draw_support() -> void:
 			FusionArt.outline(self,hull,Color("a9d8e1"),1.4)
 			draw_line(p+Vector2(0,-7),p+Vector2(0,3),CYAN,2.2,true)
 			draw_line(p+Vector2(0,10),p+Vector2(0,19),Color("badcf4"),2,true)
+	# Haven's permanent Hive drones: small mint darts tucked behind the ship.
+	for i in range(sim.hive_count()):
+		var h: Vector2 = sim.hive_position(i)
+		var dart := PackedVector2Array([h+Vector2(0,-10),h+Vector2(7,6),h+Vector2(0,3),h+Vector2(-7,6)])
+		draw_colored_polygon(dart, Color("1f4a3f"))
+		FusionArt.outline(self, dart, Color("a8f4d0"), 1.3)
+		draw_circle(h + Vector2(0,-2), 1.8, Color.WHITE)
+		if not profile.reduced:
+			draw_line(h + Vector2(0,5), h + Vector2(0,12), Color(0.66, 0.96, 0.82, 0.55), 2.0, true)
 	if sim.guard_left > 0.0:
 		for i in range(sim.guard_count):
 			var g: Vector2 = sim.guard_position(i)
