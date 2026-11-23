@@ -119,6 +119,27 @@ func _run() -> void:
 		scene._update_hud()
 		check(scene.cooldown_meters[0].visible and scene.ability_buttons[0].get_node("AbilityStatus").text.contains("s"), "Cooldown progress appears when the equipped ability is recovering")
 		scene.sim.cooldowns[signature] = 0.0
+		# Every ability and fusion name shows in full in a slot (no "OVERLOA").
+		var slots_before: Array = scene.sim.active_slots.duplicate()
+		var upgrades_before: Dictionary = scene.sim.upgrades.duplicate()
+		var names_fit := true
+		var names_whole := true
+		for ability_id in scene.sim.content.abilities:
+			scene.sim.active_slots = [str(ability_id)]
+			scene.sim.upgrades[str(ability_id)] = maxi(1, int(scene.sim.upgrades.get(str(ability_id), 0)))
+			scene._update_hud()
+			var slot_label: Label = scene.ability_buttons[0].get_node("AbilityName")
+			var shown_font: Font = slot_label.get_theme_font("font")
+			var shown_size: int = slot_label.get_theme_font_size("font_size")
+			var expected: String = scene.CombatHud._short_ability_name(scene.sim, str(ability_id)) if (scene._compact_ui() or scene.ability_buttons[0].size.x < 175.0) else str(scene.sim.content.abilities[ability_id].name).to_upper()
+			names_whole = names_whole and slot_label.text == expected
+			var too_wide: bool = shown_font.get_string_size(slot_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, shown_size).x > slot_label.size.x + 0.5
+			if too_wide or slot_label.text != expected:
+				print("SLOT_NAME_MISFIT %s %s size=%d width=%.1f" % [str(ability_id), slot_label.text, shown_size, slot_label.size.x])
+			names_fit = names_fit and not too_wide and shown_size >= 11
+		check(names_whole and names_fit, "Every ability name shows in full in its slot (no cut-off letters)")
+		scene.sim.active_slots = slots_before
+		scene.sim.upgrades = upgrades_before
 		scene._update_hud()
 		if logical.x < 760:
 			check(scene.hud.get_global_rect().end.x < scene.build_button.get_global_rect().position.x, "Combat heading must not overlap Build")

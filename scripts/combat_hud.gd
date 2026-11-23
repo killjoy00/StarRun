@@ -5,7 +5,17 @@ const Catalog = preload("res://scripts/catalog.gd")
 
 static func _short_ability_name(sim, id: String) -> String:
 	var names := {"overdrive":"DRIVE", "capacitor":"CHARGE", "deflector":"DEFLECT", "barrage":"ROCKETS", "barrier":"BARRIER", "salvage":"SALVAGE", "overload":"OVERLOAD", "repair_matrix":"REPAIR", "nova_aegis":"NOVA GRD", "railstorm":"RAILSTORM", "stasis_lock":"TIME LOCK", "missile_grid":"MISSILES", "scrap_converter":"SCRAP", "prism_focus":"PRISM", "reflective_wall":"REFLECT", "ghost_signal":"GHOST", "reactor_surge":"SURGE", "strike":"RAIL", "reboot":"REBOOT", "siphon":"SIPHON", "focus":"FOCUS", "flak":"FLAK", "chrono":"CHRONO", "jammer":"JAMMER", "decoy":"DECOY", "aegis":"AEGIS", "mend":"REPAIR", "emp":"EMP", "nova":"NOVA", "prism":"PRISM", "wing_drones":"WING", "guard_drones":"GUARD", "ion_mine":"MINE", "storm_carrier":"CARRIER"}
-	return str(names.get(id, sim.content.abilities[id].name.to_upper())).left(9)
+	return str(names.get(id, sim.content.abilities[id].name.to_upper()))
+
+## Shrink a slot label (16 pt down to 11 pt) until the whole word fits.
+## Names used to be cut to 7 letters on narrow phones ("OVERLOA").
+static func fit_label(label: Label, base_size: int = 16, floor_size: int = 11) -> void:
+	var font: Font = label.get_theme_font("font")
+	var limit: float = label.size.x
+	var font_size := base_size
+	while font_size > floor_size and font.get_string_size(label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > limit:
+		font_size -= 1
+	label.add_theme_font_size_override("font_size", font_size)
 
 static func refresh(host) -> void:
 	var sim = host.sim
@@ -23,14 +33,13 @@ static func refresh(host) -> void:
 		var cooldown: float = float(sim.cooldowns.get(id, 0.0))
 		var learned: bool = occupied and int(sim.upgrades.get(id, 0)) > 0
 		var title: String = _short_ability_name(sim, id) if occupied and (host._compact_ui() or button.size.x < 175.0) else (sim.content.abilities[id].name.to_upper() if occupied else "EMPTY")
-		if occupied and host._compact_ui() and button.size.x < 94.0:
-			title = title.left(7)
 		var status_text := ("%.0fs" % ceilf(cooldown) if cooldown > 0 else "READY") if learned and host._compact_ui() else (("%.1fs" % cooldown if cooldown > 0 else "READY") if learned else "OPEN")
 		# Icons and the two lines of text occupy separate bounds on every screen.
 		button.text = ""
 		var name_label: Label = button.get_node("AbilityName")
 		var status_label: Label = button.get_node("AbilityStatus")
 		name_label.text = title if occupied else "EMPTY"
+		fit_label(name_label)
 		status_label.text = status_text
 		name_label.add_theme_color_override("font_color", Color("eef7ff") if learned else Color("778ba0"))
 		status_label.add_theme_color_override("font_color", Color("66f5df") if learned and cooldown <= 0.0 else Color("b4c6d8") if learned else Color("6c8097"))
