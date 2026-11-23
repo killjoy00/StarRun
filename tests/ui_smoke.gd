@@ -311,13 +311,23 @@ func _run() -> void:
 		check(scene.mode == "loadout", "Loadout selector must open from the Hangar")
 		scene.profile.ships_owned = ["vanguard"]
 		scene.profile.ship = "vanguard"
+		var wallet: int = scene.profile.cores
 		scene._loadout_tap("ship", "wraith")
-		check(scene.profile.ship != "wraith" and "wraith" not in scene.profile.ships_owned, "Permanent unlocks must not spend cores on the first tap")
 		scene._loadout_tap("ship", "wraith")
-		check(scene.profile.ship == "wraith" and "wraith" in scene.profile.ships_owned, "Unlocking a ship must equip and persist ownership")
+		scene._select_loadout("ship", "wraith")
+		check("wraith" not in scene.profile.ships_owned and scene.profile.cores == wallet, "Earned ships cannot be bought with Cores")
+		scene._loadout_tab("Ships")
+		await process_frame
+		check(_contains_text(scene.reading_scroll, "Unlock: Get Seeker pods to rank 10 in one run"), "Locked ships show how to earn them")
+		scene._loadout_tap("ship", "lancer")
+		check(scene.profile.ship != "lancer" and "lancer" not in scene.profile.ships_owned, "Permanent unlocks must not spend cores on the first tap")
+		scene._loadout_tap("ship", "lancer")
+		check(scene.profile.ship == "lancer" and "lancer" in scene.profile.ships_owned and scene.profile.cores == wallet - 120, "Buying the Lancer must equip and persist ownership")
 		scene._loadout_tab("Pilots")
 		scene._select_loadout("pilot", "hunter")
-		check(scene.profile.pilot == "hunter" and "hunter" in scene.profile.pilots_owned, "Unlocking a pilot must equip and persist ownership")
+		check(scene.profile.pilot != "hunter" and "hunter" not in scene.profile.pilots_owned, "Earned pilots cannot be bought with Cores")
+		scene._select_loadout("pilot", "daredevil")
+		check(scene.profile.pilot == "daredevil" and "daredevil" in scene.profile.pilots_owned, "Buying Kade must equip and persist ownership")
 		scene._show_hangar()
 		var paid: int = scene.profile.cores
 		scene._purchase("shield")
@@ -359,7 +369,7 @@ func _run() -> void:
 		check(scene.mode == "playing" and scene.sim.choice_cores == core_before + 5, "The maxed draft Core reward works through the actual UI action")
 		scene.sim.cards.clear()
 		scene._new_run()
-		check(scene.sim.ship_id == "wraith" and scene.sim.pilot_id == "hunter", "A new flight must use the equipped hull and pilot")
+		check(scene.sim.ship_id == "lancer" and scene.sim.pilot_id == "daredevil" and scene.sim.upgrades.lance >= 1, "A new flight must use the equipped hull and pilot")
 		scene._show_build()
 		await process_frame
 		check(scene.mode == "build", "Build inspection must pause combat and show equipped modules")

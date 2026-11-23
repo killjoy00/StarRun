@@ -58,6 +58,7 @@ func _run() -> void:
 	_test_start_world()
 	_test_daily_fair_drafts()
 	_test_codex()
+	_test_unlocks_and_new_loadouts()
 	_test_spawn_flow_and_level_pace()
 	_test_stage_difficulty_and_pressure()
 	_test_four_stage_campaign()
@@ -1914,6 +1915,41 @@ func _test_codex() -> void:
 			check(not keys.has(entry.key), "Codex keys are unique: " + str(entry.key))
 			keys[entry.key] = true
 	check(keys.has("fusion:nova_aegis") and keys.has("evolution:duelist") and keys.has("engine:storm_circuit") and keys.has("card:piercing_pulse"), "Codex lists fusions, evolutions, engines and mutations")
+
+func _test_unlocks_and_new_loadouts() -> void:
+	var profile := {"cores":0, "achievements":{}, "daily_records":{}, "ships_owned":["vanguard"], "pilots_owned":["rookie"]}
+	Progress.prepare(profile)
+	check(profile.ships_owned == ["vanguard"] and profile.pilots_owned == ["rookie"], "A fresh profile owns only the free ship and pilot")
+	for id in Progress.UNLOCKS:
+		var ship: Dictionary = Catalog.ship(str(id))
+		var entry: Dictionary = ship if str(ship.id) == str(id) else Catalog.pilot(str(id))
+		check(str(entry.id) == str(id) and not bool(entry.get("buy_only", false)), "Every earned unlock is a real, non-buyable entry: " + str(id))
+	for entry in Catalog.SHIPS + Catalog.PILOTS:
+		check(int(entry.cost) == 0 or bool(entry.get("buy_only", false)) or Progress.UNLOCKS.has(str(entry.id)), "Every ship and pilot is free, earned or bought: " + str(entry.id))
+	# A World 1 clear with 6 stopped beams unlocks Kestrel and the Tactician.
+	var sim := Sim.new(7501, {}, "vanguard")
+	sim.stage_clears = 1
+	sim.beams_cancelled = 6
+	sim.kills = 120
+	sim.ended = true
+	var result: Dictionary = Progress.settle(profile, sim)
+	check("kestrel" in result.unlocked and "tactician" in result.unlocked and "kestrel" in profile.ships_owned and "tactician" in profile.pilots_owned, "Meeting a condition unlocks and reports the ship or pilot")
+	check(Progress.unlock_progress(profile, "ace") == 120 and "ace" not in profile.pilots_owned, "Total kills count toward the Ace")
+	var legacy := {"cores":0, "achievements":{}, "daily_records":{}, "ships_owned":["vanguard", "wraith"], "pilots_owned":["rookie"], "achievement_stats":{"finished_runs":7}}
+	Progress.prepare(legacy)
+	check("wraith" in legacy.ships_owned and "engineer" in legacy.pilots_owned, "Existing owners keep ships, and past stats unlock on load")
+	var rotation := {}
+	for d in range(1, 29):
+		var setup: Dictionary = Progress.daily_setup("2026-12-%02d" % d)
+		rotation[setup.ship] = true
+		rotation[setup.pilot] = true
+	check(not rotation.has("lancer") and not rotation.has("daredevil"), "Buy-only ships and pilots stay out of the Daily rotation")
+	var lancer := Sim.new(7502, {}, "lancer")
+	check(lancer.upgrades.lance == 1 and lancer.upgrades.pulse == 0 and lancer.active_slots == ["prism"], "The Lancer starts with Prism lance and Prism reversal")
+	var kade := Sim.new(7503, {}, "vanguard", "daredevil")
+	var steady: float = kade.weapon_power()
+	kade.hull = kade.max_hull * 0.4
+	check(is_equal_approx(kade.weapon_power(), steady * 1.25) and kade.daredevil_active(), "Kade's guns hit 25% harder below half hull")
 
 func _test_spawn_flow_and_level_pace() -> void:
 	var sim := Sim.new(7401)

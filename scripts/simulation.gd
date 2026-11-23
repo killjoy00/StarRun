@@ -15,11 +15,11 @@ const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not re
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
 # Level a typical flight has reached at the start of each world (catch-up).
-const START_WORLD_LEVELS := [1, 12, 30, 53]
+const START_WORLD_LEVELS := [1, 13, 32, 57]
 ## Ranks per pick. Fewer, bigger level-ups: a pick adds 3 ranks (0-3-6-10;
 ## the pick that would stop at 9 goes to 10), a new ability starts at 1
 ## (1-4-7-10) and is 25% stronger at rank 1. Before: 2 ranks per pick and
-## about 1.6x as many level-ups.
+## about 1.5x as many level-ups.
 const RANKS_PER_PICK := 3
 # A pack's members share 108% of one ship's health, offsetting the shots
 # lost to overkill on small targets. Base size per light kind.
@@ -3491,9 +3491,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func xp_needed() -> int:
-	# About 62% as many level-ups as the old 25 + 9 per level, each worth
-	# 3 ranks instead of 2, so a flight's total ranks stay about the same.
-	return 30 + (level - 1) * 24
+	# About two thirds as many level-ups as the old 25 + 9 per level, each
+	# worth 3 ranks instead of 2 (World 1: about 12 instead of 17).
+	return 28 + (level - 1) * 21
 
 ## Ranks a card adds when picked at its current rank.
 static func rank_gain(card: Dictionary, before: int) -> int:
