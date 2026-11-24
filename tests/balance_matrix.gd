@@ -422,6 +422,11 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 				break
 			continue
 		_cast(sim, strategy)
+		# An active can finish the boss, end the run, or open a draft before
+		# the next simulation tick. Those are valid gameplay transitions,
+		# not stalled combat. Let the next iteration handle them explicitly.
+		if sim.ended or sim.stage_transition_queued or not sim.cards.is_empty():
+			continue
 		# Every 0.2 simulated seconds, sample only enemy projectiles inside
 		# the actual 540x960 playfield. Pause time, intermissions and drafts
 		# contribute no samples. Heavy-beam charge lanes are counted separately.
@@ -472,9 +477,9 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			pristine_focus_seconds += Sim.DT
 		var before_tick: int = sim.tick
 		sim.step()
-		if progression_profile != null and sim.tick == before_tick and not sim.ended:
+		if progression_profile != null and sim.tick == before_tick and not sim.ended and not sim.stage_transition_queued and sim.cards.is_empty():
 			fault = true
-			fault_reason = "Combat clock stalled: intermission=%s merchant=%s secret_intro=%s pending_build_choices=%s" % [sim.intermission_step, sim.merchant_state, sim.secret_intro_pending, sim.pending_build_choices]
+			fault_reason = "Combat clock stalled: stage=%d tick=%d transition=%s intermission=%s merchant=%s secret_intro=%s pending_build_choices=%s" % [sim.stage, sim.tick, sim.stage_transition_queued, sim.intermission_step, sim.merchant_state, sim.secret_intro_pending, sim.pending_build_choices]
 			break
 		if progression_profile != null and sim.time - sim.stage_start > MAX_STAGE_SECONDS and old_watchdog_reported_stage != sim.stage:
 			old_watchdog_reported_stage = sim.stage
