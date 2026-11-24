@@ -2,6 +2,7 @@
 """Summarize complete real-campaign progression logs; fail on missing/invalid cohorts."""
 import json
 import pathlib
+import statistics
 import sys
 
 
@@ -66,6 +67,35 @@ def main():
             if len(cleared) + wave_deaths + boss_deaths + abandoned != reached:
                 raise ValueError(f"{label}: unexpected World {world} termination")
             print(f"| {label} | {world} | {reached} | {len(cleared)} | {rate} | {wave_deaths} | {boss_deaths} | {abandoned} | {boss_mean} |")
+    print("\n## Boss pacing")
+    print("Successful boss durations use simulated combat seconds, not 3× wall-clock time. The median and longest fights are shown separately so a handful of stalled builds cannot hide in the mean. Long encounters include losses and abandoned flights.")
+    print("| Cohort | World | Boss attempts | Median clear seconds | Longest clear seconds | Over 60 seconds | Over 120 seconds |")
+    print("|---|---:|---:|---:|---:|---:|---:|")
+    long_fights = []
+    for label, (config, rows, summary) in results.items():
+        for world in range(1, 5):
+            fights = [(row, stage) for row in rows for stage in row["stages"] if stage["stage"] == world and stage["boss_spawned"]]
+            successful = [stage["boss_seconds"] for _, stage in fights if stage["status"] == "cleared"]
+            median = f"{statistics.median(successful):.1f}" if successful else "—"
+            longest = f"{max(successful):.1f}" if successful else "—"
+            over_60 = sum(stage["boss_seconds"] > 60 for _, stage in fights)
+            over_120 = sum(stage["boss_seconds"] > 120 for _, stage in fights)
+            print(f"| {label} | {world} | {len(fights)} | {median} | {longest} | {over_60} | {over_120} |")
+            for row, stage in fights:
+                if stage["boss_seconds"] > 120:
+                    prior = next((s for s in row["stages"] if s["stage"] == world - 1), {})
+                    long_fights.append((label, row, stage, prior))
+    print("\n### Prolonged encounters (>120 simulated boss seconds)")
+    print("| Cohort | Run | World | Result | Boss seconds | Level | Level gain since prior world | Kills since prior world | Hull left | Active loadout |")
+    print("|---|---:|---:|---|---:|---:|---:|---:|---:|---|")
+    if not long_fights:
+        print("| None | — | — | — | — | — | — | — | — | — |")
+    for label, row, stage, prior in long_fights:
+        level_gain = stage["level"] - prior.get("level", 1)
+        kills = stage["kills"] - prior.get("kills", 0)
+        hull = 100 * stage["hull"] / stage["max_hull"] if stage["max_hull"] > 0 else 0
+        abilities = ", ".join(stage["abilities"])
+        print(f"| {label} | {row['run']} | {stage['stage']} | {stage['status']} | {stage['boss_seconds']:.1f} | {stage['level']} | {level_gain} | {kills} | {hull:.0f}% | {abilities} |")
     print("\n## Progress checkpoints")
     print("| Cohort | Run | Wins to date | Cores earned | Ranks owned | Cost share | New unlocks to date |")
     print("|---|---:|---:|---:|---:|---:|---|")
