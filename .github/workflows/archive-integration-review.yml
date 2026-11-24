@@ -61,7 +61,7 @@ jobs:
               rows+=matches
           assert len(rows)==4, "Missing natural campaign receipts"
           assert all(r.get("fixture_ok") is True and not r.get("fault") for r in rows), "Redesigned Archive loadout fixture or campaign failed"
-          assert all(not r.get("eligible") or (r.get("archive_version",0)>=4 and r.get("economy_ok") is True and not r.get("timeout") and r.get("control",{}).get("archive_version",0)>=4 and r.get("control",{}).get("economy_ok") is True and not r.get("control",{}).get("timeout")) for r in rows), "Actual qualifying branch did not exercise the current Archive cleanly"
+          assert all(not r.get("eligible") or (r.get("archive_version",0)==5 and r.get("economy_ok") is True and not r.get("timeout") and r.get("control",{}).get("archive_version",0)==5 and r.get("control",{}).get("economy_ok") is True and not r.get("control",{}).get("timeout")) for r in rows), "Actual qualifying branch did not exercise the current Archive cleanly"
           assert all(not r.get("won") or r.get("remaining_emitters")==0 for r in rows), "Custodian won with an intact emitter"
           assert all(not r.get("eligible",False) or r.get("signals",0)>=2 for r in rows), "Secret route opened without enough recovered signals"
           print("## Real Silent Archive cross-ship audit")

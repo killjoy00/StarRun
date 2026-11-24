@@ -39,13 +39,13 @@ func _run() -> void:
 					var gate := sim.snapshot()
 					result.merge(_fly_archive(sim, true))
 					if expedition:
-						failed = failed or int(result.get("archive_version",0)) < 4 or not bool(result.get("economy_ok",false)) or bool(result.get("timeout",false))
+						failed = failed or int(result.get("archive_version",0)) != 5 or not bool(result.get("economy_ok",false)) or bool(result.get("timeout",false))
 					if matched:
 						var control := Sim.new()
 						control.restore(gate)
 						result["control"] = _fly_archive(control, false)
 						if expedition:
-							failed = failed or int(result.control.get("archive_version",0)) < 4 or not bool(result.control.get("economy_ok",false)) or bool(result.control.get("timeout",false))
+							failed = failed or int(result.control.get("archive_version",0)) != 5 or not bool(result.control.get("economy_ok",false)) or bool(result.control.get("timeout",false))
 				result.merge({"ship":ship.id,"pilot":pilot.id,"difficulty":difficulty,"hangar":hangar_style,"seed":sim.seed_value})
 				print("ARCHIVE_TRIAL ", JSON.stringify(result))
 				trials += 1
@@ -119,7 +119,7 @@ func _redesigned_fixture(seed: int, ship: String, pilot: String, difficulty: Str
 	fixture.signal_count = 2
 	fixture.stage_transition_queued = true
 	var locked: int = fixture.payout()
-	if not fixture.enter_secret() or fixture.archive_challenge_version < 4:
+	if not fixture.enter_secret() or fixture.archive_challenge_version != 5:
 		return false
 	fixture.dismiss_secret_intro()
 	fixture._spawn_boss()
@@ -140,7 +140,10 @@ func _redesigned_fixture(seed: int, ship: String, pilot: String, difficulty: Str
 	fixture.time = fixture.archive_attack_until - 1.0
 	var before: int = fixture.beams_cancelled
 	_cast_one(fixture)
-	if fixture.beams_cancelled != before + 1 or not fixture.archive_attack.is_empty() or fixture.payout() != locked:
+	if fixture.beams_cancelled != before + 1 or not fixture.archive_attack.is_empty() or fixture.payout() != locked or not is_equal_approx(float(fixture.damage_dealt.get("archive_feedback",0.0)),float(core.max_hp)*0.05):
+		return false
+	fixture._update_archive_attack()
+	if fixture.archive_phase != 1 or not is_equal_approx(float(core.hp),float(core.max_hp)*0.68):
 		return false
 	var snap: Dictionary = fixture.snapshot()
 	var restored := Sim.new()
@@ -197,7 +200,7 @@ func _fly_archive(sim: RefCounted, timed: bool) -> Dictionary:
 		damage_total += float(value)
 	var remaining_core: Dictionary = sim._boss_core()
 	return {"won":sim.won,"hull_fraction":sim.hull / sim.max_hull, "min_boss_hull_fraction":minf(min_boss_hull, sim.hull / sim.max_hull),"boss_damage":maxf(0.0,damage_total-boss_damage_start) if boss_damage_start >= 0.0 else 0.0,"core_fraction":float(remaining_core.hp)/maxf(1.0,float(remaining_core.max_hp)) if not remaining_core.is_empty() else 0.0,"boss_seconds":sim.time - sim.boss_spawn_time if sim.boss_spawned else -1.0,
-		"archive_version":sim.archive_challenge_version,"remaining_emitters":sim._alive_modules("archive_emitter"),"timeout":not sim.ended and not sim.stage_transition_queued,
+		"archive_version":sim.archive_challenge_version,"feedback_damage":float(sim.damage_dealt.get("archive_feedback",0.0)),"remaining_emitters":sim._alive_modules("archive_emitter"),"timeout":not sim.ended and not sim.stage_transition_queued,
 		"interrupts":sim.beams_cancelled - cancelled, "beams_fired":sim.beams_fired - fired,
 		"max_phase":max_phase, "patterns":patterns,
 		"economy_ok":sim.payout() == payout and sim.xp == xp and sim.level == level}

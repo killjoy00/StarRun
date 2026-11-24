@@ -1629,6 +1629,8 @@ func boss_phase_label() -> String:
 		return ""
 	if secret_entered:
 		if not archive_attack.is_empty():
+			if archive_challenge_version >= 5:
+				return "CAST NOW · COUNTER SURGE" if archive_precise_counter_window() else "HOLD FOR A STRONGER COUNTER"
 			if archive_challenge_version >= 4:
 				return "CAST NOW · LONGER OPENING" if archive_precise_counter_window() else "HOLD FOR A LONGER OPENING"
 			return "CAST AN ABILITY TO BREAK THE LOCK"
@@ -1841,7 +1843,7 @@ func enter_secret() -> bool:
 	if not can_enter_secret():
 		return false
 	secret_payout = payout()
-	archive_challenge_version = 4 if expedition_rules else 0
+	archive_challenge_version = 5 if expedition_rules else 0
 	secret_entered = true
 	destination_choice = ""
 	route_offers.clear()
@@ -2899,7 +2901,11 @@ func archive_sealed_factor() -> float:
 	return 0.06 if archive_boss_reworked() else (0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR)
 
 func archive_exposed_damage_factor() -> float:
-	# The armor still admits damage; a counter improves damage by 4 to 6.5 times.
+	# New encounters reward genuine openings with full weapon damage. Keep
+	# earlier suspended encounters and comparison fixtures unchanged.
+	if archive_boss_reworked() and archive_challenge_version >= 5 and boss_spawned:
+		return 1.0
+	# The earlier armor still admits damage when sealed.
 	if archive_challenge_active() and archive_challenge_version >= 2 and boss_spawned:
 		return float([0.65, 0.50, 0.40][clampi(archive_phase, 0, 2)])
 	return 1.0
@@ -2916,7 +2922,21 @@ func _archive_index_fire(core: Dictionary) -> void:
 		var count: int = int(HiddenSector.VOLLEY_COUNTS[archive_phase])
 		for i in range(count):
 			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.11
-			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
+			var speed: float = 242.0 + 17.0 * i
+			if archive_challenge_version >= 5:
+				# Split trajectories by phase and stagger arrival times. Alternate
+				# fans deterministically from saved simulation time; no RNG draws,
+				# additional projectiles, instant damage or shorter warnings.
+				var swing: float = 1.0 if int(floor((time - boss_spawn_time) / 4.0)) % 2 == 0 else -1.0
+				if archive_phase == 0:
+					angle += float(side) * swing * 0.10
+				elif archive_phase == 1:
+					angle += float(side) * 0.15
+					speed *= 0.86 if side == -1 else 1.12
+				else:
+					angle += float(side) * swing * 0.19
+					speed *= 0.80 if (i + (1 if side == 1 else 0)) % 2 == 0 else 1.18
+			bullets.append({"p":origin, "v":direction.rotated(angle) * speed, "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _update_archive_attack() -> void:
 	var core := _boss_core() if boss_spawned else {}
@@ -2926,7 +2946,14 @@ func _update_archive_attack() -> void:
 		if time >= archive_attack_until:
 			_resolve_archive_attack(core)
 		return
-	if not core.is_empty() and archive_phase < 2 and archive_phase_released and (not archive_boss_reworked() or _alive_modules("archive_emitter") == 0) and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
+	# Lockdown is an objective phase, not a second damage sponge. Each broken
+	# emitter accounts for 16% of maximum core integrity. Require the first
+	# readable lock to resolve, then release Lattice with no extra DPS gate.
+	var emitter_release: bool = archive_boss_reworked() and archive_challenge_version >= 5 and archive_phase == 0 and _alive_modules("archive_emitter") == 0
+	if not core.is_empty() and archive_phase < 2 and archive_phase_released and (not archive_boss_reworked() or _alive_modules("archive_emitter") == 0) and (emitter_release or core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001):
+		if emitter_release:
+			core.hp = minf(float(core.hp), float(core.max_hp) * HiddenSector.PHASE_FLOORS[0])
+			_log("EMITTER LINK BROKEN · lattice released")
 		archive_phase += 1
 		effects.append({"kind":"boss-phase-break", "p":core.p, "phase":archive_phase + 1, "life":1.0, "max_life":1.0, "born":tick})
 		archive_phase_released = false
@@ -2975,6 +3002,7 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 
 func _counter_archive_attack() -> void:
 	var exposure: float = archive_counter_exposure()
+	var precise: bool = archive_precise_counter_window()
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else 9.0)
@@ -2997,10 +3025,43 @@ func _counter_archive_attack() -> void:
 				var direction: Vector2 = (ship_position(time + 2.0) - origin).normalized()
 				for i in range(count):
 					var angle: float = (float(i) - float(count - 1) * 0.5) * 0.16
-					bullets.append({"p":origin, "v":direction.rotated(angle) * (220.0 + i * 9.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * 0.65 * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
+					var speed: float = 220.0 + i * 9.0
+					if archive_challenge_version >= 5 and archive_phase >= 1:
+						angle += float(side) * (0.12 if archive_phase == 1 else -0.18)
+						speed *= 0.85 if (i + (1 if side == 1 else 0)) % 2 == 0 else 1.15
+					bullets.append({"p":origin, "v":direction.rotated(angle) * speed, "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * 0.65 * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 			effects.append({"kind":"ion-burst", "p":core.p, "radius":125.0, "life":0.7, "max_life":0.7, "born":tick})
 			if count > 0:
 				_log("AUXILIARY CROSSFIRE · core remains exposed")
+			if archive_challenge_version >= 5:
+				_archive_feedback_surge(core, precise)
+
+# An actual interrupted warning discharges the station into its own defenses.
+# Fixed maximum-core-HP damage, not a weapon proc or an XP/Core reward. In
+# Lockdown the discharge attacks the live objectives first; spillover reaches
+# the core. Ordinary phase floors and the real boss death path still apply.
+func _archive_feedback_surge(core: Dictionary, precise: bool) -> void:
+	if core.is_empty() or float(core.hp) <= 0.0:
+		return
+	var maximum: float = float(core.max_hp)
+	var remaining: float = maximum * (0.05 if precise else 0.03)
+	var before: float = float(damage_dealt.get("archive_feedback", 0.0))
+	if archive_phase == 0:
+		for part in enemies:
+			if remaining <= 0.0:
+				break
+			if str(part.get("role", "")) == "archive_emitter" and float(part.hp) > 0.0:
+				var hit: float = minf(remaining, float(part.hp))
+				_damage_enemy(part, hit, "archive_feedback")
+				remaining -= hit
+	if remaining > 0.0:
+		_damage_enemy(core, remaining, "archive_feedback")
+	var actual: float = float(damage_dealt.get("archive_feedback", 0.0)) - before
+	if actual > 0.0:
+		var percent: float = actual / maxf(1.0, maximum) * 100.0
+		effects.append({"kind":"archive-feedback","p":core.p,"amount":percent,"life":0.85,"max_life":0.85,"born":tick})
+		effects.append({"kind":"arc","p":ship_position(),"to":core.p,"life":0.5,"max_life":0.5,"born":tick})
+		_log("COUNTER SURGE · %.1f%% integrity damage" % percent)
 
 func _update_charges() -> void:
 	for charge in charges:
@@ -3634,6 +3695,8 @@ func _evolution_on_weapon_hit(enemy: Dictionary, damage: float, weapon: String) 
 func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.hp <= 0.0:
 		return
+	var fixed_feedback: bool = weapon == "archive_feedback" and archive_boss_reworked() and archive_challenge_version >= 5 and (str(enemy.kind) == HiddenSector.BOSS or str(enemy.get("role", "")) == "archive_emitter")
+	var feedback_amount: float = amount
 	# No manual aiming: the boss core's broad collision area can intercept
 	# a shot intended for a visible weak point. Route automatic shots to
 	# that part instead of wasting them against the seal.
@@ -3728,11 +3791,16 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 3.0 if rank_at("targeting", 10) else (2.5 if rank_at("targeting", 5) else 2.0)
 	if boss_spawned and stage in [3, 4] and str(enemy.kind) in ["boss3", "boss4"]:
 		amount = minf(amount, maxf(0.0, float(enemy.hp) - _late_boss_floor(enemy)))
+	# Feedback is a fixed amount of station integrity: weapon modifiers,
+	# prototype penalties, and the armor multiplier cannot alter its value.
+	if fixed_feedback:
+		amount = feedback_amount
 	if enemy.kind == HiddenSector.BOSS:
-		if time >= archive_exposed_until:
-			amount *= archive_sealed_factor()
-		else:
-			amount *= archive_exposed_damage_factor()
+		if not fixed_feedback:
+			if time >= archive_exposed_until:
+				amount *= archive_sealed_factor()
+			else:
+				amount *= archive_exposed_damage_factor()
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))

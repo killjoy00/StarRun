@@ -174,7 +174,7 @@ func _test_archive_challenge() -> void:
 	sim.signal_count = 2
 	sim.stage_transition_queued = true
 	var locked_cores: int = sim.payout()
-	check(sim.enter_secret() and sim.archive_challenge_active() and sim.archive_challenge_version == 4 and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
+	check(sim.enter_secret() and sim.archive_challenge_active() and sim.archive_challenge_version == 5 and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
 	# Isolate the previous version to preserve its existing regression checks.
 	sim.archive_challenge_version = 2
 	sim.dismiss_secret_intro()
@@ -250,6 +250,12 @@ func _test_archive_rework_and_destinations() -> void:
 	var checkpoint := base.snapshot()
 	var replay := Sim.new()
 	check(replay.restore(checkpoint) and replay.snapshot() == checkpoint and replay._alive_modules("archive_emitter") == 1, "Broken emitter and phase resume exactly")
+	replay.archive_next_attack = replay.time
+	replay._update_archive_attack()
+	replay.time = replay.archive_attack_until - 1.0
+	replay.cooldowns.aegis = 0.0
+	check(replay.activate("aegis") and replay._alive_modules("archive_emitter") == 1 and is_equal_approx(float(replay._boss_core().hp),initial_core) and is_equal_approx(float(replay.damage_dealt.get("archive_feedback",0.0)),initial_core*0.05), "Surge targets live emitter before the core")
+	check(replay.xp == initial_xp and replay.kills == initial_kills and replay.payout() == initial_cores, "Surge produces no economy reward")
 	base._damage_enemy(core, 999999999.0, "nova")
 	check(base._alive_modules("archive_emitter") == 0 and base.xp == initial_xp and base.kills == initial_kills and base.payout() == initial_cores, "Emitters grant no extra kills, XP or payout")
 	check(is_equal_approx(base.stage_damage_scale(), 4.2) and is_equal_approx(old.stage_damage_scale(), 1.0), "Only new boss encounters receive restored incoming pressure")
@@ -270,7 +276,7 @@ func _test_archive_rework_and_destinations() -> void:
 	insane.dismiss_secret_intro()
 	insane._spawn_boss()
 	check(is_equal_approx(float(insane._boss_core().max_hp), float(insane_legacy._boss_core().max_hp)*3.5) and insane._alive_modules("archive_emitter") == 2, "Insane Archive calibrates stacked durability, retaining both real objectives")
-	check(is_equal_approx(insane.archive_sealed_factor(), 0.10) and is_equal_approx(base.archive_sealed_factor(), 0.06) and is_equal_approx(insane.stage_damage_scale(), 4.2), "Insane local armor adjustment retains counter advantage; other difficulty armor is unchanged")
+	check(is_equal_approx(insane.archive_sealed_factor(), 0.10) and is_equal_approx(base.archive_sealed_factor(), 0.06) and is_equal_approx(insane.stage_damage_scale(), 4.2) and is_equal_approx(insane.archive_exposed_damage_factor(),1.0), "Insane retains increased incoming attack pressure and now full exposed damage")
 	var warning := base.snapshot()
 	var early := Sim.new()
 	var precise := Sim.new()
@@ -281,6 +287,28 @@ func _test_archive_rework_and_destinations() -> void:
 	check(not early.archive_precise_counter_window() and precise.archive_precise_counter_window(), "Readable late counter window")
 	check(early.activate("aegis") and precise.activate("aegis") and early.archive_attack.is_empty() and precise.archive_attack.is_empty(), "Both legal casts cancel the main attack")
 	check(is_equal_approx(early.archive_exposed_until - early.time, 1.4) and is_equal_approx(precise.archive_exposed_until - precise.time, 4.2), "Holding a cast earns a longer real opening")
+	check(is_equal_approx(float(early.damage_dealt.get("archive_feedback",0.0)), initial_core*0.03) and is_equal_approx(float(precise.damage_dealt.get("archive_feedback",0.0)),initial_core*0.05), "Early and precise counters deal exactly 3% and 5% of maximum core HP before phase caps")
+	check(is_equal_approx(float(early._boss_core().hp), initial_core*0.97) and is_equal_approx(float(precise._boss_core().hp), initial_core*0.95), "Counter damage is real, not just a visual or statistic")
+	check(precise.effects.any(func(e): return e.kind == "archive-feedback" and is_equal_approx(float(e.amount),5.0)), "Counter feedback displays real damage")
+	var counter_snapshot := precise.snapshot()
+	var counter_resume := Sim.new()
+	check(counter_resume.restore(counter_snapshot) and counter_resume.snapshot() == counter_snapshot, "Counter damage, feedback and cooldown survive exact resume")
+	precise._update_archive_attack()
+	check(precise.archive_phase == 1 and is_equal_approx(float(precise._boss_core().hp),initial_core*0.68), "Both emitters and a resolved lock release Lattice without another DPS gate")
+	check(is_equal_approx(precise.archive_exposed_damage_factor(),1.0), "Redesigned exposed core takes full damage")
+	var v4 := Sim.new()
+	check(v4.restore(warning), "Previous revision shares the warning checkpoint")
+	v4.archive_challenge_version = 4
+	v4.time = v4.archive_attack_until - 1.0
+	v4.cooldowns.aegis = 0.0
+	check(v4.activate("aegis") and not v4.damage_dealt.has("archive_feedback") and is_equal_approx(v4.archive_exposed_damage_factor(),0.65), "Suspended v4 retains old armor and no surge")
+	var finishing := Sim.new()
+	check(finishing.restore(warning), "Final-phase surge fixture restores")
+	finishing.archive_phase = 2
+	finishing._boss_core().hp = initial_core*0.04
+	finishing.time = finishing.archive_attack_until - 1.0
+	finishing.cooldowns.aegis = 0.0
+	check(finishing.activate("aegis") and finishing.stage_transition_queued and finishing.stage_clears == 5 and finishing.payout() == initial_cores, "Lethal surge uses real boss completion and preserves locked payout")
 	base.archive_phase = 2
 	core.hp = float(core.max_hp)*0.25
 	var pressure: float = base.archive_attack_pressure()

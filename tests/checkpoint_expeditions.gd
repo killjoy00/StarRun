@@ -226,14 +226,15 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 				reason = "earned Archive entry rejected"
 				break
 			if revision == "control": fork.archive_challenge_version = 0
-			elif revision == "initial": fork.archive_challenge_version = 3
-			elif not fork.archive_boss_reworked() or fork.archive_challenge_version != 4:
+			elif revision == "initial": fork.archive_challenge_version = 4
+			elif not fork.archive_boss_reworked() or fork.archive_challenge_version != 5:
 				status = "fault"
 				reason = "candidate challenge not enabled on real entry"
 				break
 			var row := _fly_world(fork, policy, style, true)
 			row["revision"] = revision
 			row["archive_version"] = fork.archive_challenge_version
+			row["feedback_damage"] = float(fork.damage_dealt.get("archive_feedback",0.0))
 			row["remaining_emitters"] = fork._alive_modules("archive_emitter")
 			row["entry_cores"] = entry
 			row["locked_cores"] = fork.payout()

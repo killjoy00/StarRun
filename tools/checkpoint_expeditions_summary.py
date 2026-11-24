@@ -63,7 +63,7 @@ def read(paths, suite):
                     raise ValueError("missing actual Archive entry pair")
                 if r["archives"]:
                     a,b,candidate=r["archives"]
-                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,3,4] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
+                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,4,5] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
                         raise ValueError("invalid Archive comparison")
         cells[key]=rows
     if set(cells)!=(EXPECTED if suite=="routes" else ARCHIVE_EXPECTED):
@@ -127,8 +127,8 @@ def archive_report(rows):
     if not entrants: raise ValueError("no actual Archive entries")
     print("# Custodian challenge: paired real Archive entries")
     print(f"{len(rows)} actual campaigns; {len(entrants)} earned signal-qualified entries; {3*len(entrants)} real Archive fights. Identical pre-entry checkpoints and locked Cores. Legacy, previous redesigned version, and the calibrated candidate. No forced kills/signals. The timed policy responds to the candidate’s explicit late-counter cue; cooldown-only uses no special rule. Both policies retain their normal behavior for previous versions.")
-    print("| Budget | Policy | Attempts | Eligible | Legacy / prior / redesigned clears | Boss seconds (clears) | Boss counters | Boss damage received | Timeouts |")
-    print("|---|---|---:|---:|---|---|---|---|---|")
+    print("| Budget | Policy | Attempts | Eligible | Legacy / prior / redesigned clears | Boss seconds (clears) | Boss counters | Boss damage received | Feedback damage | Timeouts |")
+    print("|---|---|---:|---:|---|---|---|---|---|---|")
     for h in ("p32","max"):
         for p in POLICIES:
             rs=[r for r in rows if r["budget"]==h and r["policy"]==p]
@@ -138,8 +138,9 @@ def archive_report(rows):
             secs=" / ".join(f"{mean(v['boss_seconds'] for v in vs if clear(v)):.1f}" for vs in cohorts)
             counters=" / ".join(f"{mean(v['boss_counters'] for v in vs):.1f}" for vs in cohorts)
             damage=" / ".join(f"{mean(v['boss_damage'] for v in vs):.1f}" for vs in cohorts)
+            feedback=" / ".join(f"{mean(v['feedback_damage'] for v in vs):.1f}" for vs in cohorts)
             timeouts=" / ".join(str(sum(v["status"]=="timeout" for v in vs)) for vs in cohorts)
-            print(f"| {h} | {p} | {len(rs)} | {len(pairs)} | {outcomes} | {secs} | {counters} | {damage} | {timeouts} |")
+            print(f"| {h} | {p} | {len(rs)} | {len(pairs)} | {outcomes} | {secs} | {counters} | {damage} | {feedback} | {timeouts} |")
     o=collections.Counter((clear(r["archives"][0]),clear(r["archives"][2])) for r in entrants)
     print(f"\nPaired outcomes: old-only clears {o[True,False]}, new-only clears {o[False,True]}, both {o[True,True]}, neither {o[False,False]}.")
     print("| Ship | Budget | Policy | Old clear | New clear |")

@@ -2563,7 +2563,10 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
 		if sim.archive_boss_reworked():
 			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails.", 16, Kit.TEXT, true)
-			if sim.archive_challenge_version >= 4:
+			if sim.archive_challenge_version >= 5:
+				Kit.label(view.body, "Break both emitters to release Lattice. Any counter damages the station for up to 3% of its core health; CAST NOW gives up to 5% and a longer opening. The exposed core takes full damage.", 16, HiddenSector.MINT, true)
+				Kit.label(view.body, "Fast-forward slows during warnings. Keep an ability ready.", 15, Kit.MUTED, true)
+			elif sim.archive_challenge_version >= 4:
 				Kit.label(view.body, "Hold one ability for CAST NOW to open the core longer. Early casts still cancel the attack. Fast-forward slows during warnings.", 16, HiddenSector.MINT, true)
 		elif sim.archive_challenge_active():
 			Kit.label(view.body, "Breaking a lock cancels its main attack. The side emitters still fire, and each shield phase hits harder. Keep an ability ready for the next warning.", 16, Kit.TEXT, true)
