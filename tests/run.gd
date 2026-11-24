@@ -2056,7 +2056,7 @@ func _test_start_world() -> void:
 	check(sim.skip_prototype() and sim.intermission_step == "route", "The last skipped world asks for the route into the start world")
 	check(sim.choose_route("bounty") and sim.advance_stage() and sim.stage == 3 and not sim.skipping_worlds() and sim.route_choice == "bounty", "The chosen route applies to the start world")
 	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 1, "Catch-up gives the start world's level-ups plus the bounty pick, and no free pick per warp")
-	check(sim.payout() == 30 + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
+	check(sim.payout() == int(round(30 * Sim.REGULAR_CORE_MULTIPLIER)) + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
 	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.15), "Vanguard's veteran bonus counts the skipped worlds")
 	sim._offer_cards()
 	check(sim.level == 2 and sim.cards.size() >= 3, "Each catch-up draft raises the level by one")
@@ -2071,7 +2071,7 @@ func _test_start_world() -> void:
 	full.stage_clears = 3
 	full.kills = sim.kills
 	full.choice_cores = sim.choice_cores
-	check(sim.payout() - full.payout() == -(20 * 2 + 5 * 4), "Only Worlds 1-2 are missing from a World 3 start's payout")
+	check(sim.payout() - full.payout() == -int(round((20 * 2 + 5 * 4) * Sim.REGULAR_CORE_MULTIPLIER)), "Only Worlds 1-2 are missing from a World 3 start's payout")
 	var late := Sim.new(6102)
 	late.step()
 	check(not late.begin_at_world(2) and not Sim.new(6103).begin_at_world(1) and not Sim.new(6104).begin_at_world(5), "Later starts only before the first tick and for Worlds 2-4")
@@ -2537,15 +2537,30 @@ func _test_route_prototype_balance_grid() -> void:
 		balanced.stage = late_stage
 		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
 		balanced._add_enemy("drone", Vector2(250, 100))
-		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * 1.06
-		check(is_equal_approx(balanced.advanced_wave_health(), 1.06), "World %d Normal regular enemies have 6%% more wave health" % late_stage)
-		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction and Normal's 6%% wave health" % late_stage)
+		var wave_hp := 0.98 if late_stage == 2 else 1.06
+		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * wave_hp
+		check(is_equal_approx(balanced.advanced_wave_health(), wave_hp), "World %d uses the intended Normal wave health" % late_stage)
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the intended health scaling" % late_stage)
 		balanced._spawn_boss()
 		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply their own durability pressure on top of regular health scaling" % late_stage)
 		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
 		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss parts scale alongside their core" % late_stage)
+	var daily_balance := Sim.new(9342)
+	daily_balance.stage = 2
+	daily_balance.daily_day = "2026-11-23"
+	check(is_equal_approx(daily_balance.advanced_wave_health(), 1.06), "Daily World 2 health stays on its existing rules")
+	var hard_balance := Sim.new(9342, {}, "vanguard", "rookie", "hard")
+	hard_balance.stage = 2
+	var insane_balance := Sim.new(9342, {}, "vanguard", "rookie", "insane")
+	insane_balance.stage = 2
+	check(is_equal_approx(hard_balance.advanced_wave_health(), 0.85) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Hard and Insane World 2 health is unchanged")
+	var ordinary_reward := Sim.new(9342)
+	ordinary_reward.choice_cores = 5
+	check(ordinary_reward.payout() == 44, "Regular run base payout increases 30 percent, fixed Core picks stay fixed")
+	ordinary_reward.daily_day = "2026-11-23"
+	check(ordinary_reward.payout() == 35, "Daily base payout is unchanged")
 	var later_endless := Sim.new(9343)
 	later_endless.stage = 5
 	check(is_equal_approx(later_endless.enemy_health_multiplier(), 1.0) and is_equal_approx(later_endless.enemy_damage_multiplier(), 1.0), "Endless stages beyond the four-world campaign retain authored enemy stats")
