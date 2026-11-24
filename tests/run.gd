@@ -2571,6 +2571,30 @@ func _test_route_prototype_balance_grid() -> void:
 	for sample in [[1.0, 1.0], [0.66, 1.0], [0.65, 1.10], [0.31, 1.10], [0.30, 1.25], [0.11, 1.25], [0.10, 1.40], [0.01, 1.40]]:
 		foundry_core.hp = float(foundry_core.max_hp) * float(sample[0])
 		check(is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85 * float(sample[1])), "Crucible attack strength follows remaining core HP at %s" % str(sample[0]))
+	# Exercise the actual outgoing attacks, not just the multiplier helper.
+	foundry.time = foundry.boss_spawn_time + 20.0
+	foundry_core.hp = foundry_core.max_hp
+	foundry_core.fire = 0.0
+	foundry.heavy_ready_at = 0.0
+	foundry._update_enemies()
+	var open_heat: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "heat")
+	var open_slag: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "slag")
+	check(not open_heat.is_empty() and not open_slag.is_empty() and foundry.charges.size() == 1, "Opening Crucible produces fans, slag and a telegraphed beam")
+	if not open_heat.is_empty() and not open_slag.is_empty() and foundry.charges.size() == 1:
+		var open_beam: Dictionary = foundry.charges[0].duplicate(true)
+		foundry_core.hp = float(foundry_core.max_hp) * 0.10
+		check(foundry.charges[0] == open_beam and is_equal_approx(float(foundry.bullets[0].damage), float(open_heat[0].damage)), "Escalation never retroactively strengthens in-flight attacks")
+		foundry.charges.clear()
+		foundry.bullets.clear()
+		foundry_core.fire = 0.0
+		foundry.heavy_ready_at = 0.0
+		foundry._update_enemies()
+		var final_heat: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "heat")
+		var final_slag: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "slag")
+		check(final_heat.size() == open_heat.size() and final_slag.size() == open_slag.size() and foundry.charges.size() == 1, "Critical heat retains the same attack pattern")
+		if not final_heat.is_empty() and not final_slag.is_empty() and foundry.charges.size() == 1:
+			check(is_equal_approx(float(final_heat[0].damage), float(open_heat[0].damage) * 1.40) and is_equal_approx(float(final_slag[0].damage), float(open_slag[0].damage) * 1.40) and is_equal_approx(float(foundry.charges[0].damage), float(open_beam.damage) * 1.40), "Critical heat increases actual fans, slag and beams by 40 percent")
+			check(is_equal_approx(float(foundry.charges[0].duration), float(open_beam.duration)), "Critical heat preserves the beam warning duration")
 	foundry.time = foundry.boss_spawn_time + 600.0
 	foundry_core.hp = foundry_core.max_hp
 	check(is_equal_approx(foundry.crucible_attack_factor(), 1.0), "Even a ten-minute fight does not trigger time-based enrage")
