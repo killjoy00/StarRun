@@ -36,6 +36,7 @@ func _defeat_boss_fixture(sim: RefCounted) -> void:
 		sim._damage_enemy(core, 999999999.0, "nova")
 
 func _run() -> void:
+	_test_expedition_rules()
 	_test_swarm_packs()
 	_test_course()
 	_test_defenses()
@@ -1074,6 +1075,106 @@ func _test_elite_squad_counterplay() -> void:
 	pre_boss._spawn_boss()
 	check(pre_boss.encounter_queue.is_empty() and not pre_boss.enemies.any(func(e): return e.has("elite_role")), "Boss entry clears elite queues and does not change boss encounters")
 
+
+# These fixtures cover the new regular-run rules. Old explicit fixtures
+# retain their original rules version, as do old checkpoints and Daily.
+func _test_expedition_rules() -> void:
+	var expedition := Sim.new(8810)
+	check(expedition.enable_expedition_rules(), "New regular launch enables expedition rules")
+	var visited := {}
+	for seed in range(8800, 8832):
+		var route_sim := Sim.new(seed)
+		route_sim.enable_expedition_rules()
+		route_sim.stage = 2
+		route_sim.stage_clears = 2
+		route_sim.stage_transition_queued = true
+		check(route_sim.begin_intermission() and route_sim.skip_prototype(), "Expedition can reach route choice")
+		var options: Array = route_sim.available_destinations()
+		check(options.size() == 3, "Exactly three destination offers")
+		var groups := []
+		for id in options:
+			var spec: Dictionary = route_sim.destination_spec(str(id))
+			groups.append(str(spec.group))
+			visited[str(id)] = true
+		check(groups == ["repair", "overclock", "bounty"], "Every destination hand has recovery, assault and opportunity")
+		var saved := route_sim.snapshot()
+		var replay := Sim.new(seed)
+		check(replay.restore(saved) and replay.available_destinations() == options and replay.snapshot() == saved, "Destination offers survive checkpoint without rerolling")
+		check(not route_sim.choose_route("not_an_offer"), "Cannot select unavailable destinations")
+		var selected: String = str(options[seed % 3])
+		var chosen: Dictionary = route_sim.destination_spec(selected)
+		check(route_sim.choose_route(selected), "Offered destination is selectable")
+		check(route_sim.intermission_step == "mutation" and not route_sim.mutation_offers.is_empty(), "A real W2 clear with owned guns offers a separate workshop")
+		var lab_saved := route_sim.snapshot()
+		var lab_resume := Sim.new(seed)
+		check(lab_resume.restore(lab_saved) and lab_resume.snapshot() == lab_saved, "Workshop choices are checkpointed exactly")
+		check(not route_sim.advance_stage() and not route_sim.choose_lab_mutation("not_an_offer"), "No bypass or unoffered mutation")
+		var mutation: String = str(route_sim.mutation_offers[0])
+		var prototype_count: int = route_sim.prototypes.size()
+		check(route_sim.choose_lab_mutation(mutation) and mutation in route_sim.mutations, "Optional workshop installs an owned-gun mutation")
+		check(route_sim.prototypes.size() == prototype_count and not route_sim.choose_lab_mutation(mutation), "Workshop does not consume prototype or duplicate mutation")
+		check(route_sim.advance_stage() and route_sim.stage == 3 and route_sim.destination_choice == selected, "Destination carries into real next world")
+		check(is_equal_approx(route_sim.stage_power, float(chosen.get("power", 1.0))) and is_equal_approx(route_sim.stage_defense, float(chosen.get("defense", 1.0))) and is_equal_approx(route_sim.stage_risk, float(chosen.get("risk", 1.0))), "Destination combat modifiers match its card")
+		check(is_equal_approx(route_sim.stage_fire_rate, float(chosen.get("fire", 1.0))) and is_equal_approx(route_sim.shield, route_sim.max_shield * float(chosen.get("shield", 1.0))), "Destination starting shield and weapon rate are applied")
+		check(route_sim.route_offers.is_empty() and route_sim.mutation_offers.is_empty(), "Consumed offers cannot leak into next warp")
+		var warped := route_sim.snapshot()
+		var resumed := Sim.new(seed)
+		check(resumed.restore(warped) and resumed.snapshot() == warped, "Chosen destination and resulting build persist")
+	check(visited.size() == 8, "All eight destinations appear across independent seeds")
+
+	var swap := Sim.new(9911)
+	swap.enable_expedition_rules()
+	swap.stage = 2
+	swap.active_slots = ["aegis", "barrage", "emp", "chrono"]
+	swap.upgrades.aegis = 5
+	swap.upgrades.barrage = 1
+	swap.upgrades.emp = 1
+	swap.upgrades.chrono = 1
+	var partner: Dictionary = swap.content.cards.filter(func(c): return str(c.id) == "flak")[0]
+	swap.cards = [partner.duplicate(true)]
+	var before := swap.active_slots.duplicate()
+	check(swap._can_learn_active("flak") and "aegis" not in swap.fusion_swap_targets("flak"), "A full bar can pursue a rank-invested fusion without removing its partner")
+	check(swap.choose_card(0) and swap.pending_build_choices[0].kind == "swap" and swap.active_slots == before, "Replacement requires an explicit choice")
+	var pending := swap.snapshot()
+	var swap_resume := Sim.new(9911)
+	check(swap_resume.restore(pending) and swap_resume.snapshot() == pending, "Pending replacement survives resume")
+	check(not swap.resolve_build_choice("aegis") and swap.resolve_build_choice("back") and swap.active_slots == before and swap.cards.size() == 1, "Back retains the draft and protects the intended fusion partner")
+	check(swap.choose_card(0) and swap.resolve_build_choice("chrono"), "A legal replacement consumes the selected draft")
+	check(swap.active_slots.size() == 4 and "flak" in swap.active_slots and "chrono" not in swap.active_slots and swap.upgrades.chrono == 0 and swap.upgrades.flak == 1 and swap.cards.is_empty(), "No free rank, extra active slot or retained replaced ranks")
+	swap.upgrades.flak = 4
+	swap.cards = [partner.duplicate(true)]
+	check(swap.choose_card(0) and swap.resolve_build_choice("fuse") and "shieldstorm" in swap.active_slots and swap.active_slots.size() == 3, "Normal rank-five fusion remains achievable")
+	var legacy := Sim.new(9911)
+	legacy.stage = 2
+	legacy.active_slots = before.duplicate()
+	legacy.upgrades.aegis = 5
+	check(not legacy._can_learn_active("flak"), "Unversioned legacy run cannot learn onto a full bar")
+
+	for difficulty in ["hard", "insane"]:
+		var reward := Sim.new(8811, {}, "vanguard", "rookie", difficulty)
+		reward.enable_expedition_rules()
+		check(reward.payout() == 0, "Immediate advanced failure pays no launch stipend")
+		reward.kills = 30
+		var partial: int = reward.payout()
+		check(partial > 0 and partial < Sim.new(8811, {}, "vanguard", "rookie", difficulty).payout(), "Earned progress pays a smaller advanced recovery")
+		reward.stage_clears = 1
+		var original := Sim.new(8811, {}, "vanguard", "rookie", difficulty)
+		original.kills = 30
+		original.stage_clears = 1
+		check(reward.payout() == original.payout(), "Full difficulty bonus is preserved on boss clears")
+	var regular := Sim.new(8811)
+	var old_payout := regular.payout()
+	regular.enable_expedition_rules()
+	check(regular.payout() == old_payout, "Normal recovery reward unchanged")
+	var daily := Sim.new(8811)
+	daily.daily_day = "2026-11-23"
+	check(not daily.enable_expedition_rules() and daily.available_destinations().is_empty(), "Published Daily cannot opt into changed rules")
+	var drone := Sim.new(8811, {}, "vanguard", "rookie", "normal", "drone_armada")
+	drone.enable_expedition_rules()
+	drone.stage = 2
+	drone.stage_clears = 2
+	drone.stage_transition_queued = true
+	check(drone.begin_intermission() and drone.skip_prototype() and drone.choose_route_policy("repair") and drone.intermission_step == "ready", "Weaponless artifact does not receive impossible mutation choices")
 
 func _test_endless_encounters_and_cooldown_captures() -> void:
 	var cooldown := Sim.new(7711)

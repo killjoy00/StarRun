@@ -46,6 +46,7 @@ const PACK_HP_TOTAL := 1.08
 # with them versus 7 of 8 without.
 const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3}
 const Catalog = preload("res://scripts/catalog.gd")
+const Expedition = preload("res://scripts/expedition_rules.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var signal_count := 0
 var signal_status := "" # "", "offer", "cast", "courier", "received", "missed"
@@ -205,6 +206,13 @@ var capacity_milestones: Array = [] # Tracks one-time rank 5/10 hull and shield 
 var prototype_offers: Array = []
 var intermission_step := "" # "", "prototype", "route", "ready"
 var route_choice := ""
+# Explicit rules version: new regular launches opt in before the first tick.
+# Historical suspended flights, Daily and fixed legacy fixtures keep old rules.
+var expedition_rules := false
+var destination_choice := ""
+var route_offers: Array = []
+var mutation_offers: Array = []
+var mutation_lab_seen := false
 var stage_power := 1.0
 var stage_risk := 1.0
 var stage_defense := 1.0 # Shielded passage reduces incoming damage.
@@ -326,6 +334,37 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	rerolls_left = int(meta.rerolls) * REROLLS_PER_RANK + pilot_rerolls_left
 	banishes_left = meta.banishes
 	skips_left = meta.skips
+
+func enable_expedition_rules() -> bool:
+	if tick != 0 or stage != 1 or not daily_day.is_empty() or start_world != 1:
+		return false
+	expedition_rules = true
+	return true
+
+func expedition_active() -> bool:
+	return expedition_rules and daily_day.is_empty() and not secret_entered
+
+func destination_spec(id: String = "") -> Dictionary:
+	return Expedition.route(destination_choice if id.is_empty() else id)
+
+func _route_value(key: String, fallback: float) -> float:
+	var spec: Dictionary = destination_spec() if expedition_active() else {}
+	return fallback if spec.is_empty() else float(spec.get(key, {"repair":0.40,"shield":1.0,"power":1.0,"risk":1.0,"defense":1.0,"fire":1.0,"shield_power":1.0,"cooldown":1.0,"hull_risk":1.0,"xp":1.0,"bounty":0.0,"picks":0.0,"rerolls":0.0}.get(key, fallback)))
+
+func available_destinations() -> Array:
+	if not expedition_active():
+		return []
+	return route_offers.duplicate()
+
+# Diagnostics can select a group rather than pretending a specific
+# destination was offered. The interactive UI selects only a concrete ID.
+func choose_route_policy(group: String) -> bool:
+	if not expedition_active():
+		return choose_route(group)
+	for id in route_offers:
+		if str(Expedition.route(str(id)).group) == group:
+			return choose_route(str(id))
+	return false
 
 func _build_course() -> void:
 	course_pilot.seed = seed_value ^ 0x53746172
@@ -1124,6 +1163,26 @@ func resolve_build_choice(value: String) -> bool:
 		return false
 	var choice: Dictionary = pending_build_choices[0]
 	var id: String = str(choice.id)
+	if str(choice.kind) == "swap":
+		if value == "back":
+			pending_build_choices.pop_front()
+			return true
+		if value not in fusion_swap_targets(id):
+			return false
+		var index := -1
+		for i in range(cards.size()):
+			if str(cards[i].id) == id:
+				index = i
+				break
+		if index < 0:
+			return false
+		active_slots.erase(value)
+		upgrades[value] = 0
+		cooldowns[value] = 0.0
+		stage_casts.erase(value)
+		_log("Replaced " + str(content.abilities[value].name) + " to pursue a fusion")
+		pending_build_choices.pop_front()
+		return choose_card(index)
 	if str(choice.kind) == "evolution":
 		if weapon_evolutions.has(id) or not content.weapon_evolutions.has(id):
 			return false
@@ -1168,7 +1227,14 @@ func _auto_resolve_build_choices() -> void:
 	while not pending_build_choices.is_empty():
 		var choice: Dictionary = pending_build_choices[0]
 		var answer := "fuse"
-		if str(choice.kind) == "evolution":
+		if str(choice.kind) == "swap":
+			var targets := fusion_swap_targets(str(choice.id))
+			if targets.is_empty():
+				answer = "back"
+			else:
+				targets.sort_custom(func(a,b): return int(upgrades[a]) < int(upgrades[b]))
+				answer = str(targets[0])
+		elif str(choice.kind) == "evolution":
 			var weapon: String = str(choice.id)
 			answer = str(content.weapon_evolutions[weapon][0].id)
 			if (weapon == "pulse" and pilot_id not in ["ace", "rookie"]) or (weapon == "seeker" and pilot_id == "engineer") or (weapon == "arc" and ship_id == "arcwing") or (weapon == "lance" and pilot_id == "engineer"):
@@ -1176,9 +1242,22 @@ func _auto_resolve_build_choices() -> void:
 		if not resolve_build_choice(answer):
 			break
 
-func _can_learn_active(_id: String) -> bool:
-	# New actives start at rank 1, so none can bypass a full bar by fusing.
-	return active_slots.size() < Catalog.ACTIVE_SLOTS
+func fusion_swap_targets(id: String) -> Array:
+	if not expedition_active() or not _new_build_decisions() or active_slots.size() != Catalog.ACTIVE_SLOTS or int(upgrades.get(id, 0)) != 0 or id not in Catalog.ABILITIES:
+		return []
+	var partners: Array = []
+	for fusion in content.fusions:
+		if str(fusion.id) in fusion_declined or id not in fusion.parts:
+			continue
+		for part in fusion.parts:
+			if part != id and part in active_slots and int(upgrades.get(part, 0)) >= 3 and part not in partners:
+				partners.append(part)
+	if partners.is_empty():
+		return []
+	return active_slots.filter(func(slot): return slot not in partners and fusion_spec(str(slot)).is_empty())
+
+func _can_learn_active(id: String) -> bool:
+	return active_slots.size() < Catalog.ACTIVE_SLOTS or not fusion_swap_targets(id).is_empty()
 
 func _try_fuse() -> void:
 	for fusion in content.fusions:
@@ -1528,6 +1607,8 @@ func boss_phase_label() -> String:
 func begin_intermission() -> bool:
 	if not stage_transition_queued or stage >= stage_count() or not intermission_step.is_empty():
 		return false
+	if expedition_active():
+		route_offers = Expedition.offers(seed_value, stage + 1)
 	var available: Array = []
 	for spec in content.prototypes:
 		if spec.id not in prototypes:
@@ -1537,7 +1618,7 @@ func begin_intermission() -> bool:
 		prototype_offers.append(available.pop_at(rng.randi_range(0, available.size() - 1)))
 	# One third of boss intermissions reveal an optional, costly mutation
 	# in the third offer slot. It replaces a Prototype; no extra free pick.
-	if not prototype_offers.is_empty() and stage <= 3 and rng.randi_range(0, 2) == 0:
+	if not expedition_active() and not prototype_offers.is_empty() and stage <= 3 and rng.randi_range(0, 2) == 0:
 		var market: Array = _market_offers()
 		if not market.is_empty():
 			var offered: Dictionary = market[rng.randi_range(0, market.size() - 1)]
@@ -1593,11 +1674,56 @@ func skip_prototype() -> bool:
 	return true
 
 func choose_route(id: String) -> bool:
-	if intermission_step != "route" or id not in ["repair", "overclock", "bounty"]:
+	if intermission_step != "route":
 		return false
+	if expedition_active():
+		if id not in route_offers:
+			return false
+		var spec := Expedition.route(id)
+		if spec.is_empty():
+			return false
+		destination_choice = id
+		route_choice = str(spec.group)
+		intermission_step = "ready"
+		_log("Destination: " + str(spec.name))
+		# A dedicated optional lab after W2, or earlier on a discovery
+		# route. Never grant a free mutation in a skipped world or Daily.
+		if not skipping_worlds() and stage <= 3 and (stage == 2 or bool(spec.get("mutation", false))):
+			_prepare_mutation_lab()
+		return true
+	if id not in ["repair", "overclock", "bounty"]:
+		return false
+	destination_choice = ""
 	route_choice = id
 	intermission_step = "ready"
 	_log("Route: " + id)
+	return true
+
+func _prepare_mutation_lab() -> void:
+	if mutation_lab_seen or not expedition_active() or not mutations.is_empty():
+		return
+	var pool: Array = _market_offers()
+	if pool.is_empty():
+		return
+	var draw := RandomNumberGenerator.new()
+	draw.seed = seed_value * 104729 + stage * 7919 + 137
+	mutation_offers.clear()
+	while mutation_offers.size() < 3 and not pool.is_empty():
+		var item: Dictionary = pool.pop_at(draw.randi_range(0, pool.size() - 1))
+		mutation_offers.append(str(item.id))
+		codex_seen["card:" + str(item.id)] = true
+	mutation_lab_seen = true
+	intermission_step = "mutation"
+
+func choose_lab_mutation(id: String) -> bool:
+	if intermission_step != "mutation" or not expedition_active():
+		return false
+	if id != "skip":
+		if id not in mutation_offers or not _install_mutation(id):
+			return false
+		note_codex()
+	mutation_offers.clear()
+	intermission_step = "ready"
 	return true
 
 func can_enter_secret() -> bool:
@@ -1647,6 +1773,9 @@ func enter_secret() -> bool:
 		return false
 	secret_payout = payout()
 	secret_entered = true
+	destination_choice = ""
+	route_offers.clear()
+	mutation_offers.clear()
 	intermission_step = "ready"
 	route_choice = "repair"
 	return advance_stage()
@@ -1878,7 +2007,7 @@ func _spawn_encounter() -> void:
 	var pattern := (seed_value + stage * 7 + encounter_index * 5) % 3
 	# One elite squad in every two natural encounter opportunities; never
 	# World 1, boss phases, or an extra third-party spawn/kill payout.
-	var elite: bool = stage in [2, 3, 4] and (encounter_index + seed_value) % 2 == 0
+	var elite: bool = (stage in [2, 3, 4] and (encounter_index + seed_value) % 2 == 0) or (expedition_active() and bool(destination_spec().get("elite", false)))
 	encounter_index += 1
 	var formation: Array = []
 	match pattern:
@@ -2043,6 +2172,7 @@ func _after_skipped_prototype() -> void:
 	if stage + 1 >= start_world:
 		return
 	route_choice = "repair"
+	destination_choice = ""
 	intermission_step = "ready"
 	advance_stage()
 
@@ -2359,13 +2489,15 @@ func advance_stage() -> bool:
 	shots.clear()
 	charges.clear()
 	effects.clear()
-	stage_power = 1.35 if route_choice == "overclock" else 1.0
-	stage_risk = 1.30 if route_choice == "bounty" else 1.0
-	stage_defense = 0.65 if route_choice == "repair" else 1.0
-	stage_fire_rate = 1.20 if route_choice == "overclock" else 1.0
-	var repair_fraction := 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40)
+	stage_power = _route_value("power", 1.35 if route_choice == "overclock" else 1.0)
+	stage_risk = _route_value("risk", 1.30 if route_choice == "bounty" else 1.0)
+	stage_defense = _route_value("defense", 0.65 if route_choice == "repair" else 1.0)
+	stage_fire_rate = _route_value("fire", 1.20 if route_choice == "overclock" else 1.0)
+	var repair_fraction := _route_value("repair", 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40))
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
-	shield = max_shield * (0.50 if route_choice == "overclock" else 1.0)
+	shield = max_shield * _route_value("shield", 0.50 if route_choice == "overclock" else 1.0)
+	route_offers.clear()
+	mutation_offers.clear()
 	safeguard_used = false
 	shieldstorm_pulse_used = false
 	next_spawn = wave_now() + 1.5
@@ -2373,9 +2505,11 @@ func advance_stage() -> bool:
 	heavy_ready_at = time + 10.0
 	# No free level-up between worlds: the drafts in the world are plenty.
 	# The Bounty route still pays its extra pick.
-	if not secret_entered and route_choice == "bounty":
-		pending_levels += 1
-	_log("STAGE %d - %s - %s ROUTE" % [stage, stage_name(), route_choice.to_upper()])
+	if not secret_entered:
+		pending_levels += int(_route_value("picks", 1.0 if route_choice == "bounty" else 0.0))
+		rerolls_left += int(_route_value("rerolls", 0.0))
+	var destination := destination_spec()
+	_log("STAGE %d - %s - %s" % [stage, stage_name(), str(destination.get("name", route_choice.to_upper() + " ROUTE"))])
 	if skipping_worlds():
 		_queue_skipped_world()
 	note_codex()
@@ -3041,8 +3175,8 @@ func weapon_power() -> float:
 		power *= 1.0 + merchant_pact_power
 	# Shielded Passage contributes immediate offense without needing a niche draft.
 	# It only rewards shields above half capacity during Worlds 2-4.
-	if stage in [2, 3, 4] and route_choice == "repair" and shield > max_shield * 0.50:
-		power *= 1.15
+	if stage >= 2 and shield > max_shield * 0.50:
+		power *= _route_value("shield_power", 1.15 if stage in [2, 3, 4] and route_choice == "repair" else 1.0)
 	# Engineer can convert well-maintained shields into modest weapon output.
 	# Its repair identity remains, while the payoff no longer disappears
 	# against max-Hangar boss health in long fights.
@@ -3106,16 +3240,16 @@ func hull_damage_multiplier() -> float:
 		factor *= 1.28
 	if _has_prototype("volatile_core"):
 		factor *= 1.30
-	if route_choice == "overclock" and stage >= 2:
-		factor *= 1.20
+	if stage >= 2:
+		factor *= _route_value("hull_risk", 1.20 if route_choice == "overclock" else 1.0)
 	return factor
 
 func cooldown_multiplier() -> float:
 	var factor := 1.0
 	# Shielded Passage protects the player through more timely active choices,
 	# not extra auto-weapon damage. World 1 is always unaffected.
-	if route_choice == "repair" and stage >= 2:
-		factor *= 0.85
+	if stage >= 2:
+		factor *= _route_value("cooldown", 0.85 if route_choice == "repair" else 1.0)
 	if synergy_active("control"):
 		factor *= 0.82
 	if rank_at("coolant", 5): factor *= 0.95
@@ -3570,7 +3704,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	beams_cancelled += before - charges.size()
 	if charges.size() < before:
 		_log("Beam canceled - charging enemy destroyed")
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * (1.50 if route_choice == "bounty" else 1.0)
+	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * _route_value("xp", 1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -3584,8 +3718,9 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 			bullets.clear()
 		if not secret_entered and hull > max_hull * 0.60:
 			bonus_cores += int(meta.clean_clear) * 3
-		if stage_risk > 1.0:
-			var reward: int = 30 * stage
+		var route_bounty: int = int(_route_value("bounty", 30.0 if stage_risk > 1.0 else 0.0))
+		if route_bounty > 0:
+			var reward: int = route_bounty * stage
 			bonus_cores += reward
 			bounty_earned += reward
 			_log("Bounty done - +%d Cores" % reward)
@@ -4086,18 +4221,28 @@ func _activate_fusion(id: String, strength: float) -> void:
 
 # One compact line on a card, not a long synergy explanation. Relevance
 # only counts an upgrade if the next actual +1/+2 pick advances a recipe.
+func _recipe_rank(id: String, picked: String, old_gain: int = 2) -> int:
+	var current: int = int(upgrades.get(id, 0))
+	if id != picked:
+		return current
+	if expedition_active():
+		for card in content.cards:
+			if str(card.id) == id:
+				return current + rank_gain(card, current)
+	return current + old_gain
+
 func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
 	var primary: String = str(spec.primary)
 	var secondary: String = str(spec.secondary)
-	var primary_rank: int = int(upgrades.get(primary, 0)) + (2 if picked == primary else 0)
-	var secondary_rank: int = int(upgrades.get(secondary, 0)) + (2 if picked == secondary else 0)
+	var primary_rank: int = _recipe_rank(primary, picked)
+	var secondary_rank: int = _recipe_rank(secondary, picked)
 	var third_rank: int = 0
 	if spec.has("third_any"):
 		for weapon in spec.third_any:
-			third_rank = maxi(third_rank, int(upgrades.get(str(weapon), 0)) + (2 if picked == str(weapon) else 0))
+			third_rank = maxi(third_rank, _recipe_rank(str(weapon), picked))
 	else:
 		var third: String = str(spec.third)
-		third_rank = int(upgrades.get(third, 0)) + (2 if picked == third and third != "wing_drones" else (1 if picked == third else 0))
+		third_rank = _recipe_rank(third, picked, 1 if third == "wing_drones" else 2)
 	return (1 if primary_rank >= 5 else 0) + (1 if secondary_rank >= 2 else 0) + (1 if third_rank >= 2 else 0)
 
 func engine_hint_for_pick(id: String) -> String:
@@ -4147,7 +4292,7 @@ func _engine_relevance_score(id: String) -> int:
 func _inject_build_aware_offer(pool: Array) -> void:
 	# Two of every three regular mid/late flight offers, but only when the
 	# genuine eligible pool has a relevant card. Keep the other choices random.
-	if not _new_build_decisions() or level % 3 == 0 or cards.size() < 2:
+	if expedition_active() or not _new_build_decisions() or level % 3 == 0 or cards.size() < 2:
 		return
 	if cards.any(func(c): return _engine_relevance_score(str(c.id)) > 0):
 		return
@@ -4165,6 +4310,50 @@ func _inject_build_aware_offer(pool: Array) -> void:
 	if str(cards[slot].tag) in ["RECOVERY", "MUTATION"]:
 		return
 	cards[slot] = candidates[_draft_rand(0, candidates.size() - 1)].duplicate(true)
+
+# Every two out of three later-world hands retain at least one genuinely
+# eligible build-progress card when available. Never overwrite recovery
+# or a rare mutation, and preserve one independent random choice.
+func _expedition_relevance(id: String) -> int:
+	var score := _engine_relevance_score(id)
+	if not fusion_swap_targets(id).is_empty():
+		score = maxi(score, 14)
+	if id in Catalog.ABILITIES:
+		for spec in content.fusions:
+			if id not in spec.parts or str(spec.id) in fusion_declined or str(spec.id) in active_slots:
+				continue
+			for part in spec.parts:
+				if part != id and part in active_slots and int(upgrades.get(part, 0)) >= 3 and int(upgrades.get(id, 0)) < 5:
+					score = maxi(score, 12 + int(upgrades.get(part, 0)))
+		if not synergy_hint(id).is_empty():
+			score = maxi(score, 4)
+	if not passive_hint(id).is_empty():
+		score = maxi(score, 3)
+	return score
+
+func _inject_expedition_build_offer(pool: Array) -> void:
+	if not expedition_active() or not _new_build_decisions() or level % 3 == 0 or cards.size() < 2:
+		return
+	var candidates: Array = []
+	var best := 0
+	for card in pool:
+		var id: String = str(card.id)
+		if cards.any(func(c): return str(c.id) == id):
+			continue
+		var score := _expedition_relevance(id)
+		if score <= 0:
+			continue
+		if score > best:
+			best = score
+			candidates.clear()
+		if score == best:
+			candidates.append(card)
+	if candidates.is_empty() or cards.any(func(c): return _expedition_relevance(str(c.id)) >= best):
+		return
+	for index in range(1, cards.size()):
+		if str(cards[index].tag) not in ["RECOVERY", "MUTATION"]:
+			cards[index] = candidates[_draft_rand(0, candidates.size()-1)].duplicate(true)
+			return
 
 func _draft_rand(low: int, high: int) -> int:
 	if daily_day.is_empty():
@@ -4256,6 +4445,7 @@ func _offer_cards(consume_level: bool = true) -> void:
 	if cards.is_empty():
 		cards.append({"id": "repair", "name": "Field repair", "tag": "RECOVERY", "description": "Restore 30 hull.", "max": 99})
 		cards.append({"id": "core_cache", "name": "Salvage Cores", "tag": "RECOVERY", "description": "Bank %d Cores for the end of this flight." % MAXED_DRAFT_CORES, "max": 99})
+	_inject_expedition_build_offer(pool)
 	if consume_level:
 		pending_levels -= 1
 	for card in cards:
@@ -4291,6 +4481,14 @@ func skip_cards() -> bool:
 	return true
 
 func choose_card(index: int) -> bool:
+	if not pending_build_choices.is_empty() and str(pending_build_choices[0].kind) == "swap":
+		return false
+	if index >= 0 and index < cards.size():
+		var card: Dictionary = cards[index]
+		var id: String = str(card.id)
+		if card.tag == "ABILITY" and active_slots.size() == Catalog.ACTIVE_SLOTS and int(upgrades.get(id, 0)) == 0 and not fusion_swap_targets(id).is_empty():
+			pending_build_choices.append({"kind":"swap","id":id})
+			return true
 	var chosen := _choose_card(index)
 	if chosen:
 		note_codex()
@@ -4372,7 +4570,10 @@ func payout() -> int:
 	var played: int = stage_clears - skipped
 	var world_pay: int = 20 * played + 5 * (stage_clears * stage_clears - skipped * skipped) + meta.bounty * 5 * played
 	var base: int = int((30 + int(kills / 30) + meta.stipend * 2 + world_pay + bonus_cores) * (1.0 + meta.cores * 0.08) * float(Catalog.REWARD_MULTIPLIERS[difficulty]))
-	if pilot_id == "scavenger":
+	var advanced_recovery: bool = expedition_active() and difficulty != "normal" and played == 0
+	if advanced_recovery:
+		base = Expedition.early_advanced_base(kills, int(meta.stipend), bonus_cores, int(meta.cores), float(Catalog.REWARD_MULTIPLIERS[difficulty]))
+	if pilot_id == "scavenger" and (not advanced_recovery or base > 0):
 		base += maxi(1, int(round(base * 0.15)))
 	if synergy_active("salvager"):
 		base = int(round(base * 1.25))
@@ -4392,7 +4593,7 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
-	for key in ["stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["expedition_rules", "destination_choice", "route_offers", "mutation_offers", "mutation_lab_seen", "stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
@@ -4414,6 +4615,8 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	if not state.has("expedition_rules"):
+		expedition_rules = false
 	# Pre-overhaul suspended flights retain their original automatic fusion
 	# behavior, and no fresh evolution decision is injected mid-run.
 	if not state.has("build_choices_active"):

@@ -51,7 +51,7 @@ func _merchant_panels_within_screen(parent: Node, screen_width: float) -> bool:
 func _choice_panels_within_screen(parent: Node, screen_width: float) -> bool:
 	var matched := 0
 	for panel in parent.find_children("*", "PanelContainer", true, false):
-		if not (panel.name.begins_with("ArtifactOption") or panel.name.begins_with("PrototypeChoice") or panel.name.begins_with("RouteChoice") or panel.name.begins_with("EvolutionChoice") or panel.name.begins_with("FusionChoice")):
+		if not (panel.name.begins_with("ArtifactOption") or panel.name.begins_with("PrototypeChoice") or panel.name.begins_with("RouteChoice") or panel.name.begins_with("EvolutionChoice") or panel.name.begins_with("FusionChoice") or panel.name.begins_with("SwapAbility") or panel.name.begins_with("LabMutation")):
 			continue
 		matched += 1
 		var rect: Rect2 = panel.get_global_rect()
@@ -475,20 +475,32 @@ func _run() -> void:
 	scene._show_prototypes()
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
-	check(_contains_text(scene.reading_scroll, "Shielded passage") and _contains_text(scene.reading_scroll, "Redline assault") and _contains_text(scene.reading_scroll, "Hunter contract"), "Every strategic route must render after the prototype choice")
-	check(_contains_text(scene.reading_scroll, "70%") and _contains_text(scene.reading_scroll, "35% less damage") and _contains_text(scene.reading_scroll, "+15% gun damage") and _contains_text(scene.reading_scroll, "above half") and _contains_text(scene.reading_scroll, "One extra upgrade"), "Each route must explain its current benefit, shield threshold, and tradeoff in plain language")
+	var destination_hand: Array = scene.sim.available_destinations()
+	check(scene.sim.expedition_active() and destination_hand.size() == 3 and scene.card_buttons.size() == 3, "New regular flights must show three actual destination choices after the Prototype")
+	var destination_groups: Array = []
+	var assault_id := ""
+	var assault_spec: Dictionary = {}
+	for id in destination_hand:
+		var spec: Dictionary = scene.sim.destination_spec(str(id))
+		check(_contains_text(scene.reading_scroll, str(spec.name)) and _contains_text(scene.reading_scroll, str(spec.gain)) and _contains_text(scene.reading_scroll, str(spec.cost)), "Every offered destination must render its full name, actual gain and cost")
+		destination_groups.append(str(spec.group))
+		if str(spec.group) == "overclock":
+			assault_id = str(id)
+			assault_spec = spec
+	check(destination_groups == ["repair","overclock","bounty"], "Destination options cover all three strategic groups")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
 	scene._resume_run()
-	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
-	scene._choose_route("overclock")
-	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with its stronger weapons and no free draft")
+	check(scene.mode == "route" and scene.sim.prototypes.size() == 1 and scene.sim.available_destinations() == destination_hand, "Suspending must preserve the exact destination hand without duplicating Prototype rewards")
+	check(not assault_id.is_empty() and assault_spec.has("power") and assault_spec.has("fire"), "Assault destination has real weapon modifiers")
+	scene._choose_route(assault_id)
+	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and scene.sim.destination_choice == assault_id and is_equal_approx(scene.sim.stage_power, float(assault_spec.get("power",0.0))) and is_equal_approx(scene.sim.stage_fire_rate, float(assault_spec.get("fire",0.0))), "Selecting the actual assault destination applies its advertised weapon modifiers without a free draft")
 	scene.sim.cards.clear()
 	scene.mode = "playing"
 	scene._show_build()
 	await process_frame
-	check(_contains_text(scene.reading_scroll, "Prototype") and _contains_text(scene.reading_scroll, "Current route:"), "Build screen must explain acquired Prototype and route tradeoffs")
+	check(_contains_text(scene.reading_scroll, "Prototype") and _contains_text(scene.reading_scroll, "Current route:") and _contains_text(scene.reading_scroll, str(assault_spec.get("name","invalid"))), "Build screen must show acquired Prototype and the actual chosen destination")
 	scene._toggle_pause()
 	scene.sim.stage = 4
 	scene.sim.stage_clears = 4
@@ -656,6 +668,52 @@ func _run() -> void:
 		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Fusion choice cards stay away from phone edges")
 		scene._choose_build_decision("keep")
 		check(scene.mode == "playing" and scene.sim.active_slots == ["aegis", "nova"], "Mobile Keep choice preserves two distinct buttons")
+		# New actual regular-rule choice panels need their own narrow-phone and
+		# save/resume coverage; do not auto-resolve the player's decision.
+		scene.sim = Sim.new(99400 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.active_slots = ["aegis","barrage","emp","chrono"]
+		scene.sim.upgrades.aegis = 5
+		scene.sim.upgrades.barrage = 1
+		scene.sim.upgrades.emp = 1
+		scene.sim.upgrades.chrono = 1
+		var partner: Dictionary = scene.sim.content.cards.filter(func(c): return str(c.id) == "flak")[0]
+		scene.sim.cards = [partner.duplicate(true)]
+		check(scene.sim.choose_card(0), "Real draft offers a fusion-partner replacement")
+		scene._show_build_choice()
+		await process_frame
+		check(scene.mode == "build_choice" and _contains_text(scene.overlay, "Replace an ability?") and _contains_text(scene.overlay, "loses its ranks"), "Replacement clearly states its permanent in-run cost")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x) and not _unwrapped_long_label(scene.reading_scroll), "Replacement cards fit the narrow phone")
+		var replacement_save: Dictionary = scene.services.read_save(scene.Services.RUN)
+		scene._resume_run()
+		check(scene.mode == "build_choice" and scene.sim.snapshot() == replacement_save, "Resume retains the unanswered replacement")
+		scene._choose_build_decision("back")
+		check(scene.mode == "cards" and scene.sim.cards.size() == 1 and scene.sim.active_slots.size() == 4, "Backing out retains the original draft and loadout")
+		check(scene.sim.choose_card(0), "The same partner can still be selected")
+		scene._show_build_choice()
+		scene._choose_build_decision("chrono")
+		check(scene.sim.active_slots.size() == 4 and "flak" in scene.sim.active_slots and "chrono" not in scene.sim.active_slots and scene.sim.cards.is_empty(), "Explicit replacement consumes one draft, retains the four-slot cap")
+		scene.sim = Sim.new(99500 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.stage_clears = 2
+		scene.sim.stage_transition_queued = true
+		check(scene.sim.begin_intermission() and scene.sim.skip_prototype(), "Real W2 intermission opens destinations")
+		var recovery_id: String = str(scene.sim.available_destinations()[0])
+		scene._show_route_choice()
+		scene._choose_route(recovery_id)
+		await process_frame
+		check(scene.mode == "mutation_lab" and _contains_text(scene.overlay, "Choose a mutation") and _contains_text(scene.reading_footer, "Skip mutation"), "Real warp offers a separate optional mutation workshop")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x) and not _unwrapped_long_label(scene.reading_scroll), "Mutation workshop fits the narrow phone")
+		var workshop_save: Dictionary = scene.services.read_save(scene.Services.RUN)
+		var workshop_hand: Array = scene.sim.mutation_offers.duplicate()
+		scene._show_menu()
+		scene._resume_run()
+		check(scene.mode == "mutation_lab" and scene.sim.mutation_offers == workshop_hand and scene.sim.snapshot() == workshop_save, "Workshop cannot reroll on resume")
+		var mutation_id: String = str(workshop_hand[0])
+		scene._choose_lab_mutation(mutation_id)
+		check(scene.sim.stage == 3 and mutation_id in scene.sim.mutations and scene.sim.destination_choice == recovery_id, "Choosing mutation completes the intended warp with the selected destination")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2

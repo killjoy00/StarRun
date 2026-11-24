@@ -347,6 +347,10 @@ func _run_progression(count: int, offset: int, strategy: String, build_style: St
 func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard", progression_profile: Variant = null) -> Dictionary:
 	var hangar: Dictionary = _hangar(hangar_style) if progression_profile == null else progression_profile.hangar
 	var sim := Sim.new(seed, hangar, ship_id, pilot_id, difficulty, artifact_id)
+	# The identical copied driver can compare an old revision with the new
+	# launch rules. All future matrix runs exercise the actual regular UI rules.
+	if sim.has_method("enable_expedition_rules"):
+		sim.call("enable_expedition_rules")
 	for knob in world_tuning:
 		var key: String = {"spawn": "spawn_scale", "health": "health_scale", "damage": "damage_scale"}[knob]
 		for world in range(4):
@@ -381,7 +385,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 					break
 				continue
 			if sim.intermission_step == "route":
-				if not sim.choose_route("repair") or not sim.advance_stage():
+				if not _choose_trial_route(sim, "repair") or not sim.advance_stage():
 					fault = true
 					break
 				routes.append("repair")
@@ -409,13 +413,15 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			var route := route_policy
 			if route == "adaptive":
 				route = "overclock" if build_style == "focused" and sim.hull >= sim.max_hull * 0.72 else "repair"
-			if not sim.choose_route(route) or not sim.advance_stage():
+			if not _choose_trial_route(sim, route) or not sim.advance_stage():
 				fault = true
 				break
 			routes.append(route)
 			continue
 		if not sim.cards.is_empty():
 			_pick_upgrade(sim, build_style)
+			if not sim.pending_build_choices.is_empty() and str(sim.pending_build_choices[0].kind) == "swap":
+				sim._auto_resolve_build_choices()
 			if progression_profile != null and not sim.cards.is_empty():
 				fault = true
 				fault_reason = "Draft choice failed to clear cards: %s" % str(sim.cards)
@@ -515,6 +521,19 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 
 # Count only overlapping threats aimed near the autopilot's future lane.
 # This is a diagnostic, not a forced counter or a source of bonus damage.
+func _choose_trial_route(sim: RefCounted, group: String) -> bool:
+	if sim.has_method("choose_route_policy"):
+		if not bool(sim.call("choose_route_policy", group)):
+			return false
+		if sim.intermission_step == "mutation":
+			# Pick from real eligible workshop choices. No fabricated weapon,
+			# rarity, reward or forced outcome.
+			var offers: Array = sim.get("mutation_offers")
+			if offers.is_empty() or not bool(sim.call("choose_lab_mutation", str(offers[0]))):
+				return false
+		return true
+	return sim.choose_route(group)
+
 func _danger_overlap(sim: RefCounted) -> bool:
 	var beam_relevant := false
 	for charge in sim.charges:
@@ -803,7 +822,7 @@ func _stage_report(sim: RefCounted, status: String) -> Dictionary:
 		"kills":int(sim.kills), "boss_spawned":bool(sim.boss_spawned),
 		"boss_hp_remaining":snappedf(boss_hp,0.1),"modules_alive":modules_alive,
 		"late_boss_phase":int(sim.late_boss_phase) if sim.stage in [3,4] and sim.boss_spawned else -1,
-		"prototypes":sim.prototypes.duplicate(), "route":sim.route_choice, "upgrades":levels,
+		"prototypes":sim.prototypes.duplicate(), "route":sim.route_choice, "destination":str(sim.get("destination_choice")) if sim.has_method("destination_spec") else "", "mutations":sim.mutations.duplicate(), "engine_procs":sim.engine_procs.duplicate(), "upgrades":levels,
 		"abilities":sim.active_slots.duplicate(), "damage_taken":sim.damage_taken.duplicate(),
 		"damage_dealt":sim.damage_dealt.duplicate(), "events":tail_events
 	}

@@ -551,6 +551,10 @@ func _layout() -> void:
 		_show_codex()
 	elif mode == "cards":
 		_show_cards()
+	elif mode == "build_choice":
+		_show_build_choice()
+	elif mode == "mutation_lab":
+		_show_mutation_lab()
 	elif mode == "paused":
 		_show_pause()
 	elif mode == "results":
@@ -943,8 +947,8 @@ func _name_part(full: String, part: int) -> String:
 
 func _difficulty_text(id: String) -> String:
 	match id:
-		"hard": return "Enemies are 25% tougher and shoot more. Cores ×1.75."
-		"insane": return "Enemies are twice as tough and shoot even more. Cores ×2.5."
+		"hard": return "Enemies are 25% tougher and shoot more. Boss clears pay ×1.75; early recovery is earned by kills."
+		"insane": return "Enemies are twice as tough and shoot even more. Boss clears pay ×2.5; early recovery is earned by kills."
 	return "The normal challenge. Cores ×1."
 
 func _multiplier_text(id: String) -> String:
@@ -1887,7 +1891,21 @@ func _show_build_choice() -> void:
 	var view := _page(0.93, true, 520.0, 24.0)
 	var body: VBoxContainer = view.body
 	var first_option: Button = null
-	if str(choice.kind) == "evolution":
+	if str(choice.kind) == "swap":
+		_page_header(view.top, "FUSION PARTNER", "Replace an ability?")
+		Kit.label(body, "Learn " + str(sim.content.abilities[id].name) + " at rank 1 by replacing one ability. The replaced ability loses its ranks; the new partner still has to reach rank 5 to fuse.", 16, Kit.MUTED, true)
+		for target in sim.fusion_swap_targets(id):
+			var key: String = str(target)
+			var option := _tap_card(body, _choose_build_decision.bind(key), Kit.AMBER)
+			option.panel.name = "SwapAbility" + key.to_pascal_case()
+			Kit.label(option.content, "Replace " + str(sim.content.abilities[key].name), 19, Color.WHITE, true)
+			Kit.label(option.content, "Lose rank %d of this ability. Learn %s." % [int(sim.upgrades[key]), str(sim.content.abilities[id].name)], 16, Kit.TEXT, true)
+			if first_option == null:
+				first_option = option.button
+		var back := _ui_button(view.bottom, "Keep abilities · back to draft", _choose_build_decision.bind("back"), "secondary", 54, true)
+		if first_option == null:
+			first_option = back
+	elif str(choice.kind) == "evolution":
 		var weapon_card: Dictionary = sim.content.cards.filter(func(c): return str(c.id) == id)[0]
 		_page_header(view.top, "RANK 5 · " + id.to_upper(), "Choose your evolution")
 		Kit.label(body, str(weapon_card.name) + " keeps its ranks. Pick one bonus for the rest of this run.", 16, Kit.MUTED, true)
@@ -2017,6 +2035,7 @@ func _draft_card(parent: Node, i: int) -> void:
 	var milestone: int = 5 if current < 5 else 10
 	var reaches_milestone: bool = current < milestone and next_rank >= milestone and tag != "RECOVERY"
 	var is_new_ability := tag == "ABILITY" and current == 0
+	var swap_partner: bool = is_new_ability and not sim.fusion_swap_targets(id).is_empty()
 	var fusion: String = sim.fusion_target(id) if tag == "ABILITY" and not banish_mode else ""
 	var fused: Dictionary = sim.fusion_spec(fusion)
 	var accent := Kit.CYAN
@@ -2025,6 +2044,9 @@ func _draft_card(parent: Node, i: int) -> void:
 	if not fusion.is_empty():
 		accent = Kit.VIOLET
 		tag_text = "Active  ·  fusion"
+	elif swap_partner:
+		accent = Kit.VIOLET
+		tag_text = "Active · replace for fusion"
 	elif is_new_ability:
 		tag_text = "Active  ·  new slot %d/4" % (sim.active_slots.size() + 1)
 	elif tag == "MUTATION":
@@ -2074,6 +2096,8 @@ func _draft_card(parent: Node, i: int) -> void:
 	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
 	Kit.label(info, str(fused.description) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.description), 16, Kit.TEXT, true)
+	if swap_partner and not banish_mode:
+		Kit.label(info, "Learn a fusion partner by choosing an ability to replace.", 15, Kit.VIOLET, true)
 	if not fusion.is_empty():
 		var fusion_note := "Unlocks %s · fuse or keep" % str(fused.name) if sim._new_build_decisions() else "%s %d → %d · frees a slot" % [sim.content.abilities[id].name, current, next_rank]
 		Kit.label(info, fusion_note, 15, Kit.VIOLET, true)
@@ -2241,7 +2265,7 @@ func _show_build() -> void:
 			var spec: Dictionary = sim.prototype_spec(str(id))
 			_info_card(body, str(spec.name), "Gain: %s\nCost: %s" % [spec.benefit, spec.cost], Kit.CYAN)
 	if not sim.route_choice.is_empty():
-		Kit.label(body, "Current route: " + _route_name(sim.route_choice), 16, Kit.CYAN)
+		Kit.label(body, "Current route: " + _route_name(sim.destination_choice if not sim.destination_choice.is_empty() else sim.route_choice), 16, Kit.CYAN)
 	_ui_button(body, "Hide full equipment list" if build_show_all else "Show all upgrades and Hangar ranks", _toggle_build_details, "ghost", 44)
 	if build_show_all:
 		for group in [["WEAPON", "Automatic weapons"], ["SYSTEM", "Passive upgrades"]]:
@@ -2262,6 +2286,10 @@ func _show_build() -> void:
 	_focus(resume)
 
 func _route_name(id: String) -> String:
+	if sim != null:
+		var spec: Dictionary = sim.destination_spec(id)
+		if not spec.is_empty():
+			return str(spec.name)
 	return str({"repair": "Shielded passage", "overclock": "Redline assault", "bounty": "Hunter contract"}.get(id, id.capitalize()))
 
 # ---------------------------------------------------------------------------
@@ -2638,7 +2666,7 @@ func _show_prototypes() -> void:
 	mode = "prototype"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	var step_text := ("World %d prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else "Step 1 of 2"
+	var step_text := ("World %d prototype" % sim.stage) if sim.skipping_worlds() and sim.stage + 1 < sim.start_world else ("Before the next world" if sim.expedition_active() else "Step 1 of 2")
 	_page_header(view.top, step_text, "Pick a prototype")
 	# This explanation scrolls with the options rather than crowding the
 	# fixed header on a short phone.
@@ -2684,7 +2712,7 @@ func _show_route_choice() -> void:
 	mode = "route"
 	_save_run()
 	var view := _page(0.95, true, 540.0, 24.0)
-	_page_header(view.top, "Step 2 of 2", "Pick a route")
+	_page_header(view.top, "Chart your next jump" if sim.expedition_active() else "Step 2 of 2", "Pick a destination" if sim.expedition_active() else "Pick a route")
 	var next: Dictionary = sim.content.stages[mini(sim.stage, sim.content.stages.size() - 1)]
 	Kit.label(view.body, "Next: World %d, %s. %s" % [sim.stage + 1, str(next.name).capitalize(), str(next.description)], 16, Kit.MUTED, true)
 	var routes := [
@@ -2692,6 +2720,12 @@ func _show_route_choice() -> void:
 		{"id": "overclock", "tag": "All-in", "gain": "Next world: guns hit 35% harder and fire 20% faster.", "cost": "Repair only 10% hull. Start at half shield. Take 20% more hull damage.", "accent": Kit.AMBER},
 		{"id": "bounty", "tag": "Greedy", "gain": "One extra upgrade, +50%% XP, +%d Cores for the boss. Repair 40%% hull." % (30 * (sim.stage + 1)), "cost": "More enemies, and 30% tougher.", "accent": Kit.DANGER},
 	]
+	if sim.expedition_active():
+		routes.clear()
+		for id in sim.available_destinations():
+			var spec: Dictionary = sim.destination_spec(str(id)).duplicate(true)
+			spec["accent"] = Kit.CYAN if spec.group == "repair" else (Kit.AMBER if spec.group == "overclock" else Kit.DANGER)
+			routes.append(spec)
 	for route in routes:
 		var card := _tap_card(view.body, _choose_route.bind(str(route.id)), route.accent)
 		card.panel.name = "RouteChoice" + str(route.id).to_pascal_case()
@@ -2703,6 +2737,30 @@ func _show_route_choice() -> void:
 	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
+
+func _show_mutation_lab() -> void:
+	mode = "mutation_lab"
+	_save_run()
+	var view := _page(0.95, true, 540.0, 24.0)
+	_page_header(view.top, "EXPERIMENTAL WORKSHOP", "Choose a mutation")
+	Kit.label(view.body, "Transform one of your existing weapons for the rest of this run. This is a separate choice, not a replacement for your prototype. You can skip it.", 16, Kit.MUTED, true)
+	for id in sim.mutation_offers:
+		var spec: Dictionary = Catalog.mutation(str(id))
+		var card := _tap_card(view.body, _choose_lab_mutation.bind(str(id)), Kit.VIOLET)
+		card.panel.name = "LabMutation" + str(id).to_pascal_case()
+		card_buttons.append(card.button)
+		Kit.caps(card.content, str(spec.requires).capitalize() + " · one mutation per run", Kit.VIOLET, 12)
+		Kit.label(card.content, str(spec.name), 19, Color.WHITE, true)
+		Kit.label(card.content, str(spec.description), 16, Kit.TEXT, true)
+	var skip := _ui_button(reading_footer, "Skip mutation", _choose_lab_mutation.bind("skip"), "secondary", 54, true)
+	_ui_button(view.bottom, "Save and quit to title", _show_menu, "ghost", 44)
+	_focus(skip if card_buttons.is_empty() else card_buttons[0])
+
+func _choose_lab_mutation(id: String) -> void:
+	if mode != "mutation_lab" or not sim.choose_lab_mutation(id):
+		return
+	_save_run()
+	_finish_intermission()
 
 func _show_results() -> void:
 	mode = "results"
@@ -2920,6 +2978,7 @@ func _new_run() -> void:
 	result_rival_news.clear()
 	_save_profile()
 	sim = Simulation.new(61000 + int(profile.runs) * 7919, profile.hangar, profile.ship, profile.pilot, str(profile.get("difficulty", "normal")), str(profile.get("artifact", "standard")))
+	sim.enable_expedition_rules()
 	sim.enable_merchant()
 	var returning: Dictionary = RivalCaptains.for_launch(profile, sim)
 	if not returning.is_empty():
@@ -3046,6 +3105,7 @@ func _start_flight() -> void:
 		match sim.intermission_step:
 			"prototype": _show_prototypes()
 			"route": _show_route_choice()
+			"mutation": _show_mutation_lab()
 			"ready": _finish_intermission()
 			_: _show_stage_clear()
 
@@ -3328,7 +3388,10 @@ func _next_intermission_step() -> void:
 func _choose_route(id: String) -> void:
 	if mode != "route" or not sim.choose_route(id):
 		return
-	_finish_intermission()
+	if sim.intermission_step == "mutation":
+		_show_mutation_lab()
+	else:
+		_finish_intermission()
 
 func _finish_intermission() -> void:
 	if not sim.advance_stage():
