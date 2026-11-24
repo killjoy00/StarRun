@@ -26,7 +26,8 @@ const SCREENS := [
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
 	"archive-boss-intro", "archive-boss-lock", "archive-ending",
 	"first-flight-title", "first-flight-launch", "first-flight-aegis", "first-flight-draft",
-	"first-flight-draft-two", "first-flight-harvester", "first-flight-debrief"
+	"first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
+	"first-flight-ejection-reduced", "first-flight-debrief"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
@@ -138,10 +139,13 @@ func _build_intro_fixtures() -> void:
 			sim.activate("aegis")
 		if sim.ended:
 			break
-	if not sim.won:
+	if not sim.intro_ejected:
 		failures += 1
-		push_error("The intro screenshot fixture did not clear its real Harvester")
-	intro_fixtures["first-flight-debrief"] = sim.snapshot()
+		push_error("The intro screenshot fixture did not reach the scripted ejection")
+	var ending := sim.snapshot()
+	intro_fixtures["first-flight-debrief"] = ending
+	intro_fixtures["first-flight-ejection"] = ending
+	intro_fixtures["first-flight-ejection-reduced"] = ending
 
 func _prepare(scene, screen: String) -> void:
 	if screen == "first-flight-title":
@@ -150,7 +154,15 @@ func _prepare(scene, screen: String) -> void:
 		scene.profile.cores = 0
 		scene._show_menu()
 		return
+	if screen in ["first-flight-ejection", "first-flight-ejection-reduced"]:
+		scene.sim.restore(intro_fixtures[screen])
+		scene.flight_started = true
+		scene.profile.reduced = screen == "first-flight-ejection-reduced"
+		scene._show_intro_crash()
+		scene.intro_end_clock = Intro.IMPACT_AT + 0.14
+		return
 	if intro_fixtures.has(screen):
+		scene.profile.reduced = false
 		scene.services.write_atomic(scene.Services.RUN, intro_fixtures[screen])
 		scene._resume_run()
 		if screen == "first-flight-harvester":

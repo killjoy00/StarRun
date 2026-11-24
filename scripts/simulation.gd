@@ -50,6 +50,8 @@ const FirstFlight = preload("res://scripts/first_flight.gd")
 const Expedition = preload("res://scripts/expedition_rules.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var intro_run := false
+var intro_scripted := false # Checkpoints from the original intro keep their schedule.
+var intro_ejected := false
 var intro_reward_eligible := false
 var intro_wave := 0
 var intro_picks: Array = []
@@ -459,6 +461,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 
 func configure_first_flight(reward_eligible: bool) -> void:
 	intro_run = true
+	intro_scripted = true
 	intro_reward_eligible = reward_eligible
 	rerolls_left = 0
 	banishes_left = 0
@@ -1619,6 +1622,8 @@ func boss_phase_label() -> String:
 			return "CAST AN ABILITY TO BREAK THE LOCK"
 		return "CORE EXPOSED" if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
 	if intro_run:
+		if intro_scripted:
+			return "MAIN GUN CHARGING"
 		if not charges.is_empty():
 			return "BEAM CHARGING"
 		return "HEAVY FIRE" if intro_boss_enraged() else "LASER PREPARING"
@@ -4645,7 +4650,7 @@ func payout() -> int:
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
 	if intro_run:
-		for key in ["intro_run", "intro_reward_eligible", "intro_wave", "intro_picks", "intro_pick_at", "intro_speed", "intro_lesson_seen", "intro_aegis_prompt", "intro_boss_intro_pending", "intro_beam_blocked", "intro_blocked_at"]:
+		for key in ["intro_run", "intro_scripted", "intro_ejected", "intro_reward_eligible", "intro_wave", "intro_picks", "intro_pick_at", "intro_speed", "intro_lesson_seen", "intro_aegis_prompt", "intro_boss_intro_pending", "intro_beam_blocked", "intro_blocked_at"]:
 			state[key] = get(key)
 	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
