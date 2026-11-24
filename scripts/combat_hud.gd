@@ -64,7 +64,7 @@ static func refresh(host) -> void:
 			button.modulate = Color(1.0,1.0,1.0,1.0).lerp(Color("a2ffe1") if precise else Color("ffd0a0"), pulse)
 		else:
 			button.modulate = Color.WHITE
-			fit_label(status_label, 12, 9)
+			fit_label(status_label, 16, 11)
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var cooldown_bar: ProgressBar = host.cooldown_meters[i]
 		cooldown_bar.visible = learned and cooldown > 0.0

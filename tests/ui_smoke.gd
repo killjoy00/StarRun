@@ -664,6 +664,19 @@ func _run() -> void:
 	scene._update_hud()
 	check(scene._combat_speed() == 3.0 and scene.ability_buttons[0].modulate == Color.WHITE,"Counter ends slow-down and resets button highlighting")
 	scene.game_speed = 1.0
+	var archive_was_earned: bool = bool(scene.profile.achievement_stats.archive_cleared)
+	scene.profile.achievement_stats.archive_cleared = false
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene.sim.archive_phase = 2
+	scene.sim.archive_phase_released = true
+	scene.sim.archive_exposed_until = scene.sim.time + 4.2
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene._show_stage_clear(false)
+	check(scene.mode == "archive_ending" and scene.overlay.find_child("CustodianCoreReveal",true,false) != null,"First Archive clear shows the dedicated artifact reveal")
+	scene._finish_archive()
+	check(scene.profile.achievement_stats.archive_cleared and scene.overlay.find_child("CustodianCoreReveal",true,false) == null,"Artifact settles once and reveal is not an extra gameplay reward")
+	scene.profile.achievement_stats.archive_cleared = archive_was_earned
 	# Test the real mobile decision panel and persistence, not merely the
 	# simulation's logical option IDs. Combat must stay paused in this mode.
 	for dimensions in [Vector2i(375, 667), Vector2i(390, 844)]:
@@ -748,6 +761,25 @@ func _run() -> void:
 		var mutation_id: String = str(workshop_hand[0])
 		scene._choose_lab_mutation(mutation_id)
 		check(scene.sim.stage == 3 and mutation_id in scene.sim.mutations and scene.sim.destination_choice == recovery_id, "Choosing mutation completes the intended warp with the selected destination")
+		# Actual destination UI and curated draft, with a controlled route hand.
+		scene.sim = Sim.new(99800 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.stage_clears = 2
+		scene.sim.stage_transition_queued = true
+		scene.sim.hull = scene.sim.max_hull * 0.50
+		scene.sim.upgrades.pulse = 3
+		check(scene.sim.begin_intermission() and scene.sim.skip_prototype(),"Destination presentation fixture reaches warp")
+		scene.sim.route_offers = ["shipyard","rift","smugglers"]
+		scene._show_route_choice()
+		await process_frame
+		check(_contains_text(scene.overlay,"50% LESS DAMAGE") and _contains_text(scene.overlay,"BUILD DRAFT") and _choice_panels_within_screen(scene.overlay,scene.get_viewport_rect().size.x),"Readable rewards reflect current hull and fit the phone")
+		scene._choose_route("smugglers")
+		if scene.mode == "mutation_lab":
+			scene._choose_lab_mutation("skip")
+		await process_frame
+		check(scene.mode == "cards" and scene.sim.smuggler_draft_open and _contains_text(scene.overlay,"Build fit:"),"Actual curated hand explains the build fit")
+		check(scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler")) or scene.toast_title.text.contains("SMUGGLER"),"Destination arrival feedback names the selected route")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2

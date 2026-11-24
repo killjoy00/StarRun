@@ -4058,7 +4058,7 @@ func activate(ability: String) -> bool:
 		shield = minf(max_shield, shield + max_shield * 0.08)
 		var recovered: float = shield - shield_before
 		if recovered > 0.001:
-			effects.append({"kind":"custodian-shield","p":ship_position(),"amount":recovered,"life":0.85,"max_life":0.85,"born":tick})
+			effects.append({"kind":"custodian-shield","p":ship_position(),"amount":recovered,"ability":ability,"life":0.85,"max_life":0.85,"born":tick})
 	_log(str(content.abilities[ability].name) + " used")
 	# The Tactician gets one earned counterbattery per world. An ability used
 	# on an empty screen earns nothing: time it into real incoming danger.

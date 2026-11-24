@@ -2585,10 +2585,6 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 	_save_run()
 	var view := _page(1.0, true, 540.0)
 	_page_header(view.top, "World 5 clear  ·  Final signal", "A light left on")
-	_archive_art(view.body, "epilogue")
-	Kit.label(view.body, "The station opens. You found the secret ending.", 19, Kit.TEXT, true)
-	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
-	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
 	if not Progress.artifact_available(profile, "custodian_core"):
 		var reward := _info_card(view.body, "Artifact earned · Custodian Core", str(Catalog.artifact("custodian_core").description) + " Available in Loadout after finishing.", HiddenSector.MINT)
 		reward.name = "CustodianCoreReveal"
@@ -2605,6 +2601,11 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 			reveal.tween_property(reward,"modulate:a",1.0,0.65)
 		if reset_sound:
 			sound.play("custodian-unlock", -6.0)
+	# Keep the reward above the longer epilogue so it is visible on short phones.
+	_archive_art(view.body, "epilogue")
+	Kit.label(view.body, "The station opens. You found the secret ending.", 19, Kit.TEXT, true)
+	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
+	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
 	_focus(_ui_button(reading_footer, "Finish", _finish_archive, "primary", 56, true))
 	if reset_sound:
 		sound.play("archive-release", -4.0)
@@ -3658,6 +3659,8 @@ func _play_spectacle_cues(delta: float) -> void:
 		var kind: String = str(effect.kind)
 		if kind not in ["mutation-installed", "boss-module-break", "boss-phase-break", "engine-online"]:
 			continue
+		if kind == "boss-phase-break" and sim.archive_boss_reworked():
+			continue # Archive transitions already have their own distinct cue.
 		var key := "%s:%d:%d:%d" % [kind, int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y))]
 		if spectacle_audio_seen.has(key):
 			continue

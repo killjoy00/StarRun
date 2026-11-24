@@ -99,15 +99,17 @@ func _process(delta: float) -> void:
 				if seen_elite_break_order.size() > 64:
 					seen_elite_break_ids.erase(seen_elite_break_order.pop_front())
 				elite_break_feedback.append({"p":effect.p, "remaining":1.05, "duration":1.05})
-		if effect.kind in ["mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc"]:
+		if effect.kind in ["mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc", "custodian-shield"]:
 			var key := "%s:%d:%d:%d:%s:%s:%s" % [str(effect.kind), int(effect.born), roundi(float(effect.p.x)), roundi(float(effect.p.y)), str(effect.get("mutation", "")), str(effect.get("role", "")), str(effect.get("evolution", ""))]
+			if effect.kind == "custodian-shield":
+				key += ":" + str(effect.get("ability",""))
 			if not seen_spectacle_ids.has(key):
 				seen_spectacle_ids[key] = true
 				seen_spectacle_order.append(key)
 				if seen_spectacle_order.size() > 96:
 					seen_spectacle_ids.erase(seen_spectacle_order.pop_front())
-				var duration := 1.00 if effect.kind == "boss-phase-break" else (0.85 if effect.kind in ["mutation-installed", "engine-online"] else (0.72 if effect.kind == "evolution-proc" else (0.68 if effect.kind == "boss-module-break" else 0.53)))
-				spectacle_feedback.append({"kind":effect.kind, "p":effect.p, "mutation":str(effect.get("mutation","")), "role":str(effect.get("role","")), "engine":str(effect.get("engine","")), "evolution":str(effect.get("evolution","")), "phase":int(effect.get("phase",0)), "remaining":duration, "duration":duration})
+				var duration := 1.00 if effect.kind in ["boss-phase-break","custodian-shield"] else (0.85 if effect.kind in ["mutation-installed", "engine-online"] else (0.72 if effect.kind == "evolution-proc" else (0.68 if effect.kind == "boss-module-break" else 0.53)))
+				spectacle_feedback.append({"kind":effect.kind, "p":effect.p, "mutation":str(effect.get("mutation","")), "role":str(effect.get("role","")), "engine":str(effect.get("engine","")), "evolution":str(effect.get("evolution","")), "phase":int(effect.get("phase",0)), "amount":float(effect.get("amount",0.0)), "remaining":duration, "duration":duration})
 		if effect.kind == "fusion-formed":
 			var key := "%s:%s" % [effect.fusion,effect.born]
 			if not seen_formations.has(key):
@@ -182,7 +184,7 @@ func _draw() -> void:
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
-		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc"]:
+		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc", "custodian-shield"]:
 			_draw_effect(effect)
 	_draw_spectacle_feedback()
 	if formation_clock > 0.0:
@@ -979,7 +981,12 @@ func _draw_spectacle_feedback() -> void:
 		if p.y < -15.0 or p.y > 890.0:
 			continue
 		var kind: String = str(cue.kind)
-		if kind in ["mutation-installed", "mutation-proc"]:
+		if kind == "custodian-shield":
+			var ship: Vector2 = sim.ship_position()
+			var radius: float = 38.0 if profile.reduced else 38.0 + age * 30.0
+			draw_arc(ship,radius,0,TAU,48,Color(HiddenSector.MINT,alpha),3.2,true)
+			draw_string(ThemeDB.fallback_font, ship + Vector2(-90.0,-51.0), "CORE +%.1f SHIELD" % float(cue.amount), HORIZONTAL_ALIGNMENT_CENTER,180,15,Color(HiddenSector.MINT,alpha))
+		elif kind in ["mutation-installed", "mutation-proc"]:
 			var id: String = str(cue.mutation)
 			var family := "pulse" if id in ["piercing_pulse", "ricochet_pulse"] else ("seeker" if id in ["split_seeker", "breach_seeker"] else ("arc" if id in ["arc_reactor", "grounding_arc"] else "lance"))
 			var tint := CYAN if family == "pulse" else (AMBER if family == "seeker" else (Color("bc9eff") if family == "arc" else Color("f1e8ff")))
@@ -1062,12 +1069,7 @@ func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
 	var age := 1.0 - alpha
 	var p: Vector2 = effect.p
-	if effect.kind == "custodian-shield":
-		var ship: Vector2 = sim.ship_position()
-		var radius: float = 38.0 if profile.reduced else 38.0 + age * 30.0
-		draw_arc(ship,radius,0,TAU,48,Color(HiddenSector.MINT,alpha),3.2,true)
-		draw_string(ThemeDB.fallback_font, ship + Vector2(-75.0,-51.0), "CORE +%d SHIELD" % ceili(float(effect.amount)), HORIZONTAL_ALIGNMENT_CENTER,150,15,Color(HiddenSector.MINT,alpha))
-	elif effect.kind in ["ion-burst","ion_mine"]:
+	if effect.kind in ["ion-burst","ion_mine"]:
 		var radius: float = float(effect.get("radius",60.0))*age
 		for i in range(6):
 			var angle: float = i*TAU/6
