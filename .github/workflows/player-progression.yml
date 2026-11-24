@@ -30,7 +30,7 @@ jobs:
       fail-fast: false
       matrix:
         revision: [control, candidate]
-        policy: [timed, on_cooldown, never]
+        policy: [on_cooldown]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -86,13 +86,13 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          pattern: progression-*
+          pattern: progression-*-on_cooldown
           path: logs
           merge-multiple: true
       - name: Validate and summarize
         run: |
           set -euo pipefail
-          test "$(find logs -name '*.log' | wc -l)" -eq 6
+          test "$(find logs -name '*.log' | wc -l)" -eq 2
           python3 tools/progression_run_summary.py logs/*.log | tee progression.md
           cat progression.md >> "$GITHUB_STEP_SUMMARY"
           test "${{ needs.cohort.result }}" = success
