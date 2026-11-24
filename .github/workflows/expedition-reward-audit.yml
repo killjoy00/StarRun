@@ -1,0 +1,89 @@
+name: Expedition reward incentives
+on:
+  pull_request:
+    paths:
+      - scripts/expedition_rules.gd
+      - scripts/simulation.gd
+      - tests/balance_matrix.gd
+      - tools/expedition_reward_summary.py
+      - .github/workflows/expedition-reward-audit.yml
+permissions:
+  contents: read
+concurrency:
+  group: expedition-reward-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    if: contains(github.event.pull_request.title, 'Expedition') || contains(github.head_ref, 'expedition-routes')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: [control, candidate]
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven, lancer]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: matrix.revision == 'control'
+        with:
+          path: control
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Use the identical diagnostic driver
+        if: matrix.revision == 'control'
+        run: cp candidate/tests/balance_matrix.gd control/tests/balance_matrix.gd
+      - name: Install Godot
+        run: candidate/tools/install-godot.sh
+      - name: Import project
+        working-directory: ${{ matrix.revision }}
+        run: godot --headless --path . --editor --import --quit
+      - name: Fresh Hangar full campaign attempts
+        working-directory: ${{ matrix.revision }}
+        env:
+          REV: ${{ matrix.revision }}
+          SHIP: ${{ matrix.ship }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../logs
+          for d in normal hard insane; do
+            log="../logs/$REV-$SHIP-$d.log"
+            godot --headless --path . --script tests/balance_matrix.gd -- --seeds=4 --seed-offset=200 --ship="$SHIP" --difficulty="$d" --hangar=none --strategy=timed --build=focused --route=repair --trace |& tee "$log"
+            if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+            test "$(grep -c '^CAMPAIGN_TRACE ' "$log")" -eq 4
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-${{ matrix.revision }}-${{ matrix.ship }}
+          path: logs/
+          retention-days: 30
+  report:
+    needs: compare
+    if: always() && needs.compare.result != 'skipped'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: recovery-*
+          path: logs
+          merge-multiple: true
+      - name: Validate the reward incentive
+        run: |
+          set -euo pipefail
+          python3 tools/expedition_reward_summary.py logs/*.log | tee report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.compare.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: recovery-comparison-report
+          path: report.md
