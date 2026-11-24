@@ -34,7 +34,7 @@ def main():
     if not files:
         raise ValueError("No progression logs")
     print("# Star/Run persistent progression")
-    print("Actual seeded campaigns; Vanguard/Vale, Normal, regular full runs, cheapest affordable Hangar rank first. No Daily, ads, purchased loadouts, later starts or real-player learning. Timed is an informed bot; cooldown and no-cast are sensitivity checks, not human win rates.")
+    print("Actual seeded campaigns; Vanguard/Vale, Normal, regular full runs, cheapest affordable Hangar rank first. No Daily, ads, purchased loadouts, later starts or real-player learning. Abilities are cast on cooldown to hold combat behavior constant. This is a meta-progression diagnostic, not a human win rate.")
     print("\n| Revision / active policy | First W1 | First W2 | First W3 | First win | Wins | Hangar ranks | Hangar cost | Longest no-purchase streak | Combat min |")
     print("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
     results = {}
