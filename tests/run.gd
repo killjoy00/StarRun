@@ -174,7 +174,7 @@ func _test_archive_challenge() -> void:
 	sim.signal_count = 2
 	sim.stage_transition_queued = true
 	var locked_cores: int = sim.payout()
-	check(sim.enter_secret() and sim.archive_challenge_active() and sim.archive_challenge_version == 3 and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
+	check(sim.enter_secret() and sim.archive_challenge_active() and sim.archive_challenge_version == 4 and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
 	# Isolate the previous version to preserve its existing regression checks.
 	sim.archive_challenge_version = 2
 	sim.dismiss_secret_intro()
@@ -240,7 +240,7 @@ func _test_archive_rework_and_destinations() -> void:
 	base._spawn_boss()
 	base.dismiss_secret_intro()
 	var core: Dictionary = base._boss_core()
-	check(base._alive_modules("archive_emitter") == 2 and is_equal_approx(float(core.max_hp), prior_hp*4.0), "Lockdown has two real targets and increased durability")
+	check(base._alive_modules("archive_emitter") == 2 and is_equal_approx(float(core.max_hp), prior_hp*6.0), "Lockdown has two real targets and increased durability")
 	var initial_core: float = float(core.hp)
 	var initial_xp: float = base.xp
 	var initial_cores: int = base.payout()
@@ -252,6 +252,19 @@ func _test_archive_rework_and_destinations() -> void:
 	check(replay.restore(checkpoint) and replay.snapshot() == checkpoint and replay._alive_modules("archive_emitter") == 1, "Broken emitter and phase resume exactly")
 	base._damage_enemy(core, 999999999.0, "nova")
 	check(base._alive_modules("archive_emitter") == 0 and base.xp == initial_xp and base.kills == initial_kills and base.payout() == initial_cores, "Emitters grant no extra kills, XP or payout")
+	check(is_equal_approx(base.stage_damage_scale(), 2.8) and is_equal_approx(old.stage_damage_scale(), 1.0), "Only new boss encounters receive restored incoming pressure")
+	base.archive_next_attack = base.time
+	base._update_archive_attack()
+	var warning := base.snapshot()
+	var early := Sim.new()
+	var precise := Sim.new()
+	check(early.restore(warning) and precise.restore(warning), "Both timing tests share an actual warning")
+	early.cooldowns.aegis = 0.0
+	precise.cooldowns.aegis = 0.0
+	precise.time = precise.archive_attack_until - 1.0
+	check(not early.archive_precise_counter_window() and precise.archive_precise_counter_window(), "Readable late counter window")
+	check(early.activate("aegis") and precise.activate("aegis") and early.archive_attack.is_empty() and precise.archive_attack.is_empty(), "Both legal casts cancel the main attack")
+	check(is_equal_approx(early.archive_exposed_until - early.time, 1.4) and is_equal_approx(precise.archive_exposed_until - precise.time, 4.2), "Holding a cast earns a longer real opening")
 	base.archive_phase = 2
 	core.hp = float(core.max_hp)*0.25
 	var pressure: float = base.archive_attack_pressure()

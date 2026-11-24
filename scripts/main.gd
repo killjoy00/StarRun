@@ -2515,7 +2515,7 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
 		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
 		if sim.archive_boss_reworked():
-			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails. Save an ability for the warnings.", 16, Kit.TEXT, true)
+			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails. Cast on the warning; a well-timed cast keeps the core open longer.", 16, Kit.TEXT, true)
 		elif sim.archive_challenge_active():
 			Kit.label(view.body, "Breaking a lock cancels its main attack. The side emitters still fire, and each shield phase hits harder. Keep an ability ready for the next warning.", 16, Kit.TEXT, true)
 	else:
@@ -2564,8 +2564,11 @@ func _update_archive_hud() -> void:
 		var world_y := 289.0 if sim.secret_entered and sim.boss_spawned else 97.0
 		signal_label.position.y = field.position.y + world_y * scale_factor
 	if not sim.archive_attack.is_empty():
-		signal_label.text = "%s  %.1fs  ·  USE AN ABILITY" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time)]
-		signal_label.add_theme_color_override("font_color", Kit.DANGER)
+		var timing_cue: String = "USE AN ABILITY"
+		if sim.boss_spawned and sim.archive_challenge_version >= 4:
+			timing_cue = "CAST NOW" if sim.archive_precise_counter_window() else "HOLD"
+		signal_label.text = "%s  %.1fs  ·  %s" % [sim.archive_attack.to_upper(), maxf(0.0, sim.archive_attack_until - sim.time), timing_cue]
+		signal_label.add_theme_color_override("font_color", HiddenSector.MINT if sim.archive_precise_counter_window() else Kit.DANGER)
 	elif sim.signal_status == "cast":
 		signal_label.text = "CAST NOW  ·  ANY ABILITY" if sim.signal_cast_window() else "RECEIVER TUNING  ·  WAIT"
 		signal_label.add_theme_color_override("font_color", HiddenSector.MINT if sim.signal_cast_window() else Kit.TEXT)

@@ -98,10 +98,14 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 				if sim.activate(str(ability)): break
 		# Timed policy reserves a ready cast for actual Archive warnings.
 		# Cooldown-only does NOT special-case the boss's lock.
-		if strategy == "timed" and sim.secret_entered and not sim.archive_attack.is_empty():
+		# For the new boss, a timed player reserves a cast and responds to
+		# the explicit late-window cue; cooldown-only never special-cases it.
+		var reserve: bool = strategy == "timed" and sim.secret_entered and sim.boss_spawned and sim.archive_challenge_version >= 4 and (not sim.archive_attack.is_empty() or sim.archive_next_attack - sim.time <= 1.8)
+		if strategy == "timed" and sim.secret_entered and not sim.archive_attack.is_empty() and (not reserve or sim.archive_precise_counter_window()):
 			for ability in sim.active_slots:
 				if sim.activate(str(ability)): break
-		_cast(sim, strategy)
+		if not reserve:
+			_cast(sim, strategy)
 		if sim.ended or sim.stage_transition_queued or not sim.cards.is_empty(): continue
 		var before: int = sim.tick
 		sim.step()
@@ -222,8 +226,8 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 				reason = "earned Archive entry rejected"
 				break
 			if revision == "control": fork.archive_challenge_version = 0
-			elif revision == "initial": fork.archive_challenge_version = 2
-			elif not fork.archive_boss_reworked() or fork.archive_challenge_version != 3:
+			elif revision == "initial": fork.archive_challenge_version = 3
+			elif not fork.archive_boss_reworked() or fork.archive_challenge_version != 4:
 				status = "fault"
 				reason = "candidate challenge not enabled on real entry"
 				break

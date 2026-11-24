@@ -63,7 +63,7 @@ def read(paths, suite):
                     raise ValueError("missing actual Archive entry pair")
                 if r["archives"]:
                     a,b,candidate=r["archives"]
-                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,2,3] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
+                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,3,4] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
                         raise ValueError("invalid Archive comparison")
         cells[key]=rows
     if set(cells)!=(EXPECTED if suite=="routes" else ARCHIVE_EXPECTED):
@@ -126,7 +126,7 @@ def archive_report(rows):
     entrants=[r for r in rows if r["archives"]]
     if not entrants: raise ValueError("no actual Archive entries")
     print("# Custodian challenge: paired real Archive entries")
-    print(f"{len(rows)} actual campaigns; {len(entrants)} earned signal-qualified entries; {3*len(entrants)} real Archive fights. Identical pre-entry checkpoints and locked Cores. Control, prior armor/phase-reseal candidate, and redesigned Custodian with two targetable emitters and increased durability. No forced kills/signals. Timed policy answers warning if a ready cast is available; cooldown-only policy does not.")
+    print(f"{len(rows)} actual campaigns; {len(entrants)} earned signal-qualified entries; {3*len(entrants)} real Archive fights. Identical pre-entry checkpoints and locked Cores. Legacy, previous redesigned version, and the calibrated candidate. No forced kills/signals. The timed policy responds to the candidate’s explicit late-counter cue; cooldown-only uses no special rule. Both policies retain their normal behavior for previous versions.")
     print("| Budget | Policy | Attempts | Eligible | Legacy / prior / redesigned clears | Boss seconds (clears) | Boss counters | Boss damage received | Timeouts |")
     print("|---|---|---:|---:|---|---|---|---|---|")
     for h in ("p32","max"):

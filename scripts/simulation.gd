@@ -1070,6 +1070,10 @@ func fused_into(id: String) -> String:
 
 func stage_damage_scale() -> float:
 	var scale: float = float(stage_spec().get("damage_scale", 1.0))
+	# The Archive spec had no damage scale, leaving its boss attacks far
+	# below the 4.2x Citadel baseline. Only the new boss version changes.
+	if secret_entered and boss_spawned and archive_challenge_version >= 4:
+		scale = 2.8
 	# Each warp is followed by new status effects and stronger enemies. Ease
 	# players into those mechanics without handing out extra kills or XP.
 	# The encounter reaches its full authored damage well before the boss.
@@ -1625,6 +1629,8 @@ func boss_phase_label() -> String:
 		return ""
 	if secret_entered:
 		if not archive_attack.is_empty():
+			if archive_challenge_version >= 4:
+				return "CAST NOW · LONGER OPENING" if archive_precise_counter_window() else "HOLD FOR A LONGER OPENING"
 			return "CAST AN ABILITY TO BREAK THE LOCK"
 		if archive_boss_reworked():
 			if archive_phase == 0 and _alive_modules("archive_emitter") > 0:
@@ -1835,7 +1841,7 @@ func enter_secret() -> bool:
 	if not can_enter_secret():
 		return false
 	secret_payout = payout()
-	archive_challenge_version = 3 if expedition_rules else 0
+	archive_challenge_version = 4 if expedition_rules else 0
 	secret_entered = true
 	destination_choice = ""
 	route_offers.clear()
@@ -2398,7 +2404,7 @@ func _spawn_boss() -> void:
 			opener_boss_scale = 2.5
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 	if archive_boss_reworked():
-		hp *= 4.0
+		hp *= 6.0 if archive_challenge_version >= 4 else 4.0
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
@@ -2872,7 +2878,12 @@ func archive_attack_pressure() -> float:
 			factor *= 1.40 if fraction <= 0.10 else (1.20 if fraction <= 0.20 else 1.0)
 	return factor
 
+func archive_precise_counter_window() -> bool:
+	return archive_boss_reworked() and archive_challenge_version >= 4 and boss_spawned and not archive_attack.is_empty() and archive_attack_until - time <= 1.8
+
 func archive_counter_exposure() -> float:
+	if archive_boss_reworked() and archive_challenge_version >= 4 and boss_spawned:
+		return 4.2 if archive_precise_counter_window() else 1.4
 	return 3.4 if archive_challenge_active() and boss_spawned else HiddenSector.COUNTER_EXPOSURE_SECONDS
 
 func archive_missed_exposure() -> float:
@@ -2957,13 +2968,14 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _counter_archive_attack() -> void:
+	var exposure: float = archive_counter_exposure()
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else 9.0)
-	archive_exposed_until = time + archive_counter_exposure()
+	archive_exposed_until = time + exposure
 	beams_cancelled += 1
 	effects.append({"kind":"ion-burst", "p":ship_position(), "radius":215.0, "life":0.75, "max_life":0.75, "born":tick})
-	_log("SHIELD DOWN · shoot the core")
+	_log("SHIELD DOWN · %.1fs opening" % exposure if archive_challenge_version >= 4 and boss_spawned else "SHIELD DOWN · shoot the core")
 	# A successful interrupt still cancels the entire advertised heavy attack.
 	# The upgraded Custodian's auxiliary emitters keep firing a smaller,
 	# travel-time-limited crossfire; do not apply instant damage or clear
