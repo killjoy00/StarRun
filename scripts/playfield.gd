@@ -1,5 +1,6 @@
 extends Node2D
 ## Material ship art, parallax debris, banking and layered combat VFX.
+const FirstFlight = preload("res://scripts/first_flight.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const FusionArt = preload("res://scripts/fusion_art.gd")
@@ -173,7 +174,9 @@ func _draw() -> void:
 			draw_polyline(PackedVector2Array([tail + direction.orthogonal()*3,shot.p + direction*3,tail - direction.orthogonal()*3]),color,1.4,true)
 	for enemy in sim.enemies:
 		_draw_enemy(enemy)
-	_draw_player(ship, velocity)
+	var crashing: bool = host.mode == "intro_crash"
+	if not crashing or host.intro_end_clock < FirstFlight.IMPACT_AT:
+		_draw_player(ship, velocity)
 	if sim.intro_run and sim.time < 2.1 and not profile.reduced:
 		_draw_first_flight_launch(ship)
 	_draw_support()
@@ -198,10 +201,13 @@ func _draw() -> void:
 	if host.mode == "stage_clear":
 		_draw_boss_ceremony(host.stage_clear_clock)
 	elif host.mode == "intro_clear" and not profile.reduced:
-		_draw_boss_ceremony(host.intro_clear_clock)
+		_draw_boss_ceremony(host.intro_end_clock)
+	elif crashing:
+		_draw_first_flight_crash(ship, host.intro_end_clock)
 	elif host.mode == "warp":
 		_draw_warp(host.warp_clock)
-	_draw_boss_panel()
+	if not crashing:
+		_draw_boss_panel()
 	# Minimal edge framing lets the artwork breathe while bars stay readable.
 	for edge in [0, 1]:
 		draw_rect(Rect2(edge * 520, 0, 20, 960), Color(0.01, 0.025, 0.04, 0.18))
@@ -217,6 +223,38 @@ func _draw() -> void:
 		_bar(Rect2(18, 941, 504, 3), float(sim.xp) / sim.xp_needed(), AMBER)
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
+
+func _draw_first_flight_crash(ship: Vector2, elapsed: float) -> void:
+	var core: Dictionary = sim._boss_core()
+	var gun: Vector2 = core.get("p", Vector2(270, 135)) + Vector2(0, 27)
+	var after_impact := elapsed - FirstFlight.IMPACT_AT
+	if after_impact < 0.0:
+		draw_line(gun, ship, Color(AMBER, 0.62), 2.0, true)
+		draw_arc(gun, 22.0, 0.0, TAU, 32, AMBER, 2.0, true)
+		return
+	if not profile.reduced:
+		if after_impact < 0.22:
+			var intensity := 1.0 - after_impact / 0.22
+			draw_line(gun, ship, Color(AMBER, 0.35 * intensity), 48.0, true)
+			draw_line(gun, ship, Color(AMBER, intensity), 16.0, true)
+			draw_line(gun, ship, Color(Color.WHITE, intensity), 5.0, true)
+		var glow := maxf(0.0, 1.0 - after_impact / 1.15)
+		draw_arc(ship, 24.0 + after_impact * 155.0, 0.0, TAU, 48, Color(AMBER, glow), 3.0, true)
+		for i in range(28):
+			var direction := Vector2.from_angle(i * 2.39996)
+			var debris := ship + direction * (16.0 + after_impact * (56.0 + float(i % 7) * 19.0))
+			draw_line(debris, debris - direction * 11.0, Color(AMBER, glow), 2.0, true)
+	var side := 1.0 if ship.x < 270.0 else -1.0
+	var direction := Vector2(side, -0.45).normalized()
+	var distance := 38.0 if profile.reduced else 24.0 + after_impact * 108.0
+	var pod := ship + direction * distance
+	if not profile.reduced:
+		draw_line(pod, pod - direction * 42.0, Color(CYAN, 0.6), 3.0, true)
+	draw_set_transform(pod, direction.angle())
+	draw_colored_polygon(PackedVector2Array([Vector2(14, 0), Vector2(3, -8), Vector2(-11, -6),
+		Vector2(-11, 6), Vector2(3, 8)]), Color("eafcff"))
+	draw_circle(Vector2(3, 0), 4.0, Color("29657d"))
+	draw_set_transform(Vector2.ZERO)
 
 func _draw_first_flight_launch(ship: Vector2) -> void:
 	# A brief thrust flare uses the live ship position and fades into normal flight.

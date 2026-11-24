@@ -52,6 +52,8 @@ func _run() -> void:
 	for first in range(3):
 		for second in range(3):
 			_play_drafts(first, second)
+			_check_passive_ejection(first, second)
+	_check_legacy_checkpoint()
 	_check_eligibility()
 	_check_real_scene()
 	print("FIRST FLIGHT: %d failures" % failures)
@@ -67,7 +69,9 @@ func _play_drafts(first: int, second: int) -> void:
 	var first_weapon := ""
 	var damage_before := 0.0
 	var boss_at := -1.0
-	var saw_heavy_fire := false
+	var first_chain := 0
+	var second_chain := 0
+	var aegis_at_impact := false
 	var early := first == 1 and second == 2
 	var missed := first == 2 and second == 2
 	if early:
@@ -98,6 +102,10 @@ func _play_drafts(first: int, second: int) -> void:
 			check(sim.cards.size() == 3, "Both drafts offer three real cards")
 			sim = _restored(sim, "Draft")
 			var first_draft_open: bool = sim.intro_picks.is_empty()
+			if first_draft_open:
+				check(sim.cards[0].id == "arc" and Intro.recommendation(sim).begins_with("Pick Arc coil"), "The first draft points to Arc coil")
+			else:
+				check(sim.time == Intro.DRAFT_AT[1] and Intro.recommendation(sim).begins_with("Pick " + str(sim.cards[0].name) + " again"), "The second draft recommends the chosen weapon upgrade")
 			var index := first if first_draft_open else second
 			var card: Dictionary = sim.cards[index]
 			var id: String = str(card.id)
@@ -117,6 +125,8 @@ func _play_drafts(first: int, second: int) -> void:
 			if not missed or sim.time >= 29.0:
 				if sim.activate("aegis") and first_cast < 0.0:
 					first_cast = sim.time
+		if first == 0 and second == 0 and not aegis_at_impact and sim.time >= Intro.BOSS_AT + Intro.EJECT_AFTER - 0.25:
+			aegis_at_impact = sim.activate("aegis")
 		sim.step()
 		if first_kill < 0.0 and sim.kills > 0:
 			first_kill = sim.time
@@ -125,17 +135,66 @@ func _play_drafts(first: int, second: int) -> void:
 		if boss_at < 0.0 and sim.boss_spawned:
 			boss_at = sim.time
 			sim = _restored(sim, "Harvester arrival")
-		saw_heavy_fire = saw_heavy_fire or sim.intro_boss_enraged()
-	check(sim.won and sim.ended and sim.stage == 1 and not sim.stage_transition_queued, "Timed play clears the Harvester on branch %d/%d" % [first, second])
-	check(sim.intro_beam_blocked and saw_heavy_fire, "Real beam defense and low-hull boss phase are exercised")
+		if first == 0 and second == 0:
+			var chain: int = sim.effects.filter(func(effect): return effect.kind == "arc" and effect.born == sim.tick).size()
+			if sim.time >= 24.0 and sim.time < 29.0:
+				first_chain = maxi(first_chain, chain)
+			elif sim.time >= 49.0 and sim.time < 55.5:
+				second_chain = maxi(second_chain, chain)
+	check(sim.intro_ejected and sim.ended and not sim.won and sim.hull == 0.0 and sim.stage_clears == 0 and not sim.stage_transition_queued, "The Harvester destroys the ship on branch %d/%d" % [first, second])
+	check(sim.intro_beam_blocked, "Real beam defense still works before the scripted attack")
+	if first == 0 and second == 0:
+		check(first_chain >= 3 and second_chain > first_chain, "The recommended Arc upgrade visibly chains to more targets")
+		check(aegis_at_impact and sim.intro_ejected, "A cast immediately before the main gun still ends in ejection")
 	check(first_kill >= 0.0 and first_kill < 3.0 and first_cast > 0.0, "A kill and a cast happen in the opening")
 	check(first_draft == Intro.DRAFT_AT[0] and first_payoff >= first_draft and first_payoff < first_draft + 10.0, "First pick does damage in the next wave")
-	check(boss_at == Intro.BOSS_AT and sim.time < 215.0, "Harvester and total time meet the intro pacing")
+	check(boss_at == Intro.BOSS_AT and absf(sim.time - Intro.BOSS_AT - Intro.EJECT_AFTER) <= Sim.DT + 0.001, "Harvester arrival and ejection meet the scripted timing")
 	if missed:
 		check(sim.damage_taken.heavy > 0.0 and first_cast > 29.0, "A missed cast deals real damage and a later cast recovers")
 	print("TRACE %s: kill %.2fs, first cast %.2fs, first draft %.2fs, first weapon damage %.2fs, boss %.2fs, finish %.2fs" % [
 		sim.intro_picks, first_kill, first_cast, first_draft, first_payoff, boss_at, sim.time,
 	])
+
+func _check_passive_ejection(first: int, second: int) -> void:
+	var sim := Sim.new(Intro.SEED)
+	sim.configure_first_flight(true)
+	for tick in range(4600):
+		if sim.ended:
+			break
+		sim.intro_aegis_prompt = false
+		if not sim.cards.is_empty():
+			sim.choose_card(first if sim.intro_picks.is_empty() else second)
+		sim.step()
+	check(sim.intro_ejected and sim.ability_uses == 0, "Without Aegis, branch %d/%d still reaches the ejection" % [first, second])
+
+func _check_legacy_checkpoint() -> void:
+	var legacy := Sim.new(Intro.SEED)
+	legacy.intro_run = true
+	legacy.intro_reward_eligible = true
+	for tick in range(2300):
+		legacy.intro_aegis_prompt = false
+		legacy.step()
+		if not legacy.cards.is_empty():
+			break
+	var state := legacy.snapshot()
+	state.erase("intro_scripted")
+	state.erase("intro_ejected")
+	var restored := Sim.new()
+	check(restored.restore(state) and not restored.intro_scripted, "A saved original flight keeps the earlier encounter schedule")
+	check(restored.time == Intro.LEGACY_DRAFT_AT[0] and restored.cards.size() == 3 and Intro.boss_at(restored) == Intro.LEGACY_BOSS_AT, "The original first draft and boss timing survive the update")
+	for tick in range(13000):
+		if restored.ended:
+			break
+		restored.intro_aegis_prompt = false
+		if not restored.cards.is_empty():
+			restored.choose_card(0)
+		if restored.charges.any(func(charge): return charge.remaining <= 0.65):
+			restored.activate("aegis")
+		restored.step()
+	check(restored.won and not restored.intro_ejected, "An original flight can still defeat the Harvester")
+	var profile := {"cores": 0, "intro_status": "available"}
+	Main.Progress.settle_first_flight(profile, restored)
+	check(profile.cores == Intro.REWARD and profile.intro_status == "complete", "Winning an old suspended intro still earns its reward")
 
 func _check_eligibility() -> void:
 	var unopened := MemoryServices.new()
@@ -195,19 +254,11 @@ func _check_real_scene() -> void:
 	scene._resume_run()
 	check(scene.sim.snapshot() == original and scene.game_speed == 3.0, "Fresh process restores intro checkpoint and speed")
 	_run_scene(scene, false)
-	check(scene.mode == "intro_results" and scene.sim.ended and not scene.sim.won and scene.result_earned_cores == 0, "Ignoring defense can cause a real defeat without payout")
-	var controls: Array = scene.find_children("*", "Button", true, false)
-	check(controls.any(func(button): return button.text == "Try first flight again"), "A defeat presents a real retry button")
-	scene._new_intro_run()
-	check(scene.mode == "playing" and scene.sim.intro_reward_eligible, "A real retry stays eligible for the first win")
-	scene._cycle_speed()
-	scene._cycle_speed()
-	_run_scene(scene, true)
-	check(scene.mode == "intro_clear" and scene.sim.won, "The normal scene reaches a clearance after defeating the boss")
+	check(scene.mode == "intro_crash" and scene.sim.intro_ejected and not scene.sim.won, "The first flight reaches the ejection animation without a win")
 	var terminal: Dictionary = storage.read_save(Services.RUN)
-	check(terminal.ended and terminal.won, "The win checkpoint is durable before the debrief")
+	check(terminal.ended and terminal.intro_ejected and not terminal.won, "The ejection checkpoint is durable before the debrief")
 	storage.refuse_run = true
-	scene._process(2.0)
+	scene._process(Intro.CRASH_SECONDS + 0.1)
 	check(scene.mode == "intro_results" and scene.intro_save_pending and scene.profile.cores == 0, "A failed checkpoint write defers settlement")
 	storage.refuse_run = false
 	storage.refuse_profile = true
@@ -216,8 +267,10 @@ func _check_real_scene() -> void:
 	scene.free()
 	storage.refuse_profile = false
 	scene = _scene(storage)
-	scene._resume_run()
-	check(scene.mode == "intro_results" and scene.profile.cores == Intro.REWARD and scene.result_earned_cores == Intro.REWARD, "The debrief recovers the unpaid win after restarting")
+	scene._new_run()
+	check(scene.mode == "intro_results" and scene.profile.cores == Intro.REWARD and scene.result_earned_cores == Intro.REWARD, "Launching after a restart recovers the unpaid ejection before starting the campaign")
+	var labels: Array = scene.find_children("*", "Label", true, false)
+	check(labels.any(func(label): return label.text == "Pilot recovered"), "The scripted ending shows the pilot recovery debrief")
 	scene._resume_run()
 	check(scene.profile.cores == Intro.REWARD and int(scene.profile.achievement_stats.finished_runs) == 0 and scene.profile.codex.is_empty(), "Repeated settlement grants no extra Cores, awards or Codex progress")
 	var price: int = scene.Catalog.price("hull", 0)
@@ -228,8 +281,8 @@ func _check_real_scene() -> void:
 	scene._cycle_speed()
 	scene._cycle_speed()
 	_run_scene(scene, true)
-	scene._process(2.0)
-	check(scene.mode == "intro_results" and scene.sim.won and scene.result_earned_cores == 0 and scene.profile.cores == Intro.REWARD - price, "A replay victory pays no duplicate Cores")
+	scene._process(Intro.CRASH_SECONDS + 0.1)
+	check(scene.mode == "intro_results" and scene.sim.intro_ejected and scene.sim.intro_beam_blocked and scene.result_earned_cores == 0 and scene.profile.cores == Intro.REWARD - price, "A successful Aegis lesson still ends at the ejection and a replay pays no duplicate Cores")
 	scene._new_run()
 	check(scene.mode == "playing" and not scene.sim.intro_run and scene.sim.stage == 1 and scene.sim.expedition_active() and scene.sim.meta.hull == 1 and scene.game_speed == 1.0, "Debrief Launch starts the seeded campaign with the purchased plating")
 	print("TRACE second flight: seed %d, world %d, campaign launches %d" % [scene.sim.seed_value, scene.sim.stage, scene.profile.runs])
@@ -239,7 +292,7 @@ func _run_scene(scene: Node, timed: bool) -> void:
 	var checked_pause := false
 	var checked_boss := false
 	for i in range(1250):
-		if scene.mode in ["intro_results", "intro_clear"]:
+		if scene.mode in ["intro_results", "intro_clear", "intro_crash"]:
 			return
 		if scene.mode == "intro_aegis":
 			if not checked_pause:
@@ -260,6 +313,8 @@ func _run_scene(scene: Node, timed: bool) -> void:
 		elif scene.mode == "playing" and timed and not scene.sim.charges.is_empty() and scene.sim.charges[0].remaining <= 0.66:
 			scene.ability_a.pressed.emit()
 		elif scene.mode == "cards" and scene.draft_guard <= 0.0:
+			var labels: Array = scene.find_children("*", "Label", true, false)
+			check(labels.any(func(label): return label.text == Intro.recommendation(scene.sim)), "The live draft tells the player which card to pick")
 			scene._choose(0)
 		scene._process(0.2)
 	check(false, "Scene does not reach a terminal state")

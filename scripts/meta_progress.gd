@@ -247,7 +247,7 @@ static func progress(profile: Dictionary, id: String) -> int:
 
 ## A separate receipt keeps this reward independent of campaign/Daily seeds.
 static func settle_first_flight(profile: Dictionary, sim: RefCounted) -> void:
-	if not sim.intro_run or not sim.intro_reward_eligible or not sim.ended or not sim.won or profile.get("intro_status") != "available":
+	if not sim.intro_run or not sim.intro_reward_eligible or not sim.ended or (not sim.won and not sim.intro_ejected) or profile.get("intro_status") != "available":
 		return
 	profile.intro_status = "complete"
 	profile.intro_cores = FirstFlight.REWARD

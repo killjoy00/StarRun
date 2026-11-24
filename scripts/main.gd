@@ -39,7 +39,7 @@ var intro_marker: Panel
 var intro_cue: Array = []
 var intro_cue_tween: Tween
 var intro_save_pending := false
-var intro_clear_clock := 0.0
+var intro_end_clock := 0.0
 var accumulator := 0.0
 var visual_time := 0.0
 var save_clock := 0.0
@@ -473,13 +473,15 @@ func _layout_intro_hud() -> void:
 	intro_marker.size = ability_a.size + Vector2(6, 6)
 
 func _update_intro_hud() -> void:
-	var active: bool = flight_started and sim.intro_run and mode in ["playing", "intro_aegis"]
+	var active: bool = flight_started and sim.intro_run and mode in ["playing", "intro_aegis", "intro_crash"]
 	var lesson := active and mode == "intro_aegis"
 	intro_marker.visible = lesson
 	intro_marker.modulate.a = 1.0 if profile.reduced else 0.87 + 0.13 * sin(visual_time * 5.0)
 	intro_continue.visible = lesson
 	ability_a.focus_mode = Control.FOCUS_ALL if lesson else Control.FOCUS_NONE
 	var cue: Array = FirstFlight.cue(sim) if active else []
+	if mode == "intro_crash":
+		cue = ["MAIN GUN FIRING", "Ejecting!"] if intro_end_clock < FirstFlight.IMPACT_AT else ["PILOT EJECTED", "Vanguard lost."]
 	if cue == intro_cue:
 		return
 	if intro_cue_tween and intro_cue_tween.is_valid():
@@ -1462,7 +1464,10 @@ func _show_boss_intro(announce: bool = true) -> void:
 	var name_label := Kit.label(stack, sim.boss_name(), 42, Color.WHITE)
 	name_label.add_theme_font_override("font", Kit.font(0, 0.8))
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var tagline := Kit.label(stack, "Watch for the beam." if sim.intro_run else str(BOSS_TAGLINES.get(sim.boss_name(), "Big, angry and in your way.")), 16, Color("ffd9b0"), true)
+	var arrival_line := str(BOSS_TAGLINES.get(sim.boss_name(), "Big, angry and in your way."))
+	if sim.intro_run:
+		arrival_line = "Main gun charging." if sim.intro_scripted else "Watch for the beam."
+	var tagline := Kit.label(stack, arrival_line, 16, Color("ffd9b0"), true)
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if profile.reduced or not announce:
 		shade.color.a = 0.62
@@ -2105,7 +2110,10 @@ func _show_cards(play_sound: bool = true) -> void:
 	elif capped:
 		Kit.label(top, "You have every upgrade. Repair your ship or take Cores.", 16, Kit.MUTED, true)
 	elif sim.intro_run:
-		if sim.intro_picks.is_empty():
+		var recommendation := FirstFlight.recommendation(sim)
+		if not recommendation.is_empty():
+			Kit.label(top, recommendation, 15, Kit.TEXT, true)
+		elif sim.intro_picks.is_empty():
 			Kit.label(top, "These weapons fire automatically.", 15, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
@@ -2193,9 +2201,12 @@ func _draft_card(parent: Node, i: int) -> void:
 		tag_text = "%s  ·  rank %d bonus" % [type_text, milestone]
 	var removable := banish_mode and id not in ["repair", "core_cache"]
 	var action: Callable = _draft_action.bind("banish", i) if banish_mode else _choose.bind(i)
-	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent)
-	# Only a pick that actually fuses or crosses a breakpoint gets an accent edge.
-	if not banish_mode and (not fusion.is_empty() or reaches_milestone):
+	var recommended: bool = sim.intro_scripted and i == 0 and not banish_mode
+	if recommended:
+		tag_text = "Recommended"
+	var view := _tap_card(parent, action, Kit.DANGER if banish_mode else accent, recommended)
+	# A fusion or breakpoint gets an accent edge.
+	if not recommended and not banish_mode and (not fusion.is_empty() or reaches_milestone):
 		view.panel.add_theme_stylebox_override("panel", Kit.box(Kit.SURFACE, accent, 14, 2, 0, 0))
 	var hit: Button = view.button
 	if banish_mode and not removable:
@@ -3134,23 +3145,28 @@ func _continue_intro_aegis() -> void:
 
 func _show_intro_clear() -> void:
 	mode = "intro_clear"
-	intro_clear_clock = 0.0
+	intro_end_clock = 0.0
 	_save_run()
 	sound.play("boss-explosion")
 	_haptic(90)
+
+func _show_intro_crash() -> void:
+	mode = "intro_crash"
+	intro_end_clock = 0.0
+	_save_run()
 
 func _unsettled_intro() -> bool:
 	if profile.intro_status != "available":
 		return false
 	var saved := _saved_flight()
-	return bool(saved.get("intro_run", false)) and bool(saved.get("intro_reward_eligible", false)) and bool(saved.get("won", false))
+	return bool(saved.get("intro_run", false)) and bool(saved.get("intro_reward_eligible", false)) and (bool(saved.get("won", false)) or bool(saved.get("intro_ejected", false)))
 
 func _finish_intro_run() -> void:
 	flight_started = true
 	var checkpoint_saved := _save_run()
 	intro_save_pending = false
 	result_earned_cores = 0
-	if sim.won and sim.intro_reward_eligible:
+	if (sim.won or sim.intro_ejected) and sim.intro_reward_eligible:
 		if profile.intro_status == "available" and not checkpoint_saved:
 			intro_save_pending = true
 		elif profile.intro_status == "available":
@@ -3166,13 +3182,14 @@ func _finish_intro_run() -> void:
 	var first_view := mode != "intro_results"
 	_show_intro_results()
 	if first_view:
-		sound.play("victory" if sim.won else "defeat", -8.0)
+		sound.play("card" if sim.intro_ejected else ("victory" if sim.won else "defeat"), -8.0)
 
 func _show_intro_results() -> void:
 	mode = "intro_results"
 	var view := _page(1.0, true, 460.0)
 	var body: VBoxContainer = view.body
-	_page_header(view.top, "First flight", "Harvester defeated" if sim.won else "Ship lost", _show_menu)
+	var title := "Pilot recovered" if sim.intro_ejected else ("Harvester defeated" if sim.won else "Ship lost")
+	_page_header(view.top, "First flight", title, _show_menu)
 	var frame := PanelContainer.new()
 	frame.clip_contents = true
 	frame.add_theme_stylebox_override("panel", Kit.box(Color("091424"), Kit.LINE, 12, 1, 0, 0))
@@ -3193,7 +3210,9 @@ func _show_intro_results() -> void:
 		Kit.label(body, "Your Cores could not be saved. Try saving again.", 16, Kit.MUTED, true)
 		_focus(_ui_button(reading_footer, "Save reward", _finish_intro_run, "primary", 56, true))
 		return
-	if sim.won:
+	if sim.intro_ejected:
+		Kit.label(body, "The Harvester destroyed your ship. Take a new one into the campaign.", 16, Kit.TEXT, true)
+	if sim.won or sim.intro_ejected:
 		var plating: int = int(profile.hangar.hull)
 		var price := Catalog.price("hull", plating)
 		if result_earned_cores > 0 and plating == 0:
@@ -3202,9 +3221,13 @@ func _show_intro_results() -> void:
 				_ui_button(body, "Buy Hull plating · %d Cores" % price, _buy_intro_plating, "secondary", 49)
 		elif plating > 0:
 			Kit.label(body, "Hull plating adds %d starting hull in the campaign." % (10 * plating), 16, Kit.MUTED, true)
-		Kit.label(body, "The campaign spans four worlds.", 16, Kit.MUTED, true)
+		if not sim.intro_ejected:
+			Kit.label(body, "The campaign spans four worlds.", 16, Kit.MUTED, true)
 	else:
-		Kit.label(body, "Keep Aegis ready for the beam, then use it just before impact.", 16, Kit.MUTED, true)
+		var tip := "Use Aegis just before the beam hits."
+		if sim.intro_beam_blocked:
+			tip = "Try Seeker pods. They target ships charging a beam."
+		Kit.label(body, tip, 16, Kit.MUTED, true)
 		_ui_button(view.bottom, "Try first flight again", _new_intro_run.bind(not sim.intro_reward_eligible), "secondary", 48)
 	Kit.label(body, "First flights award no campaign achievements or unlocks.", 14, Kit.MUTED, true)
 	_focus(_ui_button(reading_footer, "Launch campaign", _new_run, "primary", 56, true))
@@ -3391,8 +3414,16 @@ func _process(delta: float) -> void:
 	if old_size != get_viewport_rect().size:
 		_layout()
 	if mode == "intro_clear":
-		intro_clear_clock += delta
-		if intro_clear_clock >= (0.3 if profile.reduced else 1.65):
+		intro_end_clock += delta
+		if intro_end_clock >= (0.3 if profile.reduced else 1.65):
+			_finish()
+	if mode == "intro_crash":
+		var before := intro_end_clock
+		intro_end_clock += delta
+		if before < FirstFlight.IMPACT_AT and intro_end_clock >= FirstFlight.IMPACT_AT:
+			sound.play("boss-explosion", -9.0)
+			_haptic(90)
+		if intro_end_clock >= FirstFlight.CRASH_SECONDS:
 			_finish()
 	if mode == "boss_intro":
 		boss_intro_clock += delta
@@ -3432,7 +3463,9 @@ func _process(delta: float) -> void:
 			if not sim.intro_run:
 				_opening_first30_beat()
 			if sim.ended:
-				if sim.intro_run and sim.won:
+				if sim.intro_ejected:
+					_show_intro_crash()
+				elif sim.intro_run and sim.won:
 					_show_intro_clear()
 				else:
 					_finish()
@@ -3478,7 +3511,7 @@ func _process(delta: float) -> void:
 		# lowers hull every tick, so it is pooled and rate-limited instead of
 		# firing a sound and a vibration on every frame.
 		hit_feedback_clock = maxf(0.0, hit_feedback_clock - delta)
-		if sim.hull < last_hull:
+		if sim.hull < last_hull and mode != "intro_crash":
 			var lost: float = last_hull - sim.hull
 			chip_damage += lost
 			if hit_feedback_clock <= 0.0 and (lost >= 1.0 or chip_damage >= 6.0):
@@ -3502,14 +3535,14 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "intro_aegis", "intro_clear", "boss_intro", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "intro_aegis", "intro_clear", "intro_crash", "boss_intro", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
 	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
 	var lesson := mode == "intro_aegis"
 	for button in [speed_button, build_button, pause_button]:
-		button.disabled = lesson or mode == "intro_clear"
+		button.disabled = lesson or mode in ["intro_clear", "intro_crash"]
 	speed_button.text = _speed_label()
 	_update_intro_hud()
 	queue_redraw()
