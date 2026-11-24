@@ -650,12 +650,15 @@ func stage_spec() -> Dictionary:
 		endless_stage_spec.name = "ENDLESS %d · %s" % [depth, template.name]
 		endless_stage_spec.subtitle = "Escalation sector"
 		endless_stage_spec.boss_name = "%s Ascendant" % template.boss_name
-		endless_stage_spec.boss_hp = float(baseline.boss_hp) * pow(1.48, depth)
-		endless_stage_spec.health_scale = float(baseline.health_scale) * pow(1.30, depth)
-		endless_stage_spec.damage_scale = float(baseline.damage_scale) * pow(1.22, depth)
+		# Endless should eventually overcome a finished build. Increase pressure
+		# more than durability, without increasing the XP-bearing spawn budget
+		# beyond the existing curve or shortening heavy-beam telegraphs.
+		endless_stage_spec.boss_hp = float(baseline.boss_hp) * pow(1.55, depth)
+		endless_stage_spec.health_scale = float(baseline.health_scale) * pow(1.35, depth)
+		endless_stage_spec.damage_scale = float(baseline.damage_scale) * pow(1.35, depth)
 		endless_stage_spec.spawn_scale = float(baseline.spawn_scale) * pow(1.08, depth)
-		endless_stage_spec.fire_scale = float(baseline.fire_scale) * pow(1.07, depth)
-		endless_stage_spec.module_scale = float(baseline.module_scale) * pow(1.42, depth)
+		endless_stage_spec.fire_scale = float(baseline.fire_scale) * pow(1.12, depth)
+		endless_stage_spec.module_scale = float(baseline.module_scale) * pow(1.48, depth)
 		endless_stage_spec.transition = "ENDLESS %d" % (depth + 1)
 		endless_stage_spec.reward_label = "ENDLESS RUN · BONUS %d" % depth
 	return endless_stage_spec
