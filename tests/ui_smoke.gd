@@ -475,20 +475,32 @@ func _run() -> void:
 	scene._show_prototypes()
 	scene._choose_prototype(0)
 	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Prototype selection must advance to the strategic route screen")
-	check(_contains_text(scene.reading_scroll, "Shielded passage") and _contains_text(scene.reading_scroll, "Redline assault") and _contains_text(scene.reading_scroll, "Hunter contract"), "Every strategic route must render after the prototype choice")
-	check(_contains_text(scene.reading_scroll, "70%") and _contains_text(scene.reading_scroll, "35% less damage") and _contains_text(scene.reading_scroll, "+15% gun damage") and _contains_text(scene.reading_scroll, "above half") and _contains_text(scene.reading_scroll, "One extra upgrade"), "Each route must explain its current benefit, shield threshold, and tradeoff in plain language")
+	var destination_hand: Array = scene.sim.available_destinations()
+	check(scene.sim.expedition_active() and destination_hand.size() == 3 and scene.card_buttons.size() == 3, "New regular flights must show three actual destination choices after the Prototype")
+	var destination_groups: Array = []
+	var assault_id := ""
+	var assault_spec: Dictionary = {}
+	for id in destination_hand:
+		var spec: Dictionary = scene.sim.destination_spec(str(id))
+		check(_contains_text(scene.reading_scroll, str(spec.name)) and _contains_text(scene.reading_scroll, str(spec.gain)) and _contains_text(scene.reading_scroll, str(spec.cost)), "Every offered destination must render its full name, actual gain and cost")
+		destination_groups.append(str(spec.group))
+		if str(spec.group) == "overclock":
+			assault_id = str(id)
+			assault_spec = spec
+	check(destination_groups == ["repair","overclock","bounty"], "Destination options cover all three strategic groups")
 	await process_frame
 	check(scene.reading_scroll.size.y > 100 and not _unwrapped_long_label(scene.reading_scroll), "Route alternatives must wrap on phone-sized viewports")
 	scene._show_menu()
 	scene._resume_run()
-	check(scene.mode == "route" and scene.sim.prototypes.size() == 1, "Suspending during route selection must not duplicate Prototype rewards")
-	scene._choose_route("overclock")
-	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and is_equal_approx(scene.sim.stage_power, 1.35) and is_equal_approx(scene.sim.stage_fire_rate, 1.20), "Selecting Overclock must start Stage 2 with its stronger weapons and no free draft")
+	check(scene.mode == "route" and scene.sim.prototypes.size() == 1 and scene.sim.available_destinations() == destination_hand, "Suspending must preserve the exact destination hand without duplicating Prototype rewards")
+	check(not assault_id.is_empty() and assault_spec.has("power") and assault_spec.has("fire"), "Assault destination has real weapon modifiers")
+	scene._choose_route(assault_id)
+	check(scene.sim.stage == 2 and scene.mode != "cards" and scene.sim.pending_levels == 0 and scene.sim.destination_choice == assault_id and is_equal_approx(scene.sim.stage_power, float(assault_spec.get("power",0.0))) and is_equal_approx(scene.sim.stage_fire_rate, float(assault_spec.get("fire",0.0))), "Selecting the actual assault destination applies its advertised weapon modifiers without a free draft")
 	scene.sim.cards.clear()
 	scene.mode = "playing"
 	scene._show_build()
 	await process_frame
-	check(_contains_text(scene.reading_scroll, "Prototype") and _contains_text(scene.reading_scroll, "Current route:"), "Build screen must explain acquired Prototype and route tradeoffs")
+	check(_contains_text(scene.reading_scroll, "Prototype") and _contains_text(scene.reading_scroll, "Current route:") and _contains_text(scene.reading_scroll, str(assault_spec.get("name","invalid"))), "Build screen must show acquired Prototype and the actual chosen destination")
 	scene._toggle_pause()
 	scene.sim.stage = 4
 	scene.sim.stage_clears = 4
