@@ -252,9 +252,25 @@ func _test_archive_rework_and_destinations() -> void:
 	check(replay.restore(checkpoint) and replay.snapshot() == checkpoint and replay._alive_modules("archive_emitter") == 1, "Broken emitter and phase resume exactly")
 	base._damage_enemy(core, 999999999.0, "nova")
 	check(base._alive_modules("archive_emitter") == 0 and base.xp == initial_xp and base.kills == initial_kills and base.payout() == initial_cores, "Emitters grant no extra kills, XP or payout")
-	check(is_equal_approx(base.stage_damage_scale(), 2.8) and is_equal_approx(old.stage_damage_scale(), 1.0), "Only new boss encounters receive restored incoming pressure")
+	check(is_equal_approx(base.stage_damage_scale(), 4.2) and is_equal_approx(old.stage_damage_scale(), 1.0), "Only new boss encounters receive restored incoming pressure")
 	base.archive_next_attack = base.time
 	base._update_archive_attack()
+	var insane := Sim.new(93500, {}, "vanguard", "rookie", "insane")
+	insane.enable_expedition_rules()
+	insane.stage = 4
+	insane.stage_clears = 4
+	insane.signal_count = 2
+	insane.stage_transition_queued = true
+	var insane_legacy := Sim.new()
+	check(insane_legacy.restore(insane.snapshot()) and insane_legacy.enter_secret(), "Insane legacy entry uses identical checkpoint")
+	insane_legacy.archive_challenge_version = 0
+	insane_legacy.dismiss_secret_intro()
+	insane_legacy._spawn_boss()
+	check(insane.enter_secret(), "Insane redesigned entry remains eligible")
+	insane.dismiss_secret_intro()
+	insane._spawn_boss()
+	check(is_equal_approx(float(insane._boss_core().max_hp), float(insane_legacy._boss_core().max_hp)*3.5) and insane._alive_modules("archive_emitter") == 2, "Insane Archive calibrates stacked durability, retaining both real objectives")
+	check(is_equal_approx(insane.archive_sealed_factor(), 0.10) and is_equal_approx(base.archive_sealed_factor(), 0.06) and is_equal_approx(insane.stage_damage_scale(), 4.2), "Insane local armor adjustment retains counter advantage; other difficulty armor is unchanged")
 	var warning := base.snapshot()
 	var early := Sim.new()
 	var precise := Sim.new()

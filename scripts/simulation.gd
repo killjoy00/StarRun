@@ -1073,7 +1073,7 @@ func stage_damage_scale() -> float:
 	# The Archive spec had no damage scale, leaving its boss attacks far
 	# below the 4.2x Citadel baseline. Only the new boss version changes.
 	if secret_entered and boss_spawned and archive_challenge_version >= 4:
-		scale = 2.8
+		scale = 4.2
 	# Each warp is followed by new status effects and stronger enemies. Ease
 	# players into those mechanics without handing out extra kills or XP.
 	# The encounter reaches its full authored damage well before the boss.
@@ -2404,7 +2404,9 @@ func _spawn_boss() -> void:
 			opener_boss_scale = 2.5
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 	if archive_boss_reworked():
-		hp *= 6.0 if archive_challenge_version >= 4 else 4.0
+		# Insane already multiplies legacy HP by 2x threat and 1.85 boss pressure.
+		# Avoid double-stacking durability while preserving a stronger absolute boss.
+		hp *= (3.5 if difficulty == "insane" else 6.0) if archive_challenge_version >= 4 else 4.0
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
@@ -2890,6 +2892,10 @@ func archive_missed_exposure() -> float:
 	return 1.2 if archive_challenge_active() and boss_spawned else HiddenSector.UNANSWERED_EXPOSURE_SECONDS
 
 func archive_sealed_factor() -> float:
+	# Insane's stronger baseline HP must not turn an earned gate into a stall.
+	# A precise opening still deals 4-6.5x sealed damage in that mode.
+	if archive_boss_reworked() and archive_challenge_version >= 4 and difficulty == "insane":
+		return 0.10
 	return 0.06 if archive_boss_reworked() else (0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR)
 
 func archive_exposed_damage_factor() -> float:

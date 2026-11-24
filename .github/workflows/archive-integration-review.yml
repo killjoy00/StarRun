@@ -38,14 +38,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p review
+          failed=0
           for offset in 1 2 3 4; do
-            godot --headless --path . --script tests/archive_campaign.gd -- \
+            if ! godot --headless --path . --script tests/archive_campaign.gd -- \
               --ship="$SHIP" --pilot=rookie --difficulty="$DIFFICULTY" \
               --hangar="$HANGAR" --seed-offset="$offset" --matched --expedition \
-              2>&1 | tee "review/archive-$offset.log"
+              2>&1 | tee "review/archive-$offset.log"; then
+              echo "::error::Archive trial failed at offset $offset"
+              failed=1
+            fi
             if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "review/archive-$offset.log"; then
               echo "::error::Archive runtime error at offset $offset"
-              exit 1
+              failed=1
             fi
           done
           python3 - <<'PY' | tee review/summary.md
@@ -73,6 +77,7 @@ jobs:
           print("A bot failure to reach the gate is reported, not counted as a real Archive fight or a player win rate.")
           PY
           cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$failed"
       - name: Preserve full stage / signal / boss receipts
         if: always()
         uses: actions/upload-artifact@v4

@@ -91,7 +91,9 @@ func _fly_campaign(sim: RefCounted) -> Dictionary:
 				_cast_one(sim)
 			_cast(sim, "timed")
 			sim.step()
-	return {"campaign_clears":sim.stage_clears, "eligible":sim.can_enter_secret(), "signals":sim.signal_count, "methods":signals, "citadel_boss_seconds":citadel_boss_seconds,"fault":fault}
+	var campaign_timeout: bool = not sim.ended and not sim.stage_transition_queued
+	fault = fault or campaign_timeout
+	return {"campaign_timeout":campaign_timeout,"campaign_clears":sim.stage_clears, "eligible":sim.can_enter_secret(), "signals":sim.signal_count, "methods":signals, "citadel_boss_seconds":citadel_boss_seconds,"fault":fault}
 
 func _advance_campaign(sim: RefCounted) -> bool:
 	if not sim.begin_intermission():
@@ -154,12 +156,21 @@ func _fly_archive(sim: RefCounted, timed: bool) -> Dictionary:
 	var cancelled: int = sim.beams_cancelled
 	var max_phase: int = -1
 	var patterns: Array[String] = []
+	var min_boss_hull := 1.0
+	var boss_damage_start := -1.0
+	var damage_total := 0.0
 	for frame in range(60 * 550):
 		if sim.ended or sim.time - sim.stage_start >= MAX_STAGE_SECONDS:
 			break
 		if sim.secret_intro_pending:
 			sim.dismiss_secret_intro()
 		if sim.boss_spawned:
+			damage_total = 0.0
+			for value in sim.damage_taken.values():
+				damage_total += float(value)
+			if boss_damage_start < 0.0:
+				boss_damage_start = damage_total
+			min_boss_hull = minf(min_boss_hull, sim.hull / sim.max_hull)
 			max_phase = maxi(max_phase, sim.archive_phase)
 			if not sim.archive_attack.is_empty() and sim.archive_attack not in patterns:
 				patterns.append(sim.archive_attack)
@@ -181,7 +192,11 @@ func _fly_archive(sim: RefCounted, timed: bool) -> Dictionary:
 		elif not reserve and _ready_count(sim) > 1:
 			_cast_one(sim)
 		sim.step()
-	return {"won":sim.won,"hull_fraction":sim.hull / sim.max_hull, "boss_seconds":sim.time - sim.boss_spawn_time if sim.boss_spawned else -1.0,
+	damage_total = 0.0
+	for value in sim.damage_taken.values():
+		damage_total += float(value)
+	var remaining_core: Dictionary = sim._boss_core()
+	return {"won":sim.won,"hull_fraction":sim.hull / sim.max_hull, "min_boss_hull_fraction":minf(min_boss_hull, sim.hull / sim.max_hull),"boss_damage":maxf(0.0,damage_total-boss_damage_start) if boss_damage_start >= 0.0 else 0.0,"core_fraction":float(remaining_core.hp)/maxf(1.0,float(remaining_core.max_hp)) if not remaining_core.is_empty() else 0.0,"boss_seconds":sim.time - sim.boss_spawn_time if sim.boss_spawned else -1.0,
 		"archive_version":sim.archive_challenge_version,"remaining_emitters":sim._alive_modules("archive_emitter"),"timeout":not sim.ended and not sim.stage_transition_queued,
 		"interrupts":sim.beams_cancelled - cancelled, "beams_fired":sim.beams_fired - fired,
 		"max_phase":max_phase, "patterns":patterns,
