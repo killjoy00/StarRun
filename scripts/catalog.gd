@@ -8,6 +8,7 @@ const ARTIFACTS := [
 	{"id":"glass_fleet", "name":"Glass Fleet", "description":"Half hull, +25% shield and +50% gun damage."},
 	{"id":"arsenal_roulette", "name":"Arsenal Shift", "description":"Each time you warp, your gun ranks move to the next gun (Pulse, Seeker, Arc, Lance)."},
 	{"id":"drone_armada", "name":"Drone Armada", "description":"No guns and no gun upgrades. Three drones fight for you and get stronger as you level up."},
+	{"id":"custodian_core", "name":"Custodian Core", "description":"Using an active ability restores 8% of your maximum shield. Guns fire 10% slower.", "requires_archive":true},
 ]
 # One extraordinary weapon transformation at a time; can be drafted or bought from a black market.
 const MUTATIONS := [

@@ -668,7 +668,7 @@ func _draw_boss_module(enemy: Dictionary) -> void:
 	var p: Vector2 = enemy.p
 	var role: String = str(enemy.role)
 	var pulse: float = 0.75 + 0.25 * sin(visual_time * 5.0 + float(enemy.id))
-	var tint := Color("6ce5ff") if role == "launch_bay" else (Color("ffae65") if role == "vent" else Color("bb8dff"))
+	var tint := HiddenSector.MINT if role == "archive_emitter" else (Color("6ce5ff") if role == "launch_bay" else (Color("ffae65") if role == "vent" else Color("bb8dff")))
 	draw_set_transform(p, sin(visual_time * 0.8 + enemy.phase) * 0.05)
 	if role == "launch_bay":
 		draw_colored_polygon(PackedVector2Array([Vector2(0,-25), Vector2(26,-14),Vector2(33,19),Vector2(0,33),Vector2(-33,19),Vector2(-26,-14)]),Color("245479"))
@@ -691,7 +691,7 @@ func _draw_boss_module(enemy: Dictionary) -> void:
 		# decoration. Keep the marker static when reduced effects are on.
 		draw_arc(p, 43, 0.0, TAU, 48, Color(tint, 0.93), 3.2, true)
 		draw_string(ThemeDB.fallback_font, p + Vector2(-36, -51),
-			"VENT" if role == "vent" else "PYLON", HORIZONTAL_ALIGNMENT_CENTER, 72, 13, tint)
+			"EMITTER" if role == "archive_emitter" else ("VENT" if role == "vent" else "PYLON"), HORIZONTAL_ALIGNMENT_CENTER, 72, 13, tint)
 	_bar(Rect2(p.x-31,p.y+43,62,5),enemy.hp/enemy.max_hp,tint)
 	# Every module is a real auto-targeted enemy, not a decorative weak point.
 

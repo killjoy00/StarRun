@@ -163,7 +163,7 @@ func _ready() -> void:
 	if not profile.get("pilot", "rookie") in profile.pilots_owned:
 		profile.pilot = "rookie"
 	Progress.prepare(profile)
-	if str(Catalog.artifact(str(profile.get("artifact","standard"))).id) != str(profile.get("artifact","standard")):
+	if not Progress.artifact_available(profile, str(profile.get("artifact","standard"))):
 		profile.artifact = "standard"
 	game_speed = float(profile.get("speed", 1.0))
 	if game_speed not in speed_options:
@@ -1404,7 +1404,7 @@ func _dismiss_rival_stinger() -> void:
 	_surface_pending_flight_choice()
 
 func _set_artifact(id: String) -> void:
-	if str(Catalog.artifact(id).id) != id:
+	if not Progress.artifact_available(profile, id):
 		return
 	profile.artifact = id
 	_save_profile()
@@ -1747,7 +1747,9 @@ func _artifact_card(parent: Node, entry: Dictionary) -> void:
 	card.panel.name = "ArtifactOption" + id.to_pascal_case()
 	# Name and explanation occupy their own full-width rows. Never squeeze the
 	# complete word "Standard" (or long names) into four equal-width buttons.
-	Kit.caps(card.content, "SELECTED" if selected else "TAP TO SELECT", Kit.CYAN if selected else Kit.MUTED, 12)
+	var available: bool = Progress.artifact_available(profile, id)
+	card.button.disabled = not available
+	Kit.caps(card.content, "LOCKED · CLEAR THE SILENT ARCHIVE" if not available else ("SELECTED" if selected else "TAP TO SELECT"), Kit.CYAN if selected and available else Kit.MUTED, 12)
 	var title := Kit.label(card.content, str(entry.name), 19, Color.WHITE, true)
 	title.name = "ArtifactTitle" + id.to_pascal_case()
 	title.custom_minimum_size.x = 0
@@ -1974,6 +1976,8 @@ func _show_cards(play_sound: bool = true) -> void:
 	# Ordinary drafts keep every card on a short phone without scrolling, so
 	# only catch-up drafts spend a line on the eyebrow.
 	var eyebrow := ("Free upgrades  ·  %d left" % (sim.catch_up_levels + 1)) if sim.catch_up_levels > 0 else ""
+	if sim.smuggler_draft_open and not banish_mode:
+		eyebrow = "Smuggler’s Corridor · build draft"
 	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
@@ -2368,7 +2372,9 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		_archive_art(view.body, "boss")
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
 		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
-		if sim.archive_challenge_active():
+		if sim.archive_boss_reworked():
+			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails. Save an ability for the warnings.", 16, Kit.TEXT, true)
+		elif sim.archive_challenge_active():
 			Kit.label(view.body, "Breaking a lock cancels its main attack. The side emitters still fire, and each shield phase hits harder. Keep an ability ready for the next warning.", 16, Kit.TEXT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
@@ -2397,6 +2403,8 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 	Kit.label(view.body, "The station opens. You found the secret ending.", 19, Kit.TEXT, true)
 	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
 	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
+	if not Progress.artifact_available(profile, "custodian_core"):
+		_info_card(view.body, "Artifact earned · Custodian Core", str(Catalog.artifact("custodian_core").description) + " Available in Loadout after finishing.", HiddenSector.MINT)
 	_focus(_ui_button(reading_footer, "Finish", _finish_archive, "primary", 56, true))
 	if reset_sound:
 		sound.play("archive-release", -4.0)
@@ -2972,6 +2980,8 @@ func _opening_first30_beat() -> void:
 			banner_clock = 3.5
 
 func _new_run() -> void:
+	if not Progress.artifact_available(profile, str(profile.get("artifact", "standard"))):
+		profile.artifact = "standard"
 	banish_mode = false
 	profile.runs += 1
 	build_show_all = false

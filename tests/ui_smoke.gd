@@ -227,6 +227,14 @@ func _run() -> void:
 			var word_width := standard_label.get_theme_font("font").get_string_size("Standard", HORIZONTAL_ALIGNMENT_LEFT, -1, standard_label.get_theme_font_size("font_size")).x
 			check(standard_label.size.x >= word_width, "The word Standard must have enough measured width to display in full")
 		check(_choice_panels_within_screen(scene.overlay, logical.x), "Artifact cards must fit inside narrow-phone margins")
+		var archive_was_cleared: bool = bool(scene.profile.achievement_stats.archive_cleared)
+		scene.profile.achievement_stats.archive_cleared = false
+		scene._set_artifact("custodian_core")
+		check(str(scene.profile.artifact) != "custodian_core", "Locked Archive Artifact cannot be equipped")
+		scene.profile.achievement_stats.archive_cleared = true
+		scene._set_artifact("custodian_core")
+		check(str(scene.profile.artifact) == "custodian_core" and _contains_text(scene.overlay, "Custodian Core"), "Earned Archive Artifact can be equipped and explained")
+		scene.profile.achievement_stats.archive_cleared = archive_was_cleared
 		scene._set_artifact("glass_fleet")
 		check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half hull"), "Choosing an Artifact must persist and explain its rules")
 		scene._set_artifact("standard")

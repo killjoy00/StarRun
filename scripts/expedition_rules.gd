@@ -12,11 +12,32 @@ const ROUTES := [
 	{"id":"uncharted","name":"Uncharted Sector","tag":"Exploration","group":"bounty","repair":0.40,"risk":1.25,"xp":1.25,"bounty":15,"picks":2,"elite":true,"gain":"Repair 40% hull. Two extra upgrades, +25% kill XP and 15 Cores per world number on boss victory.","cost":"25% greater enemy pressure and elite formations."},
 ]
 
-static func route(id: String) -> Dictionary:
+# The original destinations remain available to suspended runs and exact
+# checkpoint counterfactuals. New launches explicitly select version 1.
+static func route(id: String, version: int = 0) -> Dictionary:
 	for item in ROUTES:
-		if str(item.id) == id:
-			return item
+		if str(item.id) != id:
+			continue
+		var spec: Dictionary = item.duplicate(true)
+		if version >= 1:
+			match id:
+				"shipyard":
+					spec.merge({"repair":1.0,"defense":0.60,"damaged_defense":0.50,"gain":"Fully restore hull and shield. Take 40% less damage (50% less if you arrive below 80% hull). 15% shorter cooldowns and +15% gun damage above half shield.","cost":"No extra XP or Cores."}, true)
+				"research":
+					spec["gain"] = "Repair 50% hull. Full shield. 15% less damage, 10% shorter cooldowns. One extra upgrade to advance your build, plus a weapon mutation choice if eligible."
+				"graveyard":
+					spec.merge({"xp":1.65,"gain":"Repair 45% hull. One extra upgrade, +65% kill XP and 20 Cores per world number for the boss."}, true)
+				"smugglers":
+					spec.merge({"risk":1.08,"picks":1,"rerolls":0,"curated":true,"gain":"Repair 35% hull. A special build-focused upgrade draft, +15% kill XP, mutation choice if eligible and 20 Cores per world number for the boss.","cost":"8% greater enemy pressure. The special draft replaces the two bonus rerolls."}, true)
+				"uncharted":
+					spec.merge({"wildcard":true,"gain":"Repair 40% hull. Receive 1–3 bonus upgrades (seeded), +25% kill XP and 15 Cores per world number on boss victory.","cost":"25% greater enemy pressure and elite formations. The number of bonus upgrades is revealed on arrival."}, true)
+		return spec
 	return {}
+
+static func wildcard_picks(seed: int, world: int) -> int:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed * 104729 + world * 7919 + 811
+	return rng.randi_range(1, 3)
 
 static func offers(seed: int, world: int) -> Array:
 	var rng := RandomNumberGenerator.new()

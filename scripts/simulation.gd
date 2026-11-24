@@ -211,6 +211,9 @@ var route_choice := ""
 # Explicit rules version: new regular launches opt in before the first tick.
 # Historical suspended flights, Daily and fixed legacy fixtures keep old rules.
 var expedition_rules := false
+var destination_rules_version := 0
+var smuggler_draft_pending := false
+var smuggler_draft_open := false
 var destination_choice := ""
 var route_offers: Array = []
 var mutation_offers: Array = []
@@ -341,13 +344,14 @@ func enable_expedition_rules() -> bool:
 	if tick != 0 or stage != 1 or not daily_day.is_empty() or start_world != 1:
 		return false
 	expedition_rules = true
+	destination_rules_version = 1
 	return true
 
 func expedition_active() -> bool:
 	return expedition_rules and daily_day.is_empty() and not secret_entered
 
 func destination_spec(id: String = "") -> Dictionary:
-	return Expedition.route(destination_choice if id.is_empty() else id)
+	return Expedition.route(destination_choice if id.is_empty() else id, destination_rules_version)
 
 func _route_value(key: String, fallback: float) -> float:
 	var spec: Dictionary = destination_spec() if expedition_active() else {}
@@ -1577,6 +1581,12 @@ func boss_phase_label() -> String:
 	if secret_entered:
 		if not archive_attack.is_empty():
 			return "CAST AN ABILITY TO BREAK THE LOCK"
+		if archive_boss_reworked():
+			if archive_phase == 0 and _alive_modules("archive_emitter") > 0:
+				return "LOCKDOWN · DESTROY EMITTERS"
+			if archive_phase == 2 and archive_attack_pressure() >= 2.38 - 0.001:
+				return "COLLAPSE · CRITICAL DAMAGE"
+			return ["LOCKDOWN", "LATTICE", "COLLAPSE"][archive_phase] + (" · CORE EXPOSED" if time < archive_exposed_until else " · SHIELD UP")
 		return ("CORE EXPOSED · CROSSFIRE" if archive_challenge_active() else "CORE EXPOSED") if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
 	if stage == 1:
 		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
@@ -1681,7 +1691,7 @@ func choose_route(id: String) -> bool:
 	if expedition_active():
 		if id not in route_offers:
 			return false
-		var spec := Expedition.route(id)
+		var spec := destination_spec(id)
 		if spec.is_empty():
 			return false
 		destination_choice = id
@@ -1774,7 +1784,7 @@ func enter_secret() -> bool:
 	if not can_enter_secret():
 		return false
 	secret_payout = payout()
-	archive_challenge_version = 2 if expedition_rules else 0
+	archive_challenge_version = 3 if expedition_rules else 0
 	secret_entered = true
 	destination_choice = ""
 	route_offers.clear()
@@ -2336,6 +2346,8 @@ func _spawn_boss() -> void:
 		elif stage == 2:
 			opener_boss_scale = 2.5
 	var hp := float(spec.boss_hp) * threat_scale() * stage_risk * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
+	if archive_boss_reworked():
+		hp *= 4.0
 	var boss_id: int = next_id
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
@@ -2344,6 +2356,13 @@ func _spawn_boss() -> void:
 		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
 		next_id += 1
+	if archive_boss_reworked():
+		# Real visible emitters, not a timed invulnerability barrier. They
+		# receive normal gun/ability damage and never yield XP or Cores.
+		for side in [-1, 1]:
+			var offset := Vector2(side * 112.0, 40.0)
+			enemies.append({"id":next_id,"kind":"boss_module","role":"archive_emitter","name":"Lockdown emitter","parent":boss_id,"offset":offset,"p":Vector2(270,135)+offset,"hp":hp*0.16,"max_hp":hp*0.16,"speed":0.0,"fire":999999.0,"xp":0,"phase":0.0,"phase_objective":true,"no_reward":true})
+			next_id += 1
 	_log(str(spec.boss_name) + " arrived - %d targetable modules" % _alive_modules())
 
 func _late_boss_objective_role() -> String:
@@ -2495,6 +2514,9 @@ func advance_stage() -> bool:
 	stage_power = _route_value("power", 1.35 if route_choice == "overclock" else 1.0)
 	stage_risk = _route_value("risk", 1.30 if route_choice == "bounty" else 1.0)
 	stage_defense = _route_value("defense", 0.65 if route_choice == "repair" else 1.0)
+	var destination: Dictionary = destination_spec()
+	if expedition_active() and destination.has("damaged_defense") and hull < max_hull * 0.80:
+		stage_defense = float(destination.damaged_defense)
 	stage_fire_rate = _route_value("fire", 1.20 if route_choice == "overclock" else 1.0)
 	var repair_fraction := _route_value("repair", 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40))
 	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
@@ -2508,10 +2530,16 @@ func advance_stage() -> bool:
 	heavy_ready_at = time + 10.0
 	# No free level-up between worlds: the drafts in the world are plenty.
 	# The Bounty route still pays its extra pick.
+	smuggler_draft_pending = false
+	smuggler_draft_open = false
 	if not secret_entered:
-		pending_levels += int(_route_value("picks", 1.0 if route_choice == "bounty" else 0.0))
+		var picks: int = int(_route_value("picks", 1.0 if route_choice == "bounty" else 0.0))
+		if expedition_active() and bool(destination.get("wildcard", false)):
+			picks = Expedition.wildcard_picks(seed_value, stage)
+			_log("Uncharted cache: %d bonus upgrades" % picks)
+		smuggler_draft_pending = expedition_active() and bool(destination.get("curated", false))
+		pending_levels += picks
 		rerolls_left += int(_route_value("rerolls", 0.0))
-	var destination := destination_spec()
 	_log("STAGE %d - %s - %s" % [stage, stage_name(), str(destination.get("name", route_choice.to_upper() + " ROUTE"))])
 	if skipping_worlds():
 		_queue_skipped_world()
@@ -2779,10 +2807,19 @@ func _update_archive_enemy(enemy: Dictionary, pace: float, arriving: bool = fals
 func archive_challenge_active() -> bool:
 	return secret_entered and archive_challenge_version >= 1 and daily_day.is_empty()
 
+func archive_boss_reworked() -> bool:
+	return archive_challenge_active() and archive_challenge_version >= 3
+
 func archive_attack_pressure() -> float:
 	if not archive_challenge_active() or not boss_spawned:
 		return 1.0
-	return float([1.20, 1.45, 1.70][clampi(archive_phase, 0, 2)])
+	var factor: float = float([1.20, 1.45, 1.70][clampi(archive_phase, 0, 2)])
+	if archive_boss_reworked() and archive_phase == 2:
+		var core := _boss_core()
+		if not core.is_empty():
+			var fraction: float = float(core.hp) / maxf(1.0,float(core.max_hp))
+			factor *= 1.40 if fraction <= 0.10 else (1.20 if fraction <= 0.20 else 1.0)
+	return factor
 
 func archive_counter_exposure() -> float:
 	return 3.4 if archive_challenge_active() and boss_spawned else HiddenSector.COUNTER_EXPOSURE_SECONDS
@@ -2791,7 +2828,7 @@ func archive_missed_exposure() -> float:
 	return 1.2 if archive_challenge_active() and boss_spawned else HiddenSector.UNANSWERED_EXPOSURE_SECONDS
 
 func archive_sealed_factor() -> float:
-	return 0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR
+	return 0.06 if archive_boss_reworked() else (0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR)
 
 func archive_exposed_damage_factor() -> float:
 	# The armor still admits damage; a counter improves damage by 4 to 6.5 times.
@@ -2821,7 +2858,7 @@ func _update_archive_attack() -> void:
 		if time >= archive_attack_until:
 			_resolve_archive_attack(core)
 		return
-	if not core.is_empty() and archive_phase < 2 and archive_phase_released and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
+	if not core.is_empty() and archive_phase < 2 and archive_phase_released and (not archive_boss_reworked() or _alive_modules("archive_emitter") == 0) and core.hp <= core.max_hp * HiddenSector.PHASE_FLOORS[archive_phase] + 0.001:
 		archive_phase += 1
 		effects.append({"kind":"boss-phase-break", "p":core.p, "phase":archive_phase + 1, "life":1.0, "max_life":1.0, "born":tick})
 		archive_phase_released = false
@@ -2884,6 +2921,8 @@ func _counter_archive_attack() -> void:
 		var core := _boss_core()
 		if not core.is_empty():
 			var count: int = int([3, 5, 7][archive_phase])
+			if archive_boss_reworked() and archive_phase == 0 and _alive_modules("archive_emitter") == 0:
+				count = 0
 			for side in [-1, 1]:
 				var origin: Vector2 = core.p + Vector2(side * 115.0, 18.0)
 				var direction: Vector2 = (ship_position(time + 2.0) - origin).normalized()
@@ -3106,6 +3145,8 @@ func gun_rate() -> float:
 		rate *= 1.0 + passive_bonus("afterburn", 0.03, 0.10, 0.15)
 	if gravity_left > 0.0:
 		rate *= 0.72
+	if artifact_id == "custodian_core" and daily_day.is_empty():
+		rate *= 0.90
 	return rate
 
 func _update_weapons() -> void:
@@ -3527,6 +3568,15 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 				effects.append({"kind":"arc", "p":enemy.p, "to":part.p, "life":0.20, "max_life":0.20, "born":tick})
 				_damage_enemy(part, amount, weapon)
 				return
+	# Autopilot aims at the visible Lockdown emitters instead of wasting
+	# damage against the core. Route all ordinary attack types, including
+	# drone/ability-only builds, so the encounter has no required weapon.
+	if archive_boss_reworked() and str(enemy.kind) == HiddenSector.BOSS and archive_phase == 0:
+		for part in enemies:
+			if str(part.kind) == "boss_module" and str(part.role) == "archive_emitter" and float(part.hp) > 0.0:
+				effects.append({"kind":"arc","p":enemy.p,"to":part.p,"life":0.20,"max_life":0.20,"born":tick})
+				_damage_enemy(part, amount, weapon)
+				return
 	# Each rank-5 evolution has a meaningful mechanical tradeoff. Per-enemy
 	# marks are stored on the enemy dictionary, so save/restore is exact.
 	if weapon == "pulse" and evolution_id("pulse") == "duelist":
@@ -3932,6 +3982,8 @@ func activate(ability: String) -> bool:
 	hull = minf(max_hull, hull + meta.cast_repair)
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
+	if artifact_id == "custodian_core" and daily_day.is_empty():
+		shield = minf(max_shield, shield + max_shield * 0.08)
 	_log(str(content.abilities[ability].name) + " used")
 	# The Tactician gets one earned counterbattery per world. An ability used
 	# on an empty screen earns nothing: time it into real incoming danger.
@@ -4401,6 +4453,42 @@ func _inject_expedition_build_offer(pool: Array) -> void:
 			cards[index] = candidates[_draft_rand(0, candidates.size()-1)].duplicate(true)
 			return
 
+# The one bonus Corridor hand prioritizes real recipe progress. Rank and
+# slot limits, banishes, owned mutations and duplicate checks still apply.
+func _curate_smuggler_hand(pool: Array) -> void:
+	var available: Array = pool.duplicate(true)
+	for card in cards:
+		if not available.any(func(c): return str(c.id) == str(card.id)):
+			available.append(card.duplicate(true))
+	var curated: Array = []
+	# Preserve emergency repairs and any legitimately drawn rare mutation.
+	for card in cards:
+		if str(card.tag) in ["RECOVERY", "MUTATION"]:
+			curated.append(card)
+	var remaining: Array = available.filter(func(c): return not curated.any(func(kept): return str(kept.id) == str(c.id)))
+	while curated.size() < 3 + int(meta.extra_card) and not remaining.is_empty():
+		var best := -1
+		var ties: Array = []
+		for card in remaining:
+			var id: String = str(card.id)
+			var score: int = _expedition_relevance(id) * 10
+			if str(card.tag) == "WEAPON" and int(upgrades.get(id,0)) > 0:
+				score += 15 + mini(10,int(upgrades[id]))
+				if int(upgrades[id]) < 5 and int(upgrades[id]) + rank_gain(card,int(upgrades[id])) >= 5:
+					score += 50
+			elif str(card.tag) == "ABILITY" and int(upgrades.get(id,0)) > 0:
+				score += 10 + mini(10,int(upgrades[id]))
+			if score > best:
+				best = score
+				ties.clear()
+			if score == best:
+				ties.append(card)
+		var chosen: Dictionary = ties[_draft_rand(0,ties.size()-1)]
+		curated.append(chosen)
+		remaining.erase(chosen)
+	if not curated.is_empty():
+		cards = curated
+
 func _draft_rand(low: int, high: int) -> int:
 	if daily_day.is_empty():
 		return rng.randi_range(low, high)
@@ -4492,6 +4580,10 @@ func _offer_cards(consume_level: bool = true) -> void:
 		cards.append({"id": "repair", "name": "Field repair", "tag": "RECOVERY", "description": "Restore 30 hull.", "max": 99})
 		cards.append({"id": "core_cache", "name": "Salvage Cores", "tag": "RECOVERY", "description": "Bank %d Cores for the end of this flight." % MAXED_DRAFT_CORES, "max": 99})
 	_inject_expedition_build_offer(pool)
+	if expedition_active() and (smuggler_draft_pending or smuggler_draft_open):
+		_curate_smuggler_hand(pool)
+		smuggler_draft_pending = false
+		smuggler_draft_open = true
 	if consume_level:
 		pending_levels -= 1
 	for card in cards:
@@ -4523,6 +4615,7 @@ func skip_cards() -> bool:
 		return false
 	skips_left -= 1
 	hull = minf(max_hull, hull + 12 + meta.skip_patch * 6)
+	smuggler_draft_open = false
 	cards.clear()
 	return true
 
@@ -4593,6 +4686,7 @@ func _choose_card(index: int) -> bool:
 		if int(engine_before.get(engine_id, 0)) < 2 and engine_tier(engine_id) >= 2:
 			_engine_cue(engine_id, true, ship_position())
 			_log(str(spec.name).to_upper() + " ONLINE")
+	smuggler_draft_open = false
 	cards.clear()
 	return true
 
@@ -4639,7 +4733,7 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
-	for key in ["expedition_rules", "destination_choice", "route_offers", "mutation_offers", "mutation_lab_seen", "stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
+	for key in ["expedition_rules", "destination_rules_version", "smuggler_draft_pending", "smuggler_draft_open", "destination_choice", "route_offers", "mutation_offers", "mutation_lab_seen", "stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
 	return state.duplicate(true)
 
@@ -4663,6 +4757,11 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key])
 	if not state.has("archive_challenge_version"):
 		archive_challenge_version = 0
+	if not state.has("destination_rules_version"):
+		destination_rules_version = 0
+	if not state.has("smuggler_draft_pending"):
+		smuggler_draft_pending = false
+		smuggler_draft_open = false
 	if not state.has("expedition_rules"):
 		expedition_rules = false
 	# Pre-overhaul suspended flights retain their original automatic fusion

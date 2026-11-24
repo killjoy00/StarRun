@@ -75,6 +75,24 @@ func _test_endless_campaign_credit() -> void:
 
 func _run() -> void:
 	_test_endless_campaign_credit()
+	var archive_profile := {"cores":0,"last_paid_run":-1}
+	Progress.prepare(archive_profile)
+	check(not Progress.artifact_available(archive_profile,"custodian_core"), "Archive Artifact is locked on fresh profiles")
+	var archive := Sim.new(94119)
+	archive.stage = 4
+	archive.stage_clears = 4
+	archive.signal_count = 2
+	archive.stage_transition_queued = true
+	check(archive.enter_secret(), "Real Archive entry")
+	archive.stage_clears = 5
+	archive.stage_transition_queued = true
+	check(archive.advance_stage() and archive.won, "Real Archive completion settlement fixture")
+	var earned_archive := Progress.settle(archive_profile,archive)
+	check(Progress.artifact_available(archive_profile,"custodian_core"), "Successful settled Archive unlocks the Artifact permanently")
+	check(Progress.settle(archive_profile,archive).earned == 0 and int(archive_profile.cores) == int(earned_archive.earned), "Artifact unlock does not duplicate reward")
+	var historic := {"achievement_stats":{"archive_cleared":true}}
+	Progress.prepare(historic)
+	check(Progress.artifact_available(historic,"custodian_core"), "Past Archive victors keep credit for their genuine clear")
 	var d1 := "2026-11-15"
 	var d2 := "2026-11-16"
 	var setup: Dictionary = Progress.daily_setup(d1)

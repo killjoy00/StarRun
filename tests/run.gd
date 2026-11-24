@@ -89,6 +89,7 @@ func _run() -> void:
 	_test_daily_world1_isolation()
 	_test_hidden_archive()
 	_test_archive_challenge()
+	_test_archive_rework_and_destinations()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -173,7 +174,9 @@ func _test_archive_challenge() -> void:
 	sim.signal_count = 2
 	sim.stage_transition_queued = true
 	var locked_cores: int = sim.payout()
-	check(sim.enter_secret() and sim.archive_challenge_active() and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
+	check(sim.enter_secret() and sim.archive_challenge_active() and sim.archive_challenge_version == 3 and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
+	# Isolate the previous version to preserve its existing regression checks.
+	sim.archive_challenge_version = 2
 	sim.dismiss_secret_intro()
 	sim._spawn_boss()
 	sim.dismiss_secret_intro()
@@ -217,6 +220,85 @@ func _test_archive_challenge() -> void:
 	check(transition.archive_phase == 1 and transition.archive_exposed_until == transition.time and transition.archive_next_attack > transition.time, "New phase reseals and schedules its own readable counter")
 	var regular := Sim.new()
 	check(regular.archive_attack_pressure() == 1.0 and not regular.archive_challenge_active(), "Regular campaign and Endless have no Archive challenge pressure")
+
+func _test_archive_rework_and_destinations() -> void:
+	var base := Sim.new(93500)
+	base.enable_expedition_rules()
+	base.stage = 4
+	base.stage_clears = 4
+	base.signal_count = 2
+	base.stage_transition_queued = true
+	var saved := base.snapshot()
+	var old := Sim.new()
+	check(old.restore(saved) and old.enter_secret(), "Legacy comparison enters from same earned checkpoint")
+	old.archive_challenge_version = 0
+	old.dismiss_secret_intro()
+	old._spawn_boss()
+	var prior_hp: float = float(old._boss_core().max_hp)
+	check(base.enter_secret() and base.archive_boss_reworked(), "New entry uses the reworked Custodian")
+	base.dismiss_secret_intro()
+	base._spawn_boss()
+	base.dismiss_secret_intro()
+	var core: Dictionary = base._boss_core()
+	check(base._alive_modules("archive_emitter") == 2 and is_equal_approx(float(core.max_hp), prior_hp*4.0), "Lockdown has two real targets and increased durability")
+	var initial_core: float = float(core.hp)
+	var initial_xp: float = base.xp
+	var initial_cores: int = base.payout()
+	var initial_kills: int = base.kills
+	base._damage_enemy(core, 999999999.0, "nova")
+	check(base._alive_modules("archive_emitter") == 1 and float(core.hp) == initial_core, "Real damage destroys the first emitter rather than bypassing the phase")
+	var checkpoint := base.snapshot()
+	var replay := Sim.new()
+	check(replay.restore(checkpoint) and replay.snapshot() == checkpoint and replay._alive_modules("archive_emitter") == 1, "Broken emitter and phase resume exactly")
+	base._damage_enemy(core, 999999999.0, "nova")
+	check(base._alive_modules("archive_emitter") == 0 and base.xp == initial_xp and base.kills == initial_kills and base.payout() == initial_cores, "Emitters grant no extra kills, XP or payout")
+	base.archive_phase = 2
+	core.hp = float(core.max_hp)*0.25
+	var pressure: float = base.archive_attack_pressure()
+	core.hp = float(core.max_hp)*0.09
+	check(base.archive_attack_pressure() > pressure, "Collapse grows more dangerous as health falls, not over time")
+	var expedition := preload("res://scripts/expedition_rules.gd")
+	for id in ["shipyard","smugglers","graveyard","uncharted"]:
+		var sim := Sim.new(93501)
+		sim.enable_expedition_rules()
+		sim.stage = 2
+		sim.stage_clears = 2
+		sim.stage_transition_queued = true
+		sim.hull = sim.max_hull * 0.50
+		check(sim.begin_intermission() and sim.skip_prototype(), "Destination fixture reaches real warp")
+		# Deterministic unit fixture, not an outcome in the natural audit.
+		sim.route_offers = [id]
+		var original_rerolls: int = sim.rerolls_left
+		check(sim.choose_route(id), "Updated destination can be selected")
+		if sim.intermission_step == "mutation":
+			check(sim.choose_lab_mutation("skip"), "Optional mutation can be skipped")
+		check(sim.advance_stage(), "Updated destination enters next world")
+		match id:
+			"shipyard":
+				check(is_equal_approx(sim.hull,sim.max_hull) and is_equal_approx(sim.stage_defense,0.50), "Damaged ship earns full emergency restoration and protection")
+			"smugglers":
+				check(sim.smuggler_draft_pending and sim.pending_levels == 1 and sim.rerolls_left == original_rerolls and is_equal_approx(sim.stage_risk,1.08), "Corridor pays one curated choice instead of bonus rerolls")
+				sim._offer_cards()
+				check(sim.smuggler_draft_open and not sim.smuggler_draft_pending and sim.cards.size() >= 2, "Special draft opens once")
+				var hand: Dictionary = sim.snapshot()
+				var restored := Sim.new()
+				check(restored.restore(hand) and restored.snapshot() == hand, "Exact special draft survives resume")
+				check(sim.choose_card(0), "Special draft allows real choice")
+				sim._auto_resolve_build_choices()
+				check(not sim.smuggler_draft_open and not sim.smuggler_draft_pending, "Special draft cannot duplicate")
+			"graveyard":
+				check(is_equal_approx(sim._route_value("xp",1.0),1.65), "Graveyard earns stronger XP without extra Core multiplier")
+			"uncharted":
+				check(sim.pending_levels == expedition.wildcard_picks(sim.seed_value,sim.stage) and sim.pending_levels >= 1 and sim.pending_levels <= 3, "Uncharted bonus is seeded and bounded")
+	var old_route := Sim.new()
+	var old_checkpoint := Sim.new(5).snapshot()
+	old_checkpoint.erase("destination_rules_version")
+	check(old_route.restore(old_checkpoint) and old_route.destination_rules_version == 0, "Unversioned checkpoints retain original route rules")
+	var artifact := Sim.new(93501, {}, "vanguard", "rookie", "normal", "custodian_core")
+	var standard := Sim.new(93501)
+	artifact.shield = 0.0
+	check(is_equal_approx(artifact.gun_rate(), standard.gun_rate()*0.90), "Custodian Core trades gun cadence for active defense")
+	check(artifact.activate("aegis") and is_equal_approx(artifact.shield, artifact.max_shield*0.08), "Artifact restores actual shield on active use")
 
 func _test_hidden_archive() -> void:
 	var sector := preload("res://scripts/hidden_sector.gd")
