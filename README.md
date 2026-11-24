@@ -129,6 +129,15 @@ The game is meant to be hard, and the Hangar is how you get through it. Targets 
 - **Saves:** every save is verified before it replaces the old one, the previous good copy is kept as a backup, an interrupted Windows replace is recovered, and an unreadable profile is set aside rather than overwritten.
 - **Platforms:** Game Center skips a failing item instead of stalling the queue and retries in the background; Remove Ads is revoked when Apple no longer lists the purchase.
 
+## Progression tuning and real 50-run player simulator (candidate)
+
+- Normal regular World 2 ordinary enemy health factor is 0.98 instead of 1.06 (7.5% less HP than the previous balance). World 1, boss HP, Worlds 3–4, Daily, Hard and Insane keep their prior combat values.
+- Regular-run base Core payout increases 30% after the existing payout calculation; fixed draft/Prototype Core awards and Daily payouts are unchanged. This leaves Hangar prices, existing receipts, refunds and Daily Hangar generation alone. A 30% earnings increase would reduce runs to the same spending level by approximately 23% if earnings and outcomes otherwise held constant. Actual progression must be measured.
+- **50-run player progression** GitHub Actions compares the previous and candidate revisions on matching seeds, for timed, on-cooldown and never-cast bots. Each profile starts with 0 Cores, no Hangar, Vanguard/Vale and full Normal campaigns; the real progression code settles each completed run, records earned unlocks and achievements, and the bot spends its actual banked Cores on the cheapest affordable next rank at catalog prices. No injected XP, Cores, wins or level skips.
+- The report includes each first world clear, first win, total wins, cost and rank shares, purchases, longest purchase drought, unlocks and combat time. See the workflow's job summary and retained JSON-line traces. The three policies and fixed starter loadout are diagnostic controls, not predictions of human win rates or retention. The report excludes ads, Daily rewards, paid ship/pilot purchases and player learning.
+- Local reproduction (after Godot import): `godot --headless --path . --script tests/balance_matrix.gd -- --progression-runs=50 --strategy=timed --seed-offset=100`. This creates no live profile or platform writes.
+- No App Store/Google Play upload or deployment is included. Recheck the fleet-wide no-/mid-/max-Hangar Normal difficulty targets before merging.
+
 ## Controls
 
 On iPhone, four compact on-screen buttons run left to right on one row. Fused abilities use just one button. On keyboard, use **1–4** (Space uses slot 1); **B** opens the build, **Tab** cycles play speed and **Esc/P** pauses. Controller **A / X / Y / B** activates slots 1–4; Start pauses; menus and drafts follow controller focus. Level-up choices use keys 1–4 or touch. On desktop, **F11** or **Alt+Enter** toggles fullscreen (also in Settings), and the window shrinks to fit smaller screens such as Steam Deck. On Android, **Back** pauses a flight or steps back a screen; only the title screen exits.
