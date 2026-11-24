@@ -167,13 +167,15 @@ func _test_hidden_archive() -> void:
 	var sim := Sim.new(5407)
 	var daily := Sim.new(5407)
 	daily.daily_day = "2026-11-17"
-	for flight in [sim, daily]:
+	var ignored := Sim.new(5407)
+	ignored.signal_status = "missed"
+	for flight in [sim, daily, ignored]:
 		flight.stage = 2
 		flight.tick = roundi(sector.signal_time(5407, 2) * 60) - 1
 		flight.time = flight.tick * Sim.DT
 		flight.step()
 	check(sim.signal_status == "offer" and daily.signal_status.is_empty(), "Seeded signal starts in an ordinary campaign and never appears in a Daily")
-	check(sim.rng.state == daily.rng.state and sim.enemies == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
+	check(sim.rng.state == ignored.rng.state and sim.enemies == ignored.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged between regular flights")
 	check(not daily.choose_signal("cast") and not sim.can_enter_secret(), "No Daily interaction or premature Archive entry")
 	var legacy := sim.snapshot()
 	for key in legacy.keys():
@@ -2537,7 +2539,7 @@ func _test_route_prototype_balance_grid() -> void:
 		balanced.stage = late_stage
 		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
 		balanced._add_enemy("drone", Vector2(250, 100))
-		var wave_hp := 0.98 if late_stage == 2 else 1.06
+		var wave_hp := 0.98 if late_stage == 2 else (1.10 if late_stage == 3 else 1.06)
 		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * wave_hp
 		check(is_equal_approx(balanced.advanced_wave_health(), wave_hp), "World %d uses the intended Normal wave health" % late_stage)
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the intended health scaling" % late_stage)
@@ -2556,6 +2558,17 @@ func _test_route_prototype_balance_grid() -> void:
 	var insane_balance := Sim.new(9342, {}, "vanguard", "rookie", "insane")
 	insane_balance.stage = 2
 	check(is_equal_approx(hard_balance.advanced_wave_health(), 0.85) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Hard and Insane World 2 health is unchanged")
+	# Verify the boss-only tuning independently of the spawn calculation, and
+	# guard Daily and harder difficulties against accidental changes.
+	var foundry := Sim.new(9342)
+	foundry.stage = 3
+	daily_balance.stage = 3
+	hard_balance.stage = 3
+	insane_balance.stage = 3
+	check(is_equal_approx(foundry.boss_health_pressure(), 1.30 * 1.15) and is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85 * 1.12), "Regular Normal Crucible core, cooling vents and attacks get stronger")
+	check(is_equal_approx(daily_balance.boss_health_pressure(), 1.30) and is_equal_approx(daily_balance.boss_projectile_damage_multiplier(), 1.85) and is_equal_approx(daily_balance.advanced_wave_health(), 1.06), "Daily Foundry retains its previous health and damage")
+	check(is_equal_approx(hard_balance.boss_health_pressure(), 1.55) and is_equal_approx(hard_balance.boss_projectile_damage_multiplier(), 1.95) and is_equal_approx(hard_balance.advanced_wave_health(), 0.85), "Hard Foundry unchanged")
+	check(is_equal_approx(insane_balance.boss_health_pressure(), 1.85) and is_equal_approx(insane_balance.boss_projectile_damage_multiplier(), 2.05) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Insane Foundry unchanged")
 	var ordinary_reward := Sim.new(9342)
 	ordinary_reward.choice_cores = 5
 	check(ordinary_reward.payout() == 44, "Regular run base payout increases 30 percent, fixed Core picks stay fixed")
