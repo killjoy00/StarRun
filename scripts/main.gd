@@ -597,11 +597,18 @@ func _layout() -> void:
 			toolbar_style.set_content_margin_all(4.0)
 			control.add_theme_stylebox_override(state, toolbar_style)
 	var wide := size.x > 950
-	build_label.visible = wide
-	report_label.visible = wide
-	build_label.position = Vector2(maxf(26, field.position.x - 260), 160)
+	var first_flight := flight_started and bool(sim.intro_run)
+	var side_y := 176.0 if first_flight else 160.0
+	var build_x := field.position.x - 260.0
+	var report_x := field.end.x + 35.0
+	if first_flight:
+		build_x = minf(build_x, controls_x - 261.0)
+		report_x = maxf(report_x, controls_x + controls_width + 25.0)
+	build_label.visible = wide and (not first_flight or build_x >= 26.0)
+	report_label.visible = wide and (not first_flight or report_x + 220.0 <= size.x)
+	build_label.position = Vector2(maxf(26.0, build_x), side_y)
 	build_label.size = Vector2(235, 600)
-	report_label.position = Vector2(field.end.x + 35, 160)
+	report_label.position = Vector2(report_x, side_y)
 	report_label.size = Vector2(220, 600)
 	sound_button.position = Vector2(16, size.y - 52)
 	sound_button.size = Vector2(90, 36)
@@ -2097,6 +2104,9 @@ func _show_cards(play_sound: bool = true) -> void:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
 	elif capped:
 		Kit.label(top, "You have every upgrade. Repair your ship or take Cores.", 16, Kit.MUTED, true)
+	elif sim.intro_run:
+		if sim.intro_picks.is_empty():
+			Kit.label(top, "These weapons fire automatically.", 15, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
 		for slot in sim.active_slots:
@@ -3950,5 +3960,6 @@ func _draw() -> void:
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
 		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "Star/Run", HORIZONTAL_ALIGNMENT_LEFT, -1, 25, CYAN)
-		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+		if not flight_started or not sim.intro_run:
+			draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
