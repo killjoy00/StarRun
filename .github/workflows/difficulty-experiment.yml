@@ -6,7 +6,8 @@ name: Difficulty experiment
 # 70%+) and on-screen density per world.
 #
 # Start it from the Actions tab (Run workflow) or by pushing a change to
-# .github/difficulty-experiment.json on a claude/ branch.
+# .github/difficulty-experiment.json on a claude/ branch, or mark a PR
+# with an updated experiment config ready for review for final validation.
 on:
   workflow_dispatch:
     inputs:
@@ -38,14 +39,19 @@ on:
     branches: ['claude/**']
     paths:
       - '.github/difficulty-experiment.json'
+  pull_request:
+    types: [ready_for_review, synchronize, reopened, opened]
+    paths:
+      - '.github/difficulty-experiment.json'
 permissions:
   contents: read
 # Experiments run side by side; each run is its own group.
 concurrency:
-  group: difficulty-experiment-${{ github.run_id }}
-  cancel-in-progress: false
+  group: difficulty-experiment-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   config:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     outputs:
       spawn: ${{ steps.read.outputs.spawn }}
@@ -135,6 +141,7 @@ jobs:
             echo "::error::Godot reported a script error"
             exit 1
           fi
+          test "$(grep -c '^CAMPAIGN_TRACE ' "logs/exp-$HANGAR-$SHIP-$CHUNK.log")" -eq "$PER_CHUNK"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -142,8 +149,8 @@ jobs:
           path: logs/
           retention-days: 14
   summary:
-    needs: campaign
-    if: always()
+    needs: [config, campaign]
+    if: always() && needs.config.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -154,5 +161,10 @@ jobs:
           merge-multiple: true
       - name: Summarise against targets
         run: |
+          set -euo pipefail
           python3 tools/difficulty_summary.py logs/*.log | tee summary.md
           cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.campaign.result }}" = success
+          if [ "${{ github.event_name }}" = pull_request ] && [ "${{ needs.config.outputs.difficulty }}" = normal ] && [ "${{ needs.config.outputs.start_world }}" = 1 ]; then
+            grep -Fxq 'All targets met.' summary.md
+          fi
