@@ -1,0 +1,77 @@
+name: Expedition Endless compatibility
+on:
+  pull_request:
+    paths:
+      - scripts/expedition_rules.gd
+      - tests/expedition_endless.gd
+      - tools/expedition_endless_summary.py
+      - .github/workflows/expedition-endless.yml
+permissions:
+  contents: read
+concurrency:
+  group: expedition-endless-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  flight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, bulwark, haven]
+        hangar: [p32, max]
+        strategy: [timed, on_cooldown]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import project
+        run: godot --headless --path . --editor --import --quit
+      - name: Play four actual Expedition campaigns through death or W12
+        env:
+          SHIP: ${{ matrix.ship }}
+          HANGAR: ${{ matrix.hangar }}
+          POLICY: ${{ matrix.strategy }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          log="logs/$SHIP-$HANGAR-$POLICY.log"
+          godot --headless --path . --script tests/expedition_endless.gd -- --ship="$SHIP" --hangar="$HANGAR" --strategy="$POLICY" |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+          test "$(grep -c '^EXPEDITION_DEEP_RUN ' "$log")" -eq 4
+          test "$(grep -c '^EXPEDITION_DEEP_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: expedition-deep-${{ matrix.ship }}-${{ matrix.hangar }}-${{ matrix.strategy }}
+          path: logs/
+          retention-days: 30
+  report:
+    needs: flight
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: expedition-deep-*
+          path: logs
+          merge-multiple: true
+      - name: Verify complete evidence
+        run: |
+          set -euo pipefail
+          test "$(find logs -name '*.log' | wc -l)" -eq 12
+          python3 tools/expedition_endless_summary.py logs/*.log | tee report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.flight.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: expedition-endless-report
+          path: report.md

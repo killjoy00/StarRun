@@ -26,3 +26,8 @@ Replaying the original #82 zero-Hangar kill/time traces with the simplified reco
 - All active ordinary CI and matched 50-run progression cohorts must pass. Run the 168-campaign fleet experiment on the final ready PR; preserve zero-Hangar zero campaign victories, p32 40–60%, max at least 70%. Adjust only narrowly justified new destination/draft incentives if those gates miss; do not reduce previous campaign difficulty targets.
 - The recovery comparison verifies all 168 attempts (seven ships, three difficulties, four matched seeds, two revisions), unchanged advanced opener combat and no superior early-failure Core/min compared with Normal in the tested cohort.
 - PR #88 is separate and covers increased Endless scaling. Land it first, integrate the approved change without overwriting either PR, and validate the combined revision before merging. No release/deployment is authorized.
+
+
+## Combined validation
+
+#88 was merged at e8e967d739db8022ff43e5466eb22b929c6dc110 and incorporated with both original parents, preserving its exact Endless scale and strict isolation experiment. The new `Expedition Endless compatibility` workflow runs 48 actual candidate flights (same 3 ships, 2 budgets, 2 cast policies and 4 seeds per cell used in #88); verifies real offered destination groups, selections, mutation/swap use, compounding damage, genuine W4-to-W12 continuation, and no lost earned payout. It is not an isolated before/after tuning experiment. Additional UI fixtures check narrow-phone layout and actual save/resume for replacement and workshop choices.

@@ -51,7 +51,7 @@ func _merchant_panels_within_screen(parent: Node, screen_width: float) -> bool:
 func _choice_panels_within_screen(parent: Node, screen_width: float) -> bool:
 	var matched := 0
 	for panel in parent.find_children("*", "PanelContainer", true, false):
-		if not (panel.name.begins_with("ArtifactOption") or panel.name.begins_with("PrototypeChoice") or panel.name.begins_with("RouteChoice") or panel.name.begins_with("EvolutionChoice") or panel.name.begins_with("FusionChoice")):
+		if not (panel.name.begins_with("ArtifactOption") or panel.name.begins_with("PrototypeChoice") or panel.name.begins_with("RouteChoice") or panel.name.begins_with("EvolutionChoice") or panel.name.begins_with("FusionChoice") or panel.name.begins_with("SwapAbility") or panel.name.begins_with("LabMutation")):
 			continue
 		matched += 1
 		var rect: Rect2 = panel.get_global_rect()
@@ -668,6 +668,52 @@ func _run() -> void:
 		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x), "Fusion choice cards stay away from phone edges")
 		scene._choose_build_decision("keep")
 		check(scene.mode == "playing" and scene.sim.active_slots == ["aegis", "nova"], "Mobile Keep choice preserves two distinct buttons")
+		# New actual regular-rule choice panels need their own narrow-phone and
+		# save/resume coverage; do not auto-resolve the player's decision.
+		scene.sim = Sim.new(99400 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.active_slots = ["aegis","barrage","emp","chrono"]
+		scene.sim.upgrades.aegis = 5
+		scene.sim.upgrades.barrage = 1
+		scene.sim.upgrades.emp = 1
+		scene.sim.upgrades.chrono = 1
+		var partner: Dictionary = scene.sim.content.cards.filter(func(c): return str(c.id) == "flak")[0]
+		scene.sim.cards = [partner.duplicate(true)]
+		check(scene.sim.choose_card(0), "Real draft offers a fusion-partner replacement")
+		scene._show_build_choice()
+		await process_frame
+		check(scene.mode == "build_choice" and _contains_text(scene.overlay, "Replace an ability?") and _contains_text(scene.overlay, "loses its ranks"), "Replacement clearly states its permanent in-run cost")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x) and not _unwrapped_long_label(scene.reading_scroll), "Replacement cards fit the narrow phone")
+		var replacement_save: Dictionary = scene.services.read_save(scene.Services.RUN)
+		scene._resume_run()
+		check(scene.mode == "build_choice" and scene.sim.snapshot() == replacement_save, "Resume retains the unanswered replacement")
+		scene._choose_build_decision("back")
+		check(scene.mode == "cards" and scene.sim.cards.size() == 1 and scene.sim.active_slots.size() == 4, "Backing out retains the original draft and loadout")
+		check(scene.sim.choose_card(0), "The same partner can still be selected")
+		scene._show_build_choice()
+		scene._choose_build_decision("chrono")
+		check(scene.sim.active_slots.size() == 4 and "flak" in scene.sim.active_slots and "chrono" not in scene.sim.active_slots and scene.sim.cards.is_empty(), "Explicit replacement consumes one draft, retains the four-slot cap")
+		scene.sim = Sim.new(99500 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.stage_clears = 2
+		scene.sim.stage_transition_queued = true
+		check(scene.sim.begin_intermission() and scene.sim.skip_prototype(), "Real W2 intermission opens destinations")
+		var recovery_id: String = str(scene.sim.available_destinations()[0])
+		scene._show_route_choice()
+		scene._choose_route(recovery_id)
+		await process_frame
+		check(scene.mode == "mutation_lab" and _contains_text(scene.overlay, "Choose a mutation") and _contains_text(scene.reading_footer, "Skip mutation"), "Real warp offers a separate optional mutation workshop")
+		check(_choice_panels_within_screen(scene.overlay, scene.get_viewport_rect().size.x) and not _unwrapped_long_label(scene.reading_scroll), "Mutation workshop fits the narrow phone")
+		var workshop_save: Dictionary = scene.services.read_save(scene.Services.RUN)
+		var workshop_hand: Array = scene.sim.mutation_offers.duplicate()
+		scene._show_menu()
+		scene._resume_run()
+		check(scene.mode == "mutation_lab" and scene.sim.mutation_offers == workshop_hand and scene.sim.snapshot() == workshop_save, "Workshop cannot reroll on resume")
+		var mutation_id: String = str(workshop_hand[0])
+		scene._choose_lab_mutation(mutation_id)
+		check(scene.sim.stage == 3 and mutation_id in scene.sim.mutations and scene.sim.destination_choice == recovery_id, "Choosing mutation completes the intended warp with the selected destination")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2
