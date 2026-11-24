@@ -141,7 +141,6 @@ func _audit_draft(sim: RefCounted, style: String, use_tools: bool, counts: Dicti
 		if sim.cards != hand:
 			hand = sim.cards.duplicate(true)
 			for card in hand: _audit_increment(counts.offers, str(card.id))
-	var prior_events: Array = sim.events.duplicate(true)
 	if style == "engine": _audit_engine_pick(sim)
 	else: _pick_upgrade(sim, "focused" if style == "focused_alt" else style)
 	if not sim.cards.is_empty(): return false
@@ -212,7 +211,7 @@ func _audit_flight(seed: int, ship: String, config: Dictionary) -> Dictionary:
 	var archive_eligible := false
 	var endgame_entered := false
 	var limit := ENDLESS_STOP if endgame == "endless" else (5 if endgame == "archive" else 4)
-	for frame in range(limit * 60 * (int(AUDIT_STAGE_SECONDS) + 90)):
+	for _frame in range(limit * 60 * (int(AUDIT_STAGE_SECONDS) + 90)):
 		if sim.ended:
 			status = "won" if sim.won else "dead"
 			reason = ""
