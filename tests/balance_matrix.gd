@@ -11,6 +11,10 @@ const Progress = preload("res://scripts/meta_progress.gd")
 # Compare it under every route and against focused on identical start seeds.
 const STRATEGIES := ["never", "on_cooldown", "timed"]
 const MAX_STAGE_SECONDS := 540.0
+# Long low-power boss fights are valid in a fresh-profile progression run.
+# At 15 minutes in one world, model the actual player's abandon action:
+# no settlement, no Cores, no achievements, and a new seed next attempt.
+const PROGRESSION_STAGE_SECONDS := 900.0
 
 ## Experiment knobs: per-world multipliers on spawn rate, enemy health and
 ## enemy damage, e.g. --spawn=1,1.5,1.5,1.5. Applied to each run's own copy of
@@ -262,30 +266,51 @@ func _run_progression(count: int, offset: int, strategy: String, build_style: St
 	var bought_total := 0
 	var first_clears := [0, 0, 0, 0]
 	var wins := 0
+	var abandoned := 0
+	var completed := 0
 	var seconds := 0.0
 	var no_buy_streak := 0
 	var max_no_buy_streak := 0
 	var first_max := 0
-	print("PROGRESSION_CONFIG ", JSON.stringify({"runs":count, "seed_offset":offset, "strategy":strategy, "build":build_style, "route":route_policy, "ship":"vanguard", "pilot":"rookie", "hangar_cost":total_cost, "hangar_ranks":total_ranks, "world_tuning":world_tuning}))
+	print("PROGRESSION_CONFIG ", JSON.stringify({"runs":count, "seed_offset":offset, "strategy":strategy, "build":build_style, "route":route_policy, "ship":"vanguard", "pilot":"rookie", "hangar_cost":total_cost, "hangar_ranks":total_ranks, "world_tuning":world_tuning, "stage_timeout_seconds":PROGRESSION_STAGE_SECONDS}))
 	for run_index in range(1, count + 1):
 		var seed := 810000 + (offset + run_index) * 7919
 		var before := int(profile.cores)
 		var result := _trial(seed, "vanguard", "normal", strategy, build_style, "none", "rookie", route_policy, 4, false, "standard", profile)
-		if bool(result.fault) or bool(result.timeout) or result.settlement.is_empty() or str(result.final.status) not in ["won", "dead"]:
+		var status: String = str(result.final.status)
+		var was_abandoned: bool = bool(result.timeout) and not bool(result.fault) and status == "timeout"
+		if bool(result.fault) or (not was_abandoned and (result.settlement.is_empty() or status not in ["won", "dead"])):
+			print("PROGRESSION_FAILURE ", JSON.stringify({"run":run_index, "seed":seed, "fault":result.fault, "timeout":result.timeout, "final":result.final, "stages":result.stages, "hangar":profile.hangar, "reason":result.fault_reason}))
 			push_error("Unsettled or invalid progression run %d" % run_index)
 			quit(1)
 			return
-		var earned := int(result.settlement.earned)
-		if earned != int(result.final.cores) or int(profile.cores) != before + earned or int(profile.achievement_stats.finished_runs) != run_index:
+		var earned := 0
+		if was_abandoned:
+			abandoned += 1
+			if not result.settlement.is_empty() or bool(result.won):
+				push_error("Abandoned progression run incorrectly settled")
+				quit(1)
+				return
+			print("PROGRESSION_ABANDON ", JSON.stringify({"run":run_index,"seed":seed,"reason":"world exceeded 900 simulated seconds","stages":result.stages}))
+		else:
+			completed += 1
+			earned = int(result.settlement.earned)
+			if earned != int(result.final.cores):
+				push_error("Production payout mismatch at run %d" % run_index)
+				quit(1)
+				return
+		if int(profile.cores) != before + earned or int(profile.achievement_stats.finished_runs) != completed:
 			push_error("Production settlement mismatch at run %d" % run_index)
 			quit(1)
 			return
 		earned_total += earned
 		seconds += float(result.final.seconds)
 		wins += int(result.won)
-		for world in range(4):
-			if int(result.clears) > world and int(first_clears[world]) == 0:
-				first_clears[world] = run_index
+		# First clears refer to settled runs, which actually advance the profile.
+		if not was_abandoned:
+			for world in range(4):
+				if int(result.clears) > world and int(first_clears[world]) == 0:
+					first_clears[world] = run_index
 		var purchases := []
 		while true:
 			var best_id := ""
@@ -315,8 +340,8 @@ func _run_progression(count: int, offset: int, strategy: String, build_style: St
 		max_no_buy_streak = maxi(max_no_buy_streak, no_buy_streak)
 		if bought_total == total_ranks and first_max == 0:
 			first_max = run_index
-		print("PROGRESSION_RUN ", JSON.stringify({"run":run_index,"seed":seed,"clears":result.clears,"won":result.won,"seconds":result.final.seconds,"casts":result.casts,"cores_earned":earned,"cores_banked":profile.cores,"cores_spent_total":spent_total,"cores_earned_total":earned_total,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"purchases":purchases,"unlocked":result.settlement.unlocked,"achievements":result.settlement.awarded,"hangar":profile.hangar,"stages":result.stages}))
-	print("PROGRESSION_SUMMARY ", JSON.stringify({"runs":count,"strategy":strategy,"seed_offset":offset,"wins":wins,"first_clears":first_clears,"first_win":first_clears[3],"first_max_hangar":first_max,"max_no_purchase_streak":max_no_buy_streak,"cores_earned":earned_total,"cores_spent":spent_total,"cores_banked":profile.cores,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"combat_minutes":seconds / 60.0,"ships_owned":profile.ships_owned,"pilots_owned":profile.pilots_owned}))
+		print("PROGRESSION_RUN ", JSON.stringify({"run":run_index,"seed":seed,"clears":result.clears,"won":result.won,"status":"abandoned" if was_abandoned else status,"seconds":result.final.seconds,"casts":result.casts,"cores_earned":earned,"cores_banked":profile.cores,"cores_spent_total":spent_total,"cores_earned_total":earned_total,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"purchases":purchases,"unlocked":result.settlement.get("unlocked", []),"achievements":result.settlement.get("awarded", []),"hangar":profile.hangar,"stages":result.stages}))
+	print("PROGRESSION_SUMMARY ", JSON.stringify({"runs":count,"strategy":strategy,"seed_offset":offset,"completed":completed,"abandoned":abandoned,"wins":wins,"first_clears":first_clears,"first_win":first_clears[3],"first_max_hangar":first_max,"max_no_purchase_streak":max_no_buy_streak,"cores_earned":earned_total,"cores_spent":spent_total,"cores_banked":profile.cores,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"combat_minutes":seconds / 60.0,"ships_owned":profile.ships_owned,"pilots_owned":profile.pilots_owned}))
 	quit(0)
 
 func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard", progression_profile: Variant = null) -> Dictionary:
@@ -331,6 +356,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		push_error("begin_at_world(%d) refused" % start_world)
 	var timed_out := false
 	var fault := false
+	var fault_reason := ""
 	var stage_reports: Array = []
 	var routes: Array = []
 	var status := "dead"
@@ -338,7 +364,12 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 	var overlap_seconds := 0.0
 	var unanswered_overlap_seconds := 0.0
 	var density_by_phase := {}
-	for _frame in range(4 * 60 * 600):
+	var stage_seconds := PROGRESSION_STAGE_SECONDS if progression_profile != null else MAX_STAGE_SECONDS
+	var frame_budget := 4 * 60 * (int(stage_seconds) + 60)
+	var old_watchdog_reported_stage := 0
+	var frame_count := 0
+	for _frame in range(frame_budget):
+		frame_count += 1
 		if sim.ended:
 			status = "won" if sim.won else "dead"
 			break
@@ -385,6 +416,10 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			continue
 		if not sim.cards.is_empty():
 			_pick_upgrade(sim, build_style)
+			if progression_profile != null and not sim.cards.is_empty():
+				fault = true
+				fault_reason = "Draft choice failed to clear cards: %s" % str(sim.cards)
+				break
 			continue
 		_cast(sim, strategy)
 		# Every 0.2 simulated seconds, sample only enemy projectiles inside
@@ -435,11 +470,24 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		# Measure actual uptime, not just whether the rank was purchased.
 		if sim.stage >= 2 and sim.rank_at("shield_focus", 5) and sim.hull >= sim.max_hull - 0.01:
 			pristine_focus_seconds += Sim.DT
+		var before_tick: int = sim.tick
 		sim.step()
-		if sim.time - sim.stage_start > MAX_STAGE_SECONDS:
+		if progression_profile != null and sim.tick == before_tick and not sim.ended:
+			fault = true
+			fault_reason = "Combat clock stalled: intermission=%s merchant=%s secret_intro=%s pending_build_choices=%s" % [sim.intermission_step, sim.merchant_state, sim.secret_intro_pending, sim.pending_build_choices]
+			break
+		if progression_profile != null and sim.time - sim.stage_start > MAX_STAGE_SECONDS and old_watchdog_reported_stage != sim.stage:
+			old_watchdog_reported_stage = sim.stage
+			print("PROGRESSION_LONG_FIGHT ", JSON.stringify({"seed":seed,"stage":sim.stage,"at_previous_timeout":_stage_report(sim,"long_fight")}))
+		if sim.time - sim.stage_start > stage_seconds and not sim.ended and not sim.stage_transition_queued:
 			timed_out = true
 			status = "timeout"
 			break
+	if progression_profile != null and frame_count >= frame_budget and not sim.ended and not timed_out:
+		fault = true
+		fault_reason = "Frame budget exhausted without a settled campaign"
+	if fault and fault_reason.is_empty():
+		fault_reason = "Transition or intermission action failed"
 	if stage_reports.is_empty() or int(stage_reports[-1].stage) != sim.stage:
 		stage_reports.append(_stage_report(sim, status))
 	var settlement := {}
@@ -449,7 +497,7 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 		"settlement":settlement,
 		"clears":int(sim.stage_clears), "won":bool(sim.won), "pilot_procs":sim.pilot_procs.duplicate(),
 		"hull":float(sim.hull), "casts":int(sim.ability_uses),
-		"timeout":timed_out, "fault":fault, "stages":stage_reports, "routes":routes,
+		"timeout":timed_out, "fault":fault, "fault_reason":fault_reason, "stages":stage_reports, "routes":routes,
 		"shieldstorm":int(sim.upgrades.get("shieldstorm",0)) > 0,
 		"focus5":sim.rank_at("shield_focus",5), "focus10":sim.rank_at("shield_focus",10),
 		"shieldstorm_trigger_worlds":stage_reports.filter(func(report): return bool(report.shieldstorm_triggered)).size(),
