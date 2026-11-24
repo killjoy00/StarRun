@@ -11,6 +11,11 @@ const DAILY_EXCLUDED_CARDS := ["guard_drones"]
 const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+# Accelerate permanent progression without changing prices or Daily payouts.
+const REGULAR_CORE_MULTIPLIER := 1.30
+const NORMAL_WORLD2_WAVE_HEALTH := 0.98
+const NORMAL_WORLD3_WAVE_HEALTH := 1.10
+const NORMAL_WORLD3_BOSS_HEALTH_FACTOR := 1.15
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
@@ -547,13 +552,36 @@ func boss_health_pressure() -> float:
 		return {"normal": 1.10, "hard": 1.12, "insane": 1.35}[difficulty]
 	if stage == 2:
 		return {"normal": 1.18, "hard": 1.34, "insane": 1.55}[difficulty]
+	# The Foundry should be a meaningful second hurdle: make its core and
+	# cooling vents tougher, including the reconfigured phase objectives.
+	if stage == 3 and difficulty == "normal" and daily_day.is_empty():
+		return 1.30 * NORMAL_WORLD3_BOSS_HEALTH_FACTOR
 	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
 
 func boss_projectile_damage_multiplier() -> float:
 	# Boss-only threat. Applies to all five bosses' volleys, missiles,
 	# stage-three slag and clearly warned heavy beams; no new enemy XP,
 	# extra spawn count or faster warning timers.
-	return {"normal": 1.85, "hard": 1.95, "insane": 2.05}[difficulty]
+	return float({"normal": 1.85, "hard": 1.95, "insane": 2.05}[difficulty]) * crucible_attack_factor()
+
+# Health, not elapsed time, controls the heat buildup. Only new attacks
+# receive the multiplier: existing projectiles and telegraphed beams retain
+# their original damage. The value is derived from saved core HP, not a clock.
+func crucible_attack_factor() -> float:
+	if stage != 3 or difficulty != "normal" or not daily_day.is_empty() or secret_entered or not boss_spawned:
+		return 1.0
+	var core := _boss_core()
+	if core.is_empty() or str(core.kind) != "boss3" or float(core.max_hp) <= 0.0:
+		return 1.0
+	var hp: float = float(core.hp)
+	var maximum: float = float(core.max_hp)
+	if hp <= maximum * 0.10 + 0.01:
+		return 1.40
+	if hp <= maximum * 0.30 + 0.01:
+		return 1.25
+	if hp <= maximum * 0.65 + 0.01:
+		return 1.10
+	return 1.0
 
 func is_pressure_shooter(kind: String) -> bool:
 	# This group shoots ordinary projectile patterns, not additional
@@ -972,6 +1000,13 @@ func enemy_health_multiplier() -> float:
 func advanced_wave_health() -> float:
 	if stage not in [2, 3, 4]:
 		return 1.0
+	# The regular Normal World 2 wall was steeper than Worlds 3 and 4.
+	# Leave Daily, boss HP, World 1 and the harder difficulties untouched.
+	if difficulty == "normal" and daily_day.is_empty():
+		if stage == 2:
+			return NORMAL_WORLD2_WAVE_HEALTH
+		if stage == 3:
+			return NORMAL_WORLD3_WAVE_HEALTH
 	return {"normal": 1.06, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:
@@ -1464,7 +1499,19 @@ func boss_phase_label() -> String:
 	if stage == 2:
 		return "LAUNCH BAYS ONLINE" if _alive_modules("launch_bay") > 0 else "LAUNCH BAYS DESTROYED"
 	if stage == 3:
-		if _alive_modules("vent") > 0:
+		var factor := crucible_attack_factor()
+		var vents_alive := _alive_modules("vent") > 0
+		# The existing boss HUD updates from this label, so the danger is
+		# visible even at the final 10% threshold (no new cooldown or timer).
+		if factor >= 1.40:
+			return "CRITICAL HEAT +40% - BREAK VENT" if vents_alive else "CRITICAL HEAT +40% - FINISH IT"
+		if factor >= 1.25:
+			return "OVERHEAT +25% - BREAK VENT" if vents_alive else "OVERHEAT +25% - FINISH IT"
+		if factor >= 1.10:
+			if vents_alive:
+				return "NEW COOLING VENTS - +10% DMG" if late_boss_phase == 1 else "TARGET VENTS - +10% DMG"
+			return "PUSH TO 30% - +10% DMG"
+		if vents_alive:
 			return ["FURNACE SEALED - TARGET VENTS", "RESEALED - NEW COOLING VENTS", "FINAL OVERHEAT - BREAK THE VENT"][late_boss_phase]
 		return ["CORE EXPOSED - PUSH TO 65%", "CORE EXPOSED - PUSH TO 30%", "CORE EXPOSED - FINISH IT"][late_boss_phase]
 	if stage == 4:
@@ -4331,6 +4378,9 @@ func payout() -> int:
 	if endless_enabled:
 		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
 		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
+	# Keep explicitly banked draft/Prototype Cores fixed, and preserve Daily.
+	if daily_day.is_empty():
+		base = int(round(base * REGULAR_CORE_MULTIPLIER))
 	return base + choice_cores
 
 func snapshot() -> Dictionary:

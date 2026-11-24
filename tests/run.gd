@@ -167,13 +167,15 @@ func _test_hidden_archive() -> void:
 	var sim := Sim.new(5407)
 	var daily := Sim.new(5407)
 	daily.daily_day = "2026-11-17"
-	for flight in [sim, daily]:
+	var ignored := Sim.new(5407)
+	ignored.signal_status = "missed"
+	for flight in [sim, daily, ignored]:
 		flight.stage = 2
 		flight.tick = roundi(sector.signal_time(5407, 2) * 60) - 1
 		flight.time = flight.tick * Sim.DT
 		flight.step()
 	check(sim.signal_status == "offer" and daily.signal_status.is_empty(), "Seeded signal starts in an ordinary campaign and never appears in a Daily")
-	check(sim.rng.state == daily.rng.state and sim.enemies == daily.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged")
+	check(sim.rng.state == ignored.rng.state and sim.enemies == ignored.enemies, "Ignoring the signal leaves the combat RNG and enemies unchanged between regular flights")
 	check(not daily.choose_signal("cast") and not sim.can_enter_secret(), "No Daily interaction or premature Archive entry")
 	var legacy := sim.snapshot()
 	for key in legacy.keys():
@@ -2056,7 +2058,7 @@ func _test_start_world() -> void:
 	check(sim.skip_prototype() and sim.intermission_step == "route", "The last skipped world asks for the route into the start world")
 	check(sim.choose_route("bounty") and sim.advance_stage() and sim.stage == 3 and not sim.skipping_worlds() and sim.route_choice == "bounty", "The chosen route applies to the start world")
 	check(sim.prototypes.is_empty() and sim.catch_up_levels == int(Sim.START_WORLD_LEVELS[2]) - 1 and sim.pending_levels == sim.catch_up_levels + 1, "Catch-up gives the start world's level-ups plus the bounty pick, and no free pick per warp")
-	check(sim.payout() == 30 + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
+	check(sim.payout() == int(round(30 * Sim.REGULAR_CORE_MULTIPLIER)) + 2 * Sim.PROTOTYPE_SKIP_CORES, "Skipped worlds pay no Cores")
 	check(is_equal_approx(sim.vanguard_veteran_bonus(), 1.15), "Vanguard's veteran bonus counts the skipped worlds")
 	sim._offer_cards()
 	check(sim.level == 2 and sim.cards.size() >= 3, "Each catch-up draft raises the level by one")
@@ -2071,7 +2073,7 @@ func _test_start_world() -> void:
 	full.stage_clears = 3
 	full.kills = sim.kills
 	full.choice_cores = sim.choice_cores
-	check(sim.payout() - full.payout() == -(20 * 2 + 5 * 4), "Only Worlds 1-2 are missing from a World 3 start's payout")
+	check(sim.payout() - full.payout() == -int(round((20 * 2 + 5 * 4) * Sim.REGULAR_CORE_MULTIPLIER)), "Only Worlds 1-2 are missing from a World 3 start's payout")
 	var late := Sim.new(6102)
 	late.step()
 	check(not late.begin_at_world(2) and not Sim.new(6103).begin_at_world(1) and not Sim.new(6104).begin_at_world(5), "Later starts only before the first tick and for Worlds 2-4")
@@ -2537,15 +2539,84 @@ func _test_route_prototype_balance_grid() -> void:
 		balanced.stage = late_stage
 		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
 		balanced._add_enemy("drone", Vector2(250, 100))
-		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * 1.06
-		check(is_equal_approx(balanced.advanced_wave_health(), 1.06), "World %d Normal regular enemies have 6%% more wave health" % late_stage)
-		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the 10%% health reduction and Normal's 6%% wave health" % late_stage)
+		var wave_hp := 0.98 if late_stage == 2 else (1.10 if late_stage == 3 else 1.06)
+		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * wave_hp
+		check(is_equal_approx(balanced.advanced_wave_health(), wave_hp), "World %d uses the intended Normal wave health" % late_stage)
+		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the intended health scaling" % late_stage)
 		balanced._spawn_boss()
 		var expected_boss_hp: float = float(balanced.stage_spec().boss_hp) * balanced.threat_scale() * (2.5 if late_stage == 2 and balanced.difficulty in ["hard", "insane"] else 1.0) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_boss_hp), "World %d bosses apply their own durability pressure on top of regular health scaling" % late_stage)
 		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
 		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss parts scale alongside their core" % late_stage)
+	var daily_balance := Sim.new(9342)
+	daily_balance.stage = 2
+	daily_balance.daily_day = "2026-11-23"
+	check(is_equal_approx(daily_balance.advanced_wave_health(), 1.06), "Daily World 2 health stays on its existing rules")
+	var hard_balance := Sim.new(9342, {}, "vanguard", "rookie", "hard")
+	hard_balance.stage = 2
+	var insane_balance := Sim.new(9342, {}, "vanguard", "rookie", "insane")
+	insane_balance.stage = 2
+	check(is_equal_approx(hard_balance.advanced_wave_health(), 0.85) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Hard and Insane World 2 health is unchanged")
+	# Verify the boss-only tuning independently of the spawn calculation, and
+	# guard Daily and harder difficulties against accidental changes.
+	var foundry := Sim.new(9342)
+	foundry.stage = 3
+	daily_balance.stage = 3
+	hard_balance.stage = 3
+	insane_balance.stage = 3
+	check(is_equal_approx(foundry.boss_health_pressure(), 1.30 * 1.15) and is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85), "Regular Normal Crucible core and vents get stronger without an opening damage tax")
+	foundry._spawn_boss()
+	var foundry_core: Dictionary = foundry._boss_core()
+	for sample in [[1.0, 1.0], [0.66, 1.0], [0.65, 1.10], [0.31, 1.10], [0.30, 1.25], [0.11, 1.25], [0.10, 1.40], [0.01, 1.40]]:
+		foundry_core.hp = float(foundry_core.max_hp) * float(sample[0])
+		check(is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85 * float(sample[1])), "Crucible attack strength follows remaining core HP at %s" % str(sample[0]))
+	# Exercise the actual outgoing attacks, not just the multiplier helper.
+	foundry.time = foundry.boss_spawn_time + 20.0
+	foundry_core.hp = foundry_core.max_hp
+	foundry_core.fire = 0.0
+	foundry.heavy_ready_at = 0.0
+	foundry._update_enemies()
+	var open_heat: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "heat")
+	var open_slag: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "slag")
+	check(not open_heat.is_empty() and not open_slag.is_empty() and foundry.charges.size() == 1, "Opening Crucible produces fans, slag and a telegraphed beam")
+	if not open_heat.is_empty() and not open_slag.is_empty() and foundry.charges.size() == 1:
+		var open_beam: Dictionary = foundry.charges[0].duplicate(true)
+		foundry_core.hp = float(foundry_core.max_hp) * 0.10
+		check(foundry.charges[0] == open_beam and is_equal_approx(float(foundry.bullets[0].damage), float(open_heat[0].damage)), "Escalation never retroactively strengthens in-flight attacks")
+		foundry.charges.clear()
+		foundry.bullets.clear()
+		foundry_core.fire = 0.0
+		foundry.heavy_ready_at = 0.0
+		foundry._update_enemies()
+		var final_heat: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "heat")
+		var final_slag: Array = foundry.bullets.filter(func(b): return b.source == "boss3" and b.kind == "slag")
+		check(final_heat.size() == open_heat.size() and final_slag.size() == open_slag.size() and foundry.charges.size() == 1, "Critical heat retains the same attack pattern")
+		if not final_heat.is_empty() and not final_slag.is_empty() and foundry.charges.size() == 1:
+			check(is_equal_approx(float(final_heat[0].damage), float(open_heat[0].damage) * 1.40) and is_equal_approx(float(final_slag[0].damage), float(open_slag[0].damage) * 1.40) and is_equal_approx(float(foundry.charges[0].damage), float(open_beam.damage) * 1.40), "Critical heat increases actual fans, slag and beams by 40 percent")
+			check(is_equal_approx(float(foundry.charges[0].duration), float(open_beam.duration)), "Critical heat preserves the beam warning duration")
+	foundry.time = foundry.boss_spawn_time + 600.0
+	foundry_core.hp = foundry_core.max_hp
+	check(is_equal_approx(foundry.crucible_attack_factor(), 1.0), "Even a ten-minute fight does not trigger time-based enrage")
+	foundry_core.hp = float(foundry_core.max_hp) * 0.10
+	check(foundry.boss_phase_label().contains("+40%"), "Critical heat is telegraphed in the existing boss HUD")
+	var heated_restore := Sim.new()
+	check(heated_restore.restore(foundry.snapshot()) and is_equal_approx(heated_restore.crucible_attack_factor(), 1.40), "Health-based escalation survives checkpoint restore")
+	for isolated in [daily_balance, hard_balance, insane_balance]:
+		isolated._spawn_boss()
+		var isolated_core: Dictionary = isolated._boss_core()
+		isolated_core.hp = float(isolated_core.max_hp) * 0.05
+		check(is_equal_approx(isolated.crucible_attack_factor(), 1.0), "Crucible heat escalation is isolated from Daily and advanced difficulty")
+	foundry.stage = 4
+	check(is_equal_approx(foundry.crucible_attack_factor(), 1.0), "World 4 is unaffected by the Foundry heat mechanic")
+	check(is_equal_approx(daily_balance.boss_health_pressure(), 1.30) and is_equal_approx(daily_balance.boss_projectile_damage_multiplier(), 1.85) and is_equal_approx(daily_balance.advanced_wave_health(), 1.06), "Daily Foundry retains its previous health and damage")
+	check(is_equal_approx(hard_balance.boss_health_pressure(), 1.55) and is_equal_approx(hard_balance.boss_projectile_damage_multiplier(), 1.95) and is_equal_approx(hard_balance.advanced_wave_health(), 0.85), "Hard Foundry unchanged")
+	check(is_equal_approx(insane_balance.boss_health_pressure(), 1.85) and is_equal_approx(insane_balance.boss_projectile_damage_multiplier(), 2.05) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Insane Foundry unchanged")
+	var ordinary_reward := Sim.new(9342)
+	ordinary_reward.choice_cores = 5
+	check(ordinary_reward.payout() == 44, "Regular run base payout increases 30 percent, fixed Core picks stay fixed")
+	ordinary_reward.daily_day = "2026-11-23"
+	check(ordinary_reward.payout() == 35, "Daily base payout is unchanged")
 	var later_endless := Sim.new(9343)
 	later_endless.stage = 5
 	check(is_equal_approx(later_endless.enemy_health_multiplier(), 1.0) and is_equal_approx(later_endless.enemy_damage_multiplier(), 1.0), "Endless stages beyond the four-world campaign retain authored enemy stats")

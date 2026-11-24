@@ -1,0 +1,104 @@
+name: 50-run player progression
+on:
+  pull_request:
+    paths:
+      - scripts/simulation.gd
+      - scripts/catalog.gd
+      - scripts/meta_progress.gd
+      - data/content.json
+      - tests/balance_matrix.gd
+      - tools/progression_run_summary.py
+      - .github/workflows/player-progression.yml
+  workflow_dispatch:
+    inputs:
+      control_ref:
+        description: Baseline ref for matched control
+        default: db151e281a8035af56d9b18a42d14294bf0adeae
+      seed_offset:
+        description: First cohort seed offset
+        default: '100'
+permissions:
+  contents: read
+concurrency:
+  group: progression-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  cohort:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: [control, candidate]
+        policy: [on_cooldown]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: matrix.revision == 'control'
+        with:
+          path: control
+          ref: ${{ github.event.pull_request.base.sha || inputs.control_ref }}
+          persist-credentials: false
+      - name: Use the same diagnostic driver in both revisions
+        if: matrix.revision == 'control'
+        run: cp candidate/tests/balance_matrix.gd control/tests/balance_matrix.gd
+      - name: Install pinned Godot
+        run: candidate/tools/install-godot.sh
+      - name: Import the game
+        working-directory: ${{ matrix.revision }}
+        run: godot --headless --path . --editor --import --quit
+      - name: Run 50 real campaigns with a persistent profile
+        working-directory: ${{ matrix.revision }}
+        env:
+          POLICY: ${{ matrix.policy }}
+          REVISION: ${{ matrix.revision }}
+          OFFSET: ${{ inputs.seed_offset || '100' }}
+        run: |
+          set -euo pipefail
+          [[ "$OFFSET" =~ ^[0-9]+$ ]]
+          mkdir -p ../logs
+          log="../logs/$REVISION-$POLICY.log"
+          godot --headless --path . --script tests/balance_matrix.gd -- --progression-runs=50 --strategy="$POLICY" --seed-offset="$OFFSET" |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then
+            echo "::error::Godot reported a script error"
+            exit 1
+          fi
+          test "$(grep -c '^PROGRESSION_RUN ' "$log")" -eq 50
+          test "$(grep -c '^PROGRESSION_SUMMARY ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: progression-${{ matrix.revision }}-${{ matrix.policy }}
+          path: logs/
+          retention-days: 30
+  report:
+    if: always()
+    needs: cohort
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: progression-*-on_cooldown
+          path: logs
+          merge-multiple: true
+      - name: Validate and summarize
+        run: |
+          set -euo pipefail
+          test "$(find logs -name '*.log' | wc -l)" -eq 2
+          python3 tools/progression_run_summary.py logs/*.log | tee progression.md
+          cat progression.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.cohort.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: progression-report
+          path: progression.md
+          retention-days: 30

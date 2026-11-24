@@ -2,7 +2,11 @@
   "spawn": "1,1,1,1",
   "health": "1,1,1,1",
   "damage": "1,1,1,1",
-  "seeds": 4,
+  "seeds": 8,
   "chunks": 2,
-  "hangars": ["none", "p32", "max"]
+  "hangars": [
+    "none",
+    "p32",
+    "max"
+  ]
 }
