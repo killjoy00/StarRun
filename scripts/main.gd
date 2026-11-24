@@ -3844,7 +3844,7 @@ func _save_profile() -> bool:
 	return false
 
 func _save_run() -> bool:
-	if flight_started and sim != null and (not sim.ended or sim.intro_run):
+	if sim != null and (not sim.ended or sim.intro_run):
 		if services.write_atomic(Services.RUN, sim.snapshot()):
 			return true
 		banner_text = "Run could not be saved"
@@ -3862,12 +3862,12 @@ func _notification(what: int) -> void:
 		game_center.sync()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		# Android Back pauses a flight or steps back a screen, like Escape.
-		# Only the title screen exits, and it saves first.
+		# Only the title screen exits. Any suspended flight is already saved.
 		if not InputRouter.back(self) and mode == "menu":
-			_save_run()
 			get_tree().quit()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
-		_save_run()
+		if flight_started:
+			_save_run()
 		get_tree().quit()
 
 func _input(event: InputEvent) -> void:
