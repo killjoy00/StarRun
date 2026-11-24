@@ -4218,18 +4218,28 @@ func _activate_fusion(id: String, strength: float) -> void:
 
 # One compact line on a card, not a long synergy explanation. Relevance
 # only counts an upgrade if the next actual +1/+2 pick advances a recipe.
+func _recipe_rank(id: String, picked: String, old_gain: int = 2) -> int:
+	var current: int = int(upgrades.get(id, 0))
+	if id != picked:
+		return current
+	if expedition_active():
+		for card in content.cards:
+			if str(card.id) == id:
+				return current + rank_gain(card, current)
+	return current + old_gain
+
 func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
 	var primary: String = str(spec.primary)
 	var secondary: String = str(spec.secondary)
-	var primary_rank: int = int(upgrades.get(primary, 0)) + (2 if picked == primary else 0)
-	var secondary_rank: int = int(upgrades.get(secondary, 0)) + (2 if picked == secondary else 0)
+	var primary_rank: int = _recipe_rank(primary, picked)
+	var secondary_rank: int = _recipe_rank(secondary, picked)
 	var third_rank: int = 0
 	if spec.has("third_any"):
 		for weapon in spec.third_any:
-			third_rank = maxi(third_rank, int(upgrades.get(str(weapon), 0)) + (2 if picked == str(weapon) else 0))
+			third_rank = maxi(third_rank, _recipe_rank(str(weapon), picked))
 	else:
 		var third: String = str(spec.third)
-		third_rank = int(upgrades.get(third, 0)) + (2 if picked == third and third != "wing_drones" else (1 if picked == third else 0))
+		third_rank = _recipe_rank(third, picked, 1 if third == "wing_drones" else 2)
 	return (1 if primary_rank >= 5 else 0) + (1 if secondary_rank >= 2 else 0) + (1 if third_rank >= 2 else 0)
 
 func engine_hint_for_pick(id: String) -> String:
