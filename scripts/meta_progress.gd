@@ -307,7 +307,11 @@ static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	stats.max_rank_arc = maxi(int(stats.max_rank_arc), int(sim.upgrades.get("arc", 0)))
 	if sim.active_slots.any(func(slot): return not sim.fusion_spec(str(slot)).is_empty()):
 		stats.fusion_runs = int(stats.fusion_runs) + 1
-	if full_run and (bool(sim.won) or (secret and worlds == 4)):
+	# The campaign is earned at the Citadel clear, independently of whether
+	# the optional extension is survived. Daily and late starts retain their
+	# existing eligibility. The normal settlement key still prevents duplicates.
+	var campaign_cleared: bool = bool(sim.won) or (secret and worlds == 4) or (not daily and bool(sim.endless_enabled) and int(sim.stage_clears) >= 4)
+	if full_run and campaign_cleared:
 		stats.victories = int(stats.victories) + 1
 		if str(sim.difficulty) == "hard":
 			stats.hard_wins = int(stats.hard_wins) + 1

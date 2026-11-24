@@ -14,7 +14,67 @@ func check(ok: bool, message: String) -> void:
 		failures += 1
 		push_error(message)
 
+# Settlement fixtures use real Endless entry/warp and production settlement.
+# They isolate the accounting contract from the combat balance.
+func _test_endless_campaign_credit() -> void:
+	for difficulty in ["normal", "hard", "insane"]:
+		for kind in ["claim", "endless_loss", "endless_claim", "archive_loss", "pre_citadel_loss", "late_start_loss", "daily_loss"]:
+			var p := {"cores":0,"last_paid_run":-1}
+			Progress.prepare(p)
+			var sim := Sim.new(74190, {}, "bulwark", "rookie", difficulty)
+			sim.kills = 150
+			sim.stage = 4
+			sim.stage_clears = 4
+			sim.stage_transition_queued = true
+			if kind == "late_start_loss":
+				sim.start_world = 2
+			if kind == "daily_loss":
+				sim.daily_day = "2026-11-15"
+				sim.daily_attempt = Progress.start_daily(p, sim.daily_day)
+			var expected: bool = kind in ["claim","endless_loss","endless_claim","archive_loss"]
+			var before: int = sim.payout()
+			if kind == "claim":
+				check(sim.advance_stage() and sim.won, "Citadel claim fixture completes")
+			elif kind == "archive_loss":
+				sim.signal_count = 2
+				check(sim.enter_secret() and sim.stage == 5 and sim.secret_entered, "Archive loss fixture enters normally")
+				sim.ended = true
+				sim.won = false
+			elif kind in ["endless_loss","endless_claim","late_start_loss","daily_loss"]:
+				check(sim.enable_endless() and sim.begin_intermission(), "Endless fixture enters through the real intermission")
+				if sim.intermission_step == "prototype":
+					check(sim.skip_prototype(), "Endless prototype skip")
+				check(sim.choose_route("repair") and sim.advance_stage() and sim.stage == 5, "Endless fixture advances to W5")
+				if kind == "endless_claim":
+					sim.stage_clears = 5
+					sim.stage_transition_queued = true
+					check(sim.claim_endless(), "Endless claim completes")
+				else:
+					sim.ended = true
+					sim.won = false
+			else:
+				sim.stage_clears = 3
+				sim.stage_transition_queued = false
+				sim.ended = true
+				sim.won = false
+			# The real saved flight must preserve extension eligibility.
+			var restored := Sim.new(1)
+			check(restored.restore(sim.snapshot()), "Settlement fixture restores exact saved state")
+			var earned: int = restored.payout()
+			var result := Progress.settle(p, restored)
+			var stats: Dictionary = p.achievement_stats
+			var label: String = "%s/%s" % [difficulty,kind]
+			check(int(stats.victories) == int(expected), label + " counts exactly one earned full campaign victory")
+			check(int(stats.hard_wins) == int(expected and difficulty == "hard") and int(stats.insane_wins) == int(expected and difficulty == "insane"), label + " preserves earned difficulty credit")
+			check(("bulwark" in stats.victory_ships) == expected, label + " correct ship victory credit")
+			check(int(result.earned) == earned and int(p.cores) == earned and (not expected or earned >= before), label + " pays exact production Cores once")
+			check(not bool(stats.archive_cleared), label + " never grants a false Archive clear")
+			var saved: Dictionary = stats.duplicate(true)
+			var repeated := Progress.settle(p, restored)
+			check(int(repeated.earned) == 0 and p.achievement_stats == saved and int(p.cores) == earned, label + " repeated settlement is idempotent")
+
 func _run() -> void:
+	_test_endless_campaign_credit()
 	var d1 := "2026-11-15"
 	var d2 := "2026-11-16"
 	var setup: Dictionary = Progress.daily_setup(d1)
