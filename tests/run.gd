@@ -2565,7 +2565,26 @@ func _test_route_prototype_balance_grid() -> void:
 	daily_balance.stage = 3
 	hard_balance.stage = 3
 	insane_balance.stage = 3
-	check(is_equal_approx(foundry.boss_health_pressure(), 1.30 * 1.15) and is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85 * 1.12), "Regular Normal Crucible core, cooling vents and attacks get stronger")
+	check(is_equal_approx(foundry.boss_health_pressure(), 1.30 * 1.15) and is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85), "Regular Normal Crucible core and vents get stronger without an opening damage tax")
+	foundry._spawn_boss()
+	var foundry_core: Dictionary = foundry._boss_core()
+	for sample in [[1.0, 1.0], [0.66, 1.0], [0.65, 1.10], [0.31, 1.10], [0.30, 1.25], [0.11, 1.25], [0.10, 1.40], [0.01, 1.40]]:
+		foundry_core.hp = float(foundry_core.max_hp) * float(sample[0])
+		check(is_equal_approx(foundry.boss_projectile_damage_multiplier(), 1.85 * float(sample[1])), "Crucible attack strength follows remaining core HP at %s" % str(sample[0]))
+	foundry.time = foundry.boss_spawn_time + 600.0
+	foundry_core.hp = foundry_core.max_hp
+	check(is_equal_approx(foundry.crucible_attack_factor(), 1.0), "Even a ten-minute fight does not trigger time-based enrage")
+	foundry_core.hp = float(foundry_core.max_hp) * 0.10
+	check(foundry.boss_phase_label().contains("+40%"), "Critical heat is telegraphed in the existing boss HUD")
+	var heated_restore := Sim.new()
+	check(heated_restore.restore(foundry.snapshot()) and is_equal_approx(heated_restore.crucible_attack_factor(), 1.40), "Health-based escalation survives checkpoint restore")
+	for isolated in [daily_balance, hard_balance, insane_balance]:
+		isolated._spawn_boss()
+		var isolated_core: Dictionary = isolated._boss_core()
+		isolated_core.hp = float(isolated_core.max_hp) * 0.05
+		check(is_equal_approx(isolated.crucible_attack_factor(), 1.0), "Crucible heat escalation is isolated from Daily and advanced difficulty")
+	foundry.stage = 4
+	check(is_equal_approx(foundry.crucible_attack_factor(), 1.0), "World 4 is unaffected by the Foundry heat mechanic")
 	check(is_equal_approx(daily_balance.boss_health_pressure(), 1.30) and is_equal_approx(daily_balance.boss_projectile_damage_multiplier(), 1.85) and is_equal_approx(daily_balance.advanced_wave_health(), 1.06), "Daily Foundry retains its previous health and damage")
 	check(is_equal_approx(hard_balance.boss_health_pressure(), 1.55) and is_equal_approx(hard_balance.boss_projectile_damage_multiplier(), 1.95) and is_equal_approx(hard_balance.advanced_wave_health(), 0.85), "Hard Foundry unchanged")
 	check(is_equal_approx(insane_balance.boss_health_pressure(), 1.85) and is_equal_approx(insane_balance.boss_projectile_damage_multiplier(), 2.05) and is_equal_approx(insane_balance.advanced_wave_health(), 0.85), "Insane Foundry unchanged")
