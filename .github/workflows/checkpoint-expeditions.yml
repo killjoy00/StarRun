@@ -1,0 +1,118 @@
+name: Destination and Archive checkpoint review
+on:
+  pull_request:
+    paths:
+      - tests/checkpoint_expeditions.gd
+      - tools/checkpoint_expeditions_summary.py
+      - .github/workflows/checkpoint-expeditions.yml
+permissions:
+  contents: read
+concurrency:
+  group: checkpoint-expeditions-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  routes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, bulwark, haven, arcwing, wraith, kestrel, lancer]
+        budget: [p8, p32, max]
+        policy: [timed, on_cooldown]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: tools/install-godot.sh
+      - run: godot --headless --path . --editor --import --quit
+      - name: Compare all three actual offered routes at each saved warp
+        env:
+          SHIP: ${{ matrix.ship }}
+          BUDGET: ${{ matrix.budget }}
+          POLICY: ${{ matrix.policy }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          log="logs/routes-$SHIP-$BUDGET-$POLICY.log"
+          godot --headless --path . --script tests/checkpoint_expeditions.gd -- --suite=routes --ship="$SHIP" --hangar="$BUDGET" --strategy="$POLICY" |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 4
+          test "$(grep -c '^CHECKPOINT_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkpoint-routes-${{ matrix.ship }}-${{ matrix.budget }}-${{ matrix.policy }}
+          path: logs/
+          retention-days: 30
+  archive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        ship: [vanguard, bulwark, haven, arcwing]
+        budget: [p32, max]
+        policy: [timed, on_cooldown]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - run: tools/install-godot.sh
+      - run: godot --headless --path . --editor --import --quit
+      - name: Earn Archive entry and branch old/new Custodian from same save
+        env:
+          SHIP: ${{ matrix.ship }}
+          BUDGET: ${{ matrix.budget }}
+          POLICY: ${{ matrix.policy }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          log="logs/archive-$SHIP-$BUDGET-$POLICY.log"
+          godot --headless --path . --script tests/checkpoint_expeditions.gd -- --suite=archive --ship="$SHIP" --hangar="$BUDGET" --strategy="$POLICY" |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 4
+          test "$(grep -c '^CHECKPOINT_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkpoint-archive-${{ matrix.ship }}-${{ matrix.budget }}-${{ matrix.policy }}
+          path: logs/
+          retention-days: 30
+  report:
+    needs: [routes, archive]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: checkpoint-routes-*
+          path: route-logs
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: checkpoint-archive-*
+          path: archive-logs
+          merge-multiple: true
+      - name: Validate and summarize all actual checkpoint branches
+        run: |
+          set -euo pipefail
+          python3 tools/checkpoint_expeditions_summary.py routes route-logs/*.log | tee routes.md
+          python3 tools/checkpoint_expeditions_summary.py archive archive-logs/*.log | tee archive.md
+          cat routes.md archive.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.routes.result }}" = success
+          test "${{ needs.archive.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checkpoint-expeditions-report
+          path: |
+            routes.md
+            archive.md
+          retention-days: 30
