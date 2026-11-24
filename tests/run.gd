@@ -1190,6 +1190,20 @@ func _test_endless_encounters_and_cooldown_captures() -> void:
 	check(campaign.choose_prototype(0) and campaign.choose_route("repair") and campaign.advance_stage(), "Existing loadout continues through the World 5 warp")
 	check(campaign.stage == 5 and campaign.stage_spec().damage_scale > float(campaign.content.stages[3].damage_scale), "World 5 danger must exceed World 4")
 	check(campaign.stage_spec().boss_hp > float(campaign.content.stages[3].boss_hp), "Endless bosses must keep increasing in health")
+	var citadel: Dictionary = campaign.content.stages[3]
+	var endless_rates := {"boss_hp":1.55, "health_scale":1.35, "damage_scale":1.35, "spawn_scale":1.08, "fire_scale":1.12, "module_scale":1.48}
+	for world in [5, 6, 7, 10, 12]:
+		var escalation := Sim.new(7611)
+		escalation.endless_enabled = true
+		escalation.stage = world
+		var spec: Dictionary = escalation.stage_spec()
+		for key in endless_rates:
+			check(is_equal_approx(float(spec[key]), float(citadel[key]) * pow(float(endless_rates[key]), world - 4)), "Endless W%d compounds %s" % [world, key])
+		check(is_equal_approx(escalation.stage_damage_scale(), float(spec.damage_scale)), "Endless W%d uses the stronger incoming damage in combat" % world)
+	var unchanged := Sim.new(7611)
+	for world in range(1, 5):
+		unchanged.stage = world
+		check(unchanged.stage_spec() == unchanged.content.stages[world - 1], "Campaign W%d retains authored values" % world)
 	var saved := campaign.snapshot()
 	var restored := Sim.new(7611)
 	check(restored.restore(saved) and restored.snapshot() == saved, "Endless state and per-cast cooldowns must survive checkpoints")

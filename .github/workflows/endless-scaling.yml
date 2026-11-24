@@ -1,0 +1,91 @@
+name: Endless scaling comparison
+on:
+  pull_request:
+    paths:
+      - tests/endless_scaling.gd
+      - tools/endless_scaling_summary.py
+      - .github/workflows/endless-scaling.yml
+permissions:
+  contents: read
+concurrency:
+  group: endless-scaling-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: [control, candidate]
+        ship: [vanguard, bulwark, haven]
+        hangar: [p32, max]
+        strategy: [timed, on_cooldown]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: candidate
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        if: matrix.revision == 'control'
+        with:
+          path: control
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Use identical diagnostic driver
+        if: matrix.revision == 'control'
+        run: cp candidate/tests/endless_scaling.gd control/tests/endless_scaling.gd
+      - name: Install Godot
+        run: candidate/tools/install-godot.sh
+      - name: Import
+        working-directory: ${{ matrix.revision }}
+        run: godot --headless --path . --editor --import --quit
+      - name: Run four matched campaigns
+        working-directory: ${{ matrix.revision }}
+        env:
+          REV: ${{ matrix.revision }}
+          SHIP: ${{ matrix.ship }}
+          HANGAR: ${{ matrix.hangar }}
+          POLICY: ${{ matrix.strategy }}
+        run: |
+          set -euo pipefail
+          mkdir -p ../logs
+          log="../logs/$REV-$SHIP-$HANGAR-$POLICY.log"
+          godot --headless --path . --script tests/endless_scaling.gd -- --ship="$SHIP" --hangar="$HANGAR" --strategy="$POLICY" |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+          test "$(grep -c '^DEEP_RUN ' "$log")" -eq 4
+          test "$(grep -c '^DEEP_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: endless-${{ matrix.revision }}-${{ matrix.ship }}-${{ matrix.hangar }}-${{ matrix.strategy }}
+          path: logs/
+          retention-days: 30
+  report:
+    needs: compare
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: endless-*
+          path: logs
+          merge-multiple: true
+      - name: Validate matched evidence
+        run: |
+          set -euo pipefail
+          test "$(find logs -name '*.log' | wc -l)" -eq 24
+          python3 tools/endless_scaling_summary.py logs/*.log | tee report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.compare.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: endless-comparison-report
+          path: report.md
+          retention-days: 30
