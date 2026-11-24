@@ -31,6 +31,6 @@ static func offers(seed: int, world: int) -> Array:
 ## earned recovery payment. No multiplier on the flat launch stipend and
 ## no payout for immediate deliberate death. Boss clears retain old payouts.
 static func early_advanced_base(kills: int, stipend: int, bonus: int, salvage: int, multiplier: float) -> int:
-	var recovery: int = mini(30, maxi(0, int(kills / 3)))
+	var recovery: int = mini(30, maxi(0, int(kills / 12)))
 	var earned_stipend: int = int(float(stipend * 2) * recovery / 30.0)
 	return int((recovery + earned_stipend + float(int(kills / 30) + bonus) * multiplier) * (1.0 + salvage * 0.08))
