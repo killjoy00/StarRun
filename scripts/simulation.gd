@@ -11,6 +11,9 @@ const DAILY_EXCLUDED_CARDS := ["guard_drones"]
 const DRONE_ABILITIES := ["mend", "wing_drones", "guard_drones"]
 const PROTOTYPE_SKIP_CORES := 10
 const MAXED_DRAFT_CORES := 5
+# Accelerate permanent progression without changing prices or Daily payouts.
+const REGULAR_CORE_MULTIPLIER := 1.30
+const NORMAL_WORLD2_WAVE_HEALTH := 0.98
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
@@ -972,6 +975,10 @@ func enemy_health_multiplier() -> float:
 func advanced_wave_health() -> float:
 	if stage not in [2, 3, 4]:
 		return 1.0
+	# The regular Normal World 2 wall was steeper than Worlds 3 and 4.
+	# Leave Daily, boss HP, World 1 and the harder difficulties untouched.
+	if stage == 2 and difficulty == "normal" and daily_day.is_empty():
+		return NORMAL_WORLD2_WAVE_HEALTH
 	return {"normal": 1.06, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:
@@ -4331,6 +4338,9 @@ func payout() -> int:
 	if endless_enabled:
 		var bonus_worlds := maxi(0, stage_clears - int(content.stage_count))
 		base += 75 * bonus_worlds * (bonus_worlds + 1) / 2
+	# Keep explicitly banked draft/Prototype Cores fixed, and preserve Daily.
+	if daily_day.is_empty():
+		base = int(round(base * REGULAR_CORE_MULTIPLIER))
 	return base + choice_cores
 
 func snapshot() -> Dictionary:
