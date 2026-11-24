@@ -85,7 +85,7 @@ static func arrival_summary(spec: Dictionary, world: int, seed: int, defense: fl
 		"pirates", "graveyard":
 			return "+%d%% kill XP · +1 upgrade · %d Cores on boss victory" % [roundi((float(spec.xp)-1.0)*100.0),int(spec.bounty)*world]
 		"smugglers":
-			return "Build-focused upgrade · +15% kill XP · %d Cores on boss victory" % (int(spec.bounty)*world)
+			return "Build-focused upgrade · +15%% kill XP · %d Cores on boss victory" % (int(spec.bounty)*world)
 		"uncharted":
 			var count := wildcard_picks(seed, world)
 			return "%d bonus upgrade%s · +25%% kill XP · %d Cores on boss victory" % [count,"" if count == 1 else "s",int(spec.bounty)*world]

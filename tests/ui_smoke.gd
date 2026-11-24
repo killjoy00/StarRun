@@ -1,5 +1,6 @@
 extends SceneTree
 const Sim = preload("res://scripts/simulation.gd")
+const ExpeditionPresentation = preload("res://scripts/expedition_rules.gd")
 class MemoryServices extends "res://scripts/platform_services.gd":
 	var values: Dictionary = {}
 	func write_atomic(path: String, value: Dictionary) -> bool:
@@ -490,7 +491,15 @@ func _run() -> void:
 	var assault_spec: Dictionary = {}
 	for id in destination_hand:
 		var spec: Dictionary = scene.sim.destination_spec(str(id))
-		check(_contains_text(scene.reading_scroll, str(spec.name)) and _contains_text(scene.reading_scroll, str(spec.gain)) and _contains_text(scene.reading_scroll, str(spec.cost)), "Every offered destination must render its full name, actual gain and cost")
+		var route_card: Node = scene.reading_scroll.find_child("RouteChoice" + str(id).to_pascal_case(), true, false)
+		var visible_gain: String = str(spec.gain)
+		var visible_cost: String = str(spec.cost)
+		if scene.sim.destination_rules_version >= 1:
+			var summary: Dictionary = ExpeditionPresentation.preview(spec, scene.sim.hull / maxf(1.0, scene.sim.max_hull), scene.sim.stage + 1)
+			visible_gain = str(summary.extras)
+			visible_cost = str(summary.cost)
+			check(route_card != null and not str(summary.headline).is_empty() and _contains_text(route_card, str(summary.headline)), "Each current destination card renders its actual numeric reward headline")
+		check(route_card != null and _contains_text(route_card, str(spec.name)) and _contains_text(route_card, visible_gain) and _contains_text(route_card, visible_cost), "Every offered destination must render its full name, actual gain and cost on its own card")
 		destination_groups.append(str(spec.group))
 		if str(spec.group) == "overclock":
 			assault_id = str(id)
@@ -779,7 +788,8 @@ func _run() -> void:
 			scene._choose_lab_mutation("skip")
 		await process_frame
 		check(scene.mode == "cards" and scene.sim.smuggler_draft_open and _contains_text(scene.overlay,"Build fit:"),"Actual curated hand explains the build fit")
-		check(scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler")) or scene.toast_title.text.contains("SMUGGLER"),"Destination arrival feedback names the selected route")
+		var arrival_detail := "Build-focused upgrade · +15% kill XP · 60 Cores on boss victory"
+		check(scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler") and str(item.detail) == arrival_detail) or (scene.toast_title.text.contains("SMUGGLER") and scene.toast_detail.text == arrival_detail),"Destination arrival feedback names the route and shows its exact applied reward")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2
