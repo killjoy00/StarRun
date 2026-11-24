@@ -250,7 +250,7 @@ func _draw_first_flight_crash(ship: Vector2, elapsed: float) -> void:
 	var pod := ship + direction * distance
 	if not profile.reduced:
 		draw_line(pod, pod - direction * 42.0, Color(CYAN, 0.6), 3.0, true)
-	draw_set_transform(pod, direction.angle())
+	draw_set_transform(pod, direction.angle(), Vector2.ONE * 1.25)
 	draw_colored_polygon(PackedVector2Array([Vector2(14, 0), Vector2(3, -8), Vector2(-11, -6),
 		Vector2(-11, 6), Vector2(3, 8)]), Color("eafcff"))
 	draw_circle(Vector2(3, 0), 4.0, Color("29657d"))

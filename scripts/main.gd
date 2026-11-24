@@ -3153,6 +3153,7 @@ func _show_intro_clear() -> void:
 func _show_intro_crash() -> void:
 	mode = "intro_crash"
 	intro_end_clock = 0.0
+	_clear_overlay()
 	_save_run()
 
 func _unsettled_intro() -> bool:
