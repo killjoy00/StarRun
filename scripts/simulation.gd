@@ -14,6 +14,9 @@ const MAXED_DRAFT_CORES := 5
 # Accelerate permanent progression without changing prices or Daily payouts.
 const REGULAR_CORE_MULTIPLIER := 1.30
 const NORMAL_WORLD2_WAVE_HEALTH := 0.98
+const NORMAL_WORLD3_WAVE_HEALTH := 1.10
+const NORMAL_WORLD3_BOSS_HEALTH_FACTOR := 1.15
+const NORMAL_WORLD3_BOSS_DAMAGE_FACTOR := 1.12
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
 # world (bot, mid Hangar). Skipped worlds hand over these level-ups up front.
@@ -550,12 +553,18 @@ func boss_health_pressure() -> float:
 		return {"normal": 1.10, "hard": 1.12, "insane": 1.35}[difficulty]
 	if stage == 2:
 		return {"normal": 1.18, "hard": 1.34, "insane": 1.55}[difficulty]
+	# The Foundry should be a meaningful second hurdle: make its core and
+	# cooling vents tougher, including the reconfigured phase objectives.
+	if stage == 3 and difficulty == "normal" and daily_day.is_empty():
+		return 1.30 * NORMAL_WORLD3_BOSS_HEALTH_FACTOR
 	return {"normal": 1.30, "hard": 1.55, "insane": 1.85}[difficulty]
 
 func boss_projectile_damage_multiplier() -> float:
 	# Boss-only threat. Applies to all five bosses' volleys, missiles,
 	# stage-three slag and clearly warned heavy beams; no new enemy XP,
 	# extra spawn count or faster warning timers.
+	if stage == 3 and difficulty == "normal" and daily_day.is_empty():
+		return 1.85 * NORMAL_WORLD3_BOSS_DAMAGE_FACTOR
 	return {"normal": 1.85, "hard": 1.95, "insane": 2.05}[difficulty]
 
 func is_pressure_shooter(kind: String) -> bool:
@@ -977,8 +986,11 @@ func advanced_wave_health() -> float:
 		return 1.0
 	# The regular Normal World 2 wall was steeper than Worlds 3 and 4.
 	# Leave Daily, boss HP, World 1 and the harder difficulties untouched.
-	if stage == 2 and difficulty == "normal" and daily_day.is_empty():
-		return NORMAL_WORLD2_WAVE_HEALTH
+	if difficulty == "normal" and daily_day.is_empty():
+		if stage == 2:
+			return NORMAL_WORLD2_WAVE_HEALTH
+		if stage == 3:
+			return NORMAL_WORLD3_WAVE_HEALTH
 	return {"normal": 1.06, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:
