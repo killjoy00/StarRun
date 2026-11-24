@@ -11,6 +11,9 @@ static func key(host, event: InputEvent) -> void:
 	if host.mode == "boss_intro" and event.keycode in [KEY_ENTER, KEY_KP_ENTER, KEY_SPACE, KEY_ESCAPE]:
 		host._skip_boss_intro()
 		host.get_viewport().set_input_as_handled()
+	elif host.mode == "intro_aegis" and event.keycode in [KEY_SPACE, KEY_1]:
+		host._activate_slot(0)
+		host.get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_ESCAPE and back(host):
 		host.get_viewport().set_input_as_handled()
 	elif event.keycode == KEY_P and host.mode in ["playing", "paused", "build"]:
@@ -40,7 +43,11 @@ static func key(host, event: InputEvent) -> void:
 ## Shared "go back" for Escape and the Android Back button/gesture.
 ## Returns true when the current screen consumed it.
 static func back(host) -> bool:
-	if host.mode in ["playing", "paused", "build"]:
+	if host.mode == "intro_aegis":
+		host._continue_intro_aegis()
+	elif host.mode == "intro_results":
+		host._show_menu()
+	elif host.mode in ["playing", "paused", "build"]:
 		host._toggle_pause()
 	elif host.mode in ["settings", "briefing", "abandon"]:
 		host._close_sheet()

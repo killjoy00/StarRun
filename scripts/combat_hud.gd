@@ -1,6 +1,7 @@
 extends RefCounted
 ## Combat chrome presenter; menu navigation stays in main.gd.
 ## Headless UI and screenshot tests exercise this with the real main scene.
+const FirstFlight = preload("res://scripts/first_flight.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 
 static func _short_ability_name(sim, id: String) -> String:
@@ -20,12 +21,19 @@ static func fit_label(label: Label, base_size: int = 16, floor_size: int = 11) -
 static func refresh(host) -> void:
 	var sim = host.sim
 	host.hud.text = "W%d  LV%02d" % [sim.stage, sim.level] if host._compact_ui() or host.hud.size.x < 155.0 else "WORLD %d  ·  LV %02d" % [sim.stage, sim.level]
+	if sim.intro_run:
+		host.hud.text = "FIRST FLIGHT"
+		fit_label(host.hud, 18, 11)
 	host.hull_meter.value = clampf(sim.hull / maxf(1.0, sim.max_hull) * 100.0, 0.0, 100.0)
 	host.shield_meter.value = clampf(sim.shield / maxf(1.0, sim.max_shield) * 100.0, 0.0, 100.0)
 	host.hull_caption.text = "HULL  %d/%d" % [ceili(sim.hull), ceili(sim.max_hull)]
 	host.shield_caption.text = "SHIELD  %d/%d" % [ceili(sim.shield), ceili(sim.max_shield)]
 	var seconds := int(sim.time - sim.stage_start)
-	host.status.text = "%s  %02d:%02d" % [sim.difficulty.left(1).to_upper() if host.status.size.x < 110.0 else sim.difficulty.to_upper(), seconds / 60, seconds % 60]
+	if sim.intro_run:
+		host.status.text = "%02d:%02d" % [seconds / 60, seconds % 60]
+	else:
+		host.hud.add_theme_font_size_override("font_size", 18)
+		host.status.text = "%s  %02d:%02d" % [sim.difficulty.left(1).to_upper() if host.status.size.x < 110.0 else sim.difficulty.to_upper(), seconds / 60, seconds % 60]
 	for i in range(Catalog.ACTIVE_SLOTS):
 		var button: Button = host.ability_buttons[i]
 		var occupied: bool = i < sim.active_slots.size()
@@ -43,7 +51,8 @@ static func refresh(host) -> void:
 		status_label.text = status_text
 		name_label.add_theme_color_override("font_color", Color("eef7ff") if learned else Color("778ba0"))
 		status_label.add_theme_color_override("font_color", Color("66f5df") if learned and cooldown <= 0.0 else Color("b4c6d8") if learned else Color("6c8097"))
-		button.disabled = host.mode != "playing" or cooldown > 0 or not learned
+		var can_cast: bool = host.mode == "playing" or (host.mode == "intro_aegis" and id == "aegis")
+		button.disabled = not can_cast or cooldown > 0 or not learned
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var cooldown_bar: ProgressBar = host.cooldown_meters[i]
 		cooldown_bar.visible = learned and cooldown > 0.0
@@ -62,4 +71,4 @@ static func refresh(host) -> void:
 			if card.tag == tag and sim.upgrades[card.id] > 0 and sim.fused_into(str(card.id)).is_empty():
 				host.build_label.text += "%s  %d/%d\n" % [card.name, sim.upgrades[card.id], card.max]
 		host.build_label.text += "\n"
-	host.report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nCoral lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [host._sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else ("Custodian at 01:45" if sim.secret_entered else "Boss at 04:00"), sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]
+	host.report_label.text = "F L I G H T   D A T A\n\n%s\n\n%s\n\nTHREAT KEY\n\n●  Chaff · armor / shield\n◇  Missile · seekers / Nova\n┃  Heavy · Aegis / interrupt\n\nFLIGHT PLAN\n\nDotted path: next 2 seconds\nCoral lane: incoming beam\n\nKills             %d\nBeams cancelled   %d\nDamage blocked    %d\n\nSEED %d" % [host._sector_name(sim.time), sim.boss_name().to_upper() + " ENGAGED" if sim.boss_spawned else ("Custodian at 01:45" if sim.secret_entered else ("Harvester at " + host._clock(FirstFlight.boss_at(sim)) if sim.intro_run else "Boss at 04:00")), sim.kills, sim.beams_cancelled, sim.prevented, sim.seed_value]

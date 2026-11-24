@@ -46,8 +46,22 @@ const PACK_HP_TOTAL := 1.08
 # with them versus 7 of 8 without.
 const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3}
 const Catalog = preload("res://scripts/catalog.gd")
+const FirstFlight = preload("res://scripts/first_flight.gd")
 const Expedition = preload("res://scripts/expedition_rules.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
+var intro_run := false
+var intro_scripted := false # Checkpoints from the original intro keep their schedule.
+var intro_ejected := false
+var intro_reward_eligible := false
+var intro_wave := 0
+var intro_picks: Array = []
+var intro_pick_at := -1.0
+var intro_speed := 1.0
+var intro_lesson_seen := false
+var intro_aegis_prompt := false
+var intro_boss_intro_pending := false
+var intro_beam_blocked := false
+var intro_blocked_at := -1.0
 var signal_count := 0
 var signal_status := "" # "", "offer", "cast", "courier", "received", "missed"
 var signal_until := 0.0
@@ -451,10 +465,24 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 		at = time
 	return (ship_position(at + 0.025) - ship_position(maxf(0, at - 0.025))) / 0.05
 
+func configure_first_flight(reward_eligible: bool) -> void:
+	intro_run = true
+	intro_scripted = true
+	intro_reward_eligible = reward_eligible
+	rerolls_left = 0
+	banishes_left = 0
+	skips_left = 0
+
+func intro_boss_enraged() -> bool:
+	if not intro_run or not boss_spawned:
+		return false
+	var core := _boss_core()
+	return not core.is_empty() and float(core.hp) <= float(core.max_hp) * 0.5
+
 func step() -> void:
 	if not pending_build_choices.is_empty():
 		_auto_resolve_build_choices()
-	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
+	if ended or intro_aegis_prompt or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not merchant_state.is_empty() or not cards.is_empty():
 		return
 	# The Daily UTC day is assigned after Sim.new(). Restore its original
 	# first-formation clock before the first combat tick, rather than the
@@ -518,6 +546,31 @@ func step() -> void:
 	for effect in effects:
 		effect.life -= DT
 	effects = effects.filter(func(e): return e.life > 0.0)
+	if intro_run:
+		FirstFlight.spawn(self)
+	else:
+		_spawn_campaign_encounters()
+	if secret_intro_pending:
+		return
+	_update_enemies()
+	if secret_entered:
+		_update_archive_attack()
+		if ended:
+			return
+	_update_charges()
+	_update_support()
+	_update_build_engines()
+	_update_weapons()
+	_update_bullets()
+	_update_shots()
+	if intro_run:
+		FirstFlight.after_step(self)
+		return
+	# A defeated boss pauses the run for an explicit player-controlled celebration.
+	if pending_levels > 0 and not ended and not stage_transition_queued:
+		_offer_cards()
+
+func _spawn_campaign_encounters() -> void:
 	_update_signal()
 	wave_drift += DT * (spawn_flow() - 1.0)
 	if not boss_spawned and wave_elapsed() >= (HiddenSector.BOSS_AT if secret_entered else float(content.boss_at)):
@@ -551,20 +604,6 @@ func step() -> void:
 	if not secret_entered and wave_now() >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
 		next_encounter_at = wave_now() + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
-	_update_enemies()
-	if secret_entered:
-		_update_archive_attack()
-		if ended:
-			return
-	_update_charges()
-	_update_support()
-	_update_build_engines()
-	_update_weapons()
-	_update_bullets()
-	_update_shots()
-	# A defeated boss pauses the run for an explicit player-controlled celebration.
-	if pending_levels > 0 and not ended and not stage_transition_queued:
-		_offer_cards()
 
 func threat_scale() -> float:
 	# Insane combat threat is 25% greater than its former 1.6 value.
@@ -673,6 +712,8 @@ func projectile_interval_factor(kind: String) -> float:
 # create extra enemies or XP, and leaves Normal untouched. Faster builds
 # can end the fight before the later volleys escalate.
 func opener_boss_enrage() -> float:
+	if intro_run:
+		return 0.72 if intro_boss_enraged() else 0.48
 	if stage != 1 or difficulty == "normal" or not boss_spawned:
 		return 1.0
 	var elapsed := maxf(0.0, time - boss_spawn_time - 20.0)
@@ -681,6 +722,8 @@ func opener_boss_enrage() -> float:
 	return 1.0 + minf(6.0, elapsed / (25.0 if difficulty == "hard" else 20.0))
 
 func stage_spec() -> Dictionary:
+	if intro_run:
+		return FirstFlight.SECTOR
 	if secret_entered:
 		return HiddenSector.SPEC
 	if stage <= int(content.stage_count):
@@ -715,6 +758,8 @@ func stage_name() -> String:
 	return str(stage_spec().name)
 
 func stage_count() -> int:
+	if intro_run:
+		return 1
 	if secret_entered:
 		return HiddenSector.WORLD
 	return maxi(int(content.stage_count), stage + 1) if endless_enabled else int(content.stage_count)
@@ -738,7 +783,7 @@ func claim_endless() -> bool:
 func _regular_world1_opening() -> bool:
 	# Daily keeps its historical World 1 timing, encounter formation and
 	# crowd limit. Hidden sectors and Endless never use the new opener.
-	return stage == 1 and difficulty == "normal" and daily_day.is_empty()
+	return not intro_run and stage == 1 and difficulty == "normal" and daily_day.is_empty()
 
 func _enemy_limit() -> int:
 	# Normal regular World 1 has a bounded crowd; Dailies retain the
@@ -818,7 +863,7 @@ func _apply_mutation_cost(id: String) -> void:
 	shield = minf(max_shield, shield)
 
 func world1_opening_phase() -> String:
-	if stage != 1 or difficulty != "normal" or not daily_day.is_empty():
+	if not _regular_world1_opening():
 		return ""
 	var elapsed: float = time - stage_start
 	if elapsed < 8.0: return "scouts"
@@ -1588,6 +1633,12 @@ func boss_phase_label() -> String:
 				return "COLLAPSE · CRITICAL DAMAGE"
 			return ["LOCKDOWN", "LATTICE", "COLLAPSE"][archive_phase] + (" · CORE EXPOSED" if time < archive_exposed_until else " · SHIELD UP")
 		return ("CORE EXPOSED · CROSSFIRE" if archive_challenge_active() else "CORE EXPOSED") if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
+	if intro_run:
+		if intro_scripted:
+			return "MAIN GUN CHARGING"
+		if not charges.is_empty():
+			return "BEAM CHARGING"
+		return "HEAVY FIRE" if intro_boss_enraged() else "LASER PREPARING"
 	if stage == 1:
 		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
 	if stage == 2:
@@ -2949,7 +3000,11 @@ func _update_charges() -> void:
 					if int(charging_enemy.id) == int(charge.source):
 						attacker = "rival" if bool(charging_enemy.get("rival", false)) else str(charging_enemy.kind)
 						break
+				var blocked: bool = intro_run and aegis_left > 0.0
 				_hit(charge.damage, "heavy", attacker)
+				if blocked:
+					intro_beam_blocked = true
+					intro_blocked_at = time
 	charges = charges.filter(func(c): return c.remaining > 0.0)
 
 ## Haven's permanent drones: 1, plus 1 for each drone ability it owns
@@ -3967,6 +4022,8 @@ func activate(ability: String) -> bool:
 	if ended or stage_transition_queued or secret_intro_pending or not intermission_step.is_empty() or not cards.is_empty() or ability not in active_slots or not cooldowns.has(ability) or int(upgrades.get(ability, 0)) <= 0 or cooldowns[ability] > 0.0:
 		return false
 	ability_uses += 1
+	if intro_run and ability == "aegis":
+		intro_aegis_prompt = false
 	if signal_cast_window():
 		_receive_signal()
 	if secret_entered and not archive_attack.is_empty():
@@ -4681,6 +4738,9 @@ func _choose_card(index: int) -> bool:
 		if card.tag == "WEAPON":
 			_queue_weapon_evolutions()
 	_log("Installed " + cards[index].name)
+	if intro_run:
+		intro_picks.append(id)
+		intro_pick_at = time
 	for spec in content.get("build_engines", []):
 		var engine_id: String = str(spec.id)
 		if int(engine_before.get(engine_id, 0)) < 2 and engine_tier(engine_id) >= 2:
@@ -4729,6 +4789,9 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
+	if intro_run:
+		for key in ["intro_run", "intro_scripted", "intro_ejected", "intro_reward_eligible", "intro_wave", "intro_picks", "intro_pick_at", "intro_speed", "intro_lesson_seen", "intro_aegis_prompt", "intro_boss_intro_pending", "intro_beam_blocked", "intro_blocked_at"]:
+			state[key] = get(key)
 	for key in ["archive_challenge_version", "signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:

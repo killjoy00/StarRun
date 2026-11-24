@@ -2,6 +2,7 @@ extends SceneTree
 ## Capture the complete UI matrix on every PR, without touching a player's save.
 ## Run with xvfb-run -a godot --path . --audio-driver Dummy --script tests/screenshot_harness.gd
 const Sim = preload("res://scripts/simulation.gd")
+const Intro = preload("res://scripts/first_flight.gd")
 const Main = preload("res://scripts/main.gd")
 class MemoryServices extends "res://scripts/platform_services.gd":
 	var values: Dictionary = {}
@@ -23,11 +24,15 @@ const SCREENS := [
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
 	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "boss-1-charging", "endless-clear",
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
-	"archive-boss-intro", "archive-boss-lock", "archive-ending"
+	"archive-boss-intro", "archive-boss-lock", "archive-ending",
+	"first-flight-title", "first-flight-launch", "first-flight-aegis", "first-flight-draft",
+	"first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
+	"first-flight-ejection-reduced", "first-flight-debrief"
 ]
 var output := "/tmp/starrun-screenshots"
 var count := 0
 var failures := 0
+var intro_fixtures: Dictionary = {}
 
 func _initialize() -> void:
 	for arg in OS.get_cmdline_user_args():
@@ -60,11 +65,15 @@ func _scan_bounds(scene: Node, screen: String, dimensions: Vector2i) -> void:
 		if control is Label:
 			var label := control as Label
 			text_overflow = label.autowrap_mode == TextServer.AUTOWRAP_OFF and not label.clip_text and label.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING and label.get_minimum_size().x > label.size.x + 2.0
-		if rect.position.x < -2.0 or rect.end.x > width + 2.0 or text_overflow:
+		var intro_chrome := control.name in [&"FirstFlightCaption", &"AegisMarker"]
+		var viewport_height: float = (scene as CanvasItem).get_viewport_rect().size.y
+		var intro_vertical_overflow := intro_chrome and (rect.position.y < 0.0 or rect.end.y > viewport_height)
+		if rect.position.x < -2.0 or rect.end.x > width + 2.0 or text_overflow or intro_vertical_overflow:
 			bounds_failures += 1
 			print("OFFSCREEN %s %dx%d %s x=%.0f..%.0f%s \"%s\"" % [screen, dimensions.x, dimensions.y, str(scene.get_path_to(control)), rect.position.x, rect.end.x, " text-overflow" if text_overflow else "", str(control.get("text")) if control.get("text") != null else ""])
 
 func _run() -> void:
+	_build_intro_fixtures()
 	for dimensions in SIZES:
 		root.size = dimensions
 		await process_frame
@@ -88,7 +97,7 @@ func _run() -> void:
 			scene._update_hud()
 			scene._process(0.0)
 			# Capture the final frame after the 150ms sheet slide, not the dim fade-in.
-			await create_timer(0.20).timeout
+			await create_timer(0.75 if screen == "first-flight-harvester" else 0.20).timeout
 			await process_frame
 			await RenderingServer.frame_post_draw
 			var picture := root.get_texture().get_image()
@@ -105,12 +114,61 @@ func _run() -> void:
 				count += 1
 		scene.queue_free()
 		await process_frame
-	print("SCREENSHOT MATRIX: %d of %d screens (3 sizes) saved to %s" % [count, SIZES.size() * SCREENS.size(), output])
+	print("SCREENSHOT MATRIX: %d of %d screens (%d sizes) saved to %s" % [count, SIZES.size() * SCREENS.size(), SIZES.size(), output])
 	if bounds_failures > 0:
 		push_error("%d controls left the screen horizontally (see OFFSCREEN lines)" % bounds_failures)
 	quit(0 if failures == 0 and bounds_failures == 0 and count == SIZES.size() * SCREENS.size() else 1)
 
+func _build_intro_fixtures() -> void:
+	var sim := Sim.new(Intro.SEED)
+	sim.configure_first_flight(true)
+	for i in range(15000):
+		sim.step()
+		if sim.tick == 66:
+			intro_fixtures["first-flight-launch"] = sim.snapshot()
+		if sim.intro_aegis_prompt:
+			intro_fixtures["first-flight-aegis"] = sim.snapshot()
+			sim.activate("aegis")
+		if not sim.cards.is_empty():
+			var screen := "first-flight-draft" if sim.intro_picks.is_empty() else "first-flight-draft-two"
+			intro_fixtures[screen] = sim.snapshot()
+			sim.choose_card(0)
+		if sim.boss_spawned and not intro_fixtures.has("first-flight-harvester"):
+			intro_fixtures["first-flight-harvester"] = sim.snapshot()
+		if not sim.charges.is_empty() and sim.charges[0].remaining <= 0.65:
+			sim.activate("aegis")
+		if sim.ended:
+			break
+	if not sim.intro_ejected:
+		failures += 1
+		push_error("The intro screenshot fixture did not reach the scripted ejection")
+	var ending := sim.snapshot()
+	intro_fixtures["first-flight-debrief"] = ending
+	intro_fixtures["first-flight-ejection"] = ending
+	intro_fixtures["first-flight-ejection-reduced"] = ending
+
 func _prepare(scene, screen: String) -> void:
+	if screen == "first-flight-title":
+		scene.services.delete_run()
+		scene.profile.intro_status = "available"
+		scene.profile.cores = 0
+		scene._show_menu()
+		return
+	if screen in ["first-flight-ejection", "first-flight-ejection-reduced"]:
+		scene.sim.restore(intro_fixtures[screen])
+		scene.flight_started = true
+		scene.profile.reduced = screen == "first-flight-ejection-reduced"
+		scene._show_intro_crash()
+		scene.intro_end_clock = Intro.IMPACT_AT + 0.14
+		return
+	if intro_fixtures.has(screen):
+		scene.profile.reduced = false
+		scene.services.write_atomic(scene.Services.RUN, intro_fixtures[screen])
+		scene._resume_run()
+		if screen == "first-flight-harvester":
+			scene._show_boss_intro()
+			scene.boss_intro_clock = 1.1
+		return
 	match screen:
 		"menu":
 			scene._show_menu()

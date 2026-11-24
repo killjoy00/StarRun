@@ -43,6 +43,13 @@ jobs:
             echo "::error::Godot reported a run-progression script error"
             exit 1
           fi
+      - name: First flight scripted combat and settlement
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/first_flight.gd 2>&1 | tee /tmp/starrun-first-flight.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' /tmp/starrun-first-flight.log; then
+            exit 1
+          fi
       - name: Phone and Steam Deck layout checks
         run: |
           set -o pipefail
