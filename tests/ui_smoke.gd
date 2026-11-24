@@ -789,7 +789,10 @@ func _run() -> void:
 		await process_frame
 		check(scene.mode == "cards" and scene.sim.smuggler_draft_open and _contains_text(scene.overlay,"Build fit:"),"Actual curated hand explains the build fit")
 		var arrival_detail := "Build-focused upgrade · +15% kill XP · 60 Cores on boss victory"
-		check(scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler") and str(item.detail) == arrival_detail) or (scene.toast_title.text.contains("SMUGGLER") and scene.toast_detail.text == arrival_detail),"Destination arrival feedback names the route and shows its exact applied reward")
+		var arrival_notice: Label = scene.overlay.find_child("DestinationDraftArrival", true, false) as Label
+		check(is_instance_valid(arrival_notice) and arrival_notice.text.contains("Smuggler") and arrival_notice.text.contains(arrival_detail),"Destination arrival feedback names the route and shows its exact applied reward inline")
+		check(not scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler") and str(item.detail) == arrival_detail) and not (scene.toast_panel.visible and scene.toast_title.text.contains("SMUGGLER") and scene.toast_detail.text == arrival_detail),"Immediate route draft never queues an overlapping arrival toast")
+		check(is_instance_valid(arrival_notice) and not scene.card_buttons.is_empty() and arrival_notice.get_global_rect().end.y <= scene.card_buttons[0].get_global_rect().position.y + 1.0,"Arrival notice precedes the first selectable card without overlap")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2

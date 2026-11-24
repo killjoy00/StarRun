@@ -459,6 +459,9 @@ func _prepare(scene, screen: String) -> void:
 				if screen in ["archive-boss-lattice","archive-boss-collapse"]:
 					scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
 					scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+					# Direct presentation fixture: remove broken emitter nodes just as
+					# the real simulation step does before rendering later phases.
+					scene.sim.enemies = scene.sim.enemies.filter(func(e): return e.hp > 0.0)
 					scene.sim.archive_phase = 1 if screen == "archive-boss-lattice" else 2
 				scene.sim.time = scene.sim.archive_next_attack
 				scene.sim._update_archive_attack()

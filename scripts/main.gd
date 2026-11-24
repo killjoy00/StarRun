@@ -2093,7 +2093,7 @@ func _resume_after_build_choice() -> void:
 	accumulator = -0.25
 	_save_run()
 
-func _show_cards(play_sound: bool = true) -> void:
+func _show_cards(play_sound: bool = true, arrival_notice: String = "") -> void:
 	mode = "cards"
 	_save_run()
 	draft_guard = 0.35
@@ -2125,6 +2125,11 @@ func _show_cards(play_sound: bool = true) -> void:
 		for slot in sim.active_slots:
 			names.append(str(sim.content.abilities[str(slot)].name))
 		Kit.label(top, "Abilities %d of 4:  %s" % [names.size(), ", ".join(names) if not names.is_empty() else "none yet"], 15, Kit.MUTED, true)
+	# A route that grants an immediate draft has its arrival notice in the
+	# scrollable reading flow, never on top of the first selectable card.
+	if not arrival_notice.is_empty():
+		var notice := Kit.label(body, arrival_notice, 15, Kit.AMBER, true)
+		notice.name = "DestinationDraftArrival"
 	for i in range(sim.cards.size()):
 		_draft_card(body, i)
 	if banish_mode:
@@ -3832,18 +3837,26 @@ func _finish_intermission_presentation() -> void:
 	last_sector = _sector_name(sim.time)
 	banner_text = "WORLD %d  ·  %s" % [sim.stage, sim.stage_name()]
 	banner_clock = 5.0
+	var arrival_name := ""
+	var arrival_detail := ""
 	if sim.expedition_active() and sim.destination_rules_version >= 1:
 		var spec: Dictionary = sim.destination_spec()
 		if not spec.is_empty():
-			banner_text = str(spec.name).to_upper()
-			_queue_toast(str(spec.name), ExpeditionPresentation.arrival_summary(spec, sim.stage, sim.seed_value, sim.stage_defense, sim.hull, sim.max_hull, sim.shield, sim.max_shield))
+			arrival_name = str(spec.name)
+			banner_text = arrival_name.to_upper()
+			arrival_detail = ExpeditionPresentation.arrival_summary(spec, sim.stage, sim.seed_value, sim.stage_defense, sim.hull, sim.max_hull, sim.shield, sim.max_shield)
+	# Curated and wildcard arrivals pause in a draft immediately. Put the
+	# actual applied reward in that page instead of obscuring its choices.
+	var arrival_in_draft: bool = not arrival_detail.is_empty() and sim.pending_build_choices.is_empty() and sim.pending_levels > 0
+	if not arrival_detail.is_empty() and not arrival_in_draft:
+		_queue_toast(arrival_name, arrival_detail)
 	sound.play("start")
 	_save_run()
 	if not sim.pending_build_choices.is_empty():
 		_show_build_choice()
 	elif sim.pending_levels > 0:
 		sim._offer_cards()
-		_show_cards()
+		_show_cards(true, ("%s · %s" % [arrival_name, arrival_detail]) if arrival_in_draft else "")
 
 func _finish() -> void:
 	if sim.intro_run:
