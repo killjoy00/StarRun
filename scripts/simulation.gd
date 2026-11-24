@@ -2993,7 +2993,8 @@ func _counter_archive_attack() -> void:
 					var angle: float = (float(i) - float(count - 1) * 0.5) * 0.16
 					bullets.append({"p":origin, "v":direction.rotated(angle) * (220.0 + i * 9.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * 0.65 * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 			effects.append({"kind":"ion-burst", "p":core.p, "radius":125.0, "life":0.7, "max_life":0.7, "born":tick})
-			_log("AUXILIARY CROSSFIRE · core remains exposed")
+			if count > 0:
+				_log("AUXILIARY CROSSFIRE · core remains exposed")
 
 func _update_charges() -> void:
 	for charge in charges:
@@ -3212,6 +3213,7 @@ func gun_rate() -> float:
 		rate *= 1.0 + passive_bonus("afterburn", 0.03, 0.10, 0.15)
 	if gravity_left > 0.0:
 		rate *= 0.72
+	# Haven's Hive uses this same reload rate, unlike temporary ability escorts.
 	if artifact_id == "custodian_core" and daily_day.is_empty():
 		rate *= 0.90
 	return rate
@@ -4052,7 +4054,11 @@ func activate(ability: String) -> bool:
 	aftercast_left = 4.0
 	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
 	if artifact_id == "custodian_core" and daily_day.is_empty():
+		var shield_before: float = shield
 		shield = minf(max_shield, shield + max_shield * 0.08)
+		var recovered: float = shield - shield_before
+		if recovered > 0.001:
+			effects.append({"kind":"custodian-shield","p":ship_position(),"amount":recovered,"life":0.85,"max_life":0.85,"born":tick})
 	_log(str(content.abilities[ability].name) + " used")
 	# The Tactician gets one earned counterbattery per world. An ability used
 	# on an empty screen earns nothing: time it into real incoming danger.

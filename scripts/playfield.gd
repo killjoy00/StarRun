@@ -286,7 +286,8 @@ func _draw_boss_panel() -> void:
 		var phase_label: String = sim.boss_phase_label()
 		if kind in ["boss3", "boss4"]:
 			phase_label = "PHASE %d/3 · %s" % [sim.late_boss_phase + 1, phase_label]
-		draw_string(ThemeDB.fallback_font, Vector2(60,80), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 420, 15, CYAN if sim.stage == 2 else AMBER)
+		var phase_color: Color = ArchiveIllustration.phase_tint(sim.archive_phase) if kind == HiddenSector.BOSS and sim.archive_boss_reworked() else (CYAN if sim.stage == 2 else AMBER)
+		draw_string(ThemeDB.fallback_font, Vector2(60,80), phase_label, HORIZONTAL_ALIGNMENT_CENTER, 420, 15, phase_color)
 		return
 
 func _visual_theme_id() -> String:
@@ -327,7 +328,26 @@ func _draw_archive_backdrop() -> void:
 func _draw_archive_threat() -> void:
 	var x: float = sim.archive_attack_x
 	var attack: String = sim.archive_attack
-	var phase: float = clampf((sim.archive_attack_until - sim.time) / 3.5, 0.0, 1.0)
+	var phase: float = clampf((sim.archive_attack_until - sim.time) / 3.6, 0.0, 1.0)
+	var tint: Color = ArchiveIllustration.phase_tint(sim.archive_phase) if sim.archive_boss_reworked() and sim.boss_spawned else DANGER
+	# Keep the danger lane coral; use phase-specific shapes on top of the original telegraph.
+	if sim.archive_boss_reworked() and sim.boss_spawned:
+		var core: Dictionary = sim._boss_core()
+		if not core.is_empty():
+			var radius: float = 91.0 + 20.0 * (1.0 - phase)
+			var spin: float = 0.0 if profile.reduced else visual_time * 0.7
+			for i in range(sim.archive_phase + 2):
+				var a: float = TAU * float(i) / float(sim.archive_phase + 2) + spin
+				draw_arc(core.p, radius, a, a + 0.65, 18, Color(tint,0.78), 3.0, true)
+			if sim.archive_phase == 0:
+				for e in sim.enemies:
+					if str(e.get("role","")) == "archive_emitter" and float(e.hp) > 0:
+						draw_line(core.p, e.p, Color(tint,0.55), 2.0, true)
+			elif sim.archive_phase == 1:
+				for side in [-1,1]:
+					draw_line(core.p + Vector2(side*115.0,18.0),Vector2(x-side*90.0,730.0),Color(tint,0.48),2.0,true)
+			else:
+				draw_arc(core.p,radius+13.0,0,TAU,48,Color(tint,0.40),3.0,true)
 	if attack != "lattice":
 		draw_rect(Rect2(x - 38.0, 97.0, 76.0, 803.0), Color(DANGER, 0.14 + 0.13 * (1.0 - phase)))
 		for side in [-1, 1]:
@@ -577,7 +597,7 @@ func _draw_enemy(enemy: Dictionary) -> void:
 	var boss := kind.begins_with("boss")
 	if kind == HiddenSector.BOSS:
 		draw_set_transform(p)
-		ArchiveIllustration.custodian(self, visual_time if not profile.reduced else 0.0, sim.time < sim.archive_exposed_until)
+		ArchiveIllustration.custodian(self, visual_time if not profile.reduced else 0.0, sim.time < sim.archive_exposed_until, sim.archive_phase if sim.archive_boss_reworked() else -1)
 		draw_set_transform(Vector2.ZERO)
 	elif HiddenSector.ENEMIES.has(kind):
 		_draw_archive_enemy(enemy)
@@ -1016,7 +1036,10 @@ func _draw_spectacle_feedback() -> void:
 			draw_arc(p, ring, 0, TAU, 64, Color(CYAN, alpha * 0.95), 3.5, true)
 			if not bool(profile.get("reduced", false)):
 				draw_arc(p, ring * 0.68, PI * 0.15, PI * 1.8, 48, Color(AMBER, alpha * 0.68), 3.0, true)
-			draw_string(ThemeDB.fallback_font, p + Vector2(-70.0, -98.0), "PHASE %d / 3" % int(cue.phase), HORIZONTAL_ALIGNMENT_LEFT, 145, 19, Color(CYAN, alpha))
+			var archive_phase_break: bool = sim.secret_entered and sim.archive_boss_reworked()
+			var label: String = ["LOCKDOWN","LATTICE","COLLAPSE"][clampi(int(cue.phase)-1,0,2)] if archive_phase_break else "PHASE %d / 3" % int(cue.phase)
+			var tint: Color = ArchiveIllustration.phase_tint(int(cue.phase)-1) if archive_phase_break else CYAN
+			draw_string(ThemeDB.fallback_font, p + Vector2(-82.0, -98.0), label, HORIZONTAL_ALIGNMENT_CENTER, 164, 19, Color(tint, alpha))
 
 func _draw_shield_feedback(ship: Vector2) -> void:
 	# Presentation uses real time so the break remains visible even at 3x speed.
@@ -1039,7 +1062,12 @@ func _draw_effect(effect: Dictionary) -> void:
 	var alpha: float = effect.life / effect.max_life
 	var age := 1.0 - alpha
 	var p: Vector2 = effect.p
-	if effect.kind in ["ion-burst","ion_mine"]:
+	if effect.kind == "custodian-shield":
+		var ship: Vector2 = sim.ship_position()
+		var radius: float = 38.0 if profile.reduced else 38.0 + age * 30.0
+		draw_arc(ship,radius,0,TAU,48,Color(HiddenSector.MINT,alpha),3.2,true)
+		draw_string(ThemeDB.fallback_font, ship + Vector2(-75.0,-51.0), "CORE +%d SHIELD" % ceili(float(effect.amount)), HORIZONTAL_ALIGNMENT_CENTER,150,15,Color(HiddenSector.MINT,alpha))
+	elif effect.kind in ["ion-burst","ion_mine"]:
 		var radius: float = float(effect.get("radius",60.0))*age
 		for i in range(6):
 			var angle: float = i*TAU/6

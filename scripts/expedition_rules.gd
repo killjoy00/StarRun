@@ -30,9 +30,66 @@ static func route(id: String, version: int = 0) -> Dictionary:
 				"smugglers":
 					spec.merge({"risk":1.08,"picks":1,"rerolls":0,"curated":true,"gain":"Repair 35% hull. A special build-focused upgrade draft, +15% kill XP, mutation choice if eligible and 20 Cores per world number for the boss.","cost":"8% greater enemy pressure. The special draft replaces the two bonus rerolls."}, true)
 				"uncharted":
-					spec.merge({"wildcard":true,"gain":"Repair 40% hull. Receive 1–3 bonus upgrades (seeded), +25% kill XP and 15 Cores per world number on boss victory.","cost":"25% greater enemy pressure and elite formations. The number of bonus upgrades is revealed on arrival."}, true)
+					spec.merge({"wildcard":true,"gain":"Repair 40% hull. Receive 1–3 bonus upgrades, +25% kill XP and 15 Cores per world number on boss victory.","cost":"25% greater enemy pressure and elite formations. The number of bonus upgrades is revealed on arrival."}, true)
 		return spec
 	return {}
+
+# Concise player-facing information, calculated from the same route data as combat.
+# Keep the previous rules and their original copy on suspended flights.
+static func preview(spec: Dictionary, hull_fraction: float, world: int) -> Dictionary:
+	var headline := ""
+	var extras := ""
+	var cost := str(spec.cost)
+	var repair := "Repair %d%% hull" % roundi(float(spec.get("repair", 0.0)) * 100.0)
+	var shield := "Start at %d%% shield" % roundi(float(spec.get("shield", 1.0)) * 100.0)
+	var bounty := "%d Cores on boss victory" % (int(spec.get("bounty", 0)) * world)
+	match str(spec.id):
+		"shipyard":
+			var defense := float(spec.get("damaged_defense", spec.defense)) if hull_fraction < 0.80 else float(spec.defense)
+			headline = "FULL HULL + SHIELD · %d%% LESS DAMAGE" % roundi((1.0 - defense) * 100.0)
+			extras = "15% shorter cooldowns; +15% gun damage above half shield."
+		"research":
+			headline = "+1 UPGRADE · MUTATION IF ELIGIBLE"
+			extras = repair + "; full shield; 15% less damage; 10% shorter cooldowns."
+		"blockade":
+			headline = "+38% GUN DAMAGE · +15% FIRE RATE"
+			extras = repair + "; " + shield.to_lower() + "."
+		"rift":
+			headline = "+22% GUN DAMAGE · +20% FIRE RATE"
+			extras = "28% shorter cooldowns."
+		"pirates", "graveyard", "smugglers", "uncharted":
+			var bonus := "1–3 UPGRADES" if bool(spec.get("wildcard", false)) else ("BUILD DRAFT" if bool(spec.get("curated", false)) else "+1 UPGRADE")
+			headline = "+%d%% KILL XP · %s" % [roundi((float(spec.xp) - 1.0) * 100.0), bonus]
+			extras = repair + "; " + bounty + "."
+			if bool(spec.get("mutation", false)):
+				extras += " Mutation if eligible."
+			if bool(spec.get("curated", false)):
+				cost = "8% greater enemy pressure."
+			if bool(spec.get("wildcard", false)):
+				cost = "25% greater enemy pressure; elite formations. Upgrade count revealed on arrival."
+	return {"headline":headline,"extras":extras,"cost":cost}
+
+# Arrival feedback is derived from the committed route and actual applied defense.
+# The wildcard count is the same deterministic draw as the engine; never roll again.
+static func arrival_summary(spec: Dictionary, world: int, seed: int, defense: float, hull: float, max_hull: float, shield: float, max_shield: float) -> String:
+	var status := "Hull %d/%d · Shield %d/%d" % [ceili(hull),ceili(max_hull),ceili(shield),ceili(max_shield)]
+	match str(spec.id):
+		"shipyard":
+			return "Full hull and shield · %d%% less damage this world" % roundi((1.0 - defense) * 100.0)
+		"research":
+			return "+1 upgrade · 15% less damage · " + status
+		"blockade":
+			return "+38% gun damage · +15% fire rate · " + status
+		"rift":
+			return "+22% gun damage · +20% fire rate · 28% shorter cooldowns"
+		"pirates", "graveyard":
+			return "+%d%% kill XP · +1 upgrade · %d Cores on boss victory" % [roundi((float(spec.xp)-1.0)*100.0),int(spec.bounty)*world]
+		"smugglers":
+			return "Build-focused upgrade · +15% kill XP · %d Cores on boss victory" % (int(spec.bounty)*world)
+		"uncharted":
+			var count := wildcard_picks(seed, world)
+			return "%d bonus upgrade%s · +25%% kill XP · %d Cores on boss victory" % [count,"" if count == 1 else "s",int(spec.bounty)*world]
+	return status
 
 static func wildcard_picks(seed: int, world: int) -> int:
 	var rng := RandomNumberGenerator.new()

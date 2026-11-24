@@ -312,6 +312,19 @@ func _test_archive_rework_and_destinations() -> void:
 	artifact.shield = 0.0
 	check(is_equal_approx(artifact.gun_rate(), standard.gun_rate()*0.90), "Custodian Core trades gun cadence for active defense")
 	check(artifact.activate("aegis") and is_equal_approx(artifact.shield, artifact.max_shield*0.08), "Artifact restores actual shield on active use")
+	check(artifact.effects.any(func(e): return e.kind == "custodian-shield" and is_equal_approx(float(e.amount),artifact.max_shield*0.08)), "Artifact feedback reflects actual restored shield")
+	var haven_core := Sim.new(93501, {}, "haven", "rookie", "normal", "custodian_core")
+	var haven_standard := Sim.new(93501, {}, "haven", "rookie", "normal", "standard")
+	haven_core.hive_timer = 10.0
+	haven_standard.hive_timer = 10.0
+	haven_core._update_support()
+	haven_standard._update_support()
+	check(haven_core.hive_count() > 0 and is_equal_approx(10.0-haven_core.hive_timer,(10.0-haven_standard.hive_timer)*0.90), "Custodian penalty intentionally applies to Haven Hive reloads")
+	var arrival: Dictionary = expedition.route("shipyard",1)
+	check(str(expedition.preview(arrival,0.79,3).headline).contains("50%") and str(expedition.preview(arrival,0.80,3).headline).contains("40%"),"Shipyard preview matches the exact threshold")
+	check(expedition.arrival_summary(arrival,3,123,0.50,100.0,100.0,50.0,50.0).contains("50%"),"Arrival confirms the applied protection")
+	var wild: Dictionary = expedition.route("uncharted",1)
+	check(expedition.arrival_summary(wild,3,123,1.0,100.0,100.0,50.0,50.0).begins_with("%d bonus upgrade" % expedition.wildcard_picks(123,3)),"Arrival shows the exact bonus upgrade count without consuming RNG")
 
 func _test_hidden_archive() -> void:
 	var sector := preload("res://scripts/hidden_sector.gd")

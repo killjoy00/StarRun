@@ -16,6 +16,7 @@ const Progress = preload("res://scripts/meta_progress.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
 const Codex = preload("res://scripts/codex.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
+const ExpeditionPresentation = preload("res://scripts/expedition_rules.gd")
 const ArchiveIllustration = preload("res://scripts/archive_illustration.gd")
 const RivalPortrait = preload("res://scripts/rival_portrait.gd")
 const MerchantShip = preload("res://scripts/merchant_ship.gd")
@@ -2239,6 +2240,9 @@ func _draft_card(parent: Node, i: int) -> void:
 	var title := Kit.label(info, name_text, 19, Color.WHITE, true)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
 	Kit.label(info, str(fused.description) if not fusion.is_empty() and not sim._new_build_decisions() else str(card.description), 16, Kit.TEXT, true)
+	if sim.smuggler_draft_open and not banish_mode:
+		var why: String = _smuggler_fit(card, current, next_rank, fusion, swap_partner)
+		Kit.label(info, why, 15, Kit.CYAN, true)
 	if swap_partner and not banish_mode:
 		Kit.label(info, "Learn a fusion partner by choosing an ability to replace.", 15, Kit.VIOLET, true)
 	if not fusion.is_empty():
@@ -2258,6 +2262,44 @@ func _draft_card(parent: Node, i: int) -> void:
 		var link: String = sim.passive_hint(id)
 		if not link.is_empty():
 			Kit.label(info, "Pair: " + link.get_slice(":", 0), 15, Kit.AMBER, true)
+
+# Explain the actual offer rather than promising a fusion or evolution it cannot reach.
+func _smuggler_fit(card: Dictionary, current: int, next_rank: int, fusion: String, swap_partner: bool) -> String:
+	var id: String = str(card.id)
+	var tag: String = str(card.tag)
+	if id == "repair":
+		return "Build fit: recover hull to keep this run going."
+	if id == "core_cache":
+		return "Build fit: bank Cores; this build is maxed."
+	if tag == "MUTATION":
+		var spec: Dictionary = Catalog.mutation(id)
+		return "Build fit: transforms your existing " + str(spec.requires).capitalize() + "."
+	if not fusion.is_empty():
+		return "Build fit: opens " + str(sim.fusion_spec(fusion).name) + "."
+	if swap_partner:
+		return "Build fit: makes a fusion partner available."
+	if tag == "WEAPON" and current < 5 and next_rank >= 5:
+		return "Build fit: reaches rank 5 and opens an evolution."
+	if not str(sim.engine_hint_for_pick(id)).is_empty():
+		return "Build fit: advances your build engine."
+	if tag == "ABILITY":
+		var synergy: String = sim.synergy_hint(id)
+		if not synergy.is_empty():
+			return "Build fit: " + synergy.get_slice(":",0) + " pairing."
+		for spec in sim.content.fusions:
+			if id not in spec.parts or str(spec.id) in sim.fusion_declined or str(spec.id) in sim.active_slots:
+				continue
+			for part in spec.parts:
+				if str(part) != id and part in sim.active_slots and int(sim.upgrades.get(str(part),0)) >= 3:
+					return "Build fit: moves toward " + str(spec.name) + "."
+	var link: String = sim.passive_hint(id)
+	if not link.is_empty():
+		return "Build fit: " + link.get_slice(":",0) + " pairing."
+	if current > 0:
+		if tag == "WEAPON" and current < 5:
+			return "Build fit: builds your existing gun toward rank 5."
+		return "Build fit: strengthens an existing upgrade."
+	return "Build fit: adds another option to your loadout."
 
 func _toggle_banish() -> void:
 	if mode != "cards":
@@ -2515,7 +2557,9 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
 		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
 		if sim.archive_boss_reworked():
-			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails. Cast on the warning; a well-timed cast keeps the core open longer.", 16, Kit.TEXT, true)
+			Kit.label(view.body, "Lockdown: break both emitters. Lattice: counter the lock and fire into the exposed core. Collapse: attacks grow stronger as the core fails.", 16, Kit.TEXT, true)
+			if sim.archive_challenge_version >= 4:
+				Kit.label(view.body, "Hold one ability for CAST NOW to open the core longer. Early casts still cancel the attack. Fast-forward slows during warnings.", 16, HiddenSector.MINT, true)
 		elif sim.archive_challenge_active():
 			Kit.label(view.body, "Breaking a lock cancels its main attack. The side emitters still fire, and each shield phase hits harder. Keep an ability ready for the next warning.", 16, Kit.TEXT, true)
 	else:
@@ -2546,7 +2590,21 @@ func _show_archive_ending(reset_sound: bool = true) -> void:
 	Kit.label(view.body, "You leave the gate open.", 18, HiddenSector.MINT, true)
 	_info_card(view.body, "Open Frequency", "A permanent record in Awards.", HiddenSector.COLOR)
 	if not Progress.artifact_available(profile, "custodian_core"):
-		_info_card(view.body, "Artifact earned · Custodian Core", str(Catalog.artifact("custodian_core").description) + " Available in Loadout after finishing.", HiddenSector.MINT)
+		var reward := _info_card(view.body, "Artifact earned · Custodian Core", str(Catalog.artifact("custodian_core").description) + " Available in Loadout after finishing.", HiddenSector.MINT)
+		reward.name = "CustodianCoreReveal"
+		reward.add_theme_stylebox_override("panel", Kit.box(Color("102723"), HiddenSector.MINT, 14, 2, 14, 12))
+		var art := ArchiveIllustration.new()
+		art.scene = "artifact"
+		art.reduced = bool(profile.reduced) or not reset_sound
+		art.custom_minimum_size.y = 110.0
+		reward.get_child(0).add_child(art)
+		reward.get_child(0).move_child(art, 1)
+		if reset_sound and not bool(profile.reduced):
+			reward.modulate.a = 0.35
+			var reveal := reward.create_tween()
+			reveal.tween_property(reward,"modulate:a",1.0,0.65)
+		if reset_sound:
+			sound.play("custodian-unlock", -6.0)
 	_focus(_ui_button(reading_footer, "Finish", _finish_archive, "primary", 56, true))
 	if reset_sound:
 		sound.play("archive-release", -4.0)
@@ -2888,7 +2946,12 @@ func _show_route_choice() -> void:
 		Kit.caps(card.content, str(route.tag), route.accent, 12)
 		var title := Kit.label(card.content, _route_name(str(route.id)), 19, Color.WHITE, true)
 		title.add_theme_font_override("font", Kit.font(0, 0.45))
-		_gain_cost(card.content, str(route.gain), str(route.cost))
+		if sim.expedition_active() and sim.destination_rules_version >= 1:
+			var summary: Dictionary = ExpeditionPresentation.preview(route, sim.hull / maxf(1.0, sim.max_hull), sim.stage + 1)
+			Kit.label(card.content, str(summary.headline), 18, route.accent, true)
+			_gain_cost(card.content, str(summary.extras), str(summary.cost))
+		else:
+			_gain_cost(card.content, str(route.gain), str(route.cost))
 	_ui_button(reading_footer, "Save and quit to title", _show_menu, "ghost", 48, true)
 	if not card_buttons.is_empty():
 		_focus(card_buttons[0])
@@ -3425,7 +3488,7 @@ func _process(delta: float) -> void:
 		native_ad_banner.call("set_display_for_mode", mode)
 	_advance_toast(delta)
 	game_center.update(delta)
-	visual_time += delta * (game_speed if mode == "playing" else 1.0)
+	visual_time += delta * (_combat_speed() if mode == "playing" else 1.0)
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
@@ -3465,17 +3528,31 @@ func _process(delta: float) -> void:
 	if mode == "playing" and not sim.pending_build_choices.is_empty():
 		_show_build_choice()
 	if mode == "playing":
-		accumulator += minf(delta, 0.2) * game_speed
+		accumulator += minf(delta, 0.2) * _combat_speed()
 		while accumulator >= Simulation.DT and mode == "playing":
 			var previous_signal: String = sim.signal_status
 			var previous_attack: String = sim.archive_attack
+			var previous_phase: int = sim.archive_phase
+			var previous_precise: bool = sim.archive_precise_counter_window()
 			sim.step()
 			accumulator -= Simulation.DT
 			if previous_signal != sim.signal_status:
 				_archive_signal_feedback()
+			if sim.archive_boss_reworked() and sim.boss_spawned and previous_phase != sim.archive_phase:
+				banner_text = ["LOCKDOWN","LATTICE","COLLAPSE"][sim.archive_phase] + " · PHASE %d/3" % (sim.archive_phase + 1)
+				banner_clock = 2.0
+				sound.play("archive-phase-%d" % sim.archive_phase, -8.0)
+				_haptic(65)
 			if previous_attack.is_empty() and not sim.archive_attack.is_empty():
-				sound.play("archive-boss", -10.0)
+				sound.play("archive-phase-%d" % sim.archive_phase if sim.archive_boss_reworked() and sim.boss_spawned else "archive-boss", -10.0)
 				_haptic(45)
+				# Discard only the excess fast-forward backlog on this transition.
+				# Never change the selected speed or simulation's fixed step.
+				if _archive_counter_warning() and game_speed > 1.0:
+					accumulator = minf(accumulator, Simulation.DT)
+			if sim.archive_precise_counter_window() and not previous_precise:
+				sound.play("archive-counter-ready", -12.0)
+				_haptic(30)
 			if not sim.intro_run:
 				_opening_first30_beat()
 			if sim.ended:
@@ -3607,6 +3684,8 @@ func _play_spectacle_cues(delta: float) -> void:
 func _update_hud() -> void:
 	CombatHud.refresh(self)
 	_update_archive_hud()
+	speed_button.text = _speed_label()
+	speed_button.tooltip_text = "Fast-forward paused for the counter window" if mode == "playing" and _archive_counter_warning() and game_speed > 1.0 else "Change flight speed"
 
 func _archive_signal_feedback() -> void:
 	if sim.signal_status == "offer":
@@ -3630,6 +3709,7 @@ func _activate_slot(slot: int) -> void:
 func _activate(id: String) -> void:
 	var old_signal: String = sim.signal_status
 	var old_attack: String = sim.archive_attack
+	var shield_before: float = sim.shield
 	var lesson := mode == "intro_aegis" and id == "aegis"
 	if (mode == "playing" or lesson) and sim.activate(id):
 		if lesson:
@@ -3643,6 +3723,8 @@ func _activate(id: String) -> void:
 			_save_run()
 			sound.play("archive-release", -12.0)
 		sound.play_ability(id)
+		if sim.artifact_id == "custodian_core" and sim.daily_day.is_empty() and sim.shield > shield_before and sim.effects.any(func(e): return e.kind == "custodian-shield" and int(e.born) == sim.tick):
+			sound.play("custodian-shield", -16.0)
 		if not sim.cards.is_empty():
 			_show_cards()
 
@@ -3747,6 +3829,11 @@ func _finish_intermission_presentation() -> void:
 	last_sector = _sector_name(sim.time)
 	banner_text = "WORLD %d  ·  %s" % [sim.stage, sim.stage_name()]
 	banner_clock = 5.0
+	if sim.expedition_active() and sim.destination_rules_version >= 1:
+		var spec: Dictionary = sim.destination_spec()
+		if not spec.is_empty():
+			banner_text = str(spec.name).to_upper()
+			_queue_toast(str(spec.name), ExpeditionPresentation.arrival_summary(spec, sim.stage, sim.seed_value, sim.stage_defense, sim.hull, sim.max_hull, sim.shield, sim.max_shield))
 	sound.play("start")
 	_save_run()
 	if not sim.pending_build_choices.is_empty():
@@ -3944,8 +4031,15 @@ func _cycle_difficulty() -> void:
 	_save_profile()
 	_show_menu()
 
+func _archive_counter_warning() -> bool:
+	return sim != null and sim.archive_boss_reworked() and sim.archive_challenge_version >= 4 and sim.boss_spawned and not sim.archive_attack.is_empty()
+
+func _combat_speed() -> float:
+	return minf(game_speed,1.0) if _archive_counter_warning() else game_speed
+
 func _speed_label() -> String:
-	return str(int(game_speed)) + "×" if is_equal_approx(game_speed, float(int(game_speed))) else str(game_speed) + "×"
+	var effective := _combat_speed() if mode == "playing" else game_speed
+	return str(int(effective)) + "×" if is_equal_approx(effective, float(int(effective))) else str(effective) + "×"
 
 func _cycle_speed() -> void:
 	var index := speed_options.find(game_speed)

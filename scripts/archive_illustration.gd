@@ -36,7 +36,18 @@ func _draw() -> void:
 			draw_line(start, start + direction * (5.0 + distance * 0.08), Color(accent, clampf(distance / radius - 0.40, 0.0, 0.34)), 1.25, true)
 	for i in range(6):
 		draw_circle(origin, radius * (1.19 - i * 0.13), Color(accent, 0.038))
-	if scene == "boss":
+	if scene == "artifact":
+		# An intact fragment of the Custodian, revealed in its own display.
+		var reveal: float = 1.0 if reduced else clampf(elapsed / 0.85, 0.0, 1.0)
+		var eased: float = 1.0 - pow(1.0 - reveal, 3.0)
+		var ring: float = radius * (0.66 + 0.34 * eased)
+		draw_arc(origin, ring, 0.0, TAU, 64, Color(Archive.MINT, 0.45 * eased), 2.5, true)
+		draw_arc(origin, ring * 0.78, elapsed * 0.7, elapsed * 0.7 + TAU * 0.80, 56, Color(Archive.MINT, 0.85 * eased), 3.0, true)
+		var jewel: float = ring * 0.52
+		shape(self, PackedVector2Array([Vector2(0,-jewel),Vector2(jewel*0.68,0),Vector2(0,jewel),Vector2(-jewel*0.68,0)]),origin,Color("203f39"),Color(Archive.MINT,eased))
+		draw_line(origin-Vector2(0,jewel*0.55),origin+Vector2(0,jewel*0.55),Color(Archive.MINT,eased),3.0,true)
+		draw_circle(origin, 4.0, Color(Color.WHITE,eased))
+	elif scene == "boss":
 		draw_set_transform(origin, 0.0, Vector2.ONE * radius / 74.0)
 		custodian(self, elapsed, false)
 		draw_set_transform(Vector2.ZERO)
@@ -66,8 +77,17 @@ static func shape(canvas: CanvasItem, points: PackedVector2Array, origin: Vector
 	path.append(path[0])
 	canvas.draw_polyline(path, edge, 1.6, true)
 
-static func custodian(canvas: CanvasItem, clock: float, open: bool) -> void:
-	var accent := Archive.MINT if open else Archive.COLOR
+static func phase_tint(phase: int) -> Color:
+	return [Color("80f5cd"),Color("baa5ff"),Color("ff9e72")][clampi(phase,0,2)]
+
+static func custodian(canvas: CanvasItem, clock: float, open: bool, phase: int = -1) -> void:
+	var accent := Archive.MINT if open else (phase_tint(phase) if phase >= 0 else Archive.COLOR)
+	if phase >= 0:
+		var tint := phase_tint(phase)
+		var spin: float = clock * (0.40 + phase * 0.22)
+		for i in range(phase + 2):
+			var angle: float = TAU * float(i) / float(phase + 2) + spin
+			canvas.draw_arc(Vector2.ZERO, 76.0 + phase * 7.0, angle, angle + 0.85, 20, Color(tint,0.65), 2.5, true)
 	var spacing := 16.0 if open else 0.0
 	for side in [-1, 1]:
 		var edge := float(side)

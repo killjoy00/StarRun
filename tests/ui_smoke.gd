@@ -638,6 +638,32 @@ func _run() -> void:
 		check(scene.mode == "results" and scene.profile.achievements.has("open_frequency"), "Debrief awards the permanent record")
 		check(scene.services.read_save(scene.Services.RUN).is_empty(), "Settled Archive run cannot be resumed again")
 
+	# New Archive warnings remain readable at every speed and restore the user's
+	# selected setting when the warning is answered. Test actual HUD labels.
+	scene.sim = Sim.new(88021)
+	scene.sim.enable_expedition_rules()
+	scene.sim.stage = 4
+	scene.sim.stage_clears = 4
+	scene.sim.signal_count = 2
+	scene.sim.stage_transition_queued = true
+	check(scene.sim.enter_secret(), "Redesigned Archive fixture enters")
+	scene.sim.dismiss_secret_intro()
+	scene.sim._spawn_boss()
+	scene.sim.dismiss_secret_intro()
+	scene.mode = "playing"
+	scene.game_speed = 3.0
+	scene.sim.archive_next_attack = scene.sim.time
+	scene.sim._update_archive_attack()
+	scene._update_hud()
+	check(scene._combat_speed() == 1.0 and scene.game_speed == 3.0 and scene.ability_buttons[0].get_node("AbilityStatus").text == "HOLD", "Fast-forward slows during HOLD without changing saved selection")
+	scene.sim.time = scene.sim.archive_attack_until - 1.0
+	scene._update_hud()
+	check(scene.ability_buttons[0].get_node("AbilityStatus").text == "CAST NOW" and scene.signal_label.text.contains("CAST NOW"),"Precise window is marked on both ability and HUD")
+	scene.sim.cooldowns.aegis = 0.0
+	check(scene.sim.activate("aegis"),"Ready ability counters the warning")
+	scene._update_hud()
+	check(scene._combat_speed() == 3.0 and scene.ability_buttons[0].modulate == Color.WHITE,"Counter ends slow-down and resets button highlighting")
+	scene.game_speed = 1.0
 	# Test the real mobile decision panel and persistence, not merely the
 	# simulation's logical option IDs. Combat must stay paused in this mode.
 	for dimensions in [Vector2i(375, 667), Vector2i(390, 844)]:

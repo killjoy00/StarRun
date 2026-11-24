@@ -41,6 +41,12 @@ func _ready() -> void:
 	sounds["archive-signal"] = _archive_tone([330.0, 440.0, 660.0], 0.92)
 	sounds["archive-boss"] = _archive_tone([164.8, 174.6, 110.0], 0.69)
 	sounds["archive-release"] = _archive_tone([220.0, 329.6, 440.0, 659.3], 1.45)
+	sounds["archive-phase-0"] = _archive_tone([164.8,220.0],0.46)
+	sounds["archive-phase-1"] = _archive_tone([220.0,329.6,196.0],0.56)
+	sounds["archive-phase-2"] = _archive_tone([110.0,138.6,82.4],0.62)
+	sounds["archive-counter-ready"] = _archive_tone([440.0,660.0],0.22)
+	sounds["custodian-unlock"] = _archive_tone([261.6,392.0,523.2,784.0],0.94)
+	sounds["custodian-shield"] = _archive_tone([392.0,523.2],0.24)
 	archive = AudioStreamPlayer.new()
 	archive.stream = _archive_tone([55.0, 82.4, 110.0, 164.8], 8.0, true)
 	archive.volume_db = -80.0

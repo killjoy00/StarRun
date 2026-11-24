@@ -21,34 +21,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {ship: vanguard, difficulty: normal, hangar: max}
-          - {ship: kestrel, difficulty: normal, hangar: max}
-          - {ship: bulwark, difficulty: normal, hangar: max}
-          - {ship: wraith, difficulty: normal, hangar: max}
-          - {ship: arcwing, difficulty: normal, hangar: max}
-          - {ship: haven, difficulty: normal, hangar: max}
-          - {ship: arcwing, difficulty: hard, hangar: max}
-          - {ship: wraith, difficulty: hard, hangar: max}
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven, lancer]
+        difficulty: [normal, hard, insane]
     steps:
       - uses: actions/checkout@v4
       - name: Install pinned Godot
         run: tools/install-godot.sh
       - name: Import project
         run: godot --headless --path . --editor --import --quit
-      - name: Run two natural multi-world campaigns with real Archive route
+      - name: Run four natural campaigns with current Archive and per-loadout fixture
         shell: bash
         env:
           SHIP: ${{ matrix.ship }}
           DIFFICULTY: ${{ matrix.difficulty }}
-          HANGAR: ${{ matrix.hangar }}
+          HANGAR: max
         run: |
           set -euo pipefail
           mkdir -p review
-          for offset in 1 2; do
+          for offset in 1 2 3 4; do
             godot --headless --path . --script tests/archive_campaign.gd -- \
               --ship="$SHIP" --pilot=rookie --difficulty="$DIFFICULTY" \
-              --hangar="$HANGAR" --seed-offset="$offset" --matched \
+              --hangar="$HANGAR" --seed-offset="$offset" --matched --expedition \
               2>&1 | tee "review/archive-$offset.log"
             if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "review/archive-$offset.log"; then
               echo "::error::Archive runtime error at offset $offset"
@@ -62,17 +55,22 @@ jobs:
               matches=[json.loads(line.split("ARCHIVE_TRIAL ",1)[1]) for line in open(path) if line.startswith("ARCHIVE_TRIAL ")]
               assert len(matches)==1, f"Expected exactly one trial in {path}, got {len(matches)}"
               rows+=matches
-          assert all(not r.get("economy_ok",True) is False for r in rows), "Archive affected baseline Core/XP economy"
+          assert len(rows)==4, "Missing natural campaign receipts"
+          assert all(r.get("fixture_ok") is True and not r.get("fault") for r in rows), "Redesigned Archive loadout fixture or campaign failed"
+          assert all(not r.get("eligible") or (r.get("archive_version",0)>=4 and r.get("economy_ok") is True and not r.get("timeout") and r.get("control",{}).get("archive_version",0)>=4 and r.get("control",{}).get("economy_ok") is True and not r.get("control",{}).get("timeout")) for r in rows), "Actual qualifying branch did not exercise the current Archive cleanly"
+          assert all(not r.get("won") or r.get("remaining_emitters")==0 for r in rows), "Custodian won with an intact emitter"
           assert all(not r.get("eligible",False) or r.get("signals",0)>=2 for r in rows), "Secret route opened without enough recovered signals"
           print("## Real Silent Archive cross-ship audit")
-          print("Both runs per fixture use natural World 1-4 combat, ordinary drafts, seeded courier/cast choices, and then true fifth-sector combat when eligible.")
+          print("Four natural campaigns per loadout with current expedition rules; matched late-counter and cooldown-only Archive fights from actual qualified gates. The separate phase/restore fixture covers the redesigned boss even where a natural gate is not reached.")
           print("| Ship | Difficulty | Seed | Recovered signals | Reached gate | Beat Custodian | Boss seconds | Control win | XP/Core unchanged |")
           print("|---|---|---:|---:|---|---|---:|---|---|")
           for r in rows:
               control=r.get("control",{})
               boss_s=float(r.get("boss_seconds",-1.0))
               print(f"| {r['ship']} | {r['difficulty']} | {r['seed']} | {r.get('signals',0)} | {r.get('eligible',False)} | {r.get('won',False)} | {boss_s:.1f} | {control.get('won','n/a')} | {r.get('economy_ok','n/a')} |")
-          print("\nA bot failure to reach World 4 does not prove a player cannot access the secret. The review's aim is broad progression and runtime coverage.")
+          print("\nNatural qualifying gates:",sum(bool(r.get("eligible")) for r in rows),"/",len(rows))
+          print("Phase/restore fixtures passed:",sum(bool(r.get("fixture_ok")) for r in rows),"/",len(rows))
+          print("A bot failure to reach the gate is reported, not counted as a real Archive fight or a player win rate.")
           PY
           cat review/summary.md >> "$GITHUB_STEP_SUMMARY"
       - name: Preserve full stage / signal / boss receipts
