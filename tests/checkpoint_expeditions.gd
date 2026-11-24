@@ -52,6 +52,7 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 	var hull_start: float = sim.hull
 	var shield_start: float = sim.shield
 	var rerolls_used := 0
+	var curated_picks := 0
 	var damage_before := _total_damage(sim.damage_taken)
 	var boss_damage_before := -1.0
 	var boss_counters_before := -1
@@ -81,10 +82,12 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 			continue
 		if not sim.cards.is_empty():
 			var rerolls_before: int = sim.rerolls_left
+			var curated: bool = sim.smuggler_draft_open
 			if not _take_draft(sim, style):
 				reason = "draft refused"
 				break
 			rerolls_used += maxi(0, rerolls_before - int(sim.rerolls_left))
+			if curated: curated_picks += 1
 			continue
 		if signals and not sim.secret_entered and sim.signal_status == "offer":
 			if not sim.choose_signal("cast"):
@@ -110,7 +113,7 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 			reason = "unpaid diagnostic cap"
 			break
 	var row := _stage_report(sim, status)
-	row.merge({"reason":reason,"start_hull":hull_start,"start_shield":shield_start,"level_gain":sim.level-level_before,"kill_gain":sim.kills-kills_before,"casts":sim.ability_uses-casts_before,"counters":sim.beams_cancelled-counters_before,"beams":sim.beams_fired-fired_before,"cores_if_claimed":sim.payout(),"archive_phase":sim.archive_phase,"mutations":sim.mutations.duplicate(),"rerolls_left":sim.rerolls_left,"rerolls_used":rerolls_used,"stage_damage":_total_damage(sim.damage_taken)-damage_before,"boss_damage":maxf(0.0,_total_damage(sim.damage_taken)-boss_damage_before) if boss_damage_before >= 0.0 else 0.0,"boss_counters":sim.beams_cancelled-boss_counters_before if boss_counters_before >= 0 else 0}, true)
+	row.merge({"reason":reason,"start_hull":hull_start,"start_shield":shield_start,"level_gain":sim.level-level_before,"kill_gain":sim.kills-kills_before,"casts":sim.ability_uses-casts_before,"counters":sim.beams_cancelled-counters_before,"beams":sim.beams_fired-fired_before,"cores_if_claimed":sim.payout(),"archive_phase":sim.archive_phase,"mutations":sim.mutations.duplicate(),"rerolls_left":sim.rerolls_left,"rerolls_used":rerolls_used,"curated_picks":curated_picks,"route_version":sim.destination_rules_version,"stage_damage":_total_damage(sim.damage_taken)-damage_before,"boss_damage":maxf(0.0,_total_damage(sim.damage_taken)-boss_damage_before) if boss_damage_before >= 0.0 else 0.0,"boss_counters":sim.beams_cancelled-boss_counters_before if boss_counters_before >= 0 else 0}, true)
 	return row
 
 func _total_damage(receipts: Dictionary) -> float:
@@ -177,23 +180,32 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 					reason = str(result.reason)
 					break
 			if status == "fault": break
-			var candidate := {}
-			# Diagnostic only: same stage risk field that advance_stage sets.
-			if "smugglers" in hand:
+			var controls: Array = []
+			# Use the actual previous route spec through the same API. Never
+			# replace a naturally offered ID or inject a different loadout.
+			for id in hand:
+				if id not in ["shipyard","graveyard","smugglers","uncharted"]:
+					continue
 				var probe := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
-				if not probe.restore(checkpoint) or probe.snapshot() != checkpoint or not _select_destination(probe, "smugglers") or not is_equal_approx(probe.stage_risk, 1.15):
+				if not probe.restore(checkpoint) or probe.snapshot() != checkpoint:
 					status = "fault"
-					reason = "Corridor matched control restore failed"
+					reason = "matched control restore failed"
 					break
-				probe.stage_risk = 1.08
-				candidate = _fly_world(probe, policy, style, false)
-				candidate["id"] = "smugglers"
-				candidate["incremental_cores"] = int(candidate.cores_if_claimed) - int(start.cores)
-				if candidate.status == "fault":
+				probe.destination_rules_version = 0
+				if not _select_destination(probe, str(id)):
 					status = "fault"
-					reason = str(candidate.reason)
+					reason = "actual control destination refused"
 					break
-			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants,"smuggler_candidate":candidate})
+				var control := _fly_world(probe, policy, style, false)
+				control["id"] = str(id)
+				control["incremental_cores"] = int(control.cores_if_claimed) - int(start.cores)
+				controls.append(control)
+				if control.status == "fault":
+					status = "fault"
+					reason = str(control.reason)
+					break
+			if status == "fault": break
+			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants,"controls":controls})
 		if not _select_destination(sim, continuation):
 			status = "fault"
 			reason = "continuation rejected"
@@ -210,13 +222,15 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 				reason = "earned Archive entry rejected"
 				break
 			if revision == "control": fork.archive_challenge_version = 0
-			elif revision == "initial": fork.archive_challenge_version = 1
-			elif not fork.archive_challenge_active() or fork.archive_challenge_version != 2:
+			elif revision == "initial": fork.archive_challenge_version = 2
+			elif not fork.archive_boss_reworked() or fork.archive_challenge_version != 3:
 				status = "fault"
 				reason = "candidate challenge not enabled on real entry"
 				break
 			var row := _fly_world(fork, policy, style, true)
 			row["revision"] = revision
+			row["archive_version"] = fork.archive_challenge_version
+			row["remaining_emitters"] = fork._alive_modules("archive_emitter")
 			row["entry_cores"] = entry
 			row["locked_cores"] = fork.payout()
 			archives.append(row)

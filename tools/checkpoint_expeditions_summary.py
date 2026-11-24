@@ -47,11 +47,14 @@ def read(paths, suite):
                     for v in variants:
                         if v["stage"]!=f["world"] or v["destination"]!=v["id"] or v["status"] not in ("cleared","dead","timeout") or v["incremental_cores"]!=v["cores_if_claimed"]-f["start"]["cores"]:
                             raise ValueError("wrong next-world trace")
-                    probe=f["smuggler_candidate"]
-                    if bool(probe)!=("smugglers" in hand):
-                        raise ValueError("missing actual matched Corridor probe")
-                    if probe and (probe["id"]!="smugglers" or probe["destination"]!="smugglers" or probe["stage"]!=f["world"] or probe["status"] not in ("cleared","dead","timeout") or probe["incremental_cores"]!=probe["cores_if_claimed"]-f["start"]["cores"]):
-                        raise ValueError("invalid Corridor probe")
+                    controls=f["controls"]
+                    if [v["id"] for v in controls]!=[id for id in hand if id in ("shipyard","graveyard","smugglers","uncharted")]:
+                        raise ValueError("missing actual old-route counterfactual")
+                    for probe in controls:
+                        if probe["route_version"]!=0 or probe["id"]!=probe["destination"] or probe["stage"]!=f["world"] or probe["status"] not in ("cleared","dead","timeout") or probe["incremental_cores"]!=probe["cores_if_claimed"]-f["start"]["cores"]:
+                            raise ValueError("invalid old-route branch")
+                    if any(v["route_version"]!=1 or (v["id"]=="smugglers" and v["curated_picks"]!=1 and v["status"]=="cleared") for v in variants):
+                        raise ValueError("production destination or curated choice was not exercised")
                     chosen=next(v for v in variants if v["id"]==f["continued"])
                     if any(chosen[k]!=next_stage[k] for k in ("status","elapsed","level","hull","kills","destination","cores_if_claimed")):
                         raise ValueError("restored branch differs from actual continuation")
@@ -60,7 +63,7 @@ def read(paths, suite):
                     raise ValueError("missing actual Archive entry pair")
                 if r["archives"]:
                     a,b,candidate=r["archives"]
-                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
+                    if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,2,3] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
                         raise ValueError("invalid Archive comparison")
         cells[key]=rows
     if set(cells)!=(EXPECTED if suite=="routes" else ARCHIVE_EXPECTED):
@@ -107,23 +110,24 @@ def route_report(rows):
     for r,f,v in entries: groups[(v["id"],r["budget"],r["policy"],r["style"])].append(v)
     for (d,h,p,s),vs in sorted(groups.items()):
         print(f"| {d} | {h} | {p} | {s} | {len(vs)} | {pct(sum(map(clear,vs)),len(vs))} | {mean(100*v['hull']/max(1,v['max_hull']) for v in vs):.1f} | {mean(map(earned,vs)):.1f} |")
-    probes=[(r,f,next(v for v in f["variants"] if v["id"]=="smugglers"),f["smuggler_candidate"]) for r in rows for f in r["forks"] if f["smuggler_candidate"]]
-    if not probes: raise ValueError("no matched Corridor probes")
-    print("\n### Corridor risk-only candidate (1.15 to 1.08; not production)")
-    print("| Cohort | Pairs | Old/new clears | Old/new exclusive clears | Old/new Cores | Old/new levels | Old/new rerolls used | Old/new end hull % |")
-    print("|---|---:|---|---|---|---|---|---|")
-    for label,ps in [("All",probes),("Original four",[x for x in probes if x[0]["seed"]<810000+(430+5)*7919]),("Additional four",[x for x in probes if x[0]["seed"]>=810000+(430+5)*7919])]+[(h,[x for x in probes if x[0]["budget"]==h]) for h in ("p8","p32","max")]:
-        a=[x[2] for x in ps]; b=[x[3] for x in ps]; o=collections.Counter((clear(x),clear(y)) for x,y in zip(a,b))
-        def pair(fn): return f"{mean(map(fn,a)):.1f} / {mean(map(fn,b)):.1f}"
-        print(f"| {label} | {len(ps)} | {pct(sum(map(clear,a)),len(a))} / {pct(sum(map(clear,b)),len(b))} | {o[True,False]} / {o[False,True]} | {pair(earned)} | {pair(lambda v:v['level_gain'])} | {pair(lambda v:v['rerolls_used'])} | {pair(lambda v:100*v['hull']/max(1,v['max_hull']))} |")
+    print("\\n### Matched old/new destination revisions")
+    print("| Destination | Cohort | Pairs | Old/new clears | Old/new exclusive clears | Old/new levels | Old/new Cores | New curated picks | Old/new end hull % |")
+    print("|---|---|---:|---|---|---|---|---:|---|")
+    for id in ("shipyard","graveyard","smugglers","uncharted"):
+        probes=[(r,f,old,next(v for v in f["variants"] if v["id"]==id)) for r in rows for f in r["forks"] for old in f["controls"] if old["id"]==id]
+        if not probes: raise ValueError("no matched probes for "+id)
+        for label,ps in [("All",probes),("Original four",[x for x in probes if x[0]["seed"]<810000+(430+5)*7919]),("Additional four",[x for x in probes if x[0]["seed"]>=810000+(430+5)*7919]),("Hull below 80%",[x for x in probes if x[1]["start"]["hull_fraction"]<0.8])]+[(h,[x for x in probes if x[0]["budget"]==h]) for h in ("p8","p32","max")]:
+            a=[x[2] for x in ps]; b=[x[3] for x in ps]; o=collections.Counter((clear(x),clear(y)) for x,y in zip(a,b))
+            def pair(fn): return f"{mean(map(fn,a)):.1f} / {mean(map(fn,b)):.1f}"
+            print(f"| {id} | {label} | {len(ps)} | {pct(sum(map(clear,a)),len(a))} / {pct(sum(map(clear,b)),len(b))} | {o[True,False]} / {o[False,True]} | {pair(lambda v:v['level_gain'])} | {pair(earned)} | {sum(v['curated_picks'] for v in b)} | {pair(lambda v:100*v['hull']/max(1,v['max_hull']))} |")
     print("\nOnly change a demonstrably redundant destination with sufficient shared checkpoints and mechanical evidence. Same-group alternatives never co-occur; comparisons across hands are observational. Low-health cells may be sparse. Payoffs include hypothetical immediate payout difference, not extra repeatable settlements. No equal-win-rate requirement.")
 
 def archive_report(rows):
     entrants=[r for r in rows if r["archives"]]
     if not entrants: raise ValueError("no actual Archive entries")
     print("# Custodian challenge: paired real Archive entries")
-    print(f"{len(rows)} actual campaigns; {len(entrants)} earned signal-qualified entries; {3*len(entrants)} real Archive fights. Identical pre-entry checkpoints and locked Cores. Control, original attack-pressure candidate, and revised armor/phase-reseal candidate; no additional boss HP. No forced kills/signals. Timed policy answers warning if a ready cast is available; cooldown-only policy does not.")
-    print("| Budget | Policy | Attempts | Eligible | Control / initial / revised clears | Boss seconds (clears) | Boss counters | Boss damage received | Timeouts |")
+    print(f"{len(rows)} actual campaigns; {len(entrants)} earned signal-qualified entries; {3*len(entrants)} real Archive fights. Identical pre-entry checkpoints and locked Cores. Control, prior armor/phase-reseal candidate, and redesigned Custodian with two targetable emitters and increased durability. No forced kills/signals. Timed policy answers warning if a ready cast is available; cooldown-only policy does not.")
+    print("| Budget | Policy | Attempts | Eligible | Legacy / prior / redesigned clears | Boss seconds (clears) | Boss counters | Boss damage received | Timeouts |")
     print("|---|---|---:|---:|---|---|---|---|---|")
     for h in ("p32","max"):
         for p in POLICIES:
@@ -145,7 +149,7 @@ def archive_report(rows):
             for p in POLICIES:
                 a=[r["archives"] for r in entrants if (r["ship"],r["budget"],r["policy"])==(s,h,p)]
                 print(f"| {s} | {h} | {p} | {pct(sum(clear(x[0]) for x in a),len(a))} | {pct(sum(clear(x[2]) for x in a),len(a))} |")
-    print("\nReview actual counter effectiveness, final-phase pressure, deaths and boss durations. Target a meaningful but achievable secret challenge, especially for max Hangar; avoid an invulnerable slog. Preserve payout and entry eligibility. Do not infer human win rates.")
+    print("\nReview actual counter effectiveness, final-phase pressure, deaths and boss durations. Aim for roughly 60–120 simulated boss seconds for strong builds, with meaningful survival pressure and no excessive stall. Treat target as a tuning goal, not fabricated evidence. Preserve payout and entry eligibility. Do not infer human win rates.")
 
 if __name__=="__main__":
     suite=sys.argv[1]
