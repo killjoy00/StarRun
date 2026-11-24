@@ -31,7 +31,7 @@ func _test_endless_campaign_credit() -> void:
 			if kind == "daily_loss":
 				sim.daily_day = "2026-11-15"
 				sim.daily_attempt = Progress.start_daily(p, sim.daily_day)
-			var expected := kind in ["claim","endless_loss","endless_claim","archive_loss"]
+			var expected: bool = kind in ["claim","endless_loss","endless_claim","archive_loss"]
 			var before: int = sim.payout()
 			if kind == "claim":
 				check(sim.advance_stage() and sim.won, "Citadel claim fixture completes")
