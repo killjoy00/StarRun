@@ -24,7 +24,7 @@ const SCREENS := [
 	"results-loss", "results-win", "rival-intro", "rival-retired", "rival-journal",
 	"opening-warning", "opening-strike", "merchant-signal", "merchant-shop", "merchant-confirm", "merchant-receipt", "beam-tutorial", "beam-charging", "beam-canceled", "boss-1-charging", "endless-clear",
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
-	"archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending",
+	"archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-counter-surge", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending",
 	"destination-preview", "destination-arrival", "smuggler-draft", "uncharted-arrival", "custodian-shield",
 	"first-flight-title", "first-flight-launch", "first-flight-aegis", "first-flight-draft",
 	"first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
@@ -419,7 +419,7 @@ func _prepare(scene, screen: String) -> void:
 			scene.flight_started = true
 			scene._clear_overlay()
 			scene._activate("aegis")
-		"archive-reveal", "archive-arrival", "archive-patrol", "archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending":
+		"archive-reveal", "archive-arrival", "archive-patrol", "archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-counter-surge", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending":
 			scene.sim.enable_expedition_rules()
 			scene.sim.stage = 4
 			scene.sim.stage_clears = 4
@@ -453,7 +453,7 @@ func _prepare(scene, screen: String) -> void:
 			if screen == "archive-boss-intro":
 				return
 			scene._resume_archive()
-			if screen in ["archive-boss-lock","archive-boss-cast","archive-boss-lattice","archive-boss-collapse","archive-boss-reduced"]:
+			if screen in ["archive-boss-lock","archive-boss-cast","archive-counter-surge","archive-boss-lattice","archive-boss-collapse","archive-boss-reduced"]:
 				scene.game_speed = 3.0
 				scene.profile.reduced = screen == "archive-boss-reduced"
 				if screen in ["archive-boss-lattice","archive-boss-collapse"]:
@@ -467,6 +467,12 @@ func _prepare(scene, screen: String) -> void:
 				scene.sim._update_archive_attack()
 				if screen != "archive-boss-lock":
 					scene.sim.time = scene.sim.archive_attack_until - 1.0
+				if screen == "archive-counter-surge":
+					scene.sim.cooldowns.aegis = 0.0
+					scene._activate("aegis")
+					if not scene.sim.effects.any(func(e): return e.kind == "archive-feedback" and float(e.amount) > 0.0):
+						push_error("Counter surge screenshot must capture real feedback")
+						failures += 1
 				return
 			scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
 			scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")

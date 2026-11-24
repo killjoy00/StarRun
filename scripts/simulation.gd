@@ -2895,16 +2895,20 @@ func archive_missed_exposure() -> float:
 
 func archive_sealed_factor() -> float:
 	# Insane's stronger baseline HP must not turn an earned gate into a stall.
-	# A precise opening still deals 4-6.5x sealed damage in that mode.
 	if archive_boss_reworked() and archive_challenge_version >= 4 and difficulty == "insane":
 		return 0.10
+	# Fixed counter surges still bypass armor. Keep ordinary burst damage
+	# from skipping most of the Normal/Hard encounter between warnings.
+	if archive_boss_reworked() and archive_challenge_version >= 5:
+		return 0.035
 	return 0.06 if archive_boss_reworked() else (0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR)
 
 func archive_exposed_damage_factor() -> float:
-	# New encounters reward genuine openings with full weapon damage. Keep
-	# earlier suspended encounters and comparison fixtures unchanged.
+	# Insane retains full exposed damage after the two natural stall fixes.
+	# Normal/Hard need stronger residual armor to sustain readable phases
+	# even on high-DPS builds. Counters still deal fixed integrity damage.
 	if archive_boss_reworked() and archive_challenge_version >= 5 and boss_spawned:
-		return 1.0
+		return 1.0 if difficulty == "insane" else float([0.45, 0.35, 0.25][clampi(archive_phase, 0, 2)])
 	# The earlier armor still admits damage when sealed.
 	if archive_challenge_active() and archive_challenge_version >= 2 and boss_spawned:
 		return float([0.65, 0.50, 0.40][clampi(archive_phase, 0, 2)])

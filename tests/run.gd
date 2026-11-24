@@ -276,7 +276,7 @@ func _test_archive_rework_and_destinations() -> void:
 	insane.dismiss_secret_intro()
 	insane._spawn_boss()
 	check(is_equal_approx(float(insane._boss_core().max_hp), float(insane_legacy._boss_core().max_hp)*3.5) and insane._alive_modules("archive_emitter") == 2, "Insane Archive calibrates stacked durability, retaining both real objectives")
-	check(is_equal_approx(insane.archive_sealed_factor(), 0.10) and is_equal_approx(base.archive_sealed_factor(), 0.06) and is_equal_approx(insane.stage_damage_scale(), 4.2) and is_equal_approx(insane.archive_exposed_damage_factor(),1.0), "Insane retains increased incoming attack pressure and now full exposed damage")
+	check(is_equal_approx(insane.archive_sealed_factor(), 0.10) and is_equal_approx(base.archive_sealed_factor(), 0.035) and is_equal_approx(insane.stage_damage_scale(), 4.2) and is_equal_approx(insane.archive_exposed_damage_factor(),1.0), "Insane retains increased incoming attack pressure and now full exposed damage")
 	var warning := base.snapshot()
 	var early := Sim.new()
 	var precise := Sim.new()
@@ -295,7 +295,17 @@ func _test_archive_rework_and_destinations() -> void:
 	check(counter_resume.restore(counter_snapshot) and counter_resume.snapshot() == counter_snapshot, "Counter damage, feedback and cooldown survive exact resume")
 	precise._update_archive_attack()
 	check(precise.archive_phase == 1 and is_equal_approx(float(precise._boss_core().hp),initial_core*0.68), "Both emitters and a resolved lock release Lattice without another DPS gate")
-	check(is_equal_approx(precise.archive_exposed_damage_factor(),1.0), "Redesigned exposed core takes full damage")
+	check(is_equal_approx(precise.archive_exposed_damage_factor(),0.35), "Normal Lattice opening retains residual armor while fixed counter damage bypasses it")
+	# All three phases on both lower difficulties retain real, substantial
+	# opening damage; Insane's proven anti-stall calibration stays unchanged.
+	for mode in ["normal","hard","insane"]:
+		var armor := Sim.new()
+		check(armor.restore(warning), "Armor calibration fixture restores the same warning")
+		armor.difficulty = mode
+		for phase in range(3):
+			armor.archive_phase = phase
+			var expected: float = 1.0 if mode == "insane" else float([0.45,0.35,0.25][phase])
+			check(is_equal_approx(armor.archive_exposed_damage_factor(),expected) and armor.archive_exposed_damage_factor() > armor.archive_sealed_factor()*7.0, "Every new phase preserves meaningful exposed damage without changing fixed feedback")
 	var v4 := Sim.new()
 	check(v4.restore(warning), "Previous revision shares the warning checkpoint")
 	v4.archive_challenge_version = 4
