@@ -1774,7 +1774,7 @@ func enter_secret() -> bool:
 	if not can_enter_secret():
 		return false
 	secret_payout = payout()
-	archive_challenge_version = 1 if expedition_rules else 0
+	archive_challenge_version = 2 if expedition_rules else 0
 	secret_entered = true
 	destination_choice = ""
 	route_offers.clear()
@@ -2793,6 +2793,12 @@ func archive_missed_exposure() -> float:
 func archive_sealed_factor() -> float:
 	return 0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR
 
+func archive_exposed_damage_factor() -> float:
+	# The armor still admits damage; a counter improves damage by 4 to 6.5 times.
+	if archive_challenge_active() and archive_challenge_version >= 2 and boss_spawned:
+		return float([0.65, 0.50, 0.40][clampi(archive_phase, 0, 2)])
+	return 1.0
+
 func _archive_index_fire(core: Dictionary) -> void:
 	core.fire -= DT
 	if core.fire > 0.0 or jammer_left > 0.0 or emp_left > 0.0:
@@ -2822,6 +2828,8 @@ func _update_archive_attack() -> void:
 		# The shield hardens between phases. Players must survive the next
 		# pattern instead of ending every phase within a single burst.
 		archive_next_attack = time + HiddenSector.PHASE_TRANSITION_SECONDS
+		if archive_challenge_active() and archive_challenge_version >= 2:
+			archive_exposed_until = time
 		# A brief visible phase surge creates actual dodging pressure instead
 		# of waiting behind an invulnerable timer. It has no XP or Core reward.
 		var count: int = int(HiddenSector.PHASE_SURGE_SHOTS[archive_phase])
@@ -3598,6 +3606,8 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == HiddenSector.BOSS:
 		if time >= archive_exposed_until:
 			amount *= archive_sealed_factor()
+		else:
+			amount *= archive_exposed_damage_factor()
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))

@@ -4,6 +4,7 @@ extends "res://tests/balance_matrix.gd"
 ## For Archive, compare old/new challenge versions from the same earned entry.
 const STAGE_CAP := 900.0
 const SEED_OFFSET := 430
+const SEED_COUNT := 8
 
 func _run() -> void:
 	var ship := ""
@@ -19,15 +20,15 @@ func _run() -> void:
 		push_error("Invalid checkpoint audit cohort")
 		quit(2)
 		return
-	print("CHECKPOINT_CONFIG ", JSON.stringify({"suite":suite,"ship":ship,"budget":budget,"policy":policy,"seeds":4,"offset":SEED_OFFSET}))
+	print("CHECKPOINT_CONFIG ", JSON.stringify({"suite":suite,"ship":ship,"budget":budget,"policy":policy,"seeds":SEED_COUNT,"offset":SEED_OFFSET}))
 	var faults := 0
-	for i in range(4):
+	for i in range(SEED_COUNT):
 		var seed := 810000 + (SEED_OFFSET + i + 1) * 7919
 		var style := "focused" if i % 2 == 0 else "shielded"
 		var row := _campaign(seed, ship, budget, policy, style, suite, i)
 		print("CHECKPOINT_RUN ", JSON.stringify(row))
 		if row.status == "fault": faults += 1
-	print("CHECKPOINT_DONE ", JSON.stringify({"runs":4,"faults":faults}))
+	print("CHECKPOINT_DONE ", JSON.stringify({"runs":SEED_COUNT,"faults":faults}))
 	quit(1 if faults else 0)
 
 func _take_draft(sim: RefCounted, style: String) -> bool:
@@ -50,6 +51,10 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 	var kills_before: int = sim.kills
 	var hull_start: float = sim.hull
 	var shield_start: float = sim.shield
+	var rerolls_used := 0
+	var damage_before := _total_damage(sim.damage_taken)
+	var boss_damage_before := -1.0
+	var boss_counters_before := -1
 	var status := "fault"
 	var reason := "frame budget"
 	for _frame in range(60 * (int(STAGE_CAP) + 90)):
@@ -60,6 +65,9 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 			status = "cleared" if sim.stage_transition_queued and sim.stage_clears == world else "dead"
 			reason = ""
 			break
+		if sim.boss_spawned and boss_damage_before < 0.0:
+			boss_damage_before = _total_damage(sim.damage_taken)
+			boss_counters_before = sim.beams_cancelled
 		if sim.secret_intro_pending:
 			if not sim.dismiss_secret_intro():
 				reason = "intro refused"
@@ -72,9 +80,11 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 				break
 			continue
 		if not sim.cards.is_empty():
+			var rerolls_before: int = sim.rerolls_left
 			if not _take_draft(sim, style):
 				reason = "draft refused"
 				break
+			rerolls_used += maxi(0, rerolls_before - int(sim.rerolls_left))
 			continue
 		if signals and not sim.secret_entered and sim.signal_status == "offer":
 			if not sim.choose_signal("cast"):
@@ -100,8 +110,14 @@ func _fly_world(sim: RefCounted, strategy: String, style: String, signals: bool)
 			reason = "unpaid diagnostic cap"
 			break
 	var row := _stage_report(sim, status)
-	row.merge({"reason":reason,"start_hull":hull_start,"start_shield":shield_start,"level_gain":sim.level-level_before,"kill_gain":sim.kills-kills_before,"casts":sim.ability_uses-casts_before,"counters":sim.beams_cancelled-counters_before,"beams":sim.beams_fired-fired_before,"cores_if_claimed":sim.payout(),"archive_phase":sim.archive_phase,"mutations":sim.mutations.duplicate(),"rerolls_left":sim.rerolls_left}, true)
+	row.merge({"reason":reason,"start_hull":hull_start,"start_shield":shield_start,"level_gain":sim.level-level_before,"kill_gain":sim.kills-kills_before,"casts":sim.ability_uses-casts_before,"counters":sim.beams_cancelled-counters_before,"beams":sim.beams_fired-fired_before,"cores_if_claimed":sim.payout(),"archive_phase":sim.archive_phase,"mutations":sim.mutations.duplicate(),"rerolls_left":sim.rerolls_left,"rerolls_used":rerolls_used,"stage_damage":_total_damage(sim.damage_taken)-damage_before,"boss_damage":maxf(0.0,_total_damage(sim.damage_taken)-boss_damage_before) if boss_damage_before >= 0.0 else 0.0,"boss_counters":sim.beams_cancelled-boss_counters_before if boss_counters_before >= 0 else 0}, true)
 	return row
+
+func _total_damage(receipts: Dictionary) -> float:
+	var total := 0.0
+	for value in receipts.values():
+		total += float(value)
+	return total
 
 func _select_destination(sim: RefCounted, id: String) -> bool:
 	if not sim.choose_route(id):
@@ -161,7 +177,23 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 					reason = str(result.reason)
 					break
 			if status == "fault": break
-			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants})
+			var candidate := {}
+			# Diagnostic only: same stage risk field that advance_stage sets.
+			if "smugglers" in hand:
+				var probe := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
+				if not probe.restore(checkpoint) or probe.snapshot() != checkpoint or not _select_destination(probe, "smugglers") or not is_equal_approx(probe.stage_risk, 1.15):
+					status = "fault"
+					reason = "Corridor matched control restore failed"
+					break
+				probe.stage_risk = 1.08
+				candidate = _fly_world(probe, policy, style, false)
+				candidate["id"] = "smugglers"
+				candidate["incremental_cores"] = int(candidate.cores_if_claimed) - int(start.cores)
+				if candidate.status == "fault":
+					status = "fault"
+					reason = str(candidate.reason)
+					break
+			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants,"smuggler_candidate":candidate})
 		if not _select_destination(sim, continuation):
 			status = "fault"
 			reason = "continuation rejected"
@@ -171,14 +203,15 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 	if suite == "archive" and status == "cleared" and sim.stage == 4 and sim.can_enter_secret():
 		var decision := sim.snapshot()
 		var entry: int = sim.payout()
-		for revision in ["control","candidate"]:
+		for revision in ["control","initial","candidate"]:
 			var fork := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
 			if not fork.restore(decision) or fork.snapshot() != decision or not fork.enter_secret():
 				status = "fault"
 				reason = "earned Archive entry rejected"
 				break
 			if revision == "control": fork.archive_challenge_version = 0
-			elif not fork.archive_challenge_active():
+			elif revision == "initial": fork.archive_challenge_version = 1
+			elif not fork.archive_challenge_active() or fork.archive_challenge_version != 2:
 				status = "fault"
 				reason = "candidate challenge not enabled on real entry"
 				break

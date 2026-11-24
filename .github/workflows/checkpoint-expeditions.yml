@@ -38,7 +38,7 @@ jobs:
           log="logs/routes-$SHIP-$BUDGET-$POLICY.log"
           godot --headless --path . --script tests/checkpoint_expeditions.gd -- --suite=routes --ship="$SHIP" --hangar="$BUDGET" --strategy="$POLICY" |& tee "$log"
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
-          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 4
+          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 8
           test "$(grep -c '^CHECKPOINT_DONE ' "$log")" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()
@@ -73,7 +73,7 @@ jobs:
           log="logs/archive-$SHIP-$BUDGET-$POLICY.log"
           godot --headless --path . --script tests/checkpoint_expeditions.gd -- --suite=archive --ship="$SHIP" --hangar="$BUDGET" --strategy="$POLICY" |& tee "$log"
           if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
-          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 4
+          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 8
           test "$(grep -c '^CHECKPOINT_DONE ' "$log")" -eq 1
       - uses: actions/upload-artifact@v4
         if: always()

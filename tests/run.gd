@@ -183,10 +183,16 @@ func _test_archive_challenge() -> void:
 	old_save.erase("archive_challenge_version")
 	check(old.restore(old_save) and not old.archive_challenge_active() and old.archive_attack_pressure() == 1.0, "Previously suspended Archive visits retain their old challenge")
 	check(is_equal_approx(sim._boss_core().max_hp, old._boss_core().max_hp), "Challenge does not inflate the Custodian's HP")
+	check(sim.archive_challenge_version == 2 and old.archive_exposed_damage_factor() == 1.0, "New entry uses revised armor; old visits remain unchanged")
+	var prior := Sim.new()
+	var prior_save := saved.duplicate(true)
+	prior_save["archive_challenge_version"] = 1
+	check(prior.restore(prior_save) and prior.archive_exposed_damage_factor() == 1.0, "Version one saved Archive retains its original exposure")
 	for phase in range(3):
 		var trial := Sim.new()
 		check(trial.restore(saved) and trial.archive_challenge_active(), "New challenge survives checkpoint")
 		trial.archive_phase = phase
+		check(is_equal_approx(trial.archive_exposed_damage_factor(), float([0.65,0.50,0.40][phase])) and trial.archive_exposed_damage_factor() > trial.archive_sealed_factor(), "Each phase rewards the counter with substantially higher damage")
 		trial.archive_next_attack = trial.time
 		trial._update_archive_attack()
 		check(is_equal_approx(trial.archive_attack_until - trial.time, 3.6), "All three phase telegraphs retain the full reading/counter window")
@@ -201,6 +207,14 @@ func _test_archive_challenge() -> void:
 		var checkpoint := trial.snapshot()
 		var restored := Sim.new()
 		check(restored.restore(checkpoint) and restored.snapshot() == checkpoint and restored.payout() == locked_cores, "Counter crossfire and locked Cores survive resume exactly")
+	var transition := Sim.new()
+	check(transition.restore(saved), "Phase transition fixture restores")
+	transition.archive_phase_released = true
+	transition.archive_exposed_until = transition.time + 3.4
+	var core: Dictionary = transition._boss_core()
+	core.hp = core.max_hp * sector.PHASE_FLOORS[0]
+	transition._update_archive_attack()
+	check(transition.archive_phase == 1 and transition.archive_exposed_until == transition.time and transition.archive_next_attack > transition.time, "New phase reseals and schedules its own readable counter")
 	var regular := Sim.new()
 	check(regular.archive_attack_pressure() == 1.0 and not regular.archive_challenge_active(), "Regular campaign and Endless have no Archive challenge pressure")
 
