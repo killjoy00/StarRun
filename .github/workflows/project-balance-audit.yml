@@ -1,0 +1,101 @@
+name: Five-part balance audit
+# Diagnostic only; no builds are deployed. Limit the expensive sweep to PRs
+# modifying the audit itself, or an explicit manual run.
+on:
+  pull_request:
+    paths:
+      - tests/project_balance_audit.gd
+      - tools/project_balance_audit.py
+      - .github/workflows/project-balance-audit.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: project-balance-audit-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import the project
+        run: godot --headless --path . --editor --import --quit
+      - name: Exercise actual engine, choices and settlement
+        run: |
+          set -euo pipefail
+          godot --headless --path . --script tests/project_balance_audit.gd -- --suite=build --ship=vanguard --seeds=1 --seed-offset=200 |& tee smoke.log
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' smoke.log; then exit 1; fi
+          test "$(grep -c '^AUDIT_RUN ' smoke.log)" -eq 5
+          python3 -m py_compile tools/project_balance_audit.py
+  research:
+    needs: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [build, route, difficulty]
+        ship: [vanguard, kestrel, bulwark, wraith, arcwing, haven, lancer]
+        include:
+          - {suite: economy, ship: vanguard}
+          - {suite: economy, ship: bulwark}
+          - {suite: economy, ship: haven}
+          - {suite: endgame, ship: vanguard}
+          - {suite: endgame, ship: bulwark}
+          - {suite: endgame, ship: haven}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install pinned Godot
+        run: tools/install-godot.sh
+      - name: Import the game
+        run: godot --headless --path . --editor --import --quit
+      - name: Simulate matched real campaigns
+        env:
+          SUITE: ${{ matrix.suite }}
+          SHIP: ${{ matrix.ship }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          log="logs/$SUITE-$SHIP.log"
+          godot --headless --path . --script tests/project_balance_audit.gd -- --suite="$SUITE" --ship="$SHIP" --seeds=4 --seed-offset=200 |& tee "$log"
+          if grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script' "$log"; then exit 1; fi
+          test "$(grep -c '^AUDIT_CONFIG ' "$log")" -eq 1
+          test "$(grep -c '^AUDIT_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: project-audit-${{ matrix.suite }}-${{ matrix.ship }}
+          path: logs/
+          retention-days: 30
+  report:
+    if: always() && needs.smoke.result == 'success'
+    needs: [smoke, research]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: project-audit-*
+          path: logs
+          merge-multiple: true
+      - name: Validate and summarize all five investigations
+        run: |
+          set -euo pipefail
+          python3 tools/project_balance_audit.py logs/*.log | tee audit.md
+          cat audit.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.research.result }}" = success
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: five-part-audit-report
+          path: audit.md
+          retention-days: 30
