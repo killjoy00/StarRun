@@ -2,6 +2,7 @@ extends RefCounted
 ## Local, offline progression. Achievements are earned from completed real runs.
 ## Daily flights use the same UTC seed, ship, pilot and zero-Hangar loadout
 ## for everyone. Replays improve a local best, but do not farm Core rewards.
+const FirstFlight = preload("res://scripts/first_flight.gd")
 const Catalog = preload("res://scripts/catalog.gd")
 const RivalCaptains = preload("res://scripts/rival_captains.gd")
 const Codex = preload("res://scripts/codex.gd")
@@ -243,6 +244,16 @@ static func progress(profile: Dictionary, id: String) -> int:
 		"endless_six":
 			return int(stats.get("max_world_any",0))
 	return 0
+
+## A separate receipt keeps this reward independent of campaign/Daily seeds.
+static func settle_first_flight(profile: Dictionary, sim: RefCounted) -> void:
+	if not sim.intro_run or not sim.intro_reward_eligible or not sim.ended or not sim.won or profile.get("intro_status") != "available":
+		return
+	profile.intro_status = "complete"
+	profile.intro_cores = FirstFlight.REWARD
+	profile.cores = int(profile.get("cores", 0)) + FirstFlight.REWARD
+	if sim.intro_beam_blocked:
+		profile.beam_tutorial_seen = true
 
 static func settle(profile: Dictionary, sim: RefCounted) -> Dictionary:
 	prepare(profile)

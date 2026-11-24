@@ -174,6 +174,8 @@ func _draw() -> void:
 	for enemy in sim.enemies:
 		_draw_enemy(enemy)
 	_draw_player(ship, velocity)
+	if sim.intro_run and sim.time < 2.1 and not profile.reduced:
+		_draw_first_flight_launch(ship)
 	_draw_support()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
@@ -195,6 +197,8 @@ func _draw() -> void:
 		_draw_projectile(bullet)
 	if host.mode == "stage_clear":
 		_draw_boss_ceremony(host.stage_clear_clock)
+	elif host.mode == "intro_clear" and not profile.reduced:
+		_draw_boss_ceremony(host.intro_clear_clock)
 	elif host.mode == "warp":
 		_draw_warp(host.warp_clock)
 	_draw_boss_panel()
@@ -209,9 +213,27 @@ func _draw() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(278, 920), "SHIELD DOWN", HORIZONTAL_ALIGNMENT_LEFT, 244, 15, DANGER)
 		for segment in range(8):
 			draw_line(Vector2(278 + segment * 31, 928), Vector2(298 + segment * 31, 928), DANGER, 3, true)
-	_bar(Rect2(18, 941, 504, 3), float(sim.xp) / sim.xp_needed(), AMBER)
+	if not sim.intro_run:
+		_bar(Rect2(18, 941, 504, 3), float(sim.xp) / sim.xp_needed(), AMBER)
 	if host.banner_clock > 0:
 		draw_string(ThemeDB.fallback_font, Vector2(28, 880), host.banner_text, HORIZONTAL_ALIGNMENT_LEFT, 480, 18, CYAN)
+
+func _draw_first_flight_launch(ship: Vector2) -> void:
+	# A brief thrust flare uses the live ship position and fades into normal flight.
+	var progress := clampf(sim.time / 2.1, 0.0, 1.0)
+	var power := sin(progress * PI) * (1.0 - progress)
+	for side in [-1.0, 1.0]:
+		var engine_mount := ship + Vector2(side * 15, 27)
+		draw_colored_polygon(PackedVector2Array([
+			engine_mount + Vector2(-7, 0),
+			engine_mount + Vector2(7, 0),
+			engine_mount + Vector2(side * 16, 110.0 * power + 24.0),
+		]), Color(CYAN, 0.25 * power))
+		draw_line(engine_mount, engine_mount + Vector2(side * 8, 94.0 * power + 16.0), Color(CYAN, power), 2.0, true)
+	for i in range(12):
+		var x := fposmod(i * 57.7, 540.0)
+		var y := fposmod(i * 137.0 + sim.time * 730.0, 960.0)
+		draw_line(Vector2(x, y), Vector2(x, y + 42.0), Color(CYAN, power * 0.65), 1.5, true)
 
 ## The boss health bar, name and phase line sit above every lane and shot.
 ## Beam lanes used to be drawn over it and could cover the phase text.
