@@ -947,8 +947,8 @@ func _name_part(full: String, part: int) -> String:
 
 func _difficulty_text(id: String) -> String:
 	match id:
-		"hard": return "Enemies are 25% tougher and shoot more. Cores ×1.75."
-		"insane": return "Enemies are twice as tough and shoot even more. Cores ×2.5."
+		"hard": return "Enemies are 25% tougher and shoot more. Boss clears pay ×1.75; early recovery is earned by kills."
+		"insane": return "Enemies are twice as tough and shoot even more. Boss clears pay ×2.5; early recovery is earned by kills."
 	return "The normal challenge. Cores ×1."
 
 func _multiplier_text(id: String) -> String:
