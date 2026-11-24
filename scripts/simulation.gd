@@ -58,6 +58,8 @@ var archive_next_attack := 0.0
 var archive_attack_until := 0.0
 var archive_exposed_until := 0.0
 var archive_phase := 0
+# Assigned on a new Archive entry; already-suspended Archive visits keep their rules.
+var archive_challenge_version := 0
 var archive_phase_released := false
 var archive_attack := ""
 var archive_attack_x := 0.0
@@ -1575,7 +1577,7 @@ func boss_phase_label() -> String:
 	if secret_entered:
 		if not archive_attack.is_empty():
 			return "CAST AN ABILITY TO BREAK THE LOCK"
-		return "CORE EXPOSED" if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
+		return ("CORE EXPOSED · CROSSFIRE" if archive_challenge_active() else "CORE EXPOSED") if time < archive_exposed_until else ["READING YOUR FLIGHT", "LATTICE RECONFIGURING", "COLLAPSE IMMINENT"][archive_phase]
 	if stage == 1:
 		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
 	if stage == 2:
@@ -1772,6 +1774,7 @@ func enter_secret() -> bool:
 	if not can_enter_secret():
 		return false
 	secret_payout = payout()
+	archive_challenge_version = 1 if expedition_rules else 0
 	secret_entered = true
 	destination_choice = ""
 	route_offers.clear()
@@ -2773,11 +2776,28 @@ func _update_archive_enemy(enemy: Dictionary, pace: float, arriving: bool = fals
 	for i in range(count):
 		bullets.append({"p":enemy.p, "v":direction.rotated((i - (count - 1) * 0.5) * 0.17) * 245.0, "damage":2.5 * threat_scale(), "kind":"chaff", "source":kind})
 
+func archive_challenge_active() -> bool:
+	return secret_entered and archive_challenge_version >= 1 and daily_day.is_empty()
+
+func archive_attack_pressure() -> float:
+	if not archive_challenge_active() or not boss_spawned:
+		return 1.0
+	return float([1.20, 1.45, 1.70][clampi(archive_phase, 0, 2)])
+
+func archive_counter_exposure() -> float:
+	return 3.4 if archive_challenge_active() and boss_spawned else HiddenSector.COUNTER_EXPOSURE_SECONDS
+
+func archive_missed_exposure() -> float:
+	return 1.2 if archive_challenge_active() and boss_spawned else HiddenSector.UNANSWERED_EXPOSURE_SECONDS
+
+func archive_sealed_factor() -> float:
+	return 0.10 if archive_challenge_active() else HiddenSector.SEALED_DAMAGE_FACTOR
+
 func _archive_index_fire(core: Dictionary) -> void:
 	core.fire -= DT
 	if core.fire > 0.0 or jammer_left > 0.0 or emp_left > 0.0:
 		return
-	core.fire = HiddenSector.VOLLEY_INTERVALS[archive_phase]
+	core.fire = float(HiddenSector.VOLLEY_INTERVALS[archive_phase]) * (0.86 if archive_challenge_active() else 1.0)
 	var aim := ship_position(time + 2.35)
 	for side in [-1, 1]:
 		var origin: Vector2 = core.p + Vector2(side * 66.0, 12.0)
@@ -2785,7 +2805,7 @@ func _archive_index_fire(core: Dictionary) -> void:
 		var count: int = int(HiddenSector.VOLLEY_COUNTS[archive_phase])
 		for i in range(count):
 			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.11
-			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
+			bullets.append({"p":origin, "v":direction.rotated(angle) * (242.0 + 17.0 * i), "damage":HiddenSector.VOLLEY_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _update_archive_attack() -> void:
 	var core := _boss_core() if boss_spawned else {}
@@ -2808,7 +2828,7 @@ func _update_archive_attack() -> void:
 		var direction: Vector2 = (ship_position(time + 1.4) - core.p).normalized()
 		for i in range(count):
 			var angle: float = (float(i) - float(count - 1) * 0.5) * 0.14
-			bullets.append({"p":core.p, "v":direction.rotated(angle) * 290.0, "damage":HiddenSector.PHASE_SURGE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
+			bullets.append({"p":core.p, "v":direction.rotated(angle) * 290.0, "damage":HiddenSector.PHASE_SURGE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 		effects.append({"kind":"ion-burst", "p":core.p, "radius":115.0, "life":0.70, "max_life":0.70, "born":tick})
 		_log("BOSS PHASE %d/3 · core moved · attack coming" % (archive_phase + 1))
 	if time < archive_next_attack:
@@ -2825,12 +2845,12 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else (7.5 if archive_phase == 2 else 10.0))
-	archive_exposed_until = time + HiddenSector.UNANSWERED_EXPOSURE_SECONDS
+	archive_exposed_until = time + archive_missed_exposure()
 	if attack != "lattice":
 		effects.append({"kind":"beam", "p":Vector2(archive_attack_x, 0), "life":0.32, "max_life":0.32, "born":tick})
 		beams_fired += 1
 		if absf(ship_position().x - archive_attack_x) < 38.0:
-			_hit((HiddenSector.COLLAPSE_BEAM_DAMAGE if attack == "collapse" else (HiddenSector.LOCK_BEAM_DAMAGE if boss_spawned else 27.0)) * threat_scale() * (boss_projectile_damage_multiplier() if boss_spawned else 1.0), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
+			_hit((HiddenSector.COLLAPSE_BEAM_DAMAGE if attack == "collapse" else (HiddenSector.LOCK_BEAM_DAMAGE if boss_spawned else 27.0)) * threat_scale() * (boss_projectile_damage_multiplier() * archive_attack_pressure() if boss_spawned else 1.0), "heavy", HiddenSector.BOSS if boss_spawned else "Archive gate")
 	if attack in ["lattice", "collapse"]:
 		var count: int = HiddenSector.LATTICE_PROJECTILES_PER_SIDE if attack == "lattice" else HiddenSector.COLLAPSE_PROJECTILES_PER_SIDE
 		for side in [-1, 1]:
@@ -2838,16 +2858,32 @@ func _resolve_archive_attack(core: Dictionary) -> void:
 			var dir: Vector2 = (ship_position(time + 2.0) - source).normalized()
 			for i in range(count):
 				var offset := (i - (count - 1) * 0.5) * 0.15
-				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier(), "kind":"void", "source":HiddenSector.BOSS})
+				bullets.append({"p":source, "v":dir.rotated(offset) * (220.0 + i * 7.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
 
 func _counter_archive_attack() -> void:
 	archive_attack = ""
 	archive_phase_released = true
 	archive_next_attack = time + (16.0 if not boss_spawned else 9.0)
-	archive_exposed_until = time + HiddenSector.COUNTER_EXPOSURE_SECONDS
+	archive_exposed_until = time + archive_counter_exposure()
 	beams_cancelled += 1
 	effects.append({"kind":"ion-burst", "p":ship_position(), "radius":215.0, "life":0.75, "max_life":0.75, "born":tick})
 	_log("SHIELD DOWN · shoot the core")
+	# A successful interrupt still cancels the entire advertised heavy attack.
+	# The upgraded Custodian's auxiliary emitters keep firing a smaller,
+	# travel-time-limited crossfire; do not apply instant damage or clear
+	# existing bullets. Any active remains a valid counter.
+	if archive_challenge_active() and boss_spawned:
+		var core := _boss_core()
+		if not core.is_empty():
+			var count: int = int([3, 5, 7][archive_phase])
+			for side in [-1, 1]:
+				var origin: Vector2 = core.p + Vector2(side * 115.0, 18.0)
+				var direction: Vector2 = (ship_position(time + 2.0) - origin).normalized()
+				for i in range(count):
+					var angle: float = (float(i) - float(count - 1) * 0.5) * 0.16
+					bullets.append({"p":origin, "v":direction.rotated(angle) * (220.0 + i * 9.0), "damage":HiddenSector.ATTACK_PROJECTILE_DAMAGE * 0.65 * threat_scale() * boss_projectile_damage_multiplier() * archive_attack_pressure(), "kind":"void", "source":HiddenSector.BOSS})
+			effects.append({"kind":"ion-burst", "p":core.p, "radius":125.0, "life":0.7, "max_life":0.7, "born":tick})
+			_log("AUXILIARY CROSSFIRE · core remains exposed")
 
 func _update_charges() -> void:
 	for charge in charges:
@@ -3561,7 +3597,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount = minf(amount, maxf(0.0, float(enemy.hp) - _late_boss_floor(enemy)))
 	if enemy.kind == HiddenSector.BOSS:
 		if time >= archive_exposed_until:
-			amount *= HiddenSector.SEALED_DAMAGE_FACTOR
+			amount *= archive_sealed_factor()
 		if archive_phase < 2 or not archive_phase_released:
 			var floor_hp: float = enemy.max_hp * HiddenSector.PHASE_FLOORS[archive_phase]
 			amount = minf(amount, maxf(0.0, enemy.hp - floor_hp))
@@ -4589,7 +4625,7 @@ func payout() -> int:
 
 func snapshot() -> Dictionary:
 	var state: Dictionary = {"version": SAVE_VERSION, "rng": rng.state, "draft_rng": draft_rng.state}
-	for key in ["signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
+	for key in ["archive_challenge_version", "signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
@@ -4615,6 +4651,8 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	if not state.has("archive_challenge_version"):
+		archive_challenge_version = 0
 	if not state.has("expedition_rules"):
 		expedition_rules = false
 	# Pre-overhaul suspended flights retain their original automatic fusion

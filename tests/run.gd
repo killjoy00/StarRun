@@ -88,6 +88,7 @@ func _run() -> void:
 	_test_rival_captain_campaign()
 	_test_daily_world1_isolation()
 	_test_hidden_archive()
+	_test_archive_challenge()
 	var seeds := 24
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--seeds="):
@@ -162,6 +163,46 @@ func _test_daily_world1_isolation() -> void:
 		daily._spawn_world1_strike_wing()
 		check(daily.enemies.is_empty() and daily.pressure_waves == 0,
 			"Direct calls cannot leak regular-flight pressure enemies into Daily")
+
+func _test_archive_challenge() -> void:
+	var sector := preload("res://scripts/hidden_sector.gd")
+	var sim := Sim.new(81990)
+	check(sim.enable_expedition_rules(), "Fresh regular rules enabled")
+	sim.stage = 4
+	sim.stage_clears = 4
+	sim.signal_count = 2
+	sim.stage_transition_queued = true
+	var locked_cores: int = sim.payout()
+	check(sim.enter_secret() and sim.archive_challenge_active() and sim.payout() == locked_cores, "New Archive entry locks earned campaign reward and selects challenge version")
+	sim.dismiss_secret_intro()
+	sim._spawn_boss()
+	sim.dismiss_secret_intro()
+	var saved := sim.snapshot()
+	var old := Sim.new()
+	var old_save := saved.duplicate(true)
+	old_save.erase("archive_challenge_version")
+	check(old.restore(old_save) and not old.archive_challenge_active() and old.archive_attack_pressure() == 1.0, "Previously suspended Archive visits retain their old challenge")
+	check(is_equal_approx(sim._boss_core().max_hp, old._boss_core().max_hp), "Challenge does not inflate the Custodian's HP")
+	for phase in range(3):
+		var trial := Sim.new()
+		check(trial.restore(saved) and trial.archive_challenge_active(), "New challenge survives checkpoint")
+		trial.archive_phase = phase
+		trial.archive_next_attack = trial.time
+		trial._update_archive_attack()
+		check(is_equal_approx(trial.archive_attack_until - trial.time, 3.6), "All three phase telegraphs retain the full reading/counter window")
+		check(is_equal_approx(trial.archive_attack_pressure(), float([1.20,1.45,1.70][phase])), "Phase pressure escalates without time enrage")
+		var before_bullets: int = trial.bullets.size()
+		var before_health: float = trial.hull + trial.shield
+		var before_beams: int = trial.beams_fired
+		trial.cooldowns.aegis = 0.0
+		check(trial.activate("aegis") and trial.archive_attack.is_empty() and trial.archive_phase_released, "Any ready ability still cancels the main attack")
+		check(is_equal_approx(trial.archive_exposed_until - trial.time, 3.4), "Counter still earns a meaningful exposure")
+		check(trial.bullets.size() == before_bullets + 2 * int([3,5,7][phase]) and trial.beams_fired == before_beams and trial.hull + trial.shield >= before_health, "Counter emits real residual crossfire, not instant damage or a beam")
+		var checkpoint := trial.snapshot()
+		var restored := Sim.new()
+		check(restored.restore(checkpoint) and restored.snapshot() == checkpoint and restored.payout() == locked_cores, "Counter crossfire and locked Cores survive resume exactly")
+	var regular := Sim.new()
+	check(regular.archive_attack_pressure() == 1.0 and not regular.archive_challenge_active(), "Regular campaign and Endless have no Archive challenge pressure")
 
 func _test_hidden_archive() -> void:
 	var sector := preload("res://scripts/hidden_sector.gd")

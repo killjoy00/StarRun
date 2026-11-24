@@ -2368,6 +2368,8 @@ func _show_archive_intro(reset_sound: bool = true) -> void:
 		_archive_art(view.body, "boss")
 		Kit.label(view.body, "“I was ordered to keep this door closed. I no longer remember by whom.”", 18, Kit.TEXT, true)
 		Kit.label(view.body, "The boss has 3 shields. When you see a warning, use an ability to open the core, then shoot it.", 17, HiddenSector.MINT, true)
+		if sim.archive_challenge_active():
+			Kit.label(view.body, "Breaking a lock cancels its main attack. The side emitters still fire, and each shield phase hits harder. Keep an ability ready for the next warning.", 16, Kit.TEXT, true)
 	else:
 		_page_header(view.top, "World 5  ·  Off the charts", "Silent Archive")
 		_archive_art(view.body, "arrival")
