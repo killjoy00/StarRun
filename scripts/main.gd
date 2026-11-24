@@ -1,5 +1,6 @@
 extends Node2D
 const Simulation = preload("res://scripts/simulation.gd")
+const FirstFlight = preload("res://scripts/first_flight.gd")
 const Services = preload("res://scripts/platform_services.gd")
 const Sound = preload("res://scripts/sound.gd")
 const Playfield = preload("res://scripts/playfield.gd")
@@ -29,6 +30,16 @@ var services := Services.new()
 var sound: Node
 var profile := {"cores": 0, "runs": 0, "hangar": {"hull": 0, "damage": 0, "regen": 0}, "hangar_paid": {}, "sound": true, "music": true, "reduced": false, "last_paid_run": -1, "ship": "vanguard", "pilot": "rookie", "ships_owned": ["vanguard"], "pilots_owned": ["rookie"], "speed": 1.0, "difficulty": "normal", "artifact":"standard", "start_world": 1}
 var mode := "menu"
+var flight_started := false
+var intro_panel: PanelContainer
+var intro_heading: Label
+var intro_caption: Label
+var intro_continue: Button
+var intro_marker: Panel
+var intro_cue: Array = []
+var intro_cue_tween: Tween
+var intro_save_pending := false
+var intro_clear_clock := 0.0
 var accumulator := 0.0
 var visual_time := 0.0
 var save_clock := 0.0
@@ -134,6 +145,10 @@ func _ready() -> void:
 	var profile_recovery := str(services.get("last_recovery")) if services.get("last_recovery") != null else ""
 	if not saved.is_empty():
 		profile.merge(saved, true)
+	if not profile.has("intro_status"):
+		var old_flight := services.read_save(Services.RUN)
+		var fresh := saved.is_empty() and (old_flight.is_empty() or bool(old_flight.get("intro_reward_eligible", false)))
+		profile.intro_status = "available" if fresh else "legacy"
 	var hangar := Catalog.defaults()
 	hangar.merge(profile.hangar, true)
 	profile.hangar = hangar
@@ -398,6 +413,7 @@ func _build_ui() -> void:
 	signal_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	signal_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	signal_label.visible = false
+	_build_intro_hud()
 	overlay = Control.new()
 	overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(overlay)
@@ -418,6 +434,69 @@ func _build_ui() -> void:
 	toast_title.add_theme_font_override("font",Kit.font(1,0.35))
 	toast_detail = Kit.label(stack,"",17,Kit.TEXT,true)
 
+func _build_intro_hud() -> void:
+	intro_panel = PanelContainer.new()
+	intro_panel.name = "FirstFlightCaption"
+	intro_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intro_panel.add_theme_stylebox_override("panel", Kit.box(Color("0d1d2b"), Color("385568"), 9, 1, 10, 5))
+	intro_panel.hide()
+	root.add_child(intro_panel)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 8)
+	intro_panel.add_child(row)
+	var text_stack := VBoxContainer.new()
+	text_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	text_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_stack.alignment = BoxContainer.ALIGNMENT_CENTER
+	text_stack.add_theme_constant_override("separation", 0)
+	row.add_child(text_stack)
+	intro_heading = Kit.caps(text_stack, "", Kit.CYAN, 13)
+	intro_caption = Kit.label(text_stack, "", 15, Kit.TEXT, true)
+	intro_continue = _ui_button(row, "Keep flying", _continue_intro_aegis, "ghost", 44)
+	intro_continue.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	intro_continue.hide()
+
+	intro_marker = Panel.new()
+	intro_marker.name = "AegisMarker"
+	intro_marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intro_marker.add_theme_stylebox_override("panel", Kit.box(Color.TRANSPARENT, Kit.AMBER, 10, 2, 0, 0))
+	intro_marker.hide()
+	root.add_child(intro_marker)
+
+func _layout_intro_hud() -> void:
+	var screen := get_viewport_rect().size
+	var width := minf(440.0, screen.x - 32.0)
+	intro_panel.position = Vector2((screen.x - width) * 0.5, shield_meter.position.y + 30.0)
+	intro_panel.size = Vector2(width, 52.0)
+	intro_marker.position = ability_a.position - Vector2(3, 3)
+	intro_marker.size = ability_a.size + Vector2(6, 6)
+
+func _update_intro_hud() -> void:
+	var active: bool = flight_started and sim.intro_run and mode in ["playing", "intro_aegis"]
+	var lesson := active and mode == "intro_aegis"
+	intro_marker.visible = lesson
+	intro_marker.modulate.a = 1.0 if profile.reduced else 0.87 + 0.13 * sin(visual_time * 5.0)
+	intro_continue.visible = lesson
+	ability_a.focus_mode = Control.FOCUS_ALL if lesson else Control.FOCUS_NONE
+	var cue: Array = FirstFlight.cue(sim) if active else []
+	if cue == intro_cue:
+		return
+	if intro_cue_tween and intro_cue_tween.is_valid():
+		intro_cue_tween.kill()
+	intro_cue = cue
+	intro_panel.visible = not cue.is_empty()
+	if cue.is_empty():
+		return
+	intro_heading.text = cue[0]
+	intro_caption.text = cue[1]
+	intro_heading.add_theme_color_override("font_color", Kit.AMBER if lesson else Kit.CYAN)
+	intro_panel.modulate.a = 1.0
+	if not profile.reduced and not lesson:
+		intro_panel.modulate.a = 0.0
+		intro_cue_tween = create_tween()
+		intro_cue_tween.tween_property(intro_panel, "modulate:a", 1.0, 0.23)
+
 func _layout() -> void:
 	var size := get_viewport_rect().size
 	old_size = size
@@ -430,7 +509,7 @@ func _layout() -> void:
 	var inset := _insets()
 	var compact := _compact_ui()
 	var safe_top: float = float(inset.top) + 7.0
-	var field_top := safe_top + 92.0
+	var field_top := safe_top + (160.0 if flight_started and sim.intro_run else 92.0)
 	var reserved := 128.0 if compact else 196.0
 	var usable_height := maxf(80.0, size.y - field_top - reserved - float(inset.bottom))
 	scale_factor = minf((size.x - 24.0) / 540.0, usable_height / 960.0)
@@ -518,11 +597,18 @@ func _layout() -> void:
 			toolbar_style.set_content_margin_all(4.0)
 			control.add_theme_stylebox_override(state, toolbar_style)
 	var wide := size.x > 950
-	build_label.visible = wide
-	report_label.visible = wide
-	build_label.position = Vector2(maxf(26, field.position.x - 260), 160)
+	var first_flight := flight_started and bool(sim.intro_run)
+	var side_y := 176.0 if first_flight else 160.0
+	var build_x := field.position.x - 260.0
+	var report_x := field.end.x + 35.0
+	if first_flight:
+		build_x = minf(build_x, controls_x - 261.0)
+		report_x = maxf(report_x, controls_x + controls_width + 25.0)
+	build_label.visible = wide and (not first_flight or build_x >= 26.0)
+	report_label.visible = wide and (not first_flight or report_x + 220.0 <= size.x)
+	build_label.position = Vector2(maxf(26.0, build_x), side_y)
 	build_label.size = Vector2(235, 600)
-	report_label.position = Vector2(field.end.x + 35, 160)
+	report_label.position = Vector2(report_x, side_y)
 	report_label.size = Vector2(220, 600)
 	sound_button.position = Vector2(16, size.y - 52)
 	sound_button.size = Vector2(90, 36)
@@ -536,6 +622,7 @@ func _layout() -> void:
 	music_button.custom_minimum_size.y = 36
 	music_button.visible = wide
 	low_fx_button.visible = wide
+	_layout_intro_hud()
 	if mode in ["settings", "briefing"]:
 		if mode == "settings":
 			_show_settings()
@@ -589,6 +676,10 @@ func _layout() -> void:
 		_show_route_choice()
 	elif mode == "beam_tutorial":
 		_show_beam_tutorial()
+	elif mode == "intro_results":
+		_show_intro_results()
+	elif mode == "boss_intro" and sim.intro_run:
+		_show_boss_intro(false)
 
 func _clear_overlay() -> void:
 	for child in overlay.get_children():
@@ -967,6 +1058,7 @@ func _render_base(base: String) -> void:
 
 func _show_menu() -> void:
 	mode = "menu"
+	flight_started = false
 	confirm_key = ""
 	var view := _page(1.0, true, 460.0)
 	var top: VBoxContainer = view.top
@@ -1089,7 +1181,7 @@ func _show_menu() -> void:
 		segments.add_child(segment)
 	_start_world_picker(body, current)
 	# A short navigation rail stays above the thumb-reachable primary action.
-	var saved: Dictionary = services.read_save(Services.RUN)
+	var saved := _saved_flight()
 	# Two short rows: five labels in one row were cut off ("Hanga...") on phones.
 	var row := HBoxContainer.new()
 	row.name = "MenuNavTop"
@@ -1107,7 +1199,14 @@ func _show_menu() -> void:
 	_ui_button(row2, "Guide", _show_briefing.bind(false), "ghost", 42, true)
 	var primary: Button
 	if saved.is_empty():
-		primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
+		if profile.intro_status == "available":
+			_ui_button(bottom, "Skip to campaign", _new_run, "ghost", 44)
+			primary = _ui_button(reading_footer, "Start first flight", _launch, "primary", 60, true)
+		else:
+			primary = _ui_button(reading_footer, "Launch", _launch, "primary", 60, true)
+	elif bool(saved.get("intro_run", false)):
+		_ui_button(bottom, "Skip to campaign" if not bool(saved.ended) else "Launch campaign", _new_run, "ghost", 44)
+		primary = _ui_button(reading_footer, "First flight debrief" if bool(saved.ended) else "Resume first flight", _resume_run, "primary", 60, true)
 	else:
 		_ui_button(bottom, "Start new run", _confirm_abandon.bind("menu"), "ghost", 44)
 		var resume_title := "Resume daily  ·  World %d" % int(saved.get("stage",1)) if not str(saved.get("daily_day","")).is_empty() else "Resume  ·  World %d" % int(saved.get("stage",1))
@@ -1318,10 +1417,11 @@ func _show_rival_retired() -> void:
 
 ## A short title card when a world's boss arrives: the sim pauses, warning
 ## stripes slide in and the boss name drops in. Tap to skip.
-func _show_boss_intro() -> void:
+func _show_boss_intro(announce: bool = true) -> void:
 	boss_intro_stage = sim.stage
 	mode = "boss_intro"
-	boss_intro_clock = 0.0
+	if announce:
+		boss_intro_clock = 0.0
 	_clear_overlay()
 	var screen := get_viewport_rect().size
 	var shade := ColorRect.new()
@@ -1356,14 +1456,15 @@ func _show_boss_intro() -> void:
 	stack.size = Vector2(screen.x - 32, 0)
 	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	overlay.add_child(stack)
-	var eyebrow := Kit.caps(stack, ("World %d boss" % sim.stage) if not sim.endless_enabled else ("Endless world %d boss" % sim.stage), Kit.DANGER, 15)
+	var boss_heading := "Debris Belt" if sim.intro_run else ("Endless world %d boss" % sim.stage if sim.endless_enabled else "World %d boss" % sim.stage)
+	var eyebrow := Kit.caps(stack, boss_heading, Kit.DANGER, 15)
 	eyebrow.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var name_label := Kit.label(stack, sim.boss_name(), 42, Color.WHITE)
 	name_label.add_theme_font_override("font", Kit.font(0, 0.8))
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	var tagline := Kit.label(stack, str(BOSS_TAGLINES.get(sim.boss_name(), "Big, angry and in your way.")), 16, Color("ffd9b0"), true)
+	var tagline := Kit.label(stack, "Watch for the beam." if sim.intro_run else str(BOSS_TAGLINES.get(sim.boss_name(), "Big, angry and in your way.")), 16, Color("ffd9b0"), true)
 	tagline.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	if profile.reduced:
+	if profile.reduced or not announce:
 		shade.color.a = 0.62
 	else:
 		var tween := create_tween().set_parallel(true)
@@ -1375,8 +1476,12 @@ func _show_boss_intro() -> void:
 		stack.position.y -= 40.0
 		tween.tween_property(stack, "modulate:a", 1.0, 0.35).set_delay(0.25)
 		tween.tween_property(stack, "position:y", center_y - 58.0, 0.45).set_delay(0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	sound.play("warning")
-	_haptic(160)
+	if announce:
+		sound.play("warning")
+		_haptic(160)
+		if sim.intro_run:
+			sim.intro_boss_intro_pending = true
+			_save_run()
 
 func _skip_boss_intro() -> void:
 	if mode == "boss_intro" and boss_intro_clock >= 0.4:
@@ -1387,6 +1492,9 @@ func _dismiss_boss_intro() -> void:
 		return
 	mode = "playing"
 	boss_intro_clock = 0.0
+	if sim.intro_run:
+		sim.intro_boss_intro_pending = false
+		_save_run()
 	_clear_overlay()
 	accumulator = 0.0
 	_surface_pending_flight_choice()
@@ -1462,18 +1570,29 @@ func _set_difficulty(id: String) -> void:
 	_show_menu()
 
 func _launch() -> void:
-	# Launch immediately; the first heavy-beam charge teaches Aegis in context.
-	# The optional How to play briefing remains available from the title.
-	_new_run()
+	if profile.intro_status == "available" and _saved_flight().is_empty():
+		_new_intro_run()
+	else:
+		_new_run()
+
+func _saved_flight() -> Dictionary:
+	var saved := services.read_save(Services.RUN)
+	if not bool(saved.get("intro_run", false)) or not bool(saved.get("intro_reward_eligible", false)):
+		return saved
+	# A profile write can commit before the replacement campaign checkpoint.
+	var state := str(profile.intro_status)
+	if state == "skipped" or (state == "complete" and not bool(saved.get("ended", false))):
+		return {}
+	return saved
 
 func _launch_daily() -> void:
-	if services.read_save(Services.RUN).is_empty():
+	if _saved_flight().is_empty():
 		_new_daily_run()
 	else:
 		_confirm_abandon("menu", "daily")
 
 func _launch_or_confirm(base: String) -> void:
-	if services.read_save(Services.RUN).is_empty():
+	if _saved_flight().is_empty():
 		_launch()
 	else:
 		_confirm_abandon(base)
@@ -1561,6 +1680,9 @@ func _show_briefing(launch_after: bool = false) -> void:
 		Kit.label(text, str(steps[i][1]), 15, Kit.MUTED, true)
 	if not _touch_first():
 		Kit.label(box, "Keyboard: 1-4 fire abilities, B opens your build, Tab changes speed, Esc pauses.", 14, Kit.DIM, true)
+	var saved := _saved_flight()
+	if profile.intro_status != "available" and (saved.is_empty() or (bool(saved.get("intro_run", false)) and bool(saved.get("ended", false)))):
+		_ui_button(box, "Replay first flight", _new_intro_run.bind(true), "secondary", 48)
 	_focus(_ui_button(box, "Launch" if briefing_launch else "Got it", _briefing_done, "primary", 56))
 
 func _briefing_done() -> void:
@@ -1568,7 +1690,7 @@ func _briefing_done() -> void:
 	_save_profile()
 	if briefing_launch:
 		briefing_launch = false
-		_new_run()
+		_launch()
 	else:
 		_show_menu()
 
@@ -1579,7 +1701,8 @@ func _confirm_abandon(base: String, desired: String = "normal") -> void:
 	mode = "abandon"
 	var saved := services.read_save(Services.RUN)
 	var box := _sheet("Delete your saved run?", "New run", _close_sheet, false)
-	Kit.label(box, "You have a run saved in World %d. Starting over deletes it and earns no Cores." % int(saved.get("stage", 1)), 16, Kit.MUTED, true)
+	var saved_location := "first flight" if bool(saved.get("intro_run", false)) else "World %d" % int(saved.get("stage", 1))
+	Kit.label(box, "You have a run saved in %s. Starting over deletes it and earns no Cores." % saved_location, 16, Kit.MUTED, true)
 	_focus(_ui_button(box, "Resume saved run", _resume_run, "primary", 54))
 	_ui_button(box, "Abandon and start daily" if pending_launch == "daily" else "Abandon and launch", _new_daily_run if pending_launch == "daily" else _launch, "danger", 48)
 	_ui_button(box, "Cancel", _close_sheet, "ghost", 44)
@@ -1974,11 +2097,16 @@ func _show_cards(play_sound: bool = true) -> void:
 	# Ordinary drafts keep every card on a short phone without scrolling, so
 	# only catch-up drafts spend a line on the eyebrow.
 	var eyebrow := ("Free upgrades  ·  %d left" % (sim.catch_up_levels + 1)) if sim.catch_up_levels > 0 else ""
+	if sim.intro_run:
+		eyebrow = "First flight · Upgrade %d of 2" % (sim.intro_picks.size() + 1)
 	_page_header(top, eyebrow, title)
 	if banish_mode:
 		Kit.label(top, "Tap one to remove it from this run. %d left." % sim.banishes_left, 16, Kit.DANGER, true)
 	elif capped:
 		Kit.label(top, "You have every upgrade. Repair your ship or take Cores.", 16, Kit.MUTED, true)
+	elif sim.intro_run:
+		if sim.intro_picks.is_empty():
+			Kit.label(top, "These weapons fire automatically.", 15, Kit.MUTED, true)
 	else:
 		var names := PackedStringArray()
 		for slot in sim.active_slots:
@@ -2157,7 +2285,8 @@ func _show_pause() -> void:
 	sheet_base = "paused"
 	_save_run()
 	var seconds := int(sim.time - sim.stage_start)
-	var box := _sheet("Paused", "Stage %d  ·  %s  ·  %02d:%02d" % [sim.stage, sim.stage_name().capitalize(), seconds / 60, seconds % 60])
+	var flight_label := "First flight" if sim.intro_run else "Stage %d  ·  %s" % [sim.stage, sim.stage_name().capitalize()]
+	var box := _sheet("Paused", "%s  ·  %02d:%02d" % [flight_label, seconds / 60, seconds % 60])
 	Kit.label(box, "Your run is saved. The game is paused.", 15, Kit.MUTED, true)
 	var resume := _ui_button(box, "Resume", _toggle_pause, "primary", 56)
 	var row := HBoxContainer.new()
@@ -2166,6 +2295,8 @@ func _show_pause() -> void:
 	_ui_button(row, "Build", _show_build, "secondary", 48, true)
 	_ui_button(row, "Settings", _show_settings, "secondary", 48, true)
 	_ui_button(box, "Save and quit to title", _show_menu, "ghost", 44)
+	if sim.intro_run:
+		_ui_button(box, "Skip to campaign", _new_run, "ghost", 44)
 	_focus(resume)
 
 func _show_build() -> void:
@@ -2969,7 +3100,129 @@ func _opening_first30_beat() -> void:
 			banner_text = "BIG WAVE  ·  HOLD ON"
 			banner_clock = 3.5
 
+func _new_intro_run(replay: bool = false) -> void:
+	var saved := _saved_flight()
+	if not saved.is_empty() and (not bool(saved.get("intro_run", false)) or not bool(saved.get("ended", false))):
+		return
+	banish_mode = false
+	build_show_all = false
+	var reward_eligible: bool = not replay and profile.intro_status == "available"
+	if reward_eligible and not _save_profile():
+		_queue_toast("First flight could not start", "The profile could not be saved.")
+		return
+	sim = Simulation.new(FirstFlight.SEED)
+	sim.configure_first_flight(reward_eligible)
+	_start_flight()
+
+func _show_intro_aegis() -> void:
+	mode = "intro_aegis"
+	accumulator = 0.0
+	_save_run()
+	_update_intro_hud()
+	_update_hud()
+	_focus(ability_a)
+	sound.play("warning")
+	_haptic(45)
+
+func _continue_intro_aegis() -> void:
+	if mode != "intro_aegis":
+		return
+	sim.intro_aegis_prompt = false
+	mode = "playing"
+	accumulator = 0.0
+	_save_run()
+
+func _show_intro_clear() -> void:
+	mode = "intro_clear"
+	intro_clear_clock = 0.0
+	_save_run()
+	sound.play("boss-explosion")
+	_haptic(90)
+
+func _unsettled_intro() -> bool:
+	if profile.intro_status != "available":
+		return false
+	var saved := _saved_flight()
+	return bool(saved.get("intro_run", false)) and bool(saved.get("intro_reward_eligible", false)) and bool(saved.get("won", false))
+
+func _finish_intro_run() -> void:
+	flight_started = true
+	var checkpoint_saved := _save_run()
+	intro_save_pending = false
+	result_earned_cores = 0
+	if sim.won and sim.intro_reward_eligible:
+		if profile.intro_status == "available" and not checkpoint_saved:
+			intro_save_pending = true
+		elif profile.intro_status == "available":
+			var settled := profile.duplicate(true)
+			Progress.settle_first_flight(settled, sim)
+			if services.write_atomic(Services.PROFILE, settled):
+				# Keep the profile's identity for Game Center and platform services.
+				profile.merge(settled, true)
+			else:
+				intro_save_pending = true
+		if profile.intro_status == "complete":
+			result_earned_cores = int(profile.get("intro_cores", 0))
+	var first_view := mode != "intro_results"
+	_show_intro_results()
+	if first_view:
+		sound.play("victory" if sim.won else "defeat", -8.0)
+
+func _show_intro_results() -> void:
+	mode = "intro_results"
+	var view := _page(1.0, true, 460.0)
+	var body: VBoxContainer = view.body
+	_page_header(view.top, "First flight", "Harvester defeated" if sim.won else "Ship lost", _show_menu)
+	var frame := PanelContainer.new()
+	frame.clip_contents = true
+	frame.add_theme_stylebox_override("panel", Kit.box(Color("091424"), Kit.LINE, 12, 1, 0, 0))
+	body.add_child(frame)
+	var ship_art := HangarBay.new()
+	ship_art.style = "flight"
+	ship_art.labels = false
+	ship_art.ship_id = "vanguard"
+	ship_art.custom_minimum_size.y = 118.0
+	frame.add_child(ship_art)
+	ship_art.set_process(not bool(profile.reduced))
+	_tiles(body, [
+		["Kills", str(sim.kills), Kit.TEXT],
+		["Flight time", _clock(sim.time), Kit.TEXT],
+		["Cores earned", str(maxi(0, result_earned_cores)), Kit.CYAN],
+	])
+	if intro_save_pending:
+		Kit.label(body, "Your Cores could not be saved. Try saving again.", 16, Kit.MUTED, true)
+		_focus(_ui_button(reading_footer, "Save reward", _finish_intro_run, "primary", 56, true))
+		return
+	if sim.won:
+		var plating: int = int(profile.hangar.hull)
+		var price := Catalog.price("hull", plating)
+		if result_earned_cores > 0 and plating == 0:
+			_info_card(body, "Hull plating", "Adds 10 starting hull to future campaign runs.")
+			if int(profile.cores) >= price:
+				_ui_button(body, "Buy Hull plating · %d Cores" % price, _buy_intro_plating, "secondary", 49)
+		elif plating > 0:
+			Kit.label(body, "Hull plating adds %d starting hull in the campaign." % (10 * plating), 16, Kit.MUTED, true)
+		Kit.label(body, "The campaign spans four worlds.", 16, Kit.MUTED, true)
+	else:
+		Kit.label(body, "Keep Aegis ready for the beam, then use it just before impact.", 16, Kit.MUTED, true)
+		_ui_button(view.bottom, "Try first flight again", _new_intro_run.bind(not sim.intro_reward_eligible), "secondary", 48)
+	Kit.label(body, "First flights award no campaign achievements or unlocks.", 14, Kit.MUTED, true)
+	_focus(_ui_button(reading_footer, "Launch campaign", _new_run, "primary", 56, true))
+
+func _buy_intro_plating() -> void:
+	if _buy_hangar_rank("hull"):
+		_show_intro_results()
+
 func _new_run() -> void:
+	if _unsettled_intro():
+		_resume_run()
+		return
+	if profile.intro_status == "available":
+		profile.intro_status = "skipped"
+		if not _save_profile():
+			profile.intro_status = "available"
+			_queue_toast("Could not start the campaign", "Your first flight is still available.")
+			return
 	banish_mode = false
 	profile.runs += 1
 	build_show_all = false
@@ -2989,6 +3242,9 @@ func _new_run() -> void:
 	_start_flight()
 
 func _new_daily_run() -> void:
+	if _unsettled_intro():
+		_resume_run()
+		return
 	# One shared run for each UTC day: same seed, ship, pilot and the day's
 	# generated Hangar for everyone. The player's own upgrades never apply.
 	var setup: Dictionary = Progress.daily_setup(Progress.utc_day())
@@ -3010,16 +3266,20 @@ func _resume_run() -> void:
 	result_earned_cores = -1
 	result_awards.clear()
 	result_rival_news.clear()
-	var state := services.read_save(Services.RUN)
+	var state := _saved_flight()
 	sim = Simulation.new()
 	if not sim.restore(state):
 		_new_run()
 		return
-	if sim.ended and sim.secret_entered:
+	if sim.ended and (sim.secret_entered or sim.intro_run):
 		_finish()
 		return
-	_start_flight()
-	if mode == "playing" and not sim.pending_build_choices.is_empty():
+	_start_flight(false)
+	if sim.intro_aegis_prompt:
+		_show_intro_aegis()
+	elif sim.intro_boss_intro_pending:
+		_show_boss_intro()
+	elif mode == "playing" and not sim.pending_build_choices.is_empty():
 		_show_build_choice()
 	elif mode == "playing" and not sim.cards.is_empty():
 		_show_cards()
@@ -3064,8 +3324,19 @@ func _resume_beam_tutorial() -> void:
 	_clear_overlay()
 	accumulator = 0.0
 
-func _start_flight() -> void:
+func _start_flight(announce: bool = true) -> void:
 	mode = "playing"
+	flight_started = true
+	if sim.intro_run:
+		game_speed = float(sim.intro_speed) if sim.intro_speed in speed_options else 1.0
+	else:
+		game_speed = float(profile.get("speed", 1.0))
+		if game_speed not in speed_options:
+			game_speed = 1.0
+	intro_panel.hide()
+	intro_cue.clear()
+	save_clock = 0.0
+	_layout()
 	opening_last_phase = ""
 	spectacle_audio_run = sim
 	spectacle_audio_seen.clear()
@@ -3082,8 +3353,9 @@ func _start_flight() -> void:
 		previous_ready[id] = sim.cooldowns[id] <= 0
 	last_sector = _sector_name(sim.time)
 	banner_text = "Daily challenge · %s UTC · fixed loadout" % sim.daily_day if not sim.daily_day.is_empty() else ("ARTIFACT · " + str(Catalog.artifact(sim.artifact_id).name).to_upper() if sim.artifact_id != "standard" else "Upgrade your ship. Survive four worlds.")
-	banner_clock = 5.0
-	sound.play("start")
+	banner_clock = 0.0 if sim.intro_run else 5.0
+	if announce or not sim.intro_run:
+		sound.play("start")
 	_save_run()
 	if sim.rival_retire_pending:
 		_show_rival_retired()
@@ -3118,6 +3390,10 @@ func _process(delta: float) -> void:
 	banner_clock = maxf(0.0, banner_clock - delta)
 	if old_size != get_viewport_rect().size:
 		_layout()
+	if mode == "intro_clear":
+		intro_clear_clock += delta
+		if intro_clear_clock >= (0.3 if profile.reduced else 1.65):
+			_finish()
 	if mode == "boss_intro":
 		boss_intro_clock += delta
 		if boss_intro_clock >= (1.4 if profile.reduced else BOSS_INTRO_SECONDS):
@@ -3153,9 +3429,15 @@ func _process(delta: float) -> void:
 			if previous_attack.is_empty() and not sim.archive_attack.is_empty():
 				sound.play("archive-boss", -10.0)
 				_haptic(45)
-			_opening_first30_beat()
+			if not sim.intro_run:
+				_opening_first30_beat()
 			if sim.ended:
-				_finish()
+				if sim.intro_run and sim.won:
+					_show_intro_clear()
+				else:
+					_finish()
+			elif sim.intro_aegis_prompt:
+				_show_intro_aegis()
 			elif sim.boss_spawned and boss_intro_stage != sim.stage and not sim.secret_entered and not sim.stage_transition_queued:
 				_show_boss_intro()
 			elif sim.rival_retire_pending:
@@ -3172,17 +3454,18 @@ func _process(delta: float) -> void:
 				_show_stage_clear()
 			elif not sim.cards.is_empty():
 				_show_cards()
-			elif sim.stage == 1 and not bool(profile.get("beam_tutorial_seen", false)) and "aegis" in sim.active_slots and not sim.charges.is_empty():
+			elif not sim.intro_run and sim.stage == 1 and not bool(profile.get("beam_tutorial_seen", false)) and "aegis" in sim.active_slots and not sim.charges.is_empty():
 				_show_beam_tutorial()
 		var sector_now := _sector_name(sim.time)
-		if sector_now != last_sector:
+		if not sim.intro_run and sector_now != last_sector:
 			last_sector = sector_now
 			banner_text = sector_now + "  /  NEW SECTOR"
 			banner_clock = 3.5
 		var warning: bool = not sim.charges.is_empty()
 		if warning and not previous_warning:
-			sound.play("warning")
-			if sim.boss_spawned:
+			if mode != "intro_aegis":
+				sound.play("warning")
+			if sim.boss_spawned and not sim.intro_run:
 				banner_text = "BOSS BEAM · %s · USE A DEFENSE" % sim.boss_attack_pattern.to_upper()
 				banner_clock = 2.8
 		previous_warning = warning
@@ -3205,7 +3488,7 @@ func _process(delta: float) -> void:
 				chip_damage = 0.0
 		last_hull = sim.hull
 		save_clock += delta
-		if save_clock > 10:
+		if save_clock > (3.0 if sim.intro_run else 10.0):
 			save_clock = 0
 			_save_run()
 	sound.update(sim, mode, delta)
@@ -3219,12 +3502,16 @@ func _process(delta: float) -> void:
 	_update_hud()
 	draft_guard = maxf(0.0, draft_guard - delta)
 	# Combat chrome only shows while a flight is on screen; menus own the whole display.
-	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "boss_intro", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
+	var in_flight: bool = mode in ["playing", "paused", "warp", "beam_tutorial", "intro_aegis", "intro_clear", "boss_intro", "rival_intro", "rival_retired", "merchant_signal", "merchant_shop", "merchant_confirm", "merchant_receipt"] or (mode == "settings" and sheet_base == "paused")
 	for control in [hud, status, hull_meter, shield_meter, hull_caption, shield_caption, build_button, pause_button, speed_button]:
 		control.visible = in_flight
 	for button in ability_buttons.values():
 		button.visible = in_flight
+	var lesson := mode == "intro_aegis"
+	for button in [speed_button, build_button, pause_button]:
+		button.disabled = lesson or mode == "intro_clear"
 	speed_button.text = _speed_label()
+	_update_intro_hud()
 	queue_redraw()
 	world.queue_redraw()
 
@@ -3294,7 +3581,12 @@ func _activate_slot(slot: int) -> void:
 func _activate(id: String) -> void:
 	var old_signal: String = sim.signal_status
 	var old_attack: String = sim.archive_attack
-	if mode == "playing" and sim.activate(id):
+	var lesson := mode == "intro_aegis" and id == "aegis"
+	if (mode == "playing" or lesson) and sim.activate(id):
+		if lesson:
+			_continue_intro_aegis()
+		elif sim.intro_run:
+			_save_run()
 		_haptic(38)
 		if old_signal != sim.signal_status:
 			_archive_signal_feedback()
@@ -3415,6 +3707,9 @@ func _finish_intermission_presentation() -> void:
 		_show_cards()
 
 func _finish() -> void:
+	if sim.intro_run:
+		_finish_intro_run()
+		return
 	mode = "results"
 	if sim.secret_entered:
 		services.write_atomic(Services.RUN, sim.snapshot())
@@ -3446,9 +3741,13 @@ func _hangar_tab(group: String) -> void:
 	_show_hangar()
 
 func _purchase(id: String) -> void:
+	if _buy_hangar_rank(id):
+		_show_hangar()
+
+func _buy_hangar_rank(id: String) -> bool:
 	var entry := Catalog.entry(id)
 	if entry.is_empty():
-		return
+		return false
 	var rank: int = int(profile.hangar.get(id, 0))
 	var price := Catalog.price(id, rank)
 	if profile.cores >= price and rank < int(entry.max):
@@ -3457,9 +3756,15 @@ func _purchase(id: String) -> void:
 		var paid: Dictionary = profile.get("hangar_paid", {})
 		paid[id] = int(paid.get(id, 0)) + price
 		profile.hangar_paid = paid
-		_save_profile()
+		if not _save_profile():
+			profile.cores += price
+			profile.hangar[id] = rank
+			paid[id] -= price
+			_queue_toast("Purchase could not be saved", "Your Cores are still available.")
+			return false
 		sound.play("card")
-		_show_hangar()
+		return true
+	return false
 
 func _respec() -> void:
 	profile.cores += Catalog.refund(profile.hangar, profile.get("hangar_paid", {}))
@@ -3538,27 +3843,31 @@ func _save_profile() -> bool:
 	banner_clock = 5.0
 	return false
 
-func _save_run() -> void:
-	if sim != null and not sim.ended:
-		if not services.write_atomic(Services.RUN, sim.snapshot()):
-			banner_text = "Run could not be saved"
-			banner_clock = 5.0
+func _save_run() -> bool:
+	if sim != null and (not sim.ended or sim.intro_run):
+		if services.write_atomic(Services.RUN, sim.snapshot()):
+			return true
+		banner_text = "Run could not be saved"
+		banner_clock = 5.0
+	return false
 
 func _notification(what: int) -> void:
 	if what in [NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_APPLICATION_FOCUS_OUT]:
 		if mode == "playing":
 			_show_pause()
+		elif flight_started and sim.intro_run:
+			_save_run()
 	elif what == NOTIFICATION_APPLICATION_RESUMED:
 		# Retry any Game Center items that failed while the app was away.
 		game_center.sync()
 	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		# Android Back pauses a flight or steps back a screen, like Escape.
-		# Only the title screen exits, and it saves first.
+		# Only the title screen exits. Any suspended flight is already saved.
 		if not InputRouter.back(self) and mode == "menu":
-			_save_run()
 			get_tree().quit()
 	elif what == NOTIFICATION_WM_CLOSE_REQUEST:
-		_save_run()
+		if flight_started:
+			_save_run()
 		get_tree().quit()
 
 func _input(event: InputEvent) -> void:
@@ -3592,8 +3901,12 @@ func _speed_label() -> String:
 func _cycle_speed() -> void:
 	var index := speed_options.find(game_speed)
 	game_speed = float(speed_options[(index + 1) % speed_options.size()])
-	profile.speed = game_speed
-	_save_profile()
+	if sim.intro_run:
+		sim.intro_speed = game_speed
+		_save_run()
+	else:
+		profile.speed = game_speed
+		_save_profile()
 	speed_button.text = _speed_label()
 
 func _toggle_build_details() -> void:
@@ -3647,5 +3960,6 @@ func _draw() -> void:
 	draw_texture_rect(Playfield.SPACE, Rect2(Vector2.ZERO, screen), false, Color(0.23, 0.28, 0.36, 0.45))
 	if screen.x > 950:
 		draw_string(ThemeDB.fallback_font, Vector2(32, 58), "Star/Run", HORIZONTAL_ALIGNMENT_LEFT, -1, 25, CYAN)
-		draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
+		if not flight_started or not sim.intro_run:
+			draw_string(ThemeDB.fallback_font, Vector2(screen.x - 220, 56), "FOUR STAGES  /  " + str(ProjectSettings.get_setting("application/config/version")), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, MUTED)
 	draw_rect(field.grow(1), Color("29414b"), false, 1)
