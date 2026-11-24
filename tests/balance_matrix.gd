@@ -4,6 +4,7 @@ extends SceneTree
 # The same seeds are used across strategies, but combat RNG can shift draft offers.
 const Sim = preload("res://scripts/simulation.gd")
 const Catalog = preload("res://scripts/catalog.gd")
+const Progress = preload("res://scripts/meta_progress.gd")
 
 # Targeted Shieldstorm check (2026-11-16): the shielded build only reorders
 # naturally offered cards, never injects an ability, fusion, reward or enemy.
@@ -22,6 +23,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var seeds := 1
+	var progression_runs := 0
 	var only_ship := ""
 	var only_difficulty := ""
 	var only_strategy := ""
@@ -39,7 +41,9 @@ func _run() -> void:
 	var require_world1_clears := 0 # --require-world1-clears=N: Normal no-Hangar floor.
 	var require_no_campaign_wins := false
 	for arg in OS.get_cmdline_user_args():
-		if arg.begins_with("--seeds="):
+		if arg.begins_with("--progression-runs="):
+			progression_runs = int(arg.get_slice("=", 1))
+		elif arg.begins_with("--seeds="):
 			seeds = maxi(1, int(arg.get_slice("=", 1)))
 		elif arg.begins_with("--ship="):
 			only_ship = arg.get_slice("=", 1)
@@ -87,6 +91,13 @@ func _run() -> void:
 	if build_style not in ["baseline", "focused", "shielded"] or not (hangar_style in ["none", "mid", "half", "max"] or (hangar_style.begins_with("p") and hangar_style.substr(1).is_valid_int())) or route_policy not in ["adaptive", "repair", "overclock", "bounty"] or stage_limit < 1 or stage_limit > 4 or not Catalog.PILOTS.any(func(p): return p.id == pilot_id) or str(Catalog.artifact(artifact_id).id) != artifact_id:
 		push_error("Invalid balance diagnostic build, hangar or pilot")
 		quit(2)
+		return
+	if progression_runs != 0:
+		if progression_runs < 1 or progression_runs > 200 or start_world != 1 or stage_limit != 4 or hangar_style != "none" or only_ship not in ["", "vanguard"] or pilot_id != "rookie" or artifact_id != "standard" or only_strategy not in STRATEGIES or only_difficulty not in ["", "normal"] or require_win or require_no_world1_clears or require_no_campaign_wins or require_world1_clears > 0:
+			push_error("Progression mode requires fresh Normal Vanguard/Vale, a specified active strategy and full campaigns (1-200 runs)")
+			quit(2)
+			return
+		_run_progression(progression_runs, seed_offset, only_strategy, build_style, route_policy)
 		return
 	if not world_tuning.is_empty():
 		print("WORLD_TUNING ", JSON.stringify(world_tuning))
@@ -233,8 +244,84 @@ func _run() -> void:
 		push_error("World 1 floor: %d clears, need at least %d" % [world1_clears, require_world1_clears])
 	quit(1 if cells == 0 or trials == 0 or faults > 0 or (require_win and campaign_wins == 0) or (require_no_world1_clears and world1_clears > 0) or (require_no_campaign_wins and campaign_wins > 0) or (require_world1_clears > 0 and world1_clears < require_world1_clears) else 0)
 
-func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard") -> Dictionary:
-	var sim := Sim.new(seed, _hangar(hangar_style), ship_id, pilot_id, difficulty, artifact_id)
+# Follow one fresh, offline profile through actual campaigns. Each result is
+# settled by the production progression code, then affordable Hangar ranks
+# are bought at the real catalog price. No injected XP, cores or fake victories.
+# Keep Vanguard/Vale fixed so the matched control isolates balance and economy.
+func _run_progression(count: int, offset: int, strategy: String, build_style: String, route_policy: String) -> void:
+	var profile := {"cores":0, "hangar":Catalog.defaults(), "hangar_paid":{}, "ships_owned":["vanguard"], "pilots_owned":["rookie"], "last_paid_run":-1}
+	Progress.prepare(profile)
+	var total_cost := 0
+	var total_ranks := 0
+	for item in Catalog.HANGAR:
+		total_ranks += int(item.max)
+		for rank in range(int(item.max)):
+			total_cost += Catalog.price(str(item.id), rank)
+	var earned_total := 0
+	var spent_total := 0
+	var bought_total := 0
+	var first_clears := [0, 0, 0, 0]
+	var wins := 0
+	var seconds := 0.0
+	var no_buy_streak := 0
+	var max_no_buy_streak := 0
+	var first_max := 0
+	print("PROGRESSION_CONFIG ", JSON.stringify({"runs":count, "seed_offset":offset, "strategy":strategy, "build":build_style, "route":route_policy, "ship":"vanguard", "pilot":"rookie", "hangar_cost":total_cost, "hangar_ranks":total_ranks, "world_tuning":world_tuning}))
+	for run_index in range(1, count + 1):
+		var seed := 810000 + (offset + run_index) * 7919
+		var before := int(profile.cores)
+		var result := _trial(seed, "vanguard", "normal", strategy, build_style, "none", "rookie", route_policy, 4, false, "standard", profile)
+		if bool(result.fault) or bool(result.timeout) or result.settlement.is_empty() or str(result.final.status) not in ["won", "dead"]:
+			push_error("Unsettled or invalid progression run %d" % run_index)
+			quit(1)
+			return
+		var earned := int(result.settlement.earned)
+		if earned != int(result.final.cores) or int(profile.cores) != before + earned or int(profile.achievement_stats.finished_runs) != run_index:
+			push_error("Production settlement mismatch at run %d" % run_index)
+			quit(1)
+			return
+		earned_total += earned
+		seconds += float(result.final.seconds)
+		wins += int(result.won)
+		for world in range(4):
+			if int(result.clears) > world and int(first_clears[world]) == 0:
+				first_clears[world] = run_index
+		var purchases := []
+		while true:
+			var best_id := ""
+			var best_price := 1 << 30
+			for item in Catalog.HANGAR:
+				var id: String = str(item.id)
+				var rank := int(profile.hangar[id])
+				if rank >= int(item.max):
+					continue
+				var price := Catalog.price(id, rank)
+				if price < best_price:
+					best_id = id
+					best_price = price
+			if best_id.is_empty() or best_price > int(profile.cores):
+				break
+			profile.cores = int(profile.cores) - best_price
+			profile.hangar[best_id] = int(profile.hangar[best_id]) + 1
+			profile.hangar_paid[best_id] = int(profile.hangar_paid.get(best_id, 0)) + best_price
+			spent_total += best_price
+			bought_total += 1
+			purchases.append({"id":best_id, "rank":profile.hangar[best_id], "price":best_price})
+		if int(profile.cores) + spent_total != earned_total or Catalog.refund(profile.hangar, profile.hangar_paid) != spent_total:
+			push_error("Progression Core ledger mismatch at run %d" % run_index)
+			quit(1)
+			return
+		no_buy_streak = no_buy_streak + 1 if purchases.is_empty() and bought_total < total_ranks else 0
+		max_no_buy_streak = maxi(max_no_buy_streak, no_buy_streak)
+		if bought_total == total_ranks and first_max == 0:
+			first_max = run_index
+		print("PROGRESSION_RUN ", JSON.stringify({"run":run_index,"seed":seed,"clears":result.clears,"won":result.won,"seconds":result.final.seconds,"casts":result.casts,"cores_earned":earned,"cores_banked":profile.cores,"cores_spent_total":spent_total,"cores_earned_total":earned_total,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"purchases":purchases,"unlocked":result.settlement.unlocked,"achievements":result.settlement.awarded,"hangar":profile.hangar,"stages":result.stages}))
+	print("PROGRESSION_SUMMARY ", JSON.stringify({"runs":count,"strategy":strategy,"seed_offset":offset,"wins":wins,"first_clears":first_clears,"first_win":first_clears[3],"first_max_hangar":first_max,"max_no_purchase_streak":max_no_buy_streak,"cores_earned":earned_total,"cores_spent":spent_total,"cores_banked":profile.cores,"ranks_owned":bought_total,"rank_pct":100.0 * bought_total / total_ranks,"cost_pct":100.0 * spent_total / total_cost,"combat_minutes":seconds / 60.0,"ships_owned":profile.ships_owned,"pilots_owned":profile.pilots_owned}))
+	quit(0)
+
+func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, build_style: String = "baseline", hangar_style: String = "none", pilot_id: String = "rookie", route_policy: String = "adaptive", stage_limit: int = 4, track_density: bool = false, artifact_id: String = "standard", progression_profile: Variant = null) -> Dictionary:
+	var hangar: Dictionary = _hangar(hangar_style) if progression_profile == null else progression_profile.hangar
+	var sim := Sim.new(seed, hangar, ship_id, pilot_id, difficulty, artifact_id)
 	for knob in world_tuning:
 		var key: String = {"spawn": "spawn_scale", "health": "health_scale", "damage": "damage_scale"}[knob]
 		for world in range(4):
@@ -355,7 +442,11 @@ func _trial(seed: int, ship_id: String, difficulty: String, strategy: String, bu
 			break
 	if stage_reports.is_empty() or int(stage_reports[-1].stage) != sim.stage:
 		stage_reports.append(_stage_report(sim, status))
+	var settlement := {}
+	if progression_profile != null and sim.ended and not fault and not timed_out:
+		settlement = Progress.settle(progression_profile, sim)
 	return {
+		"settlement":settlement,
 		"clears":int(sim.stage_clears), "won":bool(sim.won), "pilot_procs":sim.pilot_procs.duplicate(),
 		"hull":float(sim.hull), "casts":int(sim.ability_uses),
 		"timeout":timed_out, "fault":fault, "stages":stage_reports, "routes":routes,
