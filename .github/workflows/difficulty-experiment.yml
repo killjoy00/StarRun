@@ -43,6 +43,7 @@ on:
     types: [ready_for_review, synchronize, reopened, opened]
     paths:
       - '.github/difficulty-experiment.json'
+      - 'scripts/expedition_rules.gd'
 permissions:
   contents: read
 # Experiments run side by side; each run is its own group.
