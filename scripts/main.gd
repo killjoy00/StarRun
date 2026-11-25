@@ -35,6 +35,12 @@ var flight_started := false
 var intro_panel: PanelContainer
 var intro_heading: Label
 var intro_caption: Label
+var intro_popup_layer: CenterContainer
+var intro_popup: PanelContainer
+var intro_popup_title: Label
+var intro_popup_detail: Label
+var intro_popup_buttons: HBoxContainer
+var intro_popup_aegis: Button
 var intro_continue: Button
 var intro_marker: Panel
 var intro_cue: Array = []
@@ -442,21 +448,46 @@ func _build_intro_hud() -> void:
 	intro_panel.add_theme_stylebox_override("panel", Kit.box(Color("0d1d2b"), Color("385568"), 9, 1, 10, 5))
 	intro_panel.hide()
 	root.add_child(intro_panel)
-	var row := HBoxContainer.new()
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	row.add_theme_constant_override("separation", 8)
-	intro_panel.add_child(row)
 	var text_stack := VBoxContainer.new()
 	text_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	text_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	text_stack.alignment = BoxContainer.ALIGNMENT_CENTER
 	text_stack.add_theme_constant_override("separation", 0)
-	row.add_child(text_stack)
+	intro_panel.add_child(text_stack)
 	intro_heading = Kit.caps(text_stack, "", Kit.CYAN, 13)
 	intro_caption = Kit.label(text_stack, "", 15, Kit.TEXT, true)
-	intro_continue = _ui_button(row, "Keep flying", _continue_intro_aegis, "ghost", 44)
-	intro_continue.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	intro_continue.hide()
+
+	intro_popup_layer = CenterContainer.new()
+	intro_popup_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intro_popup_layer.hide()
+	root.add_child(intro_popup_layer)
+
+	intro_popup = PanelContainer.new()
+	intro_popup.name = "FirstFlightPopup"
+	intro_popup.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var popup_style := Kit.box(Color("101e2b"), Color("507486"), 14, 1, 18, 15)
+	popup_style.shadow_color = Color(0.0, 0.0, 0.0, 0.44)
+	popup_style.shadow_size = 9
+	popup_style.shadow_offset = Vector2(0, 4)
+	intro_popup.add_theme_stylebox_override("panel", popup_style)
+	intro_popup_layer.add_child(intro_popup)
+
+	var popup_stack := VBoxContainer.new()
+	popup_stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	popup_stack.add_theme_constant_override("separation", 7)
+	intro_popup.add_child(popup_stack)
+	intro_popup_title = Kit.label(popup_stack, "", 21, Kit.TEXT, true)
+	intro_popup_title.add_theme_font_override("font", Kit.font(0, 0.55))
+	intro_popup_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	intro_popup_detail = Kit.label(popup_stack, "", 15, Color("bdcad7"), true)
+	intro_popup_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+	intro_popup_buttons = HBoxContainer.new()
+	intro_popup_buttons.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	intro_popup_buttons.add_theme_constant_override("separation", 8)
+	popup_stack.add_child(intro_popup_buttons)
+	intro_popup_aegis = _ui_button(intro_popup_buttons, "Use Aegis", _activate.bind("aegis"), "primary", 44, true)
+	intro_continue = _ui_button(intro_popup_buttons, "Keep flying", _continue_intro_aegis, "ghost", 44, true)
+	intro_popup_buttons.hide()
 
 	intro_marker = Panel.new()
 	intro_marker.name = "AegisMarker"
@@ -470,6 +501,9 @@ func _layout_intro_hud() -> void:
 	var width := minf(440.0, screen.x - 32.0)
 	intro_panel.position = Vector2((screen.x - width) * 0.5, shield_meter.position.y + 30.0)
 	intro_panel.size = Vector2(width, 52.0)
+	intro_popup.custom_minimum_size.x = minf(330.0, screen.x - 40.0)
+	intro_popup_layer.position = Vector2(0.0, field.position.y)
+	intro_popup_layer.size = Vector2(screen.x, field.size.y)
 	intro_marker.position = ability_a.position - Vector2(3, 3)
 	intro_marker.size = ability_a.size + Vector2(6, 6)
 
@@ -478,27 +512,34 @@ func _update_intro_hud() -> void:
 	var lesson := active and mode == "intro_aegis"
 	intro_marker.visible = lesson
 	intro_marker.modulate.a = 1.0 if profile.reduced else 0.87 + 0.13 * sin(visual_time * 5.0)
-	intro_continue.visible = lesson
+	intro_popup_buttons.visible = lesson
 	ability_a.focus_mode = Control.FOCUS_ALL if lesson else Control.FOCUS_NONE
-	var cue: Array = FirstFlight.cue(sim) if active else []
+	var prompt: Array = FirstFlight.popup(sim) if active and mode != "intro_crash" else []
+	var cue: Array = FirstFlight.cue(sim) if active and prompt.is_empty() else []
 	if mode == "intro_crash":
 		cue = ["MAIN GUN FIRING", "Ejecting!"] if intro_end_clock < FirstFlight.IMPACT_AT else ["PILOT EJECTED", "Vanguard lost."]
-	if cue == intro_cue:
+	intro_panel.visible = not cue.is_empty()
+	intro_popup_layer.visible = not prompt.is_empty()
+	var text: Array = cue if prompt.is_empty() else prompt
+	if text == intro_cue:
 		return
 	if intro_cue_tween and intro_cue_tween.is_valid():
 		intro_cue_tween.kill()
-	intro_cue = cue
-	intro_panel.visible = not cue.is_empty()
-	if cue.is_empty():
+	intro_cue = text
+	if text.is_empty():
 		return
-	intro_heading.text = cue[0]
-	intro_caption.text = cue[1]
-	intro_heading.add_theme_color_override("font_color", Kit.AMBER if lesson else Kit.CYAN)
-	intro_panel.modulate.a = 1.0
+	var panel: PanelContainer = intro_popup if not prompt.is_empty() else intro_panel
+	if not prompt.is_empty():
+		intro_popup_title.text = prompt[0]
+		intro_popup_detail.text = prompt[1]
+	else:
+		intro_heading.text = cue[0]
+		intro_caption.text = cue[1]
+	panel.modulate.a = 1.0
 	if not profile.reduced and not lesson:
-		intro_panel.modulate.a = 0.0
+		panel.modulate.a = 0.0
 		intro_cue_tween = create_tween()
-		intro_cue_tween.tween_property(intro_panel, "modulate:a", 1.0, 0.23)
+		intro_cue_tween.tween_property(panel, "modulate:a", 1.0, 0.23)
 
 func _layout() -> void:
 	var size := get_viewport_rect().size
@@ -3216,7 +3257,7 @@ func _show_intro_aegis() -> void:
 	_save_run()
 	_update_intro_hud()
 	_update_hud()
-	_focus(ability_a)
+	_focus(intro_popup_aegis)
 	sound.play("warning")
 	_haptic(45)
 
@@ -3445,6 +3486,7 @@ func _start_flight(announce: bool = true) -> void:
 		if game_speed not in speed_options:
 			game_speed = 1.0
 	intro_panel.hide()
+	intro_popup_layer.hide()
 	intro_cue.clear()
 	save_clock = 0.0
 	_layout()

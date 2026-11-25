@@ -26,7 +26,7 @@ const SCREENS := [
 	"archive-signal", "archive-reveal", "archive-arrival", "archive-patrol",
 	"archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-counter-surge", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending",
 	"destination-preview", "destination-arrival", "smuggler-draft", "uncharted-arrival", "custodian-shield",
-	"first-flight-title", "first-flight-launch", "first-flight-aegis", "first-flight-draft",
+	"first-flight-title", "first-flight-launch", "first-flight-wave", "first-flight-aegis", "first-flight-draft", "first-flight-upgrade-popup",
 	"first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
 	"first-flight-ejection-reduced", "first-flight-debrief"
 ]
@@ -66,10 +66,11 @@ func _scan_bounds(scene: Node, screen: String, dimensions: Vector2i) -> void:
 		if control is Label:
 			var label := control as Label
 			text_overflow = label.autowrap_mode == TextServer.AUTOWRAP_OFF and not label.clip_text and label.text_overrun_behavior == TextServer.OVERRUN_NO_TRIMMING and label.get_minimum_size().x > label.size.x + 2.0
-		var intro_chrome := control.name in [&"FirstFlightCaption", &"AegisMarker"]
+		var intro_chrome := control.name in [&"FirstFlightCaption", &"FirstFlightPopup", &"AegisMarker"]
 		var viewport_height: float = (scene as CanvasItem).get_viewport_rect().size.y
 		var intro_vertical_overflow := intro_chrome and (rect.position.y < 0.0 or rect.end.y > viewport_height)
-		if rect.position.x < -2.0 or rect.end.x > width + 2.0 or text_overflow or intro_vertical_overflow:
+		var misplaced_popup: bool = control.name == &"FirstFlightPopup" and rect.get_center().distance_to(scene.field.get_center()) > 3.0
+		if rect.position.x < -2.0 or rect.end.x > width + 2.0 or text_overflow or intro_vertical_overflow or misplaced_popup:
 			bounds_failures += 1
 			print("OFFSCREEN %s %dx%d %s x=%.0f..%.0f%s \"%s\"" % [screen, dimensions.x, dimensions.y, str(scene.get_path_to(control)), rect.position.x, rect.end.x, " text-overflow" if text_overflow else "", str(control.get("text")) if control.get("text") != null else ""])
 
@@ -132,6 +133,10 @@ func _build_intro_fixtures() -> void:
 		sim.step()
 		if sim.tick == 66:
 			intro_fixtures["first-flight-launch"] = sim.snapshot()
+		elif sim.tick == 560:
+			intro_fixtures["first-flight-wave"] = sim.snapshot()
+		elif sim.tick == 1485:
+			intro_fixtures["first-flight-upgrade-popup"] = sim.snapshot()
 		if sim.intro_aegis_prompt:
 			intro_fixtures["first-flight-aegis"] = sim.snapshot()
 			sim.activate("aegis")

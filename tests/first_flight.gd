@@ -54,6 +54,7 @@ func _run() -> void:
 			_play_drafts(first, second)
 			_check_passive_ejection(first, second)
 	_check_legacy_checkpoint()
+	_check_harvester_entrance()
 	_check_eligibility()
 	_check_real_scene()
 	print("FIRST FLIGHT: %d failures" % failures)
@@ -72,6 +73,9 @@ func _play_drafts(first: int, second: int) -> void:
 	var first_chain := 0
 	var second_chain := 0
 	var aegis_at_impact := false
+	var all_entered := true
+	var early_peak := 0
+	var late_peak := 0
 	var early := first == 1 and second == 2
 	var missed := first == 2 and second == 2
 	if early:
@@ -127,7 +131,18 @@ func _play_drafts(first: int, second: int) -> void:
 					first_cast = sim.time
 		if first == 0 and second == 0 and not aegis_at_impact and sim.time >= Intro.BOSS_AT + Intro.EJECT_AFTER - 0.25:
 			aegis_at_impact = sim.activate("aegis")
+		var first_new_id: int = sim.next_id
 		sim.step()
+		if sim.next_id > first_new_id:
+			for enemy in sim.enemies:
+				if int(enemy.id) >= first_new_id:
+					all_entered = all_entered and enemy.p.y < 0.0 and enemy.has("arrive_y")
+		if sim.tick % 15 == 0:
+			var on_screen: int = sim.enemies.filter(func(e): return e.hp > 0.0 and e.p.y >= 0.0 and e.p.y < Sim.HEIGHT).size()
+			if sim.time <= 12.0:
+				early_peak = maxi(early_peak, on_screen)
+			elif sim.time >= 45.0:
+				late_peak = maxi(late_peak, on_screen)
 		if first_kill < 0.0 and sim.kills > 0:
 			first_kill = sim.time
 		if first_payoff < 0.0 and not first_weapon.is_empty() and float(sim.damage_dealt[first_weapon]) > damage_before:
@@ -142,7 +157,9 @@ func _play_drafts(first: int, second: int) -> void:
 			elif sim.time >= 49.0 and sim.time < 55.5:
 				second_chain = maxi(second_chain, chain)
 	check(sim.intro_ejected and sim.ended and not sim.won and sim.hull == 0.0 and sim.stage_clears == 0 and not sim.stage_transition_queued, "The Harvester destroys the ship on branch %d/%d" % [first, second])
-	check(sim.intro_beam_blocked, "Real beam defense still works before the scripted attack")
+	check(sim.intro_beam_blocked or (early and sim.beams_cancelled > 0), "A well-timed Aegis or destruction of the charging ship still stops a beam")
+	check(all_entered, "Launch ships, reinforcements and draft formations all enter from offscreen")
+	check(early_peak >= 7 and late_peak >= 8, "Crowded waves on path %d/%d, early peak %d, late peak %d" % [first, second, early_peak, late_peak])
 	if first == 0 and second == 0:
 		check(first_chain >= 3 and second_chain > first_chain, "The recommended Arc upgrade visibly chains to more targets")
 		check(aegis_at_impact and sim.intro_ejected, "A cast immediately before the main gun still ends in ejection")
@@ -195,6 +212,17 @@ func _check_legacy_checkpoint() -> void:
 	var profile := {"cores": 0, "intro_status": "available"}
 	Main.Progress.settle_first_flight(profile, restored)
 	check(profile.cores == Intro.REWARD and profile.intro_status == "complete", "Winning an old suspended intro still earns its reward")
+
+func _check_harvester_entrance() -> void:
+	var sim := Sim.new(Intro.SEED)
+	sim.configure_first_flight(true)
+	sim._add_enemy("gunship", Vector2(150, 320))
+	var escort_id: int = int(sim.enemies[0].id)
+	sim.time = Intro.BOSS_AT
+	Intro.spawn(sim)
+	check(sim.enemies.any(func(e): return int(e.id) == escort_id), "The Harvester arrives while the remaining escort is still flying")
+	var boss := sim._boss_core()
+	check(not boss.is_empty() and boss.p.y < 0.0 and boss.has("arrive_y"), "The Harvester also enters from above the playfield")
 
 func _check_eligibility() -> void:
 	var unopened := MemoryServices.new()
@@ -301,8 +329,9 @@ func _run_scene(scene: Node, timed: bool) -> void:
 				scene._resume_run()
 				check(scene.mode == "intro_aegis" and scene.sim.snapshot() == state, "Resuming reveals the exact paused Aegis opportunity")
 				check(not scene.ability_a.disabled, "The real Aegis button is actionable in the lesson")
+				check(scene.intro_popup_layer.visible and scene.intro_popup_buttons.visible and scene.intro_popup_title.text == "Block the beam", "Resuming the lesson shows the centered actionable popup")
 			if timed:
-				scene.ability_a.pressed.emit()
+				scene.intro_popup_aegis.pressed.emit()
 			else:
 				scene.intro_continue.pressed.emit()
 		elif scene.mode == "boss_intro" and not checked_boss:
