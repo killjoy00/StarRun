@@ -11,24 +11,27 @@ func _run() -> void:
 	var budget := ""
 	var policy := ""
 	var suite := ""
+	var profile := "full"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--ship="): ship = arg.get_slice("=", 1)
 		elif arg.begins_with("--hangar="): budget = arg.get_slice("=", 1)
 		elif arg.begins_with("--strategy="): policy = arg.get_slice("=", 1)
 		elif arg.begins_with("--suite="): suite = arg.get_slice("=", 1)
-	if ship not in ["vanguard","bulwark","haven","arcwing","wraith","kestrel","lancer"] or budget not in ["p8","p32","max"] or policy not in ["timed","on_cooldown"] or suite not in ["routes","archive"]:
+		elif arg.begins_with("--profile="): profile = arg.get_slice("=", 1)
+	if ship not in ["vanguard","bulwark","haven","arcwing","wraith","kestrel","lancer"] or budget not in ["p8","p32","max"] or policy not in ["timed","on_cooldown"] or suite not in ["routes","archive"] or profile not in ["full","smoke"] or (profile == "smoke" and suite != "routes"):
 		push_error("Invalid checkpoint audit cohort")
 		quit(2)
 		return
-	print("CHECKPOINT_CONFIG ", JSON.stringify({"suite":suite,"ship":ship,"budget":budget,"policy":policy,"seeds":SEED_COUNT,"offset":SEED_OFFSET}))
+	var seed_count := 2 if profile == "smoke" else SEED_COUNT
+	print("CHECKPOINT_CONFIG ", JSON.stringify({"suite":suite,"ship":ship,"budget":budget,"policy":policy,"seeds":seed_count,"offset":SEED_OFFSET,"profile":profile}))
 	var faults := 0
-	for i in range(SEED_COUNT):
+	for i in range(seed_count):
 		var seed := 810000 + (SEED_OFFSET + i + 1) * 7919
 		var style := "focused" if i % 2 == 0 else "shielded"
-		var row := _campaign(seed, ship, budget, policy, style, suite, i)
+		var row := _campaign(seed, ship, budget, policy, style, suite, i, profile)
 		print("CHECKPOINT_RUN ", JSON.stringify(row))
 		if row.status == "fault": faults += 1
-	print("CHECKPOINT_DONE ", JSON.stringify({"runs":SEED_COUNT,"faults":faults}))
+	print("CHECKPOINT_DONE ", JSON.stringify({"runs":seed_count,"faults":faults}))
 	quit(1 if faults else 0)
 
 func _take_draft(sim: RefCounted, style: String) -> bool:
@@ -134,8 +137,8 @@ func _select_destination(sim: RefCounted, id: String) -> bool:
 			return false
 	return sim.advance_stage()
 
-func _campaign(seed: int, ship: String, budget: String, policy: String, style: String, suite: String, index: int) -> Dictionary:
-	var sim := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
+func _campaign(seed: int, ship: String, budget: String, policy: String, style: String, suite: String, index: int, profile: String) -> Dictionary:
+	var sim: RefCounted = Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
 	if not sim.enable_expedition_rules():
 		return {"seed":seed,"status":"fault","reason":"new rules refused"}
 	var stages: Array = []
@@ -143,8 +146,10 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 	var archives: Array = []
 	var status := "fault"
 	var reason := "unsettled"
+	var carried_row: Dictionary = {}
 	for world in range(1,5):
-		var row := _fly_world(sim, policy, style, suite == "archive")
+		var row: Dictionary = _fly_world(sim, policy, style, suite == "archive") if carried_row.is_empty() else carried_row
+		carried_row = {}
 		stages.append(row)
 		status = str(row.status)
 		reason = str(row.reason)
@@ -169,6 +174,8 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 			var checkpoint: Dictionary = sim.snapshot()
 			var start := {"hull_fraction":sim.hull/sim.max_hull,"shield_fraction":sim.shield/sim.max_shield,"level":sim.level,"cores":sim.payout(),"ranked_weapons":sim.active_slots.duplicate(),"mutation":not sim.mutations.is_empty(),"lab_seen":sim.mutation_lab_seen,"rerolls":sim.rerolls_left,"prototype":sim.prototypes.duplicate()}
 			var variants: Array = []
+			var continued_sim: RefCounted = null
+			var continued_row: Dictionary = {}
 			for id in hand:
 				var fork := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
 				if not fork.restore(checkpoint) or fork.snapshot() != checkpoint or not _select_destination(fork, str(id)):
@@ -179,6 +186,9 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 				result["id"] = str(id)
 				result["incremental_cores"] = int(result.cores_if_claimed) - int(start.cores)
 				variants.append(result)
+				if str(id) == continuation:
+					continued_sim = fork
+					continued_row = result.duplicate(true)
 				if result.status == "fault":
 					status = "fault"
 					reason = str(result.reason)
@@ -188,7 +198,7 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 			# Use the actual previous route spec through the same API. Never
 			# replace a naturally offered ID or inject a different loadout.
 			for id in hand:
-				if id not in ["shipyard","graveyard","smugglers","uncharted"]:
+				if profile == "smoke" or id not in ["shipyard","graveyard","smugglers","uncharted"]:
 					continue
 				var probe := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
 				if not probe.restore(checkpoint) or probe.snapshot() != checkpoint:
@@ -209,7 +219,19 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 					reason = str(control.reason)
 					break
 			if status == "fault": break
-			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants,"controls":controls})
+			# The full study independently replays every continuation. The small
+			# PR check replays the first warp of its first seed, then reuses the
+			# already-flown selected branch instead of paying for it twice.
+			var replayed := profile == "full" or (index == 0 and world == 1)
+			forks.append({"world":world+1,"offered":hand,"continued":continuation,"start":start,"variants":variants,"controls":controls,"continuation_replayed":replayed})
+			if not replayed:
+				if continued_sim == null or continued_row.is_empty():
+					status = "fault"
+					reason = "missing selected continuation"
+					break
+				sim = continued_sim
+				carried_row = continued_row
+				continue
 		if not _select_destination(sim, continuation):
 			status = "fault"
 			reason = "continuation rejected"
@@ -217,7 +239,7 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 	# Archive: preserve the actual run and its earned payout. Only the
 	# newly-entered boss version is varied, not its weapons or phase state.
 	if suite == "archive" and status == "cleared" and sim.stage == 4 and sim.can_enter_secret():
-		var decision := sim.snapshot()
+		var decision: Dictionary = sim.snapshot()
 		var entry: int = sim.payout()
 		for revision in ["control","initial","candidate"]:
 			var fork := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")

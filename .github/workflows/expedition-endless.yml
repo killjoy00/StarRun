@@ -1,18 +1,18 @@
 name: Expedition Endless compatibility
 on:
   pull_request:
-    paths:
-      - scripts/expedition_rules.gd
-      - tests/expedition_endless.gd
-      - tools/expedition_endless_summary.py
-      - .github/workflows/expedition-endless.yml
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: expedition-endless-${{ github.event.pull_request.number }}
+  group: expedition-endless-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
   flight:
+    needs: scope
+    if: needs.scope.outputs.endless == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - name: Install pinned Godot
         run: tools/install-godot.sh
@@ -50,13 +50,13 @@ jobs:
           path: logs/
           retention-days: 30
   report:
-    needs: flight
-    if: always()
+    needs: [scope, flight]
+    if: always() && needs.scope.outputs.endless == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:

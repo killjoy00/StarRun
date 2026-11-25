@@ -1,0 +1,73 @@
+name: Destination regression smoke
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: destination-smoke-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
+  routes:
+    needs: scope
+    if: needs.scope.outputs.routes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {ship: vanguard, budget: p8, policy: on_cooldown}
+          - {ship: bulwark, budget: p32, policy: timed}
+          - {ship: haven, budget: max, policy: timed}
+          - {ship: arcwing, budget: p32, policy: on_cooldown}
+          - {ship: wraith, budget: p8, policy: timed}
+          - {ship: kestrel, budget: max, policy: on_cooldown}
+          - {ship: lancer, budget: p32, policy: timed}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - run: tools/install-godot.sh
+      - run: godot --headless --path . --editor --import --quit
+      - name: Two actual seeded campaigns and production destination forks
+        env:
+          SHIP: ${{ matrix.ship }}
+          BUDGET: ${{ matrix.budget }}
+          POLICY: ${{ matrix.policy }}
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          log="logs/routes-$SHIP-$BUDGET-$POLICY.log"
+          godot --headless --path . --script tests/checkpoint_expeditions.gd -- --suite=routes --profile=smoke --ship="$SHIP" --hangar="$BUDGET" --strategy="$POLICY" |& tee "$log"
+          ! grep -Eq 'SCRIPT ERROR:|ERROR: Failed to load script|Parse Error:|GDScript backtrace' "$log"
+          test "$(grep -c '^CHECKPOINT_RUN ' "$log")" -eq 2
+          test "$(grep -c '^CHECKPOINT_DONE ' "$log")" -eq 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: destination-smoke-${{ matrix.ship }}-${{ matrix.budget }}-${{ matrix.policy }}
+          path: logs/
+          retention-days: 14
+  report:
+    needs: [scope, routes]
+    if: always() && needs.scope.outputs.routes == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: destination-smoke-*
+          path: logs
+          merge-multiple: true
+      - run: |
+          set -euo pipefail
+          python3 tools/checkpoint_expeditions_summary.py routes-smoke logs/*.log | tee report.md
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          test "${{ needs.routes.result }}" = success

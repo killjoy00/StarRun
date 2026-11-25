@@ -1,14 +1,6 @@
 name: 50-run player progression
 on:
   pull_request:
-    paths:
-      - scripts/simulation.gd
-      - scripts/catalog.gd
-      - scripts/meta_progress.gd
-      - data/content.json
-      - tests/balance_matrix.gd
-      - tools/progression_run_summary.py
-      - .github/workflows/player-progression.yml
   workflow_dispatch:
     inputs:
       control_ref:
@@ -23,7 +15,11 @@ concurrency:
   group: progression-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
   cohort:
+    needs: scope
+    if: needs.scope.outputs.progression == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -76,8 +72,8 @@ jobs:
           path: logs/
           retention-days: 30
   report:
-    if: always()
-    needs: cohort
+    if: always() && needs.scope.outputs.progression == 'true'
+    needs: [scope, cohort]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

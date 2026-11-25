@@ -1,8 +1,6 @@
 name: Silent Archive cross-ship real-campaign review
 
 on:
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +12,6 @@ concurrency:
 
 jobs:
   secret_route:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'review/silent-archive-') || startsWith(github.head_ref, 'balance/harder-silent-archive-')
     name: Archive / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest
     timeout-minutes: 45

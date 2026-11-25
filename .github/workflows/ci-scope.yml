@@ -1,0 +1,45 @@
+name: CI change scope
+on:
+  workflow_call:
+    outputs:
+      ordinary:
+        value: ${{ jobs.classify.outputs.ordinary }}
+      routes:
+        value: ${{ jobs.classify.outputs.routes }}
+      archive:
+        value: ${{ jobs.classify.outputs.archive }}
+      fleet:
+        value: ${{ jobs.classify.outputs.fleet }}
+      progression:
+        value: ${{ jobs.classify.outputs.progression }}
+      endless:
+        value: ${{ jobs.classify.outputs.endless }}
+      native:
+        value: ${{ jobs.classify.outputs.native }}
+permissions:
+  contents: read
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ordinary: ${{ steps.scope.outputs.ordinary }}
+      routes: ${{ steps.scope.outputs.routes }}
+      archive: ${{ steps.scope.outputs.archive }}
+      fleet: ${{ steps.scope.outputs.fleet }}
+      progression: ${{ steps.scope.outputs.progression }}
+      endless: ${{ steps.scope.outputs.endless }}
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 tools/ci_scope.py --self-test
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 tools/ci_scope.py --event "$EVENT" --base "$BASE" --head "$HEAD_SHA"
