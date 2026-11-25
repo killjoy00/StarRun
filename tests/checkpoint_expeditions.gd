@@ -239,7 +239,7 @@ func _campaign(seed: int, ship: String, budget: String, policy: String, style: S
 	# Archive: preserve the actual run and its earned payout. Only the
 	# newly-entered boss version is varied, not its weapons or phase state.
 	if suite == "archive" and status == "cleared" and sim.stage == 4 and sim.can_enter_secret():
-		var decision := sim.snapshot()
+		var decision: Dictionary = sim.snapshot()
 		var entry: int = sim.payout()
 		for revision in ["control","initial","candidate"]:
 			var fork := Sim.new(seed, _hangar(budget), ship, "rookie", "normal")
