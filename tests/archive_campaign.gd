@@ -8,6 +8,32 @@ func _run() -> void:
 	for arg in OS.get_cmdline_user_args():
 		if arg.contains("="):
 			options[arg.get_slice("=", 0)] = arg.get_slice("=", 1)
+	var gate_mode: String = options.get("--gate-mode", "none")
+	if gate_mode == "fixtures":
+		var count := 0
+		var ok := true
+		for ship in Catalog.SHIPS:
+			for difficulty in Catalog.DIFFICULTIES:
+				var passed := _redesigned_fixture(825838, ship.id, "rookie", difficulty, "max")
+				print("ARCHIVE_FIXTURE ", JSON.stringify({"ship":ship.id,"difficulty":difficulty,"passed":passed}))
+				ok = ok and passed
+				count += 1
+		quit(0 if ok and count == 21 else 1)
+		return
+	if gate_mode not in ["none","generate","replay"]:
+		push_error("Unknown gate mode")
+		quit(2)
+		return
+	if gate_mode != "none":
+		for key in ["--ship","--pilot","--difficulty","--hangar","--seed-offset","--gate-file","--baseline-sha"]:
+			if not options.has(key) or str(options[key]).is_empty():
+				push_error("Gate mode requires explicit identity: " + key)
+				quit(2)
+				return
+		if "--expedition" not in OS.get_cmdline_user_args() or "--matched" not in OS.get_cmdline_user_args():
+			push_error("Gate mode requires expedition and matched checks")
+			quit(2)
+			return
 	var matched := "--matched" in OS.get_cmdline_user_args()
 	var expedition := "--expedition" in OS.get_cmdline_user_args()
 	var require_win := "--require-win" in OS.get_cmdline_user_args()
@@ -31,7 +57,44 @@ func _run() -> void:
 					push_error("Production expedition rules refused")
 					quit(2)
 					return
-				var result := _fly_campaign(sim)
+				var identity := {"ship":ship.id,"pilot":pilot.id,"difficulty":difficulty,"hangar":hangar_style,"seed":sim.seed_value,"baseline":str(options.get("--baseline-sha",""))}
+				var result: Dictionary
+				if gate_mode == "replay":
+					var input := FileAccess.open(str(options["--gate-file"]), FileAccess.READ)
+					if input == null:
+						push_error("Missing frozen gate")
+						quit(2)
+						return
+					var packet: Variant = input.get_var(false)
+					if not packet is Dictionary or packet.get("schema") != 1 or packet.get("identity") != identity or not packet.get("snapshot") is Dictionary or not packet.get("campaign") is Dictionary:
+						push_error("Frozen gate identity/schema mismatch")
+						quit(2)
+						return
+					var snap: Dictionary = packet["snapshot"]
+					result = packet["campaign"].duplicate(true)
+					if not sim.restore(snap) or sim.snapshot() != snap or not sim.can_enter_secret() or sim.seed_value != identity.seed or sim.ship_id != identity.ship or sim.pilot_id != identity.pilot or sim.difficulty != identity.difficulty or result.get("fault",true) or not result.get("eligible",false) or sim.stage_clears != 4 or sim.signal_count < 2:
+						push_error("Frozen gate is not a restored eligible flight")
+						quit(2)
+						return
+					result["gate_source"] = "frozen_baseline"
+					result["baseline_sha"] = identity.baseline
+				else:
+					result = _fly_campaign(sim)
+				if gate_mode == "generate":
+					if result.get("fault",true) or not sim.can_enter_secret() or sim.stage_clears != 4 or sim.signal_count < 2:
+						push_error("Baseline did not earn the required gate")
+						quit(1)
+						return
+					var output := FileAccess.open(str(options["--gate-file"]), FileAccess.WRITE)
+					if output == null:
+						push_error("Unable to write earned gate")
+						quit(2)
+						return
+					output.store_var({"schema":1,"identity":identity,"snapshot":sim.snapshot(),"campaign":result},false)
+					output.close()
+					print("ARCHIVE_GATE_SAVED ", JSON.stringify(identity))
+					quit(0)
+					return
 				if expedition:
 					result["fixture_ok"] = _redesigned_fixture(sim.seed_value, ship.id, pilot.id, difficulty, hangar_style)
 					failed = failed or not bool(result.fixture_ok) or bool(result.get("fault",false))
@@ -42,10 +105,15 @@ func _run() -> void:
 						failed = failed or int(result.get("archive_version",0)) != 5 or not bool(result.get("economy_ok",false)) or bool(result.get("timeout",false))
 					if matched:
 						var control := Sim.new()
-						control.restore(gate)
+						if not control.restore(gate) or control.snapshot() != gate:
+							push_error("Matched gate restore failed")
+							quit(1)
+							return
 						result["control"] = _fly_archive(control, false)
 						if expedition:
 							failed = failed or int(result.control.get("archive_version",0)) != 5 or not bool(result.control.get("economy_ok",false)) or bool(result.control.get("timeout",false))
+				if gate_mode == "replay":
+					failed = failed or not bool(result.get("won",false)) or not bool(result.get("control",{}).get("won",false)) or int(result.get("remaining_emitters",-1)) != 0 or int(result.get("control",{}).get("remaining_emitters",-1)) != 0
 				result.merge({"ship":ship.id,"pilot":pilot.id,"difficulty":difficulty,"hangar":hangar_style,"seed":sim.seed_value})
 				print("ARCHIVE_TRIAL ", JSON.stringify(result))
 				trials += 1

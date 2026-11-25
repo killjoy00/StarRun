@@ -10,7 +10,11 @@ concurrency:
   group: ios-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
   iphone:
+    needs: scope
+    if: needs.scope.outputs.native == 'true'
     name: Export and compile unsigned iPhone app
     runs-on: xcode-27
     timeout-minutes: 75

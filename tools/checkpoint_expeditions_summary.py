@@ -15,7 +15,11 @@ GROUP = dict(zip(DESTINATIONS,("repair","repair","overclock","overclock","bounty
 EXPECTED = {(s,h,p) for s in FLEET for h in ("p8","p32","max") for p in POLICIES}
 ARCHIVE_EXPECTED = {(s,h,p) for s in SAMPLE for h in ("p32","max") for p in POLICIES}
 
-def read(paths, suite):
+ROUTE_SMOKE_EXPECTED = (("vanguard","p8","on_cooldown"),("bulwark","p32","timed"),("haven","max","timed"),("arcwing","p32","on_cooldown"),("wraith","p8","timed"),("kestrel","max","on_cooldown"),("lancer","p32","timed"))
+
+def read(paths, suite, smoke=False):
+    seed_count=2 if smoke else 8
+    seeds={810000 + (430+i+1)*7919 for i in range(seed_count)}
     cells={}
     for path in paths:
         records=collections.defaultdict(list)
@@ -24,16 +28,18 @@ def read(paths, suite):
             if key in ("CHECKPOINT_CONFIG","CHECKPOINT_RUN","CHECKPOINT_DONE"):
                 records[key].append(json.loads(value))
         configs,rows,done=(records[k] for k in ("CHECKPOINT_CONFIG","CHECKPOINT_RUN","CHECKPOINT_DONE"))
-        if len(configs)!=1 or len(rows)!=8 or done!=[{"runs":8,"faults":0}]:
+        if len(configs)!=1 or len(rows)!=seed_count or done!=[{"runs":seed_count,"faults":0}]:
             raise ValueError(f"incomplete cohort {path}")
         c=configs[0]
         key=c["ship"],c["budget"],c["policy"]
-        if key in cells or c["suite"]!=suite or c["offset"]!=430 or c["seeds"]!=8 or {r["seed"] for r in rows}!=SEEDS:
+        if key in cells or c["suite"]!=suite or c["offset"]!=430 or c["seeds"]!=seed_count or c.get("profile","full")!=("smoke" if smoke else "full") or {r["seed"] for r in rows}!=seeds:
             raise ValueError(f"unmatched cohort {path}")
         for r in rows:
             if (r["ship"],r["budget"],r["policy"])!=key or r["suite"]!=suite or r["status"] not in ("cleared","dead","timeout"):
                 raise ValueError(f"bad identity/status {path}")
             stages=r["stages"]
+            if smoke and (r["status"]=="timeout" or any(s["status"]=="timeout" for s in stages)):
+                raise ValueError("campaign timed out in smoke check")
             if not stages or [s["stage"] for s in stages]!=list(range(1,len(stages)+1)):
                 raise ValueError("incomplete history")
             if suite=="routes":
@@ -48,13 +54,20 @@ def read(paths, suite):
                         if v["stage"]!=f["world"] or v["destination"]!=v["id"] or v["status"] not in ("cleared","dead","timeout") or v["incremental_cores"]!=v["cores_if_claimed"]-f["start"]["cores"]:
                             raise ValueError("wrong next-world trace")
                     controls=f["controls"]
-                    if [v["id"] for v in controls]!=[id for id in hand if id in ("shipyard","graveyard","smugglers","uncharted")]:
+                    expected_controls=[] if smoke else [id for id in hand if id in ("shipyard","graveyard","smugglers","uncharted")]
+                    if [v["id"] for v in controls]!=expected_controls:
                         raise ValueError("missing actual old-route counterfactual")
                     for probe in controls:
                         if probe["route_version"]!=0 or probe["id"]!=probe["destination"] or probe["stage"]!=f["world"] or probe["status"] not in ("cleared","dead","timeout") or probe["incremental_cores"]!=probe["cores_if_claimed"]-f["start"]["cores"]:
                             raise ValueError("invalid old-route branch")
                     if any(v["route_version"]!=1 or (v["id"]=="smugglers" and v["curated_picks"]!=1 and v["status"]=="cleared") for v in variants):
                         raise ValueError("production destination or curated choice was not exercised")
+                    if smoke:
+                        if any(v["status"]=="timeout" for v in variants):
+                            raise ValueError("route branch timed out")
+                        replay_expected=r["seed"]==min(seeds) and f["world"]==2
+                        if f.get("continuation_replayed") is not replay_expected:
+                            raise ValueError("missing independent replay or selected-branch reuse")
                     chosen=next(v for v in variants if v["id"]==f["continued"])
                     if any(chosen[k]!=next_stage[k] for k in ("status","elapsed","level","hull","kills","destination","cores_if_claimed")):
                         raise ValueError("restored branch differs from actual continuation")
@@ -66,7 +79,7 @@ def read(paths, suite):
                     if r["signals"]<2 or stages[-1]["stage"]!=4 or stages[-1]["status"]!="cleared" or [a["revision"],b["revision"],candidate["revision"]]!=["control","initial","candidate"] or [a["archive_version"],b["archive_version"],candidate["archive_version"]]!=[0,4,5] or (candidate["status"]=="cleared" and candidate["remaining_emitters"]!=0) or any(x["entry_cores"]!=a["entry_cores"] or x["locked_cores"]!=a["entry_cores"] or x["stage"]!=5 or x["status"] not in ("cleared","dead","timeout") for x in (a,b,candidate)):
                         raise ValueError("invalid Archive comparison")
         cells[key]=rows
-    if set(cells)!=(EXPECTED if suite=="routes" else ARCHIVE_EXPECTED):
+    if set(cells)!=(set(ROUTE_SMOKE_EXPECTED) if smoke else EXPECTED if suite=="routes" else ARCHIVE_EXPECTED):
         raise ValueError("missing expected cells")
     return [r for rows in cells.values() for r in rows]
 
@@ -154,5 +167,17 @@ def archive_report(rows):
 
 if __name__=="__main__":
     suite=sys.argv[1]
-    rows=read(sys.argv[2:],suite)
-    (route_report if suite=="routes" else archive_report)(rows)
+    if suite=="routes-smoke":
+        rows=read(sys.argv[2:],"routes",smoke=True)
+        forks=[f for r in rows for f in r["forks"]]
+        seen={v["id"] for f in forks for v in f["variants"]}
+        if not {"shipyard","graveyard","smugglers","uncharted"} <= seen:
+            raise ValueError("smoke sample did not exercise all four changed destinations")
+        print(f"## Route smoke: {len(rows)} campaigns, {len(forks)} saved warps, {sum(len(f['variants']) for f in forks)} actual branches")
+        print(f"Independent first-warp replays: {sum(f['continuation_replayed'] for f in forks)}; destinations: {', '.join(sorted(seen))}.")
+        print("Regression coverage only; no historical-control or population balance claim.")
+    elif suite in ("routes","archive"):
+        rows=read(sys.argv[2:],suite)
+        (route_report if suite=="routes" else archive_report)(rows)
+    else:
+        raise ValueError("unknown suite")

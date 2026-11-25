@@ -2,29 +2,7 @@ name: Android Play AAB build
 on:
   push:
     branches: [main]
-    paths:
-      - 'export_presets.cfg'
-      - 'project.godot'
-      - 'assets/**'
-      - 'data/**'
-      - 'scenes/**'
-      - 'scripts/**'
-      - 'tools/android-export.sh'
-      - 'tools/android-orientation-manifest.py'
-      - 'tools/generate-android-icon.gd'
-      - '.github/workflows/android.yml'
   pull_request:
-    paths:
-      - 'export_presets.cfg'
-      - 'project.godot'
-      - 'assets/**'
-      - 'data/**'
-      - 'scenes/**'
-      - 'scripts/**'
-      - 'tools/android-export.sh'
-      - 'tools/android-orientation-manifest.py'
-      - 'tools/generate-android-icon.gd'
-      - '.github/workflows/android.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -33,7 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
   android:
+    needs: scope
+    if: needs.scope.outputs.native == 'true'
     name: Godot 4.6.3 Android 16 bundle (CI key only)
     runs-on: ubuntu-latest
     timeout-minutes: 60

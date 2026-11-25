@@ -1,17 +1,21 @@
-name: Destination and Archive checkpoint review
+name: Full destination and Archive checkpoint research
 on:
-  pull_request:
-    paths:
-      - tests/checkpoint_expeditions.gd
-      - tools/checkpoint_expeditions_summary.py
-      - .github/workflows/checkpoint-expeditions.yml
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Full research suite (major balance changes, not routine PRs)
+        type: choice
+        options: [all, routes, archive]
+        default: all
+        required: true
 permissions:
   contents: read
 concurrency:
-  group: checkpoint-expeditions-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: checkpoint-research-${{ github.run_id }}
+  cancel-in-progress: false
 jobs:
   routes:
+    if: inputs.suite == 'all' || inputs.suite == 'routes'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -23,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - run: tools/install-godot.sh
       - run: godot --headless --path . --editor --import --quit
@@ -47,6 +51,7 @@ jobs:
           path: logs/
           retention-days: 30
   archive:
+    if: inputs.suite == 'all' || inputs.suite == 'archive'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -58,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - run: tools/install-godot.sh
       - run: godot --headless --path . --editor --import --quit
@@ -88,14 +93,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
+        if: inputs.suite != 'archive'
         with:
           pattern: checkpoint-routes-*
           path: route-logs
           merge-multiple: true
       - uses: actions/download-artifact@v4
+        if: inputs.suite != 'routes'
         with:
           pattern: checkpoint-archive-*
           path: archive-logs
@@ -103,11 +110,16 @@ jobs:
       - name: Validate and summarize all actual checkpoint branches
         run: |
           set -euo pipefail
-          python3 tools/checkpoint_expeditions_summary.py routes route-logs/*.log | tee routes.md
-          python3 tools/checkpoint_expeditions_summary.py archive archive-logs/*.log | tee archive.md
-          cat routes.md archive.md >> "$GITHUB_STEP_SUMMARY"
-          test "${{ needs.routes.result }}" = success
-          test "${{ needs.archive.result }}" = success
+          if [ "${{ inputs.suite }}" != archive ]; then
+            python3 tools/checkpoint_expeditions_summary.py routes route-logs/*.log | tee routes.md
+            cat routes.md >> "$GITHUB_STEP_SUMMARY"
+            test "${{ needs.routes.result }}" = success
+          fi
+          if [ "${{ inputs.suite }}" != routes ]; then
+            python3 tools/checkpoint_expeditions_summary.py archive archive-logs/*.log | tee archive.md
+            cat archive.md >> "$GITHUB_STEP_SUMMARY"
+            test "${{ needs.archive.result }}" = success
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:

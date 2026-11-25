@@ -10,6 +10,8 @@ concurrency:
   group: playable-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    uses: ./.github/workflows/ci-scope.yml
   simulation:
     name: Simulation and checkpoint checks
     runs-on: ubuntu-latest
@@ -125,6 +127,8 @@ jobs:
             exit 1
           fi
   balance_smoke:
+    needs: scope
+    if: needs.scope.outputs.ordinary == 'true'
     name: Full campaign / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -163,6 +167,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
   real_campaign:
+    needs: scope
+    if: needs.scope.outputs.ordinary == 'true'
     name: Real four-world completion (no forced boss kills)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -215,7 +221,8 @@ jobs:
           retention-days: 30
   exports:
     name: Web, Windows, Linux, and macOS builds
-    needs: simulation
+    needs: [scope, simulation]
+    if: needs.scope.outputs.native == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
