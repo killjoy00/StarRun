@@ -27,7 +27,7 @@ const SCREENS := [
 	"archive-boss-intro", "archive-boss-lock", "archive-boss-cast", "archive-counter-surge", "archive-boss-lattice", "archive-boss-collapse", "archive-boss-reduced", "archive-ending",
 	"destination-preview", "destination-arrival", "smuggler-draft", "uncharted-arrival", "custodian-shield",
 	"first-flight-title", "first-flight-launch", "first-flight-wave", "first-flight-aegis", "first-flight-draft", "first-flight-upgrade-popup",
-	"first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
+	"first-flight-beam", "first-flight-draft-two", "first-flight-harvester", "first-flight-ejection",
 	"first-flight-ejection-reduced", "first-flight-debrief"
 ]
 var output := "/tmp/starrun-screenshots"
@@ -131,12 +131,14 @@ func _build_intro_fixtures() -> void:
 	sim.configure_first_flight(true)
 	for i in range(15000):
 		sim.step()
-		if sim.tick == 66:
+		if sim.tick == 132:
 			intro_fixtures["first-flight-launch"] = sim.snapshot()
 		elif sim.tick == 560:
 			intro_fixtures["first-flight-wave"] = sim.snapshot()
 		elif sim.tick == 1485:
 			intro_fixtures["first-flight-upgrade-popup"] = sim.snapshot()
+		elif sim.tick == 1878:
+			intro_fixtures["first-flight-beam"] = sim.snapshot()
 		if sim.intro_aegis_prompt:
 			intro_fixtures["first-flight-aegis"] = sim.snapshot()
 			sim.activate("aegis")
