@@ -10,10 +10,16 @@ const DRAFT_AT := [23.0, 48.0]
 const LEGACY_BOSS_AT := 145.0
 const LEGACY_DRAFT_AT := [35.0, 82.0]
 const LESSON_WAVES := [13.5, 29.0]
+const CAMPAIGN_WINGS := [
+	[13.5, "sniper"], [24.0, 0], [30.5, "sniper"],
+	[39.0, "shieldguard"], [49.0, 1], [57.0, "gunship"],
+]
+const BOSS_ENTRANCE_DELAY := 0.8
+const UPGRADE_WINGS := {"arc": "missile_bomber", "lance": "shieldguard", "seeker": "gunship"}
 const SECTOR := {
 	"id": "debris_belt", "name": "FIRST FLIGHT", "boss": "boss",
 	"boss_name": "Harvester", "boss_hp": 1490.0, "health_scale": 1.0,
-	"damage_scale": 0.52,
+	"damage_scale": 0.52, "spawn_scale": 1.0,
 }
 # [seconds, [enemy, x, hp, first volley] ...]. Two slower snipers leave
 # an Aegis window even when the first cast was early or the first beam missed.
@@ -114,7 +120,7 @@ static func recommendation(sim) -> String:
 static func spawn(sim) -> void:
 	if sim.boss_spawned:
 		return
-	if sim.time >= boss_at(sim):
+	if sim.time >= boss_at(sim) or (sim.intro_campaign_waves and _clear_for_harvester(sim)):
 		if sim.intro_scripted:
 			# The campaign entrance clears the field. In the short intro,
 			# let the last formation stay in flight as the Harvester arrives.
@@ -124,6 +130,9 @@ static func spawn(sim) -> void:
 			sim.enemies.append_array(escorts)
 		else:
 			sim._spawn_boss()
+		return
+	if sim.intro_campaign_waves:
+		_spawn_campaign_waves(sim)
 		return
 	if sim.intro_scripted and sim.tick % roundi(1.0 / sim.DT) == 0:
 		_enter_formation(sim, REINFORCEMENTS.get(roundi(sim.time), []))
@@ -135,6 +144,32 @@ static func spawn(sim) -> void:
 	var showcase: bool = wave[1] is int
 	var units: Array = FORMATIONS[featured_weapon(sim, int(wave[1]))] if showcase else wave.slice(1)
 	_enter_formation(sim, units, float(wave[0]) in LESSON_WAVES)
+
+static func _spawn_campaign_waves(sim) -> void:
+	if sim.intro_wave >= CAMPAIGN_WINGS.size():
+		return
+	sim.wave_drift += sim.DT * (sim.spawn_flow() - 1.0)
+	sim._spawn_regular_waves()
+	var wing: Array = CAMPAIGN_WINGS[sim.intro_wave]
+	if sim.time < float(wing[0]):
+		return
+	var lead: String = UPGRADE_WINGS[featured_weapon(sim, int(wing[1]))] if wing[1] is int else wing[1]
+	var lead_index: int = sim.enemies.size()
+	sim._send_world1_strike_wing(lead)
+	if sim.intro_wave == 0:
+		# Keep the first shooter alive long enough to teach the timing.
+		var sniper: Dictionary = sim.enemies[lead_index]
+		sniper.max_hp = 115.0
+		sniper.hp = sniper.max_hp
+		sim.heavy_ready_at = sim.time + 0.85
+	sim.intro_wave += 1
+
+static func _clear_for_harvester(sim) -> bool:
+	if sim.intro_wave < CAMPAIGN_WINGS.size() or not sim.enemies.is_empty():
+		return false
+	if sim.intro_clear_at < 0.0:
+		sim.intro_clear_at = sim.time
+	return sim.time >= sim.intro_clear_at + BOSS_ENTRANCE_DELAY
 
 static func _enter_formation(sim, units: Array, lesson: bool = false) -> void:
 	for i in range(units.size()):
@@ -194,8 +229,13 @@ static func after_step(sim) -> void:
 		return
 	if sim.intro_lesson_seen or sim.intro_beam_blocked or sim.intro_wave == 0 or sim.cooldowns.aegis > 0.0:
 		return
-	var waves := WAVES if sim.intro_scripted else LEGACY_WAVES
-	if float(waves[sim.intro_wave - 1][0]) in LESSON_WAVES and sim.charges.any(func(charge): return float(charge.remaining) <= 0.65):
+	var lesson_wave: bool
+	if sim.intro_campaign_waves:
+		lesson_wave = sim.intro_wave == 1 and sim.time < float(CAMPAIGN_WINGS[0][0]) + 3.0
+	else:
+		var waves := WAVES if sim.intro_scripted else LEGACY_WAVES
+		lesson_wave = float(waves[sim.intro_wave - 1][0]) in LESSON_WAVES
+	if lesson_wave and sim.charges.any(func(charge): return float(charge.remaining) <= 0.65):
 		sim.intro_lesson_seen = true
 		sim.intro_aegis_prompt = true
 
@@ -228,7 +268,7 @@ static func cue(sim) -> Array:
 		return ["BEAM BLOCKED", "Aegis needs time to recharge."]
 	if not sim.intro_scripted and sim.time >= 46.0 and sim.time < 51.0:
 		return ["FLIGHT SPEED", "Tap %s× to change speed." % str(sim.intro_speed)]
-	if sim.time >= boss_at(sim) - (3.0 if sim.intro_scripted else 5.0):
+	if not sim.intro_campaign_waves and sim.time >= boss_at(sim) - (3.0 if sim.intro_scripted else 5.0):
 		return ["HARVESTER AHEAD", "Main gun charging."] if sim.intro_scripted else ["HARVESTER AHEAD", "Watch for the beam warning."]
 	if not sim.charges.is_empty():
 		return ["BEAM INCOMING", "The line shows where it will hit."]

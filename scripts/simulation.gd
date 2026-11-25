@@ -45,12 +45,20 @@ const PACK_HP_TOTAL := 1.08
 # were measured and held back: the Arcwing Archive route won 5 of 8 seeds
 # with them versus 7 of 8 without.
 const PACK_KINDS := {"drone":4, "rusher":3, "interceptor":3}
+const WORLD1_STRIKE_WINGS := {
+	"gunship": ["gunship", "drone", "interceptor"],
+	"shieldguard": ["shieldguard", "interceptor", "gunship"],
+	"missile_bomber": ["missile_bomber", "drone", "rusher"],
+	"sniper": ["sniper", "gunship", "interceptor"],
+}
 const Catalog = preload("res://scripts/catalog.gd")
 const FirstFlight = preload("res://scripts/first_flight.gd")
 const Expedition = preload("res://scripts/expedition_rules.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var intro_run := false
 var intro_scripted := false # Checkpoints from the original intro keep their schedule.
+var intro_campaign_waves := false
+var intro_clear_at := -1.0
 var intro_ejected := false
 var intro_reward_eligible := false
 var intro_wave := 0
@@ -468,6 +476,7 @@ func ship_velocity(at: float = -1.0) -> Vector2:
 func configure_first_flight(reward_eligible: bool) -> void:
 	intro_run = true
 	intro_scripted = true
+	intro_campaign_waves = true
 	intro_reward_eligible = reward_eligible
 	rerolls_left = 0
 	banishes_left = 0
@@ -577,21 +586,8 @@ func _spawn_campaign_encounters() -> void:
 		_spawn_boss()
 		if secret_intro_pending:
 			return
-	if wave_now() >= next_spawn and not boss_spawned:
-		# Keep the genuine XP-bearing spawn cadence intact. The separate
-		# short-lived visual scout contacts create opening beats without
-		# starving slower ships or shifting the entire late-world build.
-		_spawn_enemy()
-		var stage_time := wave_elapsed()
-		var pace := maxf(0.55, 1.65 - stage_time / 260.0)
-		next_spawn = wave_now() + pace * _spawn_rhythm_factor() / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
-		if _uses_spawn_rhythm():
-			spawn_rhythm_slot += 1
-	if _regular_world1_opening() and not boss_spawned:
-		_spawn_opening_scout_screen()
-	if _regular_world1_opening() and not boss_spawned and wave_now() >= next_pressure_wave_at:
-		_spawn_world1_pressure()
-		next_pressure_wave_at = wave_now() + 7.5
+	if not boss_spawned:
+		_spawn_regular_waves()
 	if not secret_entered and wave_now() >= next_hazard and not boss_spawned:
 		_spawn_hazard()
 		next_hazard = wave_now() + rng.randf_range(15.0, 23.0)
@@ -604,6 +600,19 @@ func _spawn_campaign_encounters() -> void:
 	if not secret_entered and wave_now() >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
 		next_encounter_at = wave_now() + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
+
+func _spawn_regular_waves() -> void:
+	if wave_now() >= next_spawn:
+		_spawn_enemy()
+		var pace := maxf(0.55, 1.65 - wave_elapsed() / 260.0)
+		next_spawn = wave_now() + pace * _spawn_rhythm_factor() / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+		if _uses_spawn_rhythm():
+			spawn_rhythm_slot += 1
+	if _uses_world1_opening():
+		_spawn_opening_scout_screen()
+		if wave_now() >= next_pressure_wave_at:
+			_spawn_world1_pressure()
+			next_pressure_wave_at = wave_now() + 7.5
 
 func threat_scale() -> float:
 	# Insane combat threat is 25% greater than its former 1.6 value.
@@ -785,11 +794,14 @@ func _regular_world1_opening() -> bool:
 	# crowd limit. Hidden sectors and Endless never use the new opener.
 	return not intro_run and stage == 1 and difficulty == "normal" and daily_day.is_empty()
 
+func _uses_world1_opening() -> bool:
+	return intro_campaign_waves or _regular_world1_opening()
+
 func _enemy_limit() -> int:
 	# Normal regular World 1 has a bounded crowd; Dailies retain the
 	# original 20-enemy limit used by the fixed UTC challenge. Tougher
 	# ships stay on screen longer, so the cap grows with them.
-	if _regular_world1_opening():
+	if _uses_world1_opening():
 		return 11
 	return mini(55, 20 + (stage - 1) * 5)
 
@@ -863,7 +875,7 @@ func _apply_mutation_cost(id: String) -> void:
 	shield = minf(max_shield, shield)
 
 func world1_opening_phase() -> String:
-	if not _regular_world1_opening():
+	if not _uses_world1_opening():
 		return ""
 	var elapsed: float = time - stage_start
 	if elapsed < 8.0: return "scouts"
@@ -2033,14 +2045,14 @@ func _add_enemy(kind: String, position: Vector2) -> void:
 	var spec: Dictionary = HiddenSector.ENEMIES[kind] if HiddenSector.ENEMIES.has(kind) else content.enemies[kind]
 	var scaling := (1.0 + wave_elapsed() / 340.0) * float(stage_spec().health_scale) * threat_scale() * stage_risk * enemy_health_multiplier() * advanced_wave_health() * shooter_health_pressure(kind)
 	var first_fire := shooter_first_fire_window(kind)
-	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": int(spec.xp), "phase": rng.randf_range(0, TAU)})
+	enemies.append({"id": next_id, "kind": kind, "p": position, "hp": float(spec.hp) * scaling, "max_hp": float(spec.hp) * scaling, "speed": float(spec.speed), "fire": rng.randf_range(first_fire.x, first_fire.y), "xp": 0 if intro_campaign_waves else int(spec.xp), "phase": rng.randf_range(0, TAU)})
 	next_id += 1
 
 ## Ships placed directly on screen (scripted waves, rivals, bosses) fly in
 ## from above the top edge and ease into position instead of popping in.
 func _begin_entry(enemy: Dictionary) -> void:
 	enemy["arrive_y"] = float(enemy.p.y)
-	enemy.p.y = -50.0
+	enemy.p.y = -120.0 if intro_campaign_waves and enemy.kind == "boss" else -50.0
 
 func _advance_entry(enemy: Dictionary) -> void:
 	var target: float = float(enemy.arrive_y)
@@ -2105,7 +2117,7 @@ func _spawn_encounter() -> void:
 		encounter_queue = formation.duplicate()
 
 func _spawn_opening_scout_screen() -> void:
-	if not _regular_world1_opening():
+	if not _uses_world1_opening():
 		return
 	# A deliberate series of early, attackable contact groups. They grant
 	# no XP and leave the combat/draft RNG unchanged. Their first shots have
@@ -2143,12 +2155,13 @@ func _spawn_world1_strike_wing() -> void:
 	# kills on top of the regular wave schedule, no change to Hard/Insane.
 	var elapsed: float = wave_elapsed()
 	var pattern: int = (seed_value + encounter_index * 5) % 3
-	var formation: Array = ["gunship", "drone", "interceptor"]
-	if elapsed >= 48.0:
-		match pattern:
-			0: formation = ["shieldguard", "interceptor", "gunship"]
-			1: formation = ["missile_bomber", "drone", "rusher"]
-			2: formation = ["sniper", "gunship", "interceptor"]
+	var lead := "gunship"
+	if elapsed >= 48.0 and pattern >= 0:
+		lead = ["shieldguard", "missile_bomber", "sniper"][pattern]
+	_send_world1_strike_wing(lead)
+
+func _send_world1_strike_wing(lead: String) -> void:
+	var formation: Array = WORLD1_STRIKE_WINGS[lead]
 	encounter_index += 1
 	for index in range(3):
 		for member in _spawn_unit(str(formation[index]), Vector2(100.0 + index * 165.0, 38.0 - index * 16.0)):
@@ -2159,7 +2172,7 @@ func _spawn_world1_strike_wing() -> void:
 			member.max_hp *= 1.20
 			member.hp = member.max_hp
 			member.fire = 1.85 + index * 0.20
-	var pace := maxf(0.55, 1.65 - elapsed / 260.0)
+	var pace := maxf(0.55, 1.65 - wave_elapsed() / 260.0)
 	next_spawn = maxf(next_spawn, wave_now()) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
 	_log("THREE-SHIP ATTACK")
 
@@ -2174,7 +2187,7 @@ func _visible_world1_enemies() -> int:
 	return ceili(visible - 0.001)
 
 func _spawn_world1_pressure() -> void:
-	if not _regular_world1_opening():
+	if not _uses_world1_opening():
 		return
 	# The opening director fills EMPTY space, not low ship statistics.
 	# Extra pressure ships are genuine, attackable enemies, but do not
@@ -4888,6 +4901,9 @@ func snapshot() -> Dictionary:
 	if intro_run:
 		for key in ["intro_run", "intro_scripted", "intro_ejected", "intro_reward_eligible", "intro_wave", "intro_picks", "intro_pick_at", "intro_speed", "intro_lesson_seen", "intro_aegis_prompt", "intro_boss_intro_pending", "intro_beam_blocked", "intro_blocked_at"]:
 			state[key] = get(key)
+		if intro_campaign_waves:
+			state["intro_campaign_waves"] = true
+			state["intro_clear_at"] = intro_clear_at
 	for key in ["archive_challenge_version", "signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
 	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
@@ -4914,6 +4930,9 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	if not state.has("intro_campaign_waves"):
+		intro_campaign_waves = false
+		intro_clear_at = -1.0
 	if not state.has("archive_challenge_version"):
 		archive_challenge_version = 0
 	if not state.has("destination_rules_version"):

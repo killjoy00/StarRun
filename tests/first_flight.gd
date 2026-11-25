@@ -49,11 +49,13 @@ func _restored(sim: RefCounted, label: String) -> RefCounted:
 	return resumed
 
 func _run() -> void:
+	_check_campaign_opening()
 	for first in range(3):
 		for second in range(3):
 			_play_drafts(first, second)
 			_check_passive_ejection(first, second)
 	_check_legacy_checkpoint()
+	_check_previous_scripted_checkpoint()
 	_check_harvester_entrance()
 	_check_eligibility()
 	_check_real_scene()
@@ -73,6 +75,10 @@ func _play_drafts(first: int, second: int) -> void:
 	var first_chain := 0
 	var second_chain := 0
 	var aegis_at_impact := false
+	var lessons := 0
+	var second_sniper := -1
+	var saw_second_warning := false
+	var blocked_second_beam := false
 	var all_entered := true
 	var early_peak := 0
 	var late_peak := 0
@@ -90,12 +96,11 @@ func _play_drafts(first: int, second: int) -> void:
 	while not sim.ended and steps < 16000:
 		steps += 1
 		if sim.intro_aegis_prompt:
+			lessons += 1
 			var tick: int = sim.tick
 			sim.step()
 			check(sim.tick == tick, "Reading the beam lesson freezes combat")
 			sim = _restored(sim, "Aegis lesson")
-			if early:
-				check(sim.time > 29.0, "Second sniper offers a lesson after the early cast")
 			if missed:
 				sim.intro_aegis_prompt = false
 			else:
@@ -125,18 +130,27 @@ func _play_drafts(first: int, second: int) -> void:
 			sim = _restored(sim, "Installed upgrade")
 		# After the lesson, use ordinary warnings. A missed lesson should
 		# remain survivable with later casts and no cooldown forgiveness.
+		var second_beam: bool = sim.charges.any(func(charge): return int(charge.source) == second_sniper)
+		if second_beam and not saw_second_warning:
+			saw_second_warning = true
+			var cue: Array = Intro.cue(sim)
+			check(Intro.popup(sim).is_empty() and not cue.is_empty() and cue[0] == "BEAM INCOMING", "The later sniper uses the ordinary beam warning")
 		if not sim.charges.is_empty() and sim.charges[0].remaining <= 0.65:
-			if not missed or sim.time >= 29.0:
+			if not missed or second_beam:
 				if sim.activate("aegis") and first_cast < 0.0:
 					first_cast = sim.time
-		if first == 0 and second == 0 and not aegis_at_impact and sim.time >= Intro.BOSS_AT + Intro.EJECT_AFTER - 0.25:
+		if first == 0 and second == 0 and sim.boss_spawned and not aegis_at_impact and sim.time >= boss_at + Intro.EJECT_AFTER - 0.25:
 			aegis_at_impact = sim.activate("aegis")
 		var first_new_id: int = sim.next_id
 		sim.step()
 		if sim.next_id > first_new_id:
 			for enemy in sim.enemies:
 				if int(enemy.id) >= first_new_id:
-					all_entered = all_entered and enemy.p.y < 0.0 and enemy.has("arrive_y")
+					all_entered = all_entered and enemy.p.y < 0.0
+					if enemy.kind == "sniper" and sim.time >= float(Intro.CAMPAIGN_WINGS[2][0]) and second_sniper < 0:
+						second_sniper = int(enemy.id)
+		if second_beam and sim.intro_blocked_at == sim.time:
+			blocked_second_beam = true
 		if sim.tick % 15 == 0:
 			var on_screen: int = sim.enemies.filter(func(e): return e.hp > 0.0 and e.p.y >= 0.0 and e.p.y < Sim.HEIGHT).size()
 			if sim.time <= 12.0:
@@ -157,20 +171,39 @@ func _play_drafts(first: int, second: int) -> void:
 			elif sim.time >= 49.0 and sim.time < 55.5:
 				second_chain = maxi(second_chain, chain)
 	check(sim.intro_ejected and sim.ended and not sim.won and sim.hull == 0.0 and sim.stage_clears == 0 and not sim.stage_transition_queued, "The Harvester destroys the ship on branch %d/%d" % [first, second])
-	check(sim.intro_beam_blocked or (early and sim.beams_cancelled > 0), "A well-timed Aegis or destruction of the charging ship still stops a beam")
+	check(lessons == (0 if early else 1) and saw_second_warning, "Only the first sniper can pause combat for a lesson")
+	check(blocked_second_beam if early or missed else sim.intro_beam_blocked, "A well-timed Aegis blocks a real beam, including after an early or missed cast")
 	check(all_entered, "Launch ships, reinforcements and draft formations all enter from offscreen")
-	check(early_peak >= 7 and late_peak >= 8, "Crowded waves on path %d/%d, early peak %d, late peak %d" % [first, second, early_peak, late_peak])
+	check(early_peak >= 7 and late_peak >= 10, "Crowded waves on path %d/%d, early peak %d, late peak %d" % [first, second, early_peak, late_peak])
 	if first == 0 and second == 0:
 		check(first_chain >= 3 and second_chain > first_chain, "The recommended Arc upgrade visibly chains to more targets")
 		check(aegis_at_impact and sim.intro_ejected, "A cast immediately before the main gun still ends in ejection")
 	check(first_kill >= 0.0 and first_kill < 3.0 and first_cast > 0.0, "A kill and a cast happen in the opening")
 	check(first_draft == Intro.DRAFT_AT[0] and first_payoff >= first_draft and first_payoff < first_draft + 10.0, "First pick does damage in the next wave")
-	check(boss_at == Intro.BOSS_AT and absf(sim.time - Intro.BOSS_AT - Intro.EJECT_AFTER) <= Sim.DT + 0.001, "Harvester arrival and ejection meet the scripted timing")
+	check(boss_at < Intro.BOSS_AT and sim.intro_clear_at > 0.0 and absf(boss_at - sim.intro_clear_at - Intro.BOSS_ENTRANCE_DELAY) <= Sim.DT + 0.001, "The Harvester arrives as soon as the final wave clears")
+	check(absf(sim.time - boss_at - Intro.EJECT_AFTER) <= Sim.DT + 0.001, "Harvester arrival starts the scripted ejection clock")
+	check(sim.xp == 0.0 and sim.pending_levels == 0, "The standard enemy waves leave the two scripted drafts in control")
 	if missed:
 		check(sim.damage_taken.heavy > 0.0 and first_cast > 29.0, "A missed cast deals real damage and a later cast recovers")
 	print("TRACE %s: kill %.2fs, first cast %.2fs, first draft %.2fs, first weapon damage %.2fs, boss %.2fs, finish %.2fs" % [
 		sim.intro_picks, first_kill, first_cast, first_draft, first_payoff, boss_at, sim.time,
 	])
+
+func _check_campaign_opening() -> void:
+	var flight := Sim.new(Intro.SEED)
+	flight.configure_first_flight(true)
+	var campaign := Sim.new(Intro.SEED)
+	var saw_pack := false
+	for tick in range(roundi(12.0 / Sim.DT)):
+		flight.step()
+		campaign.step()
+		var launch_positions := flight.enemies.map(func(enemy): return [enemy.kind, enemy.p, enemy.fire])
+		var campaign_positions := campaign.enemies.map(func(enemy): return [enemy.kind, enemy.p, enemy.fire])
+		if launch_positions != campaign_positions:
+			check(false, "First Flight uses Level 1's opening positions and first volleys at %.2fs" % flight.time)
+			break
+		saw_pack = saw_pack or flight.enemies.any(func(enemy): return enemy.has("pack_id"))
+	check(saw_pack, "The opening uses the real Level 1 enemy packs")
 
 func _check_passive_ejection(first: int, second: int) -> void:
 	var sim := Sim.new(Intro.SEED)
@@ -213,16 +246,55 @@ func _check_legacy_checkpoint() -> void:
 	Main.Progress.settle_first_flight(profile, restored)
 	check(profile.cores == Intro.REWARD and profile.intro_status == "complete", "Winning an old suspended intro still earns its reward")
 
+func _check_previous_scripted_checkpoint() -> void:
+	var previous := Sim.new(Intro.SEED)
+	previous.configure_first_flight(true)
+	previous.intro_campaign_waves = false
+	for tick in range(1500):
+		if not previous.cards.is_empty():
+			break
+		previous.intro_aegis_prompt = false
+		previous.step()
+	var restored := _restored(previous, "Previous scripted first flight")
+	check(restored.intro_scripted and not restored.intro_campaign_waves and restored.time == Intro.DRAFT_AT[0], "A suspended scripted flight keeps its original formations")
+	for tick in range(4200):
+		if restored.ended:
+			break
+		restored.intro_aegis_prompt = false
+		if not restored.cards.is_empty():
+			restored.choose_card(0)
+		restored.step()
+	check(restored.boss_spawn_time == Intro.BOSS_AT and restored.intro_ejected, "The previous script keeps its fixed Harvester arrival and ejection")
+
 func _check_harvester_entrance() -> void:
 	var sim := Sim.new(Intro.SEED)
 	sim.configure_first_flight(true)
+	sim.intro_wave = Intro.CAMPAIGN_WINGS.size()
 	sim._add_enemy("gunship", Vector2(150, 320))
 	var escort_id: int = int(sim.enemies[0].id)
+	sim.time = Intro.BOSS_AT - Sim.DT
+	Intro.spawn(sim)
+	check(not sim.boss_spawned, "A surviving escort holds off the Harvester before the cutoff")
 	sim.time = Intro.BOSS_AT
 	Intro.spawn(sim)
 	check(sim.enemies.any(func(e): return int(e.id) == escort_id), "The Harvester arrives while the remaining escort is still flying")
 	var boss := sim._boss_core()
-	check(not boss.is_empty() and boss.p.y < 0.0 and boss.has("arrive_y"), "The Harvester also enters from above the playfield")
+	check(not boss.is_empty() and boss.p.y <= -95.0 and boss.has("arrive_y"), "The full Harvester sprite enters from above the playfield")
+
+	var cleared := Sim.new(Intro.SEED)
+	cleared.configure_first_flight(true)
+	cleared.intro_wave = Intro.CAMPAIGN_WINGS.size()
+	cleared.intro_picks = ["arc", "arc"]
+	cleared.tick = roundi(60.0 / Sim.DT)
+	cleared.step()
+	var ready_at: float = cleared.intro_clear_at + Intro.BOSS_ENTRANCE_DELAY
+	check(not cleared.boss_spawned and cleared.intro_clear_at == cleared.time, "The last clear leaves a short beat before the entrance")
+	var resumed := _restored(cleared, "Between the last wing and the Harvester")
+	for tick in range(roundi(2.0 / Sim.DT)):
+		if resumed.boss_spawned:
+			break
+		resumed.step()
+	check(absf(resumed.boss_spawn_time - ready_at) <= Sim.DT + 0.001, "Resuming during the breather keeps the same entrance timing")
 
 func _check_eligibility() -> void:
 	var unopened := MemoryServices.new()
