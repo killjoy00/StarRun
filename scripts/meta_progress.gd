@@ -72,6 +72,13 @@ static func unlock_progress(profile: Dictionary, id: String) -> int:
 	return int(stats.get(str(rule.stat), 0))
 
 ## Grant every ship and pilot whose condition is met. Returns the new ones.
+static func artifact_available(profile: Dictionary, id: String) -> bool:
+	var spec: Dictionary = Catalog.artifact(id)
+	if str(spec.id) != id:
+		return false
+	var stats: Variant = profile.get("achievement_stats", {})
+	return not bool(spec.get("requires_archive", false)) or (stats is Dictionary and bool(stats.get("archive_cleared",false)))
+
 static func apply_unlocks(profile: Dictionary) -> Array:
 	var added: Array = []
 	for id in UNLOCKS:

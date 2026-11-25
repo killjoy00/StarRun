@@ -1,5 +1,6 @@
 extends SceneTree
 const Sim = preload("res://scripts/simulation.gd")
+const ExpeditionPresentation = preload("res://scripts/expedition_rules.gd")
 class MemoryServices extends "res://scripts/platform_services.gd":
 	var values: Dictionary = {}
 	func write_atomic(path: String, value: Dictionary) -> bool:
@@ -227,6 +228,14 @@ func _run() -> void:
 			var word_width := standard_label.get_theme_font("font").get_string_size("Standard", HORIZONTAL_ALIGNMENT_LEFT, -1, standard_label.get_theme_font_size("font_size")).x
 			check(standard_label.size.x >= word_width, "The word Standard must have enough measured width to display in full")
 		check(_choice_panels_within_screen(scene.overlay, logical.x), "Artifact cards must fit inside narrow-phone margins")
+		var archive_was_cleared: bool = bool(scene.profile.achievement_stats.archive_cleared)
+		scene.profile.achievement_stats.archive_cleared = false
+		scene._set_artifact("custodian_core")
+		check(str(scene.profile.artifact) != "custodian_core", "Locked Archive Artifact cannot be equipped")
+		scene.profile.achievement_stats.archive_cleared = true
+		scene._set_artifact("custodian_core")
+		check(str(scene.profile.artifact) == "custodian_core" and _contains_text(scene.overlay, "Custodian Core"), "Earned Archive Artifact can be equipped and explained")
+		scene.profile.achievement_stats.archive_cleared = archive_was_cleared
 		scene._set_artifact("glass_fleet")
 		check(str(scene.profile.artifact) == "glass_fleet" and _contains_text(scene.overlay, "Half hull"), "Choosing an Artifact must persist and explain its rules")
 		scene._set_artifact("standard")
@@ -482,7 +491,15 @@ func _run() -> void:
 	var assault_spec: Dictionary = {}
 	for id in destination_hand:
 		var spec: Dictionary = scene.sim.destination_spec(str(id))
-		check(_contains_text(scene.reading_scroll, str(spec.name)) and _contains_text(scene.reading_scroll, str(spec.gain)) and _contains_text(scene.reading_scroll, str(spec.cost)), "Every offered destination must render its full name, actual gain and cost")
+		var route_card: Node = scene.reading_scroll.find_child("RouteChoice" + str(id).to_pascal_case(), true, false)
+		var visible_gain: String = str(spec.gain)
+		var visible_cost: String = str(spec.cost)
+		if scene.sim.destination_rules_version >= 1:
+			var summary: Dictionary = ExpeditionPresentation.preview(spec, scene.sim.hull / maxf(1.0, scene.sim.max_hull), scene.sim.stage + 1)
+			visible_gain = str(summary.extras)
+			visible_cost = str(summary.cost)
+			check(route_card != null and not str(summary.headline).is_empty() and _contains_text(route_card, str(summary.headline)), "Each current destination card renders its actual numeric reward headline")
+		check(route_card != null and _contains_text(route_card, str(spec.name)) and _contains_text(route_card, visible_gain) and _contains_text(route_card, visible_cost), "Every offered destination must render its full name, actual gain and cost on its own card")
 		destination_groups.append(str(spec.group))
 		if str(spec.group) == "overclock":
 			assault_id = str(id)
@@ -630,6 +647,45 @@ func _run() -> void:
 		check(scene.mode == "results" and scene.profile.achievements.has("open_frequency"), "Debrief awards the permanent record")
 		check(scene.services.read_save(scene.Services.RUN).is_empty(), "Settled Archive run cannot be resumed again")
 
+	# New Archive warnings remain readable at every speed and restore the user's
+	# selected setting when the warning is answered. Test actual HUD labels.
+	scene.sim = Sim.new(88021)
+	scene.sim.enable_expedition_rules()
+	scene.sim.stage = 4
+	scene.sim.stage_clears = 4
+	scene.sim.signal_count = 2
+	scene.sim.stage_transition_queued = true
+	check(scene.sim.enter_secret(), "Redesigned Archive fixture enters")
+	scene.sim.dismiss_secret_intro()
+	scene.sim._spawn_boss()
+	scene.sim.dismiss_secret_intro()
+	scene.mode = "playing"
+	scene.game_speed = 3.0
+	scene.sim.archive_next_attack = scene.sim.time
+	scene.sim._update_archive_attack()
+	scene._update_hud()
+	check(scene._combat_speed() == 1.0 and scene.game_speed == 3.0 and scene.ability_buttons[0].get_node("AbilityStatus").text == "HOLD", "Fast-forward slows during HOLD without changing saved selection")
+	scene.sim.time = scene.sim.archive_attack_until - 1.0
+	scene._update_hud()
+	check(scene.ability_buttons[0].get_node("AbilityStatus").text == "CAST NOW" and scene.signal_label.text.contains("CAST NOW"),"Precise window is marked on both ability and HUD")
+	scene.sim.cooldowns.aegis = 0.0
+	check(scene.sim.activate("aegis"),"Ready ability counters the warning")
+	scene._update_hud()
+	check(scene._combat_speed() == 3.0 and scene.ability_buttons[0].modulate == Color.WHITE,"Counter ends slow-down and resets button highlighting")
+	scene.game_speed = 1.0
+	var archive_was_earned: bool = bool(scene.profile.achievement_stats.archive_cleared)
+	scene.profile.achievement_stats.archive_cleared = false
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene.sim.archive_phase = 2
+	scene.sim.archive_phase_released = true
+	scene.sim.archive_exposed_until = scene.sim.time + 4.2
+	scene.sim._damage_enemy(scene.sim._boss_core(),999999999.0,"nova")
+	scene._show_stage_clear(false)
+	check(scene.mode == "archive_ending" and scene.overlay.find_child("CustodianCoreReveal",true,false) != null,"First Archive clear shows the dedicated artifact reveal")
+	scene._finish_archive()
+	check(scene.profile.achievement_stats.archive_cleared and scene.overlay.find_child("CustodianCoreReveal",true,false) == null,"Artifact settles once and reveal is not an extra gameplay reward")
+	scene.profile.achievement_stats.archive_cleared = archive_was_earned
 	# Test the real mobile decision panel and persistence, not merely the
 	# simulation's logical option IDs. Combat must stay paused in this mode.
 	for dimensions in [Vector2i(375, 667), Vector2i(390, 844)]:
@@ -714,6 +770,29 @@ func _run() -> void:
 		var mutation_id: String = str(workshop_hand[0])
 		scene._choose_lab_mutation(mutation_id)
 		check(scene.sim.stage == 3 and mutation_id in scene.sim.mutations and scene.sim.destination_choice == recovery_id, "Choosing mutation completes the intended warp with the selected destination")
+		# Actual destination UI and curated draft, with a controlled route hand.
+		scene.sim = Sim.new(99800 + dimensions.x)
+		scene.sim.enable_expedition_rules()
+		scene.sim.stage = 2
+		scene.sim.stage_clears = 2
+		scene.sim.stage_transition_queued = true
+		scene.sim.hull = scene.sim.max_hull * 0.50
+		scene.sim.upgrades.pulse = 3
+		check(scene.sim.begin_intermission() and scene.sim.skip_prototype(),"Destination presentation fixture reaches warp")
+		scene.sim.route_offers = ["shipyard","rift","smugglers"]
+		scene._show_route_choice()
+		await process_frame
+		check(_contains_text(scene.overlay,"50% LESS DAMAGE") and _contains_text(scene.overlay,"BUILD DRAFT") and _choice_panels_within_screen(scene.overlay,scene.get_viewport_rect().size.x),"Readable rewards reflect current hull and fit the phone")
+		scene._choose_route("smugglers")
+		if scene.mode == "mutation_lab":
+			scene._choose_lab_mutation("skip")
+		await process_frame
+		check(scene.mode == "cards" and scene.sim.smuggler_draft_open and _contains_text(scene.overlay,"Build fit:"),"Actual curated hand explains the build fit")
+		var arrival_detail := "Build-focused upgrade · +15% kill XP · 60 Cores on boss victory"
+		var arrival_notice: Label = scene.overlay.find_child("DestinationDraftArrival", true, false) as Label
+		check(is_instance_valid(arrival_notice) and arrival_notice.text.contains("Smuggler") and arrival_notice.text.contains(arrival_detail),"Destination arrival feedback names the route and shows its exact applied reward inline")
+		check(not scene.toast_queue.any(func(item): return str(item.title).contains("Smuggler") and str(item.detail) == arrival_detail) and not (scene.toast_panel.visible and scene.toast_title.text.contains("SMUGGLER") and scene.toast_detail.text == arrival_detail),"Immediate route draft never queues an overlapping arrival toast")
+		check(is_instance_valid(arrival_notice) and not scene.card_buttons.is_empty() and arrival_notice.get_global_rect().end.y <= scene.card_buttons[0].get_global_rect().position.y + 1.0,"Arrival notice precedes the first selectable card without overlap")
 		# Debrief reports actual engine activity, not an unsupported power score.
 		scene.sim = Sim.new(99300 + dimensions.x)
 		scene.sim.stage = 2

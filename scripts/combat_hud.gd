@@ -53,6 +53,18 @@ static func refresh(host) -> void:
 		status_label.add_theme_color_override("font_color", Color("66f5df") if learned and cooldown <= 0.0 else Color("b4c6d8") if learned else Color("6c8097"))
 		var can_cast: bool = host.mode == "playing" or (host.mode == "intro_aegis" and id == "aegis")
 		button.disabled = not can_cast or cooldown > 0 or not learned
+		# Make the timing legible without implying an unready ability can cast.
+		var counter_ready: bool = not button.disabled and host.mode == "playing" and host._archive_counter_warning()
+		if counter_ready:
+			var precise: bool = sim.archive_precise_counter_window()
+			status_label.text = "CAST NOW" if precise else "HOLD"
+			fit_label(status_label, 12, 9)
+			status_label.add_theme_color_override("font_color", Color("80f5cd") if precise else Color("ffc078"))
+			var pulse: float = 1.0 if bool(host.profile.get("reduced",false)) else 0.78 + 0.22 * sin(host.visual_time * 8.0)
+			button.modulate = Color(1.0,1.0,1.0,1.0).lerp(Color("a2ffe1") if precise else Color("ffd0a0"), pulse)
+		else:
+			button.modulate = Color.WHITE
+			fit_label(status_label, 16, 11)
 		button.tooltip_text = (sim.content.abilities[id].name + (" (combined ability)" if not sim.fusion_spec(id).is_empty() else "") + "  |  Ready" if cooldown <= 0.0 else sim.content.abilities[id].name + "  |  %.1fs" % cooldown) if learned else "Empty slot"
 		var cooldown_bar: ProgressBar = host.cooldown_meters[i]
 		cooldown_bar.visible = learned and cooldown > 0.0
