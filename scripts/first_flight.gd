@@ -13,7 +13,7 @@ const LESSON_WAVES := [13.5, 29.0]
 const SECTOR := {
 	"id": "debris_belt", "name": "FIRST FLIGHT", "boss": "boss",
 	"boss_name": "Harvester", "boss_hp": 1490.0, "health_scale": 1.0,
-	"damage_scale": 1.0,
+	"damage_scale": 0.52,
 }
 # [seconds, [enemy, x, hp, first volley] ...]. Two slower snipers leave
 # an Aegis window even when the first cast was early or the first beam missed.
@@ -41,27 +41,56 @@ const LEGACY_WAVES := [
 	[133.0, ["gunship", 185, 100, 1.4], ["shieldguard", 355, 116, 1.8]],
 ]
 
+# Each group enters in two or three rows. The sniper waves leave a clean
+# central beam lane, with the rest of the pressure coming from the flanks.
 const WAVES := [
-	[0.12, ["drone", 250, 14, 3.0], ["drone", 340, 19, 3.4]],
-	[4.2, ["interceptor", 140, 30, 2.2], ["drone", 315, 24, 2.7]],
-	[8.8, ["gunship", 288, 52, 1.5]],
-	[13.5, ["sniper", 268, 185, 2.8]],
-	[20.0, ["drone", 165, 30, 1.6], ["interceptor", 360, 30, 2.0]],
+	[0.12, ["drone", 115, 24, 3.6], ["drone", 268, 24, 3.2], ["drone", 420, 24, 3.6],
+		["drone", 185, 25, 3.9], ["drone", 352, 25, 3.9]],
+	[4.2, ["interceptor", 125, 32, 2.9], ["interceptor", 400, 32, 2.9],
+		["drone", 188, 29, 3.6], ["drone", 270, 29, 3.2], ["drone", 350, 29, 3.6]],
+	[8.8, ["gunship", 268, 66, 2.5], ["drone", 103, 28, 3.2], ["drone", 430, 28, 3.2],
+		["interceptor", 181, 35, 3.0], ["interceptor", 359, 35, 3.0]],
+	[13.5, ["sniper", 268, 200, 2.8], ["drone", 95, 32, 3.4], ["drone", 443, 32, 3.4],
+		["interceptor", 151, 37, 3.5], ["interceptor", 390, 37, 3.5]],
+	[20.0, ["rusher", 115, 30, 3.2], ["rusher", 425, 30, 3.2],
+		["drone", 170, 33, 3.6], ["drone", 370, 33, 3.6]],
 	[24.0, 0], # Bring in targets for the first weapon the player picked.
-	[29.0, ["sniper", 342, 235, 2.4]],
-	[35.0, ["interceptor", 120, 36, 1.3], ["gunship", 268, 72, 1.8], ["interceptor", 410, 36, 1.4]],
-	[42.0, ["missile_bomber", 165, 74, 1.5], ["gunship", 375, 67, 1.8]],
+	[29.0, ["sniper", 342, 245, 2.6], ["drone", 95, 33, 3.5], ["drone", 444, 33, 3.5],
+		["interceptor", 173, 38, 3.2], ["interceptor", 423, 38, 3.2]],
+	[35.0, ["gunship", 269, 87, 2.5], ["interceptor", 119, 40, 3.1], ["interceptor", 420, 40, 3.1],
+		["rusher", 95, 37, 3.3], ["rusher", 438, 37, 3.3], ["drone", 268, 42, 3.7]],
+	[42.0, ["missile_bomber", 177, 79, 2.2], ["gunship", 363, 74, 2.7],
+		["drone", 126, 35, 3.4], ["drone", 270, 35, 3.2], ["drone", 414, 35, 3.4]],
 	[49.0, 1],
-	[55.5, ["interceptor", 145, 42, 1.8], ["shieldguard", 268, 108, 1.8], ["interceptor", 394, 42, 1.8]],
-	[62.0, ["gunship", 175, 72, 1.4], ["gunship", 365, 72, 1.6]],
+	[55.5, ["shieldguard", 270, 108, 2.4], ["interceptor", 110, 44, 2.8], ["interceptor", 430, 44, 2.8],
+		["rusher", 165, 38, 3.5], ["rusher", 375, 38, 3.5], ["drone", 270, 44, 3.7]],
+	[62.0, ["gunship", 163, 80, 2.6], ["gunship", 377, 80, 2.6], ["interceptor", 95, 45, 2.8],
+		["interceptor", 444, 45, 2.8], ["drone", 221, 37, 3.5], ["drone", 319, 37, 3.5]],
 ]
+# These flank groups overlap the main waves. Fixed ticks keep a resumed
+# flight from launching a group twice or changing the saved wave index.
+const REINFORCEMENTS := {
+	2: [["rusher", 73, 30, 3.5], ["rusher", 463, 30, 3.5]],
+	33: [["interceptor", 93, 40, 3.6], ["drone", 170, 42, 3.7], ["drone", 370, 42, 3.7], ["interceptor", 443, 40, 3.6]],
+	38: [["drone", 160, 42, 3.4], ["drone", 270, 42, 3.2], ["drone", 380, 42, 3.4]],
+	40: [["rusher", 135, 37, 3.5], ["drone", 270, 44, 3.8], ["rusher", 405, 37, 3.5]],
+	45: [["interceptor", 105, 45, 3.3], ["gunship", 270, 74, 2.8], ["interceptor", 435, 45, 3.3]],
+	47: [["drone", 150, 43, 3.8], ["drone", 230, 43, 3.7], ["drone", 310, 43, 3.7], ["drone", 390, 43, 3.8]],
+	52: [["rusher", 95, 41, 3.5], ["drone", 180, 42, 3.4], ["drone", 360, 42, 3.4], ["rusher", 445, 41, 3.5]],
+	54: [["interceptor", 220, 45, 3.6], ["interceptor", 320, 45, 3.6]],
+	57: [["drone", 115, 42, 4.1], ["drone", 218, 44, 3.7], ["drone", 322, 44, 3.7], ["drone", 425, 42, 4.1]],
+	59: [["drone", 143, 41, 3.5], ["missile_bomber", 270, 79, 2.8], ["drone", 398, 41, 3.5]],
+	61: [["interceptor", 104, 43, 3.9], ["drone", 204, 45, 4.1], ["drone", 336, 45, 4.1], ["interceptor", 435, 43, 3.9]],
+	65: [["interceptor", 130, 48, 3.5], ["interceptor", 270, 48, 3.5], ["interceptor", 410, 48, 3.5]],
+	66: [["drone", 171, 40, 4.2], ["drone", 270, 40, 4.1], ["drone", 369, 40, 4.2]],
+}
 const FORMATIONS := {
-	"arc": [["drone", 156, 27, 2.1, 182], ["drone", 232, 27, 2.0, 152],
-		["drone", 308, 27, 2.0, 152], ["drone", 384, 27, 2.1, 182]],
-	"lance": [["shieldguard", 270, 65, 2.1, 195], ["drone", 270, 39, 2.3, 170],
-		["gunship", 270, 71, 2.4, 145]],
-	"seeker": [["interceptor", 95, 36, 2.0, 185], ["interceptor", 260, 36, 2.4, 150],
-		["interceptor", 445, 36, 2.2, 185]],
+	"arc": [["drone", 125, 34, 2.8, 194], ["drone", 184, 32, 2.6, 170], ["drone", 243, 36, 2.8, 151],
+		["drone", 301, 36, 2.8, 151], ["drone", 360, 32, 2.6, 170], ["drone", 419, 34, 2.8, 194]],
+	"lance": [["shieldguard", 270, 68, 2.6, 225], ["drone", 270, 45, 2.8, 190],
+		["gunship", 270, 74, 2.8, 155], ["interceptor", 144, 37, 3.3, 183], ["interceptor", 397, 37, 3.3, 183]],
+	"seeker": [["interceptor", 94, 39, 2.8, 190], ["interceptor", 180, 41, 3.0, 163],
+		["interceptor", 270, 38, 2.7, 138], ["interceptor", 359, 41, 3.0, 163], ["interceptor", 444, 39, 2.8, 190]],
 }
 
 static func boss_at(sim) -> float:
@@ -86,8 +115,18 @@ static func spawn(sim) -> void:
 	if sim.boss_spawned:
 		return
 	if sim.time >= boss_at(sim):
-		sim._spawn_boss()
+		if sim.intro_scripted:
+			# The campaign entrance clears the field. In the short intro,
+			# let the last formation stay in flight as the Harvester arrives.
+			var escorts: Array = sim.enemies
+			sim.enemies = []
+			sim._spawn_boss()
+			sim.enemies.append_array(escorts)
+		else:
+			sim._spawn_boss()
 		return
+	if sim.intro_scripted and sim.tick % roundi(1.0 / sim.DT) == 0:
+		_enter_formation(sim, REINFORCEMENTS.get(roundi(sim.time), []))
 	var waves := WAVES if sim.intro_scripted else LEGACY_WAVES
 	if sim.intro_wave >= waves.size() or sim.time < float(waves[sim.intro_wave][0]):
 		return
@@ -95,20 +134,23 @@ static func spawn(sim) -> void:
 	sim.intro_wave += 1
 	var showcase: bool = wave[1] is int
 	var units: Array = FORMATIONS[featured_weapon(sim, int(wave[1]))] if showcase else wave.slice(1)
+	_enter_formation(sim, units, float(wave[0]) in LESSON_WAVES)
+
+static func _enter_formation(sim, units: Array, lesson: bool = false) -> void:
 	for i in range(units.size()):
 		var unit: Array = units[i]
-		var y := float(unit[4]) if showcase else 105.0 + ((i + 1) % 2) * 55.0
+		var y := float(unit[4]) if unit.size() > 4 else 105.0 + ((i + 1) % 2) * 55.0
 		sim._add_enemy(str(unit[0]), Vector2(unit[1], y))
 		var enemy: Dictionary = sim.enemies[-1]
 		enemy.hp = float(unit[2])
 		enemy.max_hp = enemy.hp
 		enemy.fire = float(unit[3])
 		enemy.xp = 0 # Drafts unlock at fixed checkpoints.
-		if sim.intro_wave == 1:
-			enemy.p.y = 130.0 + i * 55.0
-		elif not showcase:
-			sim._begin_entry(enemy)
-		if float(wave[0]) in LESSON_WAVES:
+		sim._begin_entry(enemy)
+		# Always start the sprite entirely above the field, with depth
+		# between the rows so the group visibly flies into its formation.
+		enemy.p.y = -76.0 - float(i % 3) * 25.0
+		if lesson and enemy.kind == "sniper":
 			enemy.speed = 12.0
 			sim.heavy_ready_at = sim.time + 0.85
 
@@ -157,29 +199,33 @@ static func after_step(sim) -> void:
 		sim.intro_lesson_seen = true
 		sim.intro_aegis_prompt = true
 
-static func cue(sim) -> Array:
+static func popup(sim) -> Array:
 	if sim.intro_aegis_prompt:
-		return ["BEAM INCOMING", "Use Aegis now."]
+		return ["Block the beam", "Use Aegis just before the sniper fires."]
+	if sim.time < 3.4:
+		return ["Autopilot is on", "Your ship steers and fires for you."]
+	if sim.intro_picks.is_empty() or sim.time - sim.intro_pick_at >= 2.8:
+		return []
+	if sim.intro_scripted:
+		match str(sim.intro_picks[-1]):
+			"arc": return ["Arc coil installed", "Watch the lightning jump between ships."]
+			"lance": return ["Prism lance installed", "One shot can hit ships in a line."]
+			"seeker": return ["Seeker pods installed", "Watch the missiles follow their targets."]
+			"coolant": return ["Coolant loop installed", "Aegis recharges faster."]
+	for card in sim.content.cards:
+		if str(card.id) == str(sim.intro_picks[-1]):
+			return ["Upgrade installed", str(card.name)]
+	return []
+
+static func cue(sim) -> Array:
 	if sim.boss_spawned:
 		if sim.intro_scripted:
 			return ["HARVESTER MAIN GUN", "Get ready to eject."]
 		if not sim.charges.is_empty():
 			return ["BEAM INCOMING", "Time Aegis just before the beam hits."]
 		return []
-	if sim.time < 5.2:
-		return ["AUTOPILOT ON", "Your ship steers and fires for you."]
 	if sim.intro_beam_blocked and sim.time - sim.intro_blocked_at < 3.0:
 		return ["BEAM BLOCKED", "Aegis needs time to recharge."]
-	if not sim.intro_picks.is_empty() and sim.time - sim.intro_pick_at < 3.0:
-		for card in sim.content.cards:
-			if str(card.id) == str(sim.intro_picks[-1]):
-				if sim.intro_scripted:
-					match str(card.id):
-						"arc": return ["ARC COIL ONLINE", "Watch the lightning jump between ships."]
-						"lance": return ["PRISM LANCE ONLINE", "One shot can hit ships in a line."]
-						"seeker": return ["SEEKER PODS ONLINE", "Watch the missiles follow their targets."]
-						"coolant": return ["COOLANT LOOP ONLINE", "Aegis recharges faster."]
-				return ["UPGRADE INSTALLED", str(card.name)]
 	if not sim.intro_scripted and sim.time >= 46.0 and sim.time < 51.0:
 		return ["FLIGHT SPEED", "Tap %s× to change speed." % str(sim.intro_speed)]
 	if sim.time >= boss_at(sim) - (3.0 if sim.intro_scripted else 5.0):
