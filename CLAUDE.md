@@ -9,3 +9,7 @@
 ## CI test selection
 
 See [CI validation tiers](docs/CI_VALIDATION_TIERS.md). Keep core regression checks on every PR. Use targeted destination/Archive smoke and conservative change scope for expensive simulation/native jobs. Run the complete checkpoint/cross-ship research manually for major relevant balance work or public release acceptance; do not automatically restart the full research matrix after a UI or localized tuning change. Preserve assertions and distinguish frozen-gate replays from natural campaigns.
+
+## Portfolio mobile releases
+
+The canonical app registry, read-only dashboard and standard release request protocol are in [mobilereleases](https://github.com/killjoy00/mobilereleases). Read its current README and registry before any release request. Star/Run signed releases remain in EZTrivia. Retain both existing request files and their existing draft/testing safeguards. Follow this repository's existing tests, release authorization and app-specific requirements. Never equate a successful workflow with store availability or publish to production without explicit owner approval. Report store stages separately and sanitize public evidence.
