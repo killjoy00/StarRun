@@ -8,7 +8,7 @@
 
 ## CI test selection
 
-See [CI validation tiers](docs/CI_VALIDATION_TIERS.md). Keep core regression checks on every PR. Use targeted destination/Archive smoke and conservative change scope for expensive simulation/native jobs. Run the complete checkpoint/cross-ship research manually for major relevant balance work or public release acceptance; do not automatically restart the full research matrix after a UI or localized tuning change. Preserve assertions and distinguish frozen-gate replays from natural campaigns.
+See [CI validation tiers](docs/CI_VALIDATION_TIERS.md). Keep core regression checks on every PR. Development preview pushes on codex/** defer the long replay and ordinary campaign matrices to PR/main/manual validation; retain lightweight startup/UI checks and playable exports. Use targeted destination/Archive smoke and conservative change scope for expensive simulation/native jobs. Run the complete checkpoint/cross-ship research manually for major relevant balance work or public release acceptance; do not automatically restart the full research matrix after a UI or localized tuning change. Preserve assertions and distinguish frozen-gate replays from natural campaigns.
 
 ## Portfolio mobile releases
 
