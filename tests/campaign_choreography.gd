@@ -131,8 +131,16 @@ func _run() -> void:
 		check(regent.stage_transition_queued, "completed build can finish the final phase immediately")
 	var legacy := Sim.new()
 	var legacy_saved: Dictionary = legacy.snapshot()
-	legacy_saved.erase("campaign_choreography_version")
+	# Frozen Archive gates use the exact legacy schema. New fields must
+	# not appear when that same snapshot is restored and serialized.
+	for key in ["campaign_choreography_version", "hijacked_ships", "hijack_ready_at", "hijack_lost", "hijack_blocked"]:
+		legacy_saved.erase(key)
+	legacy_saved.engine_procs.erase("hijacker")
 	check(legacy.restore(legacy_saved) and not legacy.campaign_choreography_active(), "old saves retain original combat")
+	check(legacy.snapshot() == legacy_saved, "legacy checkpoints retain their exact frozen representation")
+	check(int(legacy.engine_procs.hijacker) == 0, "legacy checkpoints still initialize runtime Hijacker counters")
+	var second_legacy := Sim.new()
+	check(second_legacy.restore(legacy.snapshot()) and second_legacy.snapshot() == legacy_saved, "legacy checkpoint remains stable through repeated migration")
 	var daily := Sim.new()
 	daily.daily_day = "2026-11-26"
 	check(not daily.campaign_choreography_active(), "Daily stays on historic rules")

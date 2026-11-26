@@ -5298,6 +5298,16 @@ func snapshot() -> Dictionary:
 		state[key] = get(key)
 	for key in ["expedition_rules", "destination_rules_version", "smuggler_draft_pending", "smuggler_draft_open", "destination_choice", "route_offers", "mutation_offers", "mutation_lab_seen", "stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
+	# Pre-choreography flights are intentionally version 0. Keep their exact
+	# checkpoint representation, including the frozen Archive qualification
+	# gates, rather than serializing unsupported feature defaults into them.
+	# Runtime engine counters still contain all current IDs for safe access.
+	if campaign_choreography_version == 0:
+		for key in ["campaign_choreography_version", "hijacked_ships", "hijack_ready_at", "hijack_lost", "hijack_blocked"]:
+			state.erase(key)
+		var old_procs: Dictionary = engine_procs.duplicate(true)
+		old_procs.erase("hijacker")
+		state["engine_procs"] = old_procs
 	return state.duplicate(true)
 
 func restore(state: Dictionary) -> bool:

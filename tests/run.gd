@@ -3204,9 +3204,16 @@ func _test_new_stage_threats() -> void:
 	sim.enemies.clear()
 	sim.bullets.clear()
 	sim._spawn_boss()
+	# In regular flights the Regent alternates status barrages and the beam
+	# attack. Exercise the beam turn after visible entry, not at spawn.
+	var regent_core: Dictionary = sim._boss_core()
+	regent_core["campaign_attack_index"] = 2
+	regent_core.erase("arrive_y")
+	regent_core.p.y = 135.0
+	regent_core.fire = 0.0
 	sim.heavy_ready_at = 0.0
 	sim._update_enemies()
-	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0, "Final boss must telegraph two distinct heavy lanes")
+	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0 and sim.charges[0].x != sim.charges[1].x and sim.charges[0].source != sim.charges[1].source, "Final boss must telegraph two distinct heavy lanes")
 	sim._hit(2.0, "void", "test")
 	check(sim.hull < sim.max_hull, "Void shots must meaningfully bypass shields")
 	var bleed := Sim.new(9081)
