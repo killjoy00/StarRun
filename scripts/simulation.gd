@@ -105,7 +105,7 @@ var draft_rng := RandomNumberGenerator.new()
 var draft_rng_ready := false
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
-var campaign_choreography_version := 2 # v2 adds stronger earned Hangar combat bonuses; v0/v1 keep their rules.
+var campaign_choreography_version := 2 # v2 adds revised Hangar ranks; v0/v1 keep their rules.
 var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
@@ -321,8 +321,8 @@ var beams_cancelled := 0
 var last_heavy_hit_tick := -1
 var meta := Catalog.defaults()
 
-func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal", selected_artifact: String = "standard", boost_hangar: bool = true) -> void:
-	if not boost_hangar:
+func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal", selected_artifact: String = "standard", revised_hangar: bool = true) -> void:
+	if not revised_hangar:
 		campaign_choreography_version = 1
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
 	for id in Catalog.ABILITIES:
@@ -355,9 +355,9 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
 	var chassis: Dictionary = Catalog.ship(ship_id)
-	max_hull = float(chassis.hull) + meta.hull * 10.0 * hangar_effect_scale()
+	max_hull = float(chassis.hull) + meta.hull * hangar_rank_bonus("hull")
 	hull = max_hull
-	max_shield = float(chassis.shield) + meta.shield * 8.0 * hangar_effect_scale() + (20.0 if pilot_id == "engineer" else 0.0)
+	max_shield = float(chassis.shield) + meta.shield * hangar_rank_bonus("shield") + (20.0 if pilot_id == "engineer" else 0.0)
 	shield = max_shield
 	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
@@ -380,11 +380,12 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	banishes_left = meta.banishes
 	skips_left = meta.skips
 
-# Multiply only the benefit purchased in the Hangar, never the base ship,
-# in-flight upgrade, whole stat, or the number of ranks/uses/rewards.
-# Old checkpoints and date-seeded Daily flights preserve their previous rules.
-func hangar_effect_scale() -> float:
-	return Catalog.HANGAR_COMBAT_SCALE if campaign_choreography_version >= 2 and daily_day.is_empty() else 1.0
+# Only the seven explicitly revised per-rank values change. The rank
+# integers, other purchased effects, and all reward rules are untouched.
+func hangar_rank_bonus(id: String) -> float:
+	if campaign_choreography_version >= 2 and daily_day.is_empty():
+		return float(Catalog.HANGAR_RANK_BONUSES[id])
+	return float(Catalog.LEGACY_HANGAR_RANK_BONUSES[id])
 
 func enable_expedition_rules() -> bool:
 	if tick != 0 or stage != 1 or not daily_day.is_empty() or start_world != 1:
@@ -556,7 +557,7 @@ func step() -> void:
 		mend_left = maxf(0.0, mend_left - DT)
 	# Rank 2 of the permanent Hangar repair line is a meaningful milestone.
 	# No-Hangar Hard/Insane progression gates remain completely unchanged.
-	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * (0.20 if meta.repair >= 2 else 0.15) * hangar_effect_scale() + (0.25 if ship_id == "haven" else 0.0)
+	var repair_rate: float = upgrades.repair_bots * 0.15 + meta.repair * (0.20 if meta.repair >= 2 else 0.15) + (0.25 if ship_id == "haven" else 0.0)
 	if rank_at("repair_bots", 5): repair_rate += 0.35
 	if rank_at("repair_bots", 10): repair_rate += 0.70
 	if passive_link_active("field_recovery"): repair_rate *= 1.40
@@ -565,7 +566,7 @@ func step() -> void:
 	if shield_offline > 0.0:
 		shield_offline = maxf(0.0, shield_offline - DT)
 	else:
-		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * (0.30 if meta.regen >= 2 else 0.25) * hangar_effect_scale() + (0.8 if pilot_id == "engineer" else 0.0)) * DT
+		var recharge: float = (1.5 + upgrades.regen * 0.35 + meta.regen * (0.30 if meta.regen >= 2 else 0.25) + (0.8 if pilot_id == "engineer" else 0.0)) * DT
 		if rank_at("regen", 5): recharge += 0.55 * DT
 		if rank_at("regen", 10): recharge += 1.0 * DT
 		if passive_link_active("shield_cycle"): recharge *= 1.40
@@ -1165,7 +1166,7 @@ func status_damage_multiplier() -> float:
 	return factor
 
 func status_duration_scale() -> float:
-	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05 * hangar_effect_scale())
+	return (1.0 - passive_bonus("insulation", 0.03, 0.10, 0.10)) * (1.0 - meta.hazard_seals * 0.05)
 
 func _source_active(id: String) -> bool:
 	if id in active_slots:
@@ -2857,7 +2858,7 @@ func advance_stage() -> bool:
 		stage_defense = float(destination.damaged_defense)
 	stage_fire_rate = _route_value("fire", 1.20 if route_choice == "overclock" else 1.0)
 	var repair_fraction := _route_value("repair", 0.70 if route_choice == "repair" else (0.10 if route_choice == "overclock" else 0.40))
-	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04 * hangar_effect_scale()))
+	hull = minf(max_hull, hull + max_hull * (repair_fraction + meta.warp_repairs * 0.04))
 	shield = max_shield * _route_value("shield", 0.50 if route_choice == "overclock" else 1.0)
 	route_offers.clear()
 	mutation_offers.clear()
@@ -3657,7 +3658,7 @@ func _focus_reroll() -> void:
 ## How fast the ship's guns reload: Autoloader, Hangar fire rate, Overdrive,
 ## the ship's own fire rate, Redline, Afterburn and gravity wells.
 func gun_rate() -> float:
-	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 * hangar_effect_scale() + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
+	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * hangar_rank_bonus("fire_rate") + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
 	if rank_at("autoloader", 5): rate += 0.15
 	if rank_at("autoloader", 10): rate += 0.25
 	if aftercast_left > 0.0:
@@ -3681,7 +3682,7 @@ func _update_weapons() -> void:
 		pulse_timer += 0.19
 		var barrels := 3 if rank_at("pulse", 10) else (2 if rank_at("pulse", 5) else 1)
 		for n in range(barrels):
-			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.0 + int(meta.get("pulse_tuning", 0)) * 0.05 * hangar_effect_scale()) * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1, "pierce":(1 if _has_mutation("piercing_pulse") else 0), "last_enemy":-1})
+			shots.append({"p": origin + Vector2((n * 2 - barrels + 1) * 8, 0), "v": Vector2(0, -980).rotated(bank), "damage": (7.0 + (upgrades.pulse - 1) * 1.68) * weapon_power() * (1.0 + int(meta.get("pulse_tuning", 0)) * 0.05) * (1.25 if pilot_id == "ace" else 1.0) * (1.20 if rank_at("pulse", 10) else 1.0) * (1.20 if passive_link_active("smart_pulse") else 1.0), "weapon": "pulse", "target": -1, "pierce":(1 if _has_mutation("piercing_pulse") else 0), "last_enemy":-1})
 	if upgrades.seeker > 0 and seeker_timer <= 0.0:
 		# Haven clears early waves with rapid support pods instead of a Pulse starter.
 		var seeker_interval: float = 0.62 if pilot_id == "hunter" else 0.70
@@ -3711,7 +3712,7 @@ func _update_weapons() -> void:
 		if target_id != -1:
 			var volley: int = 3 if rank_at("seeker", 10) else (2 if rank_at("seeker", 5) else 1)
 			for n in range(volley):
-				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05 * hangar_effect_scale()) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
+				shots.append({"p": origin + Vector2((n * 2 - volley + 1) * 7, 0), "v": (target_pos - origin).normalized().rotated((n * 2 - volley + 1) * 0.06) * 650.0, "damage": (14.0 + (upgrades.seeker - 1) * 4.2) * (1.0 + meta.ordnance_damage * 0.05) * weapon_power() * (1.35 if ship_id == "wraith" else 1.0) * (1.3 if pilot_id == "hunter" else 1.0) * (1.25 if passive_link_active("guided_payload") else 1.0), "weapon": "seeker", "target": target_id})
 	if upgrades.arc > 0 and arc_timer <= 0.0 and not enemies.is_empty():
 		arc_timer = 1.7
 		var visited: Array = []
@@ -3723,7 +3724,7 @@ func _update_weapons() -> void:
 			visited.append(target.id)
 			effects.append({"kind":"arc", "p":start, "to":target.p, "life":0.22, "max_life":0.22, "born":tick})
 			start = target.p
-			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.0 + int(meta.get("arc_tuning", 0)) * 0.05 * hangar_effect_scale()) * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
+			_damage_enemy(target, (10 + upgrades.arc * 3) * weapon_power() * (1.0 + int(meta.get("arc_tuning", 0)) * 0.05) * (1.3 if ship_id == "arcwing" else 1.0) * (1.25 if rank_at("arc", 10) else 1.0), "arc")
 			if _has_mutation("grounding_arc") and target.hp > 0.0:
 				target.fire = maxf(float(target.fire), 1.8)
 				var canceled: int = charges.size()
@@ -3749,7 +3750,7 @@ func _update_weapons() -> void:
 			for enemy in enemies:
 				var closest := Geometry2D.get_closest_point_to_segment(enemy.p, origin, end)
 				if closest.distance_to(enemy.p) < (68 if str(enemy.kind).begins_with("boss") else 28):
-					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05 * hangar_effect_scale()) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (LANCER_LANCE_DAMAGE if ship_id == "lancer" else 1.0)
+					var strike_damage: float = (22 + upgrades.lance * 7) * weapon_power() * (1.0 + int(meta.get("lance_tuning", 0)) * 0.05) * (1.25 if rank_at("lance", 10) else 1.0) * (1.35 if passive_link_active("lance_sight") else 1.0) * (LANCER_LANCE_DAMAGE if ship_id == "lancer" else 1.0)
 					_damage_enemy(enemy, strike_damage, "lance")
 					if _has_mutation("refracting_lance") and not echo_used:
 						for other in enemies:
@@ -3766,7 +3767,7 @@ func daredevil_active() -> bool:
 	return pilot_id == "daredevil" and hull < max_hull * 0.5
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 * hangar_effect_scale() + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * hangar_rank_bonus("damage") + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
 	if daredevil_active():
@@ -3815,7 +3816,7 @@ func weapon_power() -> float:
 	return power
 
 func ability_power() -> float:
-	var power: float = 1.0 + meta.ability_power * 0.06 * hangar_effect_scale() + upgrades.amplifier * 0.06
+	var power: float = 1.0 + meta.ability_power * hangar_rank_bonus("ability_power") + upgrades.amplifier * 0.06
 	if rank_at("amplifier", 5): power += 0.15
 	if rank_at("amplifier", 10): power += 0.25
 	if passive_link_active("quick_charge"): power *= 1.15
@@ -3947,7 +3948,7 @@ func _update_shots() -> void:
 			var score := INF
 			for enemy in enemies:
 				var offset: Vector2 = enemy.p - shot.p
-				if enemy.hp <= 0 or offset.y >= -8 or absf(Vector2.UP.angle_to(offset)) > 0.58 + meta.guidance * 0.035 * hangar_effect_scale() + (0.12 if pilot_id == "ace" else 0.0):
+				if enemy.hp <= 0 or offset.y >= -8 or absf(Vector2.UP.angle_to(offset)) > 0.58 + meta.guidance * 0.035 + (0.12 if pilot_id == "ace" else 0.0):
 					continue
 				var candidate_score := (absf(offset.x) + offset.length() * 0.10) * (0.60 if enemy.kind == "boss_module" else 1.0)
 				if candidate_score < score:
@@ -3955,7 +3956,7 @@ func _update_shots() -> void:
 					candidate = enemy
 			if not candidate.is_empty():
 				var desired: Vector2 = (candidate.p - shot.p).normalized()
-				shot.v = shot.v.rotated(clampf(shot.v.angle_to(desired), -DT * (0.85 + meta.guidance * 0.12 * hangar_effect_scale() + (0.25 if pilot_id == "ace" else 0.0)), DT * (0.85 + meta.guidance * 0.12 * hangar_effect_scale())))
+				shot.v = shot.v.rotated(clampf(shot.v.angle_to(desired), -DT * (0.85 + meta.guidance * 0.12 + (0.25 if pilot_id == "ace" else 0.0)), DT * (0.85 + meta.guidance * 0.12)))
 		if (shot.weapon in ["seeker", "barrage"] or bool(shot.get("homing", false))) and shot.target >= 0:
 			for enemy in enemies:
 				if enemy.id == shot.target:
@@ -4139,7 +4140,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		amount *= 1.06
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		if str(enemy.kind).begins_with("boss"):
-			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03 * hangar_effect_scale())
+			amount *= (1.0 + passive_bonus("boss_hunter", 0.05, 0.15, 0.25)) * (1.0 + meta.boss_damage * 0.03)
 			# Bulwark retains its slower fire and tank role, but is no
 			# longer disproportionately weak at long bosses (World 1 included).
 			if ship_id == "bulwark":
@@ -4164,7 +4165,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if enemy.kind == "boss_module":
 		# Optional Hangar specialist tool: trade Cores for faster destruction
 		# of exposed launch bays, vents and pylons, never the core itself.
-		amount *= (2.40 if _has_prototype("breach_optics") else 1.0) * (1.0 + meta.module_breaker * 0.06 * hangar_effect_scale())
+		amount *= (2.40 if _has_prototype("breach_optics") else 1.0) * (1.0 + meta.module_breaker * 0.06)
 	elif _has_prototype("breach_optics"):
 		amount *= 0.90
 	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
@@ -4366,7 +4367,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
 
 func _award_enemy_xp(base_xp: float) -> void:
-	xp += base_xp * (1.0 + meta.xp * 0.06 * hangar_effect_scale() + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * _route_value("xp", 1.50 if route_choice == "bounty" else 1.0)
+	xp += base_xp * (1.0 + meta.xp * hangar_rank_bonus("xp") + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * _route_value("xp", 1.50 if route_choice == "bounty" else 1.0)
 	while xp >= xp_needed():
 		xp -= xp_needed()
 		level += 1
@@ -4400,7 +4401,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	# boss-launched missiles. Charged heavy beams and slag still require
 	# their own specific counters, not an invisible blanket resistance.
 	if source.begins_with("boss") and kind not in ["heavy", "hazard"]:
-		reduced *= 1.0 - float(meta.point_defense) * 0.05 * hangar_effect_scale()
+		reduced *= 1.0 - float(meta.point_defense) * 0.05
 	# Simultaneous boss4 heavy lanes can both hit an autopiloted ship on a
 	# single simulation frame. Leave the first full-strength and cap the
 	# second to 35%, without shortening charge telegraphs or changing Aegis.
@@ -4414,7 +4415,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	if kind in ["ion", "corrosion", "disrupt", "heat", "gravity", "void"]:
 		reduced *= status_damage_multiplier()
 	if kind in ["heavy", "ordnance"] or (kind == "hazard" and source in ["Molten slag", "Proximity mine"]):
-		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03 * hangar_effect_scale())
+		reduced *= (1.0 - passive_bonus("ablative", 0.03, 0.05, 0.05)) * (1.0 - meta.beam_plating * 0.03)
 		# Fortress plating: Bulwark died to Harvester beams and missiles in
 		# no-Hangar World 1 despite its hull. It now shrugs off part of them.
 		# 50% (was 30%; 20% before Bulwark traded Aegis for Deflector).
@@ -4443,7 +4444,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			if cooldowns[id] > 0.0:
 				cooldowns[id] = minf(60.0, cooldowns[id] + 2.0 * status_duration_scale())
 	if kind == "chaff":
-		reduced = maxf(reduced * 0.25, reduced - upgrades.armor * 0.35 - meta.armor * 0.12 * hangar_effect_scale() - (0.75 if ship_id == "bulwark" else 0.0) - (0.65 if rank_at("armor", 5) else 0.0) - (1.10 if rank_at("armor", 10) else 0.0) - (0.25 if passive_link_active("reinforced_plating") else 0.0))
+		reduced = maxf(reduced * 0.25, reduced - upgrades.armor * 0.35 - meta.armor * 0.12 - (0.75 if ship_id == "bulwark" else 0.0) - (0.65 if rank_at("armor", 5) else 0.0) - (1.10 if rank_at("armor", 10) else 0.0) - (0.25 if passive_link_active("reinforced_plating") else 0.0))
 	var shield_damage := minf(shield, reduced)
 	var had_shield := shield > 0.0
 	shield -= shield_damage
@@ -4457,7 +4458,7 @@ func _hit(amount: float, kind: String, source: String) -> void:
 			sentry_timer = 0.0
 			pilot_procs.engineer += 1
 			_log("FIELD SENTRY - Engineer deployed an emergency turret")
-		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2 * hangar_effect_scale())
+		shield_offline = maxf(0.5, (1.5 if passive_link_active("shield_cycle") else 3.0) - meta.shield_restart * 0.2)
 		effects.append({"kind": "shield-break", "p": ship_position(), "life": 0.75, "max_life": 0.75, "born": tick})
 		_log("Shield broke")
 		# Shieldstorm is an earned Aegis + Flak fusion, not a free route effect.
@@ -4500,7 +4501,7 @@ func _try_second_wind() -> bool:
 	if second_wind_used or int(meta.get("second_wind", 0)) <= 0:
 		return false
 	second_wind_used = true
-	hull = max_hull * (0.25 + 0.15 * float(int(meta.second_wind) - 1)) * hangar_effect_scale()
+	hull = max_hull * (0.25 + 0.15 * float(int(meta.second_wind) - 1))
 	aegis_left = maxf(aegis_left, 1.5)
 	_log("SECOND WIND - back in the fight")
 	return true
@@ -4508,7 +4509,7 @@ func _try_second_wind() -> bool:
 func _try_emergency_field() -> void:
 	if hull > 0.0 and hull < max_hull * 0.35 and meta.emergency > 0 and not emergency_used:
 		emergency_used = true
-		aegis_left = maxf(aegis_left, (1.0 + meta.emergency * 0.5) * hangar_effect_scale())
+		aegis_left = maxf(aegis_left, 1.0 + meta.emergency * 0.5)
 		_log("Emergency field: immune for a moment")
 
 func activate(ability: String) -> bool:
@@ -4522,16 +4523,16 @@ func activate(ability: String) -> bool:
 	if secret_entered and not archive_attack.is_empty():
 		_counter_archive_attack()
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 * hangar_effect_scale() - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * hangar_rank_bonus("ability_cooldown") - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
 	if ability in DRONE_ABILITIES and synergy_active("swarm"):
 		cooldowns[ability] *= 0.85
 	if not stage_casts.has(ability):
-		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10 * hangar_effect_scale()
+		cooldowns[ability] *= 1.0 - meta.opening_charge * 0.10
 		stage_casts[ability] = true
 	cooldown_totals[ability] = cooldowns[ability]
-	hull = minf(max_hull, hull + meta.cast_repair * hangar_effect_scale())
+	hull = minf(max_hull, hull + meta.cast_repair)
 	aftercast_left = 4.0
-	shield = minf(max_shield, shield + meta.reserve_shield * 5 * hangar_effect_scale() + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
+	shield = minf(max_shield, shield + meta.reserve_shield * 5 + max_shield * passive_bonus("shield_surge", 0.0075, 0.025, 0.05))
 	if artifact_id == "custodian_core" and daily_day.is_empty():
 		var shield_before: float = shield
 		shield = minf(max_shield, shield + max_shield * 0.08)
@@ -5176,7 +5177,7 @@ func skip_cards() -> bool:
 	if cards.is_empty() or skips_left <= 0:
 		return false
 	skips_left -= 1
-	hull = minf(max_hull, hull + 12 + meta.skip_patch * 6 * hangar_effect_scale())
+	hull = minf(max_hull, hull + 12 + meta.skip_patch * 6)
 	smuggler_draft_open = false
 	cards.clear()
 	return true

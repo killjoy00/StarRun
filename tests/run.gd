@@ -1658,7 +1658,7 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 	var held := Sim.new(18802, saved_hangar)
 	var resumed := Sim.new(1)
 	check(resumed.restore(held.snapshot()) and resumed.snapshot() == held.snapshot(), "Expanded Hangar track values and newly introduced tracks round-trip in existing save schema")
-	check(is_equal_approx(held.max_hull, float(Catalog.ship("vanguard").hull) + 73.5) and is_equal_approx(held.max_shield, float(Catalog.ship("vanguard").shield) + 58.8), "One more Hull and Shield capacitor rank increases actual starting survival")
+	check(is_equal_approx(held.max_hull, float(Catalog.ship("vanguard").hull) + 84.0) and is_equal_approx(held.max_shield, float(Catalog.ship("vanguard").shield) + 70.0), "One more Hull and Shield capacitor rank increases actual starting survival")
 	# On the same stage, the new boss-specific difficulty curve must rise
 	# faster than the ordinary enemy difficulty curve, without new enemies.
 	for stage_number in [1, 2, 3, 4]:
@@ -1693,7 +1693,7 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 	var before_boosted: float = float(boosted_part.hp)
 	fighter._damage_enemy(regular_part, 100.0, "pulse")
 	breaker._damage_enemy(boosted_part, 100.0, "pulse")
-	check(is_equal_approx((before_boosted - float(boosted_part.hp)) / (before - float(regular_part.hp)), 1.189), "Breach sensors add 6.3 percent boss-module damage per rank")
+	check(is_equal_approx((before_boosted - float(boosted_part.hp)) / (before - float(regular_part.hp)), 1.18), "Breach sensors add 6 percent boss-module damage per rank")
 	var core_unboosted: Dictionary = fighter.enemies[0]
 	var core_boosted: Dictionary = breaker.enemies[0]
 	before = float(core_unboosted.hp)
@@ -1707,7 +1707,7 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 		sim.shield = 0.0
 		sim.hull = 100.0
 		sim._hit(20.0, "heat", "boss3")
-	check(is_equal_approx(float(guarded.damage_taken.heat) / float(unshielded.damage_taken.heat), 0.8425), "Point defense reduces boss status projectiles by 5.25 percent per rank")
+	check(is_equal_approx(float(guarded.damage_taken.heat) / float(unshielded.damage_taken.heat), 0.85), "Point defense reduces boss status projectiles by 5 percent per rank")
 	var regular_shot := Sim.new(18806, {"point_defense":3})
 	regular_shot.shield = 0
 	regular_shot._hit(20.0, "chaff", "gunship")
@@ -1977,32 +1977,44 @@ func _test_homing_and_modules() -> void:
 	check(sim.damage_dealt.arc > 0 and sim.damage_dealt.lance > 0, "Both new automatic weapons must actually damage enemies")
 
 func _test_hangar_and_tactics() -> void:
-	# Same ranks/seed: 5% more *earned* benefit, never 5% of the base stat.
-	var empty := Sim.new(5001)
-	var empty_old := Sim.new(5001, {}, "vanguard", "rookie", "normal", "standard", false)
-	var ranks := {"hull":10, "shield":10, "damage":10, "ability_power":5, "xp":5, "cores":3, "rerolls":2}
-	var buff := Sim.new(5001, ranks)
-	var old := Sim.new(5001, ranks, "vanguard", "rookie", "normal", "standard", false)
-	check(is_equal_approx(empty.max_hull, empty_old.max_hull) and is_equal_approx(empty.weapon_power(), empty_old.weapon_power()), "Zero Hangar remains unchanged")
-	check(is_equal_approx(buff.max_hull - empty.max_hull, (old.max_hull - empty.max_hull) * 1.05) and is_equal_approx(buff.max_shield - empty.max_shield, (old.max_shield - empty.max_shield) * 1.05), "Purchased hull and shield benefits increase exactly 5 percent")
-	check(is_equal_approx(buff.weapon_power() - empty.weapon_power(), (old.weapon_power() - empty.weapon_power()) * 1.05) and is_equal_approx(buff.ability_power() - empty.ability_power(), (old.ability_power() - empty.ability_power()) * 1.05), "Purchased gun and active ability bonuses increase exactly 5 percent")
-	buff._award_enemy_xp(10.0)
-	old._award_enemy_xp(10.0)
-	check(is_equal_approx(buff.xp - 10.0, (old.xp - 10.0) * 1.05), "Purchased XP bonus, not base XP, rises 5 percent")
-	check(buff.payout() == old.payout() and buff.rerolls_left == old.rerolls_left and buff.meta == old.meta, "Ranks, Core economy and integer uses stay unchanged")
-	old.daily_day = "2026-11-26"
-	check(old.hangar_effect_scale() == 1.0 and is_equal_approx(old.max_hull, empty.max_hull + 100.0), "Daily retains old Hangar effects")
-	var old_save: Dictionary = old.snapshot()
-	var loaded := Sim.new()
-	check(loaded.restore(old_save) and loaded.snapshot() == old_save and loaded.hangar_effect_scale() == 1.0, "Old Daily/regular version retains exact checkpoint and balance")
-	var new_save: Dictionary = buff.snapshot()
-	var loaded_new := Sim.new()
-	check(loaded_new.restore(new_save) and loaded_new.snapshot() == new_save and loaded_new.hangar_effect_scale() == 1.05, "Boosted regular flight saves and resumes the same balance")
+	# Compare the actual seven earned effects on the same ship and seed.
+	var plain := Sim.new(5001)
+	var legacy_plain := Sim.new(5001, {}, "vanguard", "rookie", "normal", "standard", false)
+	var ranks := {"hull":10, "shield":10, "damage":10, "fire_rate":10, "ability_power":5, "ability_cooldown":5, "xp":5, "cores":3, "rerolls":2, "beam_plating":4, "repair":3}
+	var revised := Sim.new(5001, ranks)
+	var legacy := Sim.new(5001, ranks, "vanguard", "rookie", "normal", "standard", false)
+	check(is_equal_approx(plain.max_hull, legacy_plain.max_hull) and is_equal_approx(plain.weapon_power(), legacy_plain.weapon_power()), "Zero Hangar retains base stats")
+	check(is_equal_approx(revised.max_hull - plain.max_hull, 120.0) and is_equal_approx(revised.max_shield - plain.max_shield, 100.0), "Revised Hangar grants exactly 12 hull and 10 shield per rank")
+	check(is_equal_approx(revised.weapon_power(), plain.weapon_power() * 2.0), "Ten Munitions ranks add 100 percent weapon damage")
+	check(is_equal_approx(revised.gun_rate(), plain.gun_rate() * 1.60), "Ten Feed accelerator ranks add 60 percent gun fire rate")
+	check(is_equal_approx(revised.ability_power(), plain.ability_power() * 1.40), "Five Flux amplifier ranks add 40 percent ability power")
+	check(revised.activate("aegis") and plain.activate("aegis") and legacy.activate("aegis"), "Compare real ability activations")
+	check(is_equal_approx(revised.cooldowns.aegis, plain.cooldowns.aegis * 0.80) and is_equal_approx(legacy.cooldowns.aegis, plain.cooldowns.aegis * 0.85), "Five Reactor cooling ranks reduce cooldowns by 20 percent instead of 15")
+	revised._award_enemy_xp(10.0)
+	legacy._award_enemy_xp(10.0)
+	check(is_equal_approx(revised.xp, 12.5) and is_equal_approx(legacy.xp, 13.0), "Data harvester adds 5 percent XP per rank instead of 6")
+	check(revised.meta == legacy.meta and revised.payout() == legacy.payout() and revised.rerolls_left == legacy.rerolls_left, "Ranks, Core payout and draft uses unchanged")
+	for fixture in [revised, legacy]:
+		fixture.aegis_left = 0.0
+		fixture.shield = 0.0
+	var revised_hp: float = revised.hull
+	var legacy_hp: float = legacy.hull
+	revised._hit(20.0, "heavy", "test beam")
+	legacy._hit(20.0, "heavy", "test beam")
+	check(is_equal_approx(revised_hp - revised.hull, legacy_hp - legacy.hull), "Unlisted beam plating effect remains unchanged")
+	legacy.daily_day = "2026-11-26"
+	check(is_equal_approx(legacy.hangar_rank_bonus("xp"), 0.06) and is_equal_approx(legacy.max_hull, plain.max_hull + 100.0), "Daily retains the original XP and hull effects")
+	var legacy_state: Dictionary = legacy.snapshot()
+	var legacy_loaded := Sim.new()
+	check(legacy_loaded.restore(legacy_state) and legacy_loaded.snapshot() == legacy_state and is_equal_approx(legacy_loaded.hangar_rank_bonus("damage"),0.08), "Old Daily and regular checkpoints retain their exact previous balance")
+	var revised_state: Dictionary = revised.snapshot()
+	var revised_loaded := Sim.new()
+	check(revised_loaded.restore(revised_state) and revised_loaded.snapshot() == revised_state and is_equal_approx(revised_loaded.hangar_rank_bonus("damage"),0.10), "Revised Hangar flight saves and resumes with new balance")
 	var hangar := Catalog.defaults()
 	for id in hangar:
 		hangar[id] = 1
 	var sim := Sim.new(555, hangar)
-	check(is_equal_approx(sim.max_hull, float(Catalog.ship("vanguard").hull) + 10.5) and is_equal_approx(sim.max_shield, float(Catalog.ship("vanguard").shield) + 8.4), "Hangar defenses must apply at launch")
+	check(is_equal_approx(sim.max_hull, float(Catalog.ship("vanguard").hull) + 12.0) and is_equal_approx(sim.max_shield, float(Catalog.ship("vanguard").shield) + 10.0), "Hangar defenses must apply at launch")
 	check(sim.upgrades.pulse == 2 and sim.upgrades.seeker == 2, "Starting weapon upgrades must apply to new flights")
 	check(sim.weapon_power() > 1 and sim.payout() > Sim.new().payout(), "Armory and salvage tracks must change actual damage and rewards")
 	sim._offer_cards()
@@ -2013,7 +2025,7 @@ func _test_hangar_and_tactics() -> void:
 	var removed: String = sim.cards[0].id
 	check(sim.banish_card(0) and sim.banishes_left == 0 and not sim.cards.any(func(c): return c.id == removed), "Banished track must leave the draft pool immediately")
 	sim.hull = 50
-	check(sim.skip_cards() and sim.cards.is_empty() and is_equal_approx(sim.hull, 68.3) and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
+	check(sim.skip_cards() and sim.cards.is_empty() and sim.hull == 68 and sim.skips_left == 0, "Skip must consume a use and trade that hand for repair")
 	check(Catalog.legacy_refund({"hull":3, "damage":2, "regen":1}) == 30, "Historic Hangar costs are preserved")
 	check(Catalog.previous_price("hull",0) == 6 and Catalog.previous_price("lance_start",0) == 46 and Catalog.price("hull",0) == 7 and Catalog.price("lance_start",0) == 51, "Hangar costs compound another 10% on the earlier visible 15%-higher price")
 	check(Catalog.refund({"hull":3, "damage":2, "regen":1}, {"hull":15, "damage":10, "regen":5}) == 30, "Historical purchase receipts prevent inflated refunds")
@@ -2468,13 +2480,13 @@ func _test_extended_hangar() -> void:
 	for item in Catalog.HANGAR:
 		full[str(item.id)] = int(item.max)
 	var strong := Sim.new(5150, full)
-	check(is_equal_approx(strong.max_hull, float(Catalog.ship("vanguard").hull) + 157.5), "Fifteen hull ranks add 157.5 hull")
+	check(is_equal_approx(strong.max_hull, float(Catalog.ship("vanguard").hull) + 180.0), "Fifteen hull ranks add 180 hull")
 	# Second wind: one killing blow is survived per run.
 	var survivor := Sim.new(5151, {"second_wind": 1})
 	survivor.shield = 0.0
 	survivor.hull = 5.0
 	survivor._hit(999.0, "chaff", "drone")
-	check(not survivor.ended and is_equal_approx(survivor.hull, survivor.max_hull * 0.2625) and survivor.aegis_left > 0.0, "Second wind survives a killing blow at 26.25% hull with brief immunity")
+	check(not survivor.ended and is_equal_approx(survivor.hull, survivor.max_hull * 0.25) and survivor.aegis_left > 0.0, "Second wind survives a killing blow at 25% hull with brief immunity")
 	survivor.aegis_left = 0.0
 	survivor.shield = 0.0
 	survivor.hull = 5.0
@@ -2496,7 +2508,7 @@ func _test_extended_hangar() -> void:
 		fixture._update_weapons()
 	var tuned_damage: float = tuned.shots.filter(func(shot): return shot.weapon == "pulse")[0].damage
 	var untuned_damage: float = untuned.shots.filter(func(shot): return shot.weapon == "pulse")[0].damage
-	check(is_equal_approx(tuned_damage, untuned_damage * 1.2625), "Five ranks of Pulse tuning add 26.25% Pulse damage")
+	check(is_equal_approx(tuned_damage, untuned_damage * 1.25), "Five ranks of Pulse tuning add 25% Pulse damage")
 
 func _test_stage_difficulty_and_pressure() -> void:
 	var normal := Sim.new(111, {}, "vanguard", "rookie", "normal")
@@ -3582,17 +3594,17 @@ func _test_expanded_hangar() -> void:
 	var armor := Sim.new(3002,{"beam_plating":4})
 	armor.shield = 0
 	armor._hit(20,"heavy","test beam")
-	check(is_equal_approx(armor.hull, float(Catalog.ship("vanguard").hull) - 17.48), "Ablative panels reduce an actual beam hit by 12.6%")
+	check(is_equal_approx(armor.hull, float(Catalog.ship("vanguard").hull) - 17.6), "Ablative panels reduce an actual beam hit by 12%")
 	var restart := Sim.new(3003,{"shield_restart":4})
 	restart._hit(80,"heavy","break")
-	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.16), "Restart circuit shortens shield-break downtime")
+	check(restart.shield == 0 and is_equal_approx(restart.shield_offline,2.2), "Restart circuit shortens shield-break downtime")
 	var sealed := Sim.new(3004,{"hazard_seals":4})
 	sealed._hit(1,"heat","heat")
-	check(is_equal_approx(sealed.heat_left,2.765), "Sealed systems shorten an actual status hit")
+	check(is_equal_approx(sealed.heat_left,2.8), "Sealed systems shorten an actual status hit")
 	var siege := Sim.new(3005,{"boss_damage":5})
 	var target := {"id":99,"kind":"boss","hp":1000.0,"max_hp":1000.0,"p":Vector2(270,130)}
 	siege._damage_enemy(target,100,"pulse")
-	check(is_equal_approx(target.hp,884.25), "Siege targeting applies only to automatic boss damage")
+	check(is_equal_approx(target.hp,885.0), "Siege targeting applies only to automatic boss damage")
 	target.hp = 1000.0
 	siege._damage_enemy(target,100,"nova")
 	check(is_equal_approx(target.hp,900.0), "Siege targeting does not silently amplify active damage")
@@ -3602,13 +3614,13 @@ func _test_expanded_hangar() -> void:
 	warheads._add_enemy("station",Vector2(270,300))
 	normal._update_weapons()
 	warheads._update_weapons()
-	check(is_equal_approx(warheads.shots.filter(func(v):return v.weapon=="seeker")[0].damage,normal.shots.filter(func(v):return v.weapon=="seeker")[0].damage*1.21), "Warhead tooling strengthens real seeker projectiles")
+	check(is_equal_approx(warheads.shots.filter(func(v):return v.weapon=="seeker")[0].damage,normal.shots.filter(func(v):return v.weapon=="seeker")[0].damage*1.2), "Warhead tooling strengthens real seeker projectiles")
 	var cast := Sim.new(3007,{"cast_repair":3,"opening_charge":3})
 	cast.hull = 40
 	cast.activate("aegis")
 	normal = Sim.new(3007)
 	normal.activate("aegis")
-	check(is_equal_approx(cast.hull,43.15) and is_equal_approx(cast.cooldowns.aegis,normal.cooldowns.aegis*0.685), "Field patch and Hot start apply to the first cast")
+	check(cast.hull == 43 and is_equal_approx(cast.cooldowns.aegis,normal.cooldowns.aegis*0.7), "Field patch and Hot start apply to the first cast")
 	var saved := Sim.new()
 	check(saved.restore(cast.snapshot()) and saved.stage_casts.has("aegis"), "Hot start spending survives resume")
 	cast.cooldowns.aegis = 0
@@ -3623,8 +3635,8 @@ func _test_expanded_hangar() -> void:
 	warp.stage_casts.aegis = true
 	warp._launch_escorts(2,6,10)
 	warp._deploy_ion_mines(1,100,150)
-	# Redline repairs 10% plus 4.2% per Docking crew rank (three ranks): 22.6% of max hull.
-	check(warp.advance_stage() and is_equal_approx(warp.hull, 10.0 + warp.max_hull * 0.226) and warp.banishes_left == 3, "Warp repairs and Banish relay pay at the new world")
+	# Redline repairs 10% plus 4% per Docking crew rank (three ranks): 22% of max hull.
+	check(warp.advance_stage() and is_equal_approx(warp.hull, 10.0 + warp.max_hull * 0.22) and warp.banishes_left == 3, "Warp repairs and Banish relay pay at the new world")
 	check(warp.stage_casts.is_empty() and warp.ion_mines.is_empty() and warp.escort_left == 0, "Warp resets first casts and clears support from the previous battlefield")
 	var focused := Sim.new(3009,{"reroll_focus":1})
 	focused.rerolls_left = 100
@@ -3645,7 +3657,7 @@ func _test_expanded_hangar() -> void:
 	var skip := Sim.new(3010,{"skip_patch":3,"skips":1})
 	skip.hull = 10
 	skip._offer_cards(false)
-	check(skip.skip_cards() and is_equal_approx(skip.hull, 40.9) and skip.skips_left == 0, "Repair stores increase the actual skip heal")
+	check(skip.skip_cards() and skip.hull == 40 and skip.skips_left == 0, "Repair stores increase the actual skip heal")
 	var salvage := Sim.new(3011,{"module_salvage":3,"clean_clear":3})
 	salvage._spawn_boss()
 	var part := {"id":99,"name":"Test part","kind":"boss_module","hp":10.0,"max_hp":10.0,"p":Vector2(270,100),"xp":0}

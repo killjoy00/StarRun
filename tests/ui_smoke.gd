@@ -537,7 +537,7 @@ func _run() -> void:
 	check(scene.sim.seed_value == int(daily_expected.seed) and scene.sim.ship_id == str(daily_expected.ship) and scene.sim.pilot_id == str(daily_expected.pilot), "A Daily always uses the global day's ship, pilot, seed and difficulty")
 	var daily_set: Dictionary = scene.Progress.daily_hangar(daily_id)
 	check(scene.sim.difficulty == "normal" and daily_set.keys().all(func(k): return int(scene.sim.meta.get(k, 0)) == int(daily_set[k])), "Daily flies the set Hangar, not owned upgrades, without wiping the real profile")
-	check(scene.sim.hangar_effect_scale() == 1.0 and is_equal_approx(scene.sim.max_hull, float(scene.Catalog.ship(scene.sim.ship_id).hull) + float(scene.sim.meta.hull) * 10.0), "Daily retains its original combat bonuses and starting hull")
+	check(is_equal_approx(scene.sim.hangar_rank_bonus("xp"), 0.06) and is_equal_approx(scene.sim.max_hull, float(scene.Catalog.ship(scene.sim.ship_id).hull) + float(scene.sim.meta.hull) * 10.0), "Daily retains its original XP and starting hull")
 	var daily_snapshot: Dictionary = scene.sim.snapshot()
 	scene._show_menu()
 	scene._resume_run()
