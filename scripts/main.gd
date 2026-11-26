@@ -1785,11 +1785,11 @@ func _show_hangar() -> void:
 	var title := Kit.label(info, _name_part(ship.name, 0), 19, Color.WHITE)
 	title.add_theme_font_override("font", Kit.font(0, 0.45))
 	Kit.label(info, "Pilot " + _name_part(Catalog.pilot(profile.pilot).name, 0), 15, Kit.MUTED)
-	var hull := int(ship.hull) + int(profile.hangar.hull) * 10
-	var shield := int(ship.shield) + int(profile.hangar.shield) * 8 + (20 if profile.pilot == "engineer" else 0)
-	var stat_line := "%d hull  ·  %d shield" % [hull, shield]
+	var hull: float = float(ship.hull) + int(profile.hangar.hull) * 10.0 * Catalog.HANGAR_COMBAT_SCALE
+	var shield: float = float(ship.shield) + int(profile.hangar.shield) * 8.0 * Catalog.HANGAR_COMBAT_SCALE + (20 if profile.pilot == "engineer" else 0)
+	var stat_line := "%d hull  ·  %d shield" % [roundi(hull), roundi(shield)]
 	if int(profile.hangar.damage) > 0:
-		stat_line += "  ·  +%d%% damage" % (int(profile.hangar.damage) * 8)
+		stat_line += "  ·  +%.1f%% damage" % (int(profile.hangar.damage) * 8.0 * Catalog.HANGAR_COMBAT_SCALE)
 	Kit.label(info, stat_line, 15, Kit.CYAN, true)
 	Kit.glyph(strip_row, "next", Kit.MUTED, 18)
 	_tabs(body, Catalog.GROUPS, hangar_category, _hangar_tab)
@@ -3346,11 +3346,11 @@ func _show_intro_results() -> void:
 		var plating: int = int(profile.hangar.hull)
 		var price := Catalog.price("hull", plating)
 		if result_earned_cores > 0 and plating == 0:
-			_info_card(body, "Hull plating", "Adds 10 starting hull to future campaign runs.")
+			_info_card(body, "Hull plating", "Adds 10.5 starting hull to future campaign runs.")
 			if int(profile.cores) >= price:
 				_ui_button(body, "Buy Hull plating · %d Cores" % price, _buy_intro_plating, "secondary", 49)
 		elif plating > 0:
-			Kit.label(body, "Hull plating adds %d starting hull in the campaign." % (10 * plating), 16, Kit.MUTED, true)
+			Kit.label(body, "Hull plating adds %.1f starting hull in the campaign." % (10.0 * plating * Catalog.HANGAR_COMBAT_SCALE), 16, Kit.MUTED, true)
 		if not sim.intro_ejected:
 			Kit.label(body, "The campaign spans four worlds.", 16, Kit.MUTED, true)
 	else:
@@ -3411,7 +3411,7 @@ func _new_daily_run() -> void:
 	profile.runs += 1
 	var attempt: int = Progress.start_daily(profile, str(setup.day))
 	_save_profile()
-	sim = Simulation.new(int(setup.seed), Progress.daily_hangar(str(setup.day)), str(setup.ship), str(setup.pilot), str(setup.difficulty))
+	sim = Simulation.new(int(setup.seed), Progress.daily_hangar(str(setup.day)), str(setup.ship), str(setup.pilot), str(setup.difficulty), "standard", false)
 	sim.daily_day = str(setup.day)
 	sim.daily_attempt = attempt
 	_start_flight()
