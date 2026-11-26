@@ -23,6 +23,7 @@ func _run() -> void:
 		for world in range(1, 5):
 			var sim := Sim.new(6101, {}, "vanguard", "rookie", difficulty)
 			sim.stage = world
+			sim.campaign_choreography_version = 0 # The original simultaneous attacks remain valid for suspended flights.
 			sim._spawn_boss()
 			var core: Dictionary = sim._boss_core()
 			assert_game(not core.is_empty(), "World %d should create a targetable boss" % world)

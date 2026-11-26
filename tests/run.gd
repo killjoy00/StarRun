@@ -1224,6 +1224,7 @@ func _test_roguelike_variation() -> void:
 func _test_elite_squad_counterplay() -> void:
 	# Promote existing normal spawn slots, never additional enemies/XP.
 	var opener := Sim.new(7600, {}, "vanguard", "rookie", "hard")
+	opener.campaign_choreography_version = 0 # Explicit legacy queue fixture.
 	opener._spawn_encounter()
 	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "Hard World 1 retains its old staggered, non-elite formation queue")
 	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
@@ -1274,7 +1275,7 @@ func _test_elite_squad_counterplay() -> void:
 	late.stage = 3
 	late.encounter_index = 1
 	late._spawn_encounter()
-	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is String, "Other formations remain ordinary and World 3 encounters alternate")
+	check(late.encounter_queue.size() == 3 and not late.encounter_queue[0].has("squad"), "Other formations remain ordinary and World 3 encounters alternate")
 	late.encounter_queue.clear()
 	late.stage = 4
 	late.encounter_index = 0
@@ -2503,6 +2504,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 	var hard_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "hard")
 	var insane_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "insane")
 	for pilot in [hard_boss_volley, insane_boss_volley]:
+		pilot.campaign_choreography_version = 0 # Legacy simultaneous-volley cadence.
 		pilot._spawn_boss()
 		pilot.enemies[0].fire = 0.0
 		pilot._update_enemies()
@@ -2661,6 +2663,10 @@ func _test_boss_components_and_phases() -> void:
 	void_boss._damage_enemy(regent, 100.0, "nova")
 	check(shielded_hp - regent.hp < 40.0, "Shield pylons protect the Regent before the modules are destroyed")
 	void_boss.heavy_ready_at = 0.0
+	regent["campaign_attack_index"] = 2
+	regent.erase("arrive_y")
+	regent.p.y = 135.0
+	regent.fire = 0.0
 	void_boss._update_enemies()
 	check(void_boss.charges.size() == 2, "Both pylons still sustain two telegraphed heavy attack lanes")
 	void_boss._damage_enemy(regent, 99999999.0, "nova")

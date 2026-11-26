@@ -1080,6 +1080,13 @@ func _draw_effect(effect: Dictionary) -> void:
 			draw_arc(p,radius,angle,angle+TAU/9,20,Color("bba5ef",alpha),2.5,true)
 			var point := p+Vector2.from_angle(angle)*radius*0.75
 			draw_circle(point,2,Color(CYAN,alpha))
+	elif effect.kind == "vent-release":
+		# Orange heat expanding away from the destroyed vent, with no flash.
+		for i in range(6):
+			var axis := Vector2.from_angle(TAU * float(i) / 6.0)
+			var distance := 16.0 + age * 84.0
+			draw_line(p + axis * distance, p + axis * (distance + 22.0), Color(AMBER, alpha * 0.85), 3.0, true)
+		draw_arc(p, 25.0 + age * 58.0, 0.0, TAU, 40, Color(AMBER, alpha * 0.68), 2.5, true)
 	elif effect.kind == "wing_drones":
 		for side in [-1,1]:
 			draw_arc(p+Vector2(side*46,8),18+age*24,-PI,0,24,Color(CYAN,alpha),2,true)

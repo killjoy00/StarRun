@@ -45,6 +45,14 @@ jobs:
             echo "::error::Godot reported a run-progression script error"
             exit 1
           fi
+      - name: Campaign formation and boss choreography checks
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/campaign_choreography.gd 2>&1 | tee /tmp/starrun-choreography.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|CHOREOGRAPHY FAIL" /tmp/starrun-choreography.log; then
+            exit 1
+          fi
+          grep -q "CAMPAIGN_CHOREOGRAPHY_RESULT" /tmp/starrun-choreography.log
       - name: First flight scripted combat and settlement
         run: |
           set -o pipefail
