@@ -53,6 +53,7 @@ const WORLD1_STRIKE_WINGS := {
 }
 const Catalog = preload("res://scripts/catalog.gd")
 const FirstFlight = preload("res://scripts/first_flight.gd")
+const CampaignFormations = preload("res://scripts/campaign_formations.gd")
 const Expedition = preload("res://scripts/expedition_rules.gd")
 const HiddenSector = preload("res://scripts/hidden_sector.gd")
 var intro_run := false
@@ -104,6 +105,7 @@ var draft_rng := RandomNumberGenerator.new()
 var draft_rng_ready := false
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
+var campaign_choreography_version := 2 # v2 adds revised Hangar ranks; v0/v1 keep their rules.
 var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
@@ -177,7 +179,21 @@ var engine_prism_ready_tick := 0
 var engine_fortress_charge := 0.0
 var engine_salvage_charge := 0.0
 var engine_salvage_ready_tick := 0
-var engine_procs: Dictionary = {"execution_network":0, "missile_siege":0, "storm_circuit":0, "prism_hunter":0, "fortress_reactor":0, "salvage_carrier":0}
+var engine_procs: Dictionary = {"execution_network":0, "missile_siege":0, "storm_circuit":0, "prism_hunter":0, "fortress_reactor":0, "salvage_carrier":0, "hijacker":0}
+# Captured hulls are separate friendly units, never hostile targets or rewards.
+const HIJACK_ROLES := {
+	"drone":"gunship", "gunship":"gunship", "interceptor":"gunship", "rusher":"gunship",
+	"ion_frigate":"gunship", "storm_weaver":"gunship", "ember_hunter":"gunship",
+	"phase_stalker":"gunship", "splitter":"gunship", "missile_bomber":"bomber",
+	"slag_bomber":"bomber", "minelayer":"bomber", "shieldguard":"guard",
+	"gravity_sentinel":"guard", "arc_spire":"arc", "forge_turret":"arc",
+	"disruptor":"disruptor", "corroder":"disruptor", "carrier":"carrier",
+	"echo_carrier":"carrier", "void_lancer":"lancer", "sniper":"lancer"
+}
+var hijacked_ships: Array = []
+var hijack_ready_at := 0.0
+var hijack_lost := 0
+var hijack_blocked := 0
 # A rival is explicitly configured by the regular-flight UI. Plain Sim.new()
 # and all Dailies are rival-free, keeping old balance fixtures comparable.
 var rival_record: Dictionary = {}
@@ -305,7 +321,9 @@ var beams_cancelled := 0
 var last_heavy_hit_tick := -1
 var meta := Catalog.defaults()
 
-func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal", selected_artifact: String = "standard") -> void:
+func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "vanguard", selected_pilot: String = "rookie", selected_difficulty: String = "normal", selected_artifact: String = "standard", revised_hangar: bool = true) -> void:
+	if not revised_hangar:
+		campaign_choreography_version = 1
 	content = JSON.parse_string(FileAccess.get_file_as_string("res://data/content.json"))
 	for id in Catalog.ABILITIES:
 		if not cooldowns.has(id):
@@ -337,9 +355,9 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	for key in meta:
 		meta[key] = int(hangar.get(key, 0))
 	var chassis: Dictionary = Catalog.ship(ship_id)
-	max_hull = float(chassis.hull) + meta.hull * 10.0
+	max_hull = float(chassis.hull) + meta.hull * hangar_rank_bonus("hull")
 	hull = max_hull
-	max_shield = float(chassis.shield) + meta.shield * 8.0 + (20.0 if pilot_id == "engineer" else 0.0)
+	max_shield = float(chassis.shield) + meta.shield * hangar_rank_bonus("shield") + (20.0 if pilot_id == "engineer" else 0.0)
 	shield = max_shield
 	upgrades.pulse = int(chassis.pulse) + meta.pulse_start
 	upgrades.seeker = int(chassis.seeker) + meta.seeker_start
@@ -361,6 +379,13 @@ func _init(run_seed: int = 1, hangar: Dictionary = {}, selected_ship: String = "
 	rerolls_left = int(meta.rerolls) * REROLLS_PER_RANK + pilot_rerolls_left
 	banishes_left = meta.banishes
 	skips_left = meta.skips
+
+# Only the seven explicitly revised per-rank values change. The rank
+# integers, other purchased effects, and all reward rules are untouched.
+func hangar_rank_bonus(id: String) -> float:
+	if campaign_choreography_version >= 2 and daily_day.is_empty():
+		return float(Catalog.HANGAR_RANK_BONUSES[id])
+	return float(Catalog.LEGACY_HANGAR_RANK_BONUSES[id])
 
 func enable_expedition_rules() -> bool:
 	if tick != 0 or stage != 1 or not daily_day.is_empty() or start_world != 1:
@@ -599,7 +624,10 @@ func _spawn_campaign_encounters() -> void:
 		_try_spawn_rival()
 	if not secret_entered and wave_now() >= next_encounter_at and not boss_spawned:
 		_spawn_encounter()
-		next_encounter_at = wave_now() + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
+		if campaign_choreography_active():
+			next_encounter_at = wave_now() + 22.0 + float(posmod(seed_value + encounter_index * 11, 7))
+		else:
+			next_encounter_at = wave_now() + (35.0 + float((seed_value + encounter_index * 11) % 9) if _regular_world1_opening() else 66.0 + float((seed_value + encounter_index * 11) % 23))
 
 func _spawn_regular_waves() -> void:
 	if wave_now() >= next_spawn:
@@ -788,6 +816,9 @@ func claim_endless() -> bool:
 	won = true
 	_log("Endless victory claimed after world %d" % stage)
 	return true
+
+func campaign_choreography_active() -> bool:
+	return campaign_choreography_version >= 1 and not intro_run and daily_day.is_empty() and not secret_entered and stage in [1, 2, 3, 4]
 
 func _regular_world1_opening() -> bool:
 	# Daily keeps its historical World 1 timing, encounter formation and
@@ -1346,6 +1377,8 @@ func _try_fuse() -> void:
 # Tier 2: primary rank 5 + secondary and third rank 2 (new behavior).
 # Tier 3: primary rank 8 + secondary and third rank 5 (mastery).
 func engine_tier(id: String) -> int:
+	if id == "hijacker" and (not campaign_choreography_active() or not build_choices_active):
+		return 0
 	if not daily_day.is_empty() or stage < 2 or artifact_id == "drone_armada":
 		return 0
 	for spec in content.get("build_engines", []):
@@ -1386,13 +1419,15 @@ func build_impact_rows(max_rows: int = 2) -> Array:
 		"storm_circuit": ["storm discharge", "storm discharges"],
 		"prism_hunter": ["focus strike", "focus strikes"],
 		"fortress_reactor": ["counterbattery shot", "counterbattery shots"],
-		"salvage_carrier": ["support sortie", "support sorties"]
+		"salvage_carrier": ["support sortie", "support sorties"],
+		"hijacker": ["ship captured", "ships captured"]
 	}
 	var damage_sources := {
 		"execution_network": "engine_execution",
 		"storm_circuit": "engine_storm",
 		"prism_hunter": "engine_prism",
-		"fortress_reactor": "engine_fortress"
+		"fortress_reactor": "engine_fortress",
+		"hijacker": "engine_hijacker"
 	}
 	var rows: Array = []
 	for spec in content.get("build_engines", []):
@@ -1407,6 +1442,8 @@ func build_impact_rows(max_rows: int = 2) -> Array:
 			var dealt: int = roundi(float(damage_dealt.get(source, 0.0)))
 			if dealt > 0:
 				detail += " · %d direct damage" % dealt
+		if id == "hijacker" and hijack_blocked > 0:
+			detail += " · %d shots intercepted" % hijack_blocked
 		rows.append({"id":id, "name":str(spec.name), "detail":detail, "triggers":count})
 	# This is a frequency recap, not a claim that the largest count is
 	# strongest. Break ties by stable ID so save/replay agrees.
@@ -1498,6 +1535,7 @@ func _engine_on_weapon_hit(enemy: Dictionary, amount: float, weapon: String) -> 
 # Both fortress and salvage fire themselves. No extra combat button or
 # ability casts; bounded tick budgets and no extra XP/kill duplication.
 func _update_build_engines() -> void:
+	_update_hijacker()
 	var tier: int = engine_tier("fortress_reactor")
 	if tier >= 2 and shield_offline <= 0.0 and max_shield > 0.0 and shield >= max_shield * 0.75:
 		engine_fortress_charge = minf(9.0, engine_fortress_charge + DT)
@@ -1524,6 +1562,156 @@ func _update_build_engines() -> void:
 				var p: Vector2 = origin + Vector2(-26.0 if n == 0 else 26.0, -10.0)
 				shots.append({"p":p, "v":(target.p - p).normalized() * 690.0, "damage":minf(280.0, 26.0 * weapon_power() * (1.0 + float(stage - 1) * 0.25)), "weapon":"escort", "target":int(target.id), "homing":true})
 			hull = minf(max_hull, hull + (4.0 if engine_tier("salvage_carrier") == 3 else 2.5) + (0.5 if pilot_id == "engineer" else 0.0))
+
+# Ranks earn the engine; equipped source abilities (including their fused
+# versions) supply the actual control hardware. No extra slot is required.
+func hijack_capacity() -> int:
+	var tier: int = engine_tier("hijacker")
+	if tier == 0 or not _source_active("jammer") or not _source_active("emp"):
+		return 0
+	if tier >= 2 and not _source_active("decoy"):
+		return 1
+	return tier
+
+func _hijack_eligible(enemy: Dictionary, threshold: float, incoming: bool = false) -> bool:
+	var kind: String = str(enemy.kind)
+	return HIJACK_ROLES.has(kind) and float(enemy.hp) > 0.0 and float(enemy.hp) <= float(enemy.max_hp) * threshold and (incoming or not enemy.has("arrive_y")) and enemy.p.y >= (-140.0 if incoming else 20.0) and enemy.p.y < 720.0 and not enemy.has("pack_id") and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)) and not bool(enemy.get("no_reward", false)) and not bool(enemy.get("pressure_wing", false)) and str(enemy.get("elite_role", "")) != "leader"
+
+func _try_hijack(manual: bool = false) -> bool:
+	var capacity: int = hijack_capacity()
+	if capacity <= 0 or (not manual and capacity < 2) or boss_spawned or time < hijack_ready_at or hijacked_ships.size() >= capacity:
+		return false
+	var threshold: float = (0.50 if capacity == 1 else (0.60 if capacity == 2 else 0.70)) if manual else (0.40 if capacity == 2 else 0.55)
+	var target: Dictionary = {}
+	var weakest := INF
+	for enemy in enemies:
+		if not _hijack_eligible(enemy, threshold):
+			continue
+		var fraction: float = float(enemy.hp) / maxf(1.0, float(enemy.max_hp))
+		if fraction < weakest:
+			weakest = fraction
+			target = enemy
+	if target.is_empty():
+		return false
+	_convert_hijacked_ship(target, capacity)
+	enemies.erase(target)
+	return true
+
+# Do not remove from the enemy array inside damage loops; lethal-hit
+# captures leave a zero-HP record for the normal simulation cleanup.
+func _convert_hijacked_ship(target: Dictionary, capacity: int) -> void:
+	var origin: Vector2 = target.p
+	var kind: String = str(target.kind)
+	var identity: int = int(target.id)
+	var support_hp: float = 50.0 + float(stage) * 18.0 + (20.0 if capacity == 3 else 0.0)
+	hijacked_ships.append({"id":identity, "kind":kind, "role":str(HIJACK_ROLES[kind]), "p":origin, "hp":support_hp, "max_hp":support_hp, "fire":0.6})
+	# Award the original enemy's XP exactly once, not a destruction, salvage
+	# payout, splitter spawn or pilot kill proc. Existing projectiles persist.
+	_award_enemy_xp(float(target.xp))
+	var before: int = charges.size()
+	charges = charges.filter(func(c): return int(c.source) != identity)
+	beams_cancelled += before - charges.size()
+	target.hp = 0.0
+	hijack_ready_at = time + (7.0 if capacity == 3 else 10.0)
+	engine_procs.hijacker += 1
+	var cue_position := Vector2(origin.x, maxf(30.0, origin.y))
+	_engine_cue("hijacker", false, cue_position)
+	effects.append({"kind":"hijack-capture", "p":cue_position, "life":1.0, "max_life":1.0, "born":tick})
+	_log("%s HIJACKED · %d/%d" % [kind.replace("_", " ").to_upper(), hijacked_ships.size(), capacity])
+
+func hijack_position(index: int) -> Vector2:
+	var offsets: Array[Vector2] = [Vector2(-103,-92), Vector2(103,-92), Vector2(0,-153)]
+	var position: Vector2 = ship_position() + offsets[clampi(index, 0, 2)]
+	position.x = clampf(position.x, 37.0, WIDTH - 37.0)
+	position.y = clampf(position.y, 65.0, HEIGHT - 55.0)
+	return position
+
+func _hijack_shot(origin: Vector2, target: Dictionary, damage: float, angle: float = 0.0) -> void:
+	if target.is_empty() or shots.size() >= 498:
+		return
+	shots.append({"p":origin, "v":(target.p - origin).normalized().rotated(angle) * 650.0, "damage":damage, "weapon":"engine_hijacker", "target":int(target.id), "homing":true})
+
+func _update_hijacker() -> void:
+	var capacity: int = hijack_capacity()
+	if capacity <= 0:
+		hijacked_ships.clear()
+		return
+	while hijacked_ships.size() > capacity:
+		hijacked_ships.pop_back()
+	_try_hijack()
+	for i in range(hijacked_ships.size()):
+		var ally: Dictionary = hijacked_ships[i]
+		ally.p = ally.p.move_toward(hijack_position(i), DT * 480.0)
+		ally.fire = maxf(0.0, float(ally.fire) - DT)
+		if ally.fire > 0.0:
+			continue
+		var target: Dictionary = _nearest(ally.p)
+		if target.is_empty():
+			continue
+		var power: float = minf(1250.0 if capacity == 3 else 800.0, 24.0 * weapon_power() * (1.0 + float(stage - 2) * 0.60))
+		var role: String = str(ally.role)
+		ally.fire = 1.30 if capacity == 3 else 1.65
+		match role:
+			"gunship":
+				for n in range(3):
+					_hijack_shot(ally.p + Vector2((n - 1) * 10.0, -12.0), target, power * 0.40, float(n - 1) * 0.18)
+			"bomber":
+				ally.fire *= 1.30
+				for side in [-1, 1]:
+					_hijack_shot(ally.p + Vector2(side * 18.0,-8.0), target, power * 0.80, side * 0.18)
+			"guard":
+				# Wide, destructible interceptor radius is handled at the actual
+				# projectile collision. No unconditional shield regeneration.
+				_hijack_shot(ally.p, target, power * 0.50)
+			"arc":
+				effects.append({"kind":"arc", "p":ally.p, "to":target.p, "life":0.33, "max_life":0.33, "born":tick})
+				_damage_enemy(target, power, "engine_hijacker")
+				var second: Dictionary = _nearest(target.p, [int(target.id)])
+				if not second.is_empty() and second.p.distance_squared_to(target.p) <= 260.0 * 260.0:
+					effects.append({"kind":"arc", "p":target.p, "to":second.p, "life":0.28, "max_life":0.28, "born":tick})
+					_damage_enemy(second, power * 0.55, "engine_hijacker")
+			"disruptor":
+				# A local disruption, not another global EMP or boss stun.
+				if not str(target.kind).begins_with("boss") and not bool(target.get("rival", false)):
+					target.fire = maxf(float(target.fire), 1.8)
+					var target_id: int = int(target.id)
+					var before: int = charges.size()
+					charges = charges.filter(func(c): return int(c.source) != target_id)
+					beams_cancelled += before - charges.size()
+					effects.append({"kind":"ion-burst", "p":target.p, "radius":55.0, "life":0.5, "max_life":0.5, "born":tick})
+				_hijack_shot(ally.p, target, power * 0.65)
+			"carrier":
+				# Each sortie is two visibly deployed fighters, not extra captures.
+				ally.fire *= 1.45
+				ally["sortie_until"] = time + 1.5
+				for side in [-1, 1]:
+					_hijack_shot(ally.p + Vector2(side * 40.0,-24.0), target, power * 0.70)
+			"lancer":
+				# A distinct slow, powerful beam rather than another missile.
+				ally.fire *= 1.8
+				effects.append({"kind":"lance", "p":ally.p, "to":target.p, "life":0.45, "max_life":0.45, "born":tick})
+				_damage_enemy(target, power * 2.0, "engine_hijacker")
+
+func _hijack_intercept(bullet: Dictionary) -> bool:
+	if hijacked_ships.is_empty() or float(bullet.get("hp", 1)) <= 0.0 or str(bullet.kind) in ["mine", "slag"]:
+		return false
+	for ally in hijacked_ships:
+		var radius: float = 76.0 if str(ally.role) == "guard" and _is_small_shot(str(bullet.kind)) else 23.0
+		if bullet.p.distance_squared_to(ally.p) >= radius * radius:
+			continue
+		var hit: float = float(bullet.damage) * sqrt(maxf(1.0, stage_damage_scale()))
+		ally.hp -= hit
+		hijack_blocked += 1
+		prevented += float(bullet.damage)
+		bullet.hp = 0.0
+		effects.append({"kind":"impact", "p":bullet.p, "life":0.25, "max_life":0.25, "born":tick})
+		if ally.hp <= 0.0:
+			hijacked_ships.erase(ally)
+			hijack_lost += 1
+			effects.append({"kind":"explosion", "p":ally.p, "life":0.50, "max_life":0.50, "born":tick})
+			_log("HIJACKED %s LOST" % str(ally.kind).replace("_", " ").to_upper())
+		return true
+	return false
 
 func active_passive_links() -> Array:
 	var pairs: Array = []
@@ -1660,12 +1848,23 @@ func boss_phase_label() -> String:
 			return "BEAM CHARGING"
 		return "HEAVY FIRE" if intro_boss_enraged() else "LASER PREPARING"
 	if stage == 1:
-		return "BEAM CHARGING - INTERRUPT" if not charges.is_empty() else "LASER PREPARING"
+		if not charges.is_empty():
+			return "BEAM CHARGING - INTERRUPT"
+		if campaign_choreography_active():
+			var last_attack: String = str(_boss_core().get("campaign_attack_label", "MISSILES PREPARING"))
+			return "MISSILES PREPARING" if last_attack == "BEAM CHARGING - INTERRUPT" else last_attack
+		return "LASER PREPARING"
 	if stage == 2:
+		if campaign_choreography_active() and _alive_modules("launch_bay") == 1:
+			return "ONE LAUNCH BAY LEFT"
 		return "LAUNCH BAYS ONLINE" if _alive_modules("launch_bay") > 0 else "LAUNCH BAYS DESTROYED"
 	if stage == 3:
 		var factor := crucible_attack_factor()
 		var vents_alive := _alive_modules("vent") > 0
+		# Newly reconfigured vents take precedence in the HUD. The heat release
+		# itself remains visible via its effect and event log.
+		if _vent_cooling_active() and _alive_modules("vent") < 2:
+			return "VENT DOWN - WEAPONS COOLING" if vents_alive else "HEAT RELEASED - CORE EXPOSED"
 		# The existing boss HUD updates from this label, so the danger is
 		# visible even at the final 10% threshold (no new cooldown or timer).
 		if factor >= 1.40:
@@ -1683,6 +1882,8 @@ func boss_phase_label() -> String:
 		if late_boss_phase == 2:
 			return "FINAL ONSLAUGHT"
 		if _alive_modules("pylon") > 0:
+			if campaign_choreography_active() and _alive_modules("pylon") == 1:
+				return "ONE PYLON LEFT - SHIELD WEAKENED"
 			return "SHIELD PYLONS ACTIVE" if late_boss_phase == 0 else "RECONFIGURED - TARGET PYLONS"
 		return "CORE SHIELD DOWN - PUSH TO 65%" if late_boss_phase == 0 else "CORE SHIELD DOWN - PUSH TO 35%"
 	return ""
@@ -1950,8 +2151,13 @@ func _spawn_enemy() -> void:
 		# queues carry leader/wing information without a save format bump.
 		var queued: Variant = encounter_queue.pop_front()
 		var queued_kind: String = str(queued.get("kind", "")) if queued is Dictionary else str(queued)
-		_add_enemy(queued_kind, Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0))
-		if queued is Dictionary and not enemies.is_empty():
+		var origin := Vector2(120.0 + formation_slot * 150.0, -50.0 - formation_slot * 65.0)
+		if queued is Dictionary and queued.has("formation_x"):
+			origin = Vector2(float(queued.formation_x), float(queued.formation_y))
+		_add_enemy(queued_kind, origin)
+		if queued is Dictionary and queued.has("formation_x"):
+			enemies[-1]["authored_formation"] = true
+		if queued is Dictionary and queued.has("squad") and not enemies.is_empty():
 			var unit: Dictionary = enemies[-1]
 			unit["elite_squad"] = int(queued.get("squad", -1))
 			unit["elite_role"] = "leader" if bool(queued.get("leader", false)) else "wing"
@@ -2081,6 +2287,9 @@ func _elite_leader_active(wing: Dictionary) -> bool:
 func _spawn_encounter() -> void:
 	if _crowd_count() >= _enemy_limit() - 5 or not encounter_queue.is_empty():
 		return
+	if campaign_choreography_active() and (not _regular_world1_opening() or wave_elapsed() >= 30.0):
+		_spawn_authored_formation()
+		return
 	if _regular_world1_opening():
 		# If slow guns are already holding a crowded screen, do not pile
 		# another formation on top of it just to hit a clock.
@@ -2115,6 +2324,41 @@ func _spawn_encounter() -> void:
 		_log("ELITE GROUP - kill the marked leader to break it up")
 	else:
 		encounter_queue = formation.duplicate()
+
+func _spawn_authored_formation() -> void:
+	var formation: Array = CampaignFormations.pick(stage, wave_elapsed(), seed_value, encounter_index)
+	var kinds: Array = formation[3]
+	if _regular_world1_opening():
+		if _visible_world1_enemies() >= 3:
+			return
+		# The established Normal opener groups three ordinary slots. Keep its
+		# crowd safeguard and spend the same future spawn opportunities.
+		for index in range(3):
+			var lane: Vector2 = CampaignFormations.position(formation, index)
+			for member in _spawn_unit(str(kinds[index]), Vector2(lane.x, 38.0 + (lane.y + 100.0) * 0.45)):
+				_begin_entry(member)
+				member["strike_wing"] = true
+				member["authored_formation"] = true
+				member.max_hp *= 1.20
+				member.hp = member.max_hp
+				member.fire = 1.85 + index * 0.20
+		var pace := maxf(0.55, 1.65 - wave_elapsed() / 260.0)
+		next_spawn = maxf(next_spawn, wave_now()) + 3.0 * pace / (float(stage_spec().spawn_scale) * enemy_cadence_scale() * stage_risk)
+	else:
+		# Queued slots retain the ordinary cadence, cap and rewards. Elite
+		# promotion remains the same one-in-two rule and destination override.
+		var elite: bool = (stage in [2, 3, 4] and (encounter_index + seed_value) % 2 == 0) or (expedition_active() and bool(destination_spec().get("elite", false)))
+		var leader_id: int = next_id
+		for index in range(3):
+			var lane: Vector2 = CampaignFormations.position(formation, index)
+			var queued := {"kind":str(kinds[index]), "formation_x":lane.x, "formation_y":lane.y}
+			if elite:
+				queued.merge({"squad":leader_id, "leader":index == 0, "disrupted":false})
+			encounter_queue.append(queued)
+		if elite:
+			_log("ELITE GROUP - break the leader")
+	encounter_index += 1
+	_log(str(formation[0]).to_upper() + " INCOMING")
 
 func _spawn_opening_scout_screen() -> void:
 	if not _uses_world1_opening():
@@ -2392,6 +2636,7 @@ func _spawn_boss() -> void:
 	boss_spawned = true
 	boss_spawn_time = time
 	if secret_entered:
+		hijacked_ships.clear()
 		secret_intro_pending = true
 		archive_next_attack = time + 1.6
 		archive_attack = ""
@@ -2407,7 +2652,12 @@ func _spawn_boss() -> void:
 	heavy_ready_at = time + 3.0
 	var spec := stage_spec()
 	boss_attack_pattern = ["sweep", "crossfire", "delayed fan"][(seed_value + stage * 11) % 3]
-	_log("BOSS WARNING - %s attack" % boss_attack_pattern.to_upper())
+	if campaign_choreography_active() and stage == 1:
+		_log("HARVESTER - MISSILES, GUNFIRE, BEAM")
+	elif campaign_choreography_active() and stage == 4:
+		_log("VOID REGENT - DESTROY THE PYLONS")
+	else:
+		_log("BOSS WARNING - %s attack" % boss_attack_pattern.to_upper())
 	# Progression difficulties need stronger boss fights without making
 	# World 1 tankier than World 2. The World 2 bridge maintains ascending
 	# boss HP; Worlds 3 and 4 naturally exceed that threshold.
@@ -2426,6 +2676,8 @@ func _spawn_boss() -> void:
 	enemies.append({"id": boss_id, "kind": str(spec.boss), "p": Vector2(270, 135), "hp": hp, "max_hp": hp, "speed": 0.0, "fire": 1.0, "xp": 0, "phase": 0.0})
 	next_id += 1
 	_begin_entry(enemies[-1])
+	if campaign_choreography_active() and str(spec.boss) in ["boss", "boss4"]:
+		enemies[-1]["campaign_attack_index"] = 0
 	for part in content.boss_modules.get(str(spec.boss), []):
 		var part_hp: float = float(part.hp) * threat_scale() * stage_risk * float(stage_spec().get("module_scale", 1.0)) * opener_boss_scale * enemy_health_multiplier() * boss_health_pressure()
 		enemies.append({"id": next_id, "kind": "boss_module", "role": str(part.role), "name": str(part.name), "parent": boss_id, "offset": Vector2(float(part.offset_x), float(part.offset_y)), "p": Vector2(270 + float(part.offset_x), 135 + float(part.offset_y)), "hp": part_hp, "max_hp": part_hp, "speed": 0.0, "fire": 999999.0, "xp": 0, "phase": 0.0})
@@ -2507,6 +2759,17 @@ func _advance_late_boss_phase(core: Dictionary) -> void:
 	late_boss_phase += 1
 	_spawn_late_boss_objectives(core)
 	_late_boss_phase_surge(core)
+	if campaign_choreography_active() and stage == 4:
+		core["campaign_attack_index"] = 0
+		core.fire = minf(float(core.fire), 0.8)
+		if late_boss_phase == 2:
+			# The unshielded Regent opens with two visible flanking bursts.
+			for side in [-1, 1]:
+				var origin: Vector2 = core.p + Vector2(side * 84.0, 25.0)
+				var direction: Vector2 = (ship_position(time + 1.4) - origin).normalized()
+				for i in range(5):
+					bullets.append({"p":origin, "v":direction.rotated((i - 2) * 0.20) * 210.0, "damage":2.1 * threat_scale() * boss_projectile_damage_multiplier(), "kind":"gravity" if side < 0 else "void", "source":"boss4"})
+				effects.append({"kind":"ion-burst", "p":origin, "radius":100.0, "life":0.80, "max_life":0.80, "born":tick})
 	effects.append({"kind":"boss-phase-break", "p":core.p, "phase":late_boss_phase + 1, "life":1.0, "max_life":1.0, "born":tick})
 	_log("%s · PHASE %d/3 · %s" % [str(stage_spec().boss_name).to_upper(), late_boss_phase + 1, boss_phase_label()])
 
@@ -2522,6 +2785,8 @@ func advance_stage() -> bool:
 	if intermission_step != "ready" or route_choice not in ["repair", "overclock", "bounty"]:
 		return false
 	stage += 1
+	if not campaign_choreography_active():
+		hijacked_ships.clear()
 	_queue_weapon_evolutions()
 	_try_fuse()
 	signal_status = ""
@@ -2670,7 +2935,7 @@ func _update_enemies() -> void:
 				enemy.p.x += cos(time * 4.2 + enemy.phase) * 135.0 * DT * pace
 			elif kind in ["rusher", "ember_hunter", "storm_weaver"]:
 				enemy.p.x = move_toward(enemy.p.x, ship_position().x, (28.0 if kind == "rusher" else 65.0) * DT * pace)
-			elif kind == "phase_stalker":
+			elif kind == "phase_stalker" and (not bool(enemy.get("authored_formation", false)) or (not arriving and enemy.p.y >= 0.0)):
 				var cycle: int = floori((time - stage_start + float(enemy.phase)) / 2.8)
 				if int(enemy.get("blink", -1)) != cycle:
 					enemy.blink = cycle
@@ -2688,7 +2953,15 @@ func _update_enemies() -> void:
 				_hit(17.0, "hazard", "Boulder collision")
 				enemy.hp = -1.0
 			continue
+		# Authored enemies enter the visible field before opening fire or
+		# issuing a beam warning. Old Daily and opener scripts are unchanged.
+		if bool(enemy.get("authored_formation", false)) and (arriving or enemy.p.y < 0.0):
+			continue
 		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
+		if campaign_choreography_active() and enemy.has("campaign_attack_index"):
+			if not arriving and enemy.fire <= 0.0:
+				_campaign_boss_attack(enemy)
+			continue
 		_rival_action(enemy, minions)
 		if (kind in ["sniper", "void_lancer"] or kind.begins_with("boss")) and time >= heavy_ready_at and charges.is_empty() and jammer_left <= 0.0 and emp_left <= 0.0:
 			var lead := 2.15 if kind.begins_with("boss") and stage > 1 and boss_attack_pattern == "delayed fan" else 1.8
@@ -2749,6 +3022,8 @@ func _update_enemies() -> void:
 				continue
 			if kind.begins_with("boss"):
 				enemy.fire = ((2.1 if stage == 1 else maxf(1.1, 1.8 - stage * 0.15)) / boss_projectile_rate_multiplier()) * projectile_interval_factor(kind)
+				if campaign_choreography_active() and kind == "boss3":
+					enemy.fire *= [1.0, 0.94, 0.85][late_boss_phase]
 			else:
 				# Carrier attacks also launch minions; do not accelerate their
 				# launch cycle and accidentally create more XP on Insane.
@@ -2788,6 +3063,8 @@ func _update_enemies() -> void:
 					for bay in enemies:
 						if bay.kind == "boss_module" and bay.hp > 0 and bay.role == "launch_bay" and _crowd_count() + minions.size() < _enemy_limit() - 2:
 							minions.append({"p":bay.p + Vector2(0, 25), "kind":"storm_weaver"})
+							if campaign_choreography_active():
+								effects.append({"kind":"ion-burst", "p":bay.p, "radius":48.0, "life":0.55, "max_life":0.55, "born":tick})
 					_log("Storm Carrier launched fighters - shoot its bays")
 			if kind in ["carrier", "echo_carrier"]:
 				if _crowd_count() + minions.size() < _enemy_limit() - 2:
@@ -2828,6 +3105,8 @@ func _update_enemies() -> void:
 					bullets.append({"p": enemy.p, "v": direction.rotated(angle) * (260.0 if kind in ["ember_hunter", "phase_stalker"] else 215.0), "damage": (2.1 if kind.begins_with("boss") else (1.25 if kind in ["rusher", "interceptor"] else 1.6)) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0) * (opener_boss_enrage() if kind == "boss" else 1.0), "kind": bullet_kind, "source": "rival" if bool(enemy.get("rival", false)) else kind})
 				if kind in ["gunship", "missile_bomber", "station", "boss2", "boss4"]:
 					var volley := (1 if _alive_modules("launch_bay") == 0 else 3) if kind == "boss2" else (3 if kind == "boss4" else (2 if kind == "missile_bomber" else 1))
+					if campaign_choreography_active() and kind == "boss2":
+						volley = 1 + _alive_modules("launch_bay")
 					for i in range(volley):
 						bullets.append({"p": enemy.p + Vector2((i * 2 - volley + 1) * 13, 0), "v": direction.rotated((i * 2 - volley + 1) * 0.10) * (175.0 if kind == "missile_bomber" else 140.0), "damage": (11.0 if kind == "missile_bomber" else 12.0) * threat_scale() * (boss_projectile_damage_multiplier() if kind.begins_with("boss") else 1.0), "kind":"ordnance", "hp":12.0, "source":"rival" if bool(enemy.get("rival", false)) else kind})
 				if kind == "boss3" and _alive_modules("vent") > 0:
@@ -2855,6 +3134,95 @@ func _update_enemies() -> void:
 			if bool(minion.get("rival_escort", false)):
 				enemies[-1]["rival_escort"] = true
 				enemies[-1]["xp"] = 0
+
+# The Harvester and Regent now take distinct turns rather than firing every
+# weapon on independent clocks. Phase progress is still driven by real damage.
+func _campaign_boss_attack(core: Dictionary) -> void:
+	var kind: String = str(core.kind)
+	var harvester: bool = kind == "boss"
+	var final: bool = kind == "boss4" and late_boss_phase == 2
+	var count: int = 3 if harvester or not final else 4
+	var attack: int = posmod(int(core.campaign_attack_index), count)
+	var jammed: bool = jammer_left > 0.0 or emp_left > 0.0
+	var overload: bool = harvester and difficulty != "normal" and time - boss_spawn_time >= 75.0
+	if jammed and not overload:
+		core.fire = 0.5
+		return
+	if not charges.is_empty():
+		core.fire = 0.25
+		return
+	var beam: bool = attack == count - 1
+	var interval: float = ((2.1 if harvester else 1.2) / boss_projectile_rate_multiplier()) * projectile_interval_factor(kind)
+	if harvester and time - boss_spawn_time >= 18.0:
+		interval *= 0.80
+	if final:
+		interval *= 0.70
+	core.fire = interval
+	if beam:
+		if jammed: # A suppressed charge cannot prevent the next physical salvo.
+			core.campaign_attack_index += 1
+			return
+		if time < heavy_ready_at:
+			core.fire = maxf(0.1, heavy_ready_at - time)
+			return
+		var lead: float = 1.8
+		var damage: float = (29.0 + stage * 6.0) * threat_scale() * boss_projectile_damage_multiplier()
+		if harvester:
+			damage *= 1.20 * opener_boss_enrage()
+			if difficulty == "hard":
+				damage *= 1.30
+			elif difficulty == "insane":
+				damage *= 1.50
+		var lanes: Array = enemies.filter(func(e): return e.kind == "boss_module" and str(e.get("role", "")) == "pylon" and e.hp > 0.0) if not harvester else []
+		if lanes.is_empty():
+			lanes.append(core)
+		var aim_x: float = ship_position(time + lead).x
+		for i in range(lanes.size()):
+			var shift: float = (float(i * 2 - lanes.size() + 1) * 68.0)
+			charges.append({"source":int(lanes[i].id), "x":clampf(aim_x + shift, 35.0, 505.0), "remaining":lead, "duration":lead, "damage":damage})
+		heavy_ready_at = time + (7.5 if harvester else (4.4 if final else 5.8))
+		core.fire = maxf(interval, lead + 0.30)
+		core["campaign_attack_label"] = "BEAM CHARGING - INTERRUPT"
+		_log("HARVESTER - CHARGED BEAM" if harvester else "REGENT - BEAM CHARGING")
+	else:
+		var flight_time: float = core.p.distance_to(ship_position()) / 215.0
+		var aim: Vector2 = ship_position(time + flight_time)
+		if decoy_left > 0.0:
+			aim = Vector2(70 if ship_position().x > 270 else 470, 700)
+		var direction: Vector2 = (aim - core.p).normalized()
+		var multiplier: float = threat_scale() * boss_projectile_damage_multiplier() * (opener_boss_enrage() if harvester else 1.0)
+		if (harvester and attack == 0) or (final and attack == 2):
+			var missiles: int = 2 if harvester else 3
+			for i in range(missiles):
+				var spread: float = float(i * 2 - missiles + 1)
+				bullets.append({"p":core.p + Vector2(spread * 24.0, 12.0), "v":direction.rotated(spread * 0.12) * 140.0, "damage":12.0 * multiplier, "kind":"ordnance", "hp":12.0, "source":kind})
+			core["campaign_attack_label"] = "MISSILE BARRAGE"
+			_log("HARVESTER - MISSILES" if harvester else "REGENT - MISSILE BARRAGE")
+		else:
+			var shot_kind: String = "chaff"
+			var shots_count: int = 11
+			var spread: float = 0.15
+			if harvester:
+				if time - boss_spawn_time >= 15.0:
+					shots_count += 6 if difficulty == "hard" else (8 if difficulty == "insane" else 0)
+			else:
+				var pylons: Array = enemies.filter(func(e): return e.kind == "boss_module" and str(e.get("role", "")) == "pylon" and e.hp > 0.0)
+				# Left pylon powers gravity, right pylon powers void. Breaking
+				# one removes its status barrage and its beam lane immediately.
+				shot_kind = "gravity" if attack == 0 else "void"
+				if pylons.size() == 1:
+					shot_kind = "gravity" if float(pylons[0].offset.x) < 0.0 else "void"
+				shots_count = 15 if final else (11 if pylons.size() == 1 else 13)
+				spread = 0.21 if shot_kind == "gravity" else 0.11
+			for i in range(shots_count):
+				var angle: float = (float(i) - float(shots_count - 1) * 0.5) * spread
+				bullets.append({"p":core.p, "v":direction.rotated(angle) * (240.0 if shot_kind == "void" else 215.0), "damage":2.1 * multiplier, "kind":shot_kind, "source":kind})
+			core["campaign_attack_label"] = "GUNFIRE" if harvester else shot_kind.to_upper() + " BARRAGE"
+			_log("HARVESTER - GUNFIRE" if harvester else "REGENT - " + shot_kind.to_upper() + " BARRAGE")
+	core.campaign_attack_index += 1
+
+func _vent_cooling_active() -> bool:
+	return campaign_choreography_active() and stage == 3 and boss_spawned and time < float(_boss_core().get("vent_cooling_until", -1.0))
 
 func _update_archive_enemy(enemy: Dictionary, pace: float, arriving: bool = false) -> void:
 	var kind: String = enemy.kind
@@ -3290,7 +3658,7 @@ func _focus_reroll() -> void:
 ## How fast the ship's guns reload: Autoloader, Hangar fire rate, Overdrive,
 ## the ship's own fire rate, Redline, Afterburn and gravity wells.
 func gun_rate() -> float:
-	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * 0.05 + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
+	var rate: float = (1.0 + upgrades.autoloader * 0.08 + meta.fire_rate * hangar_rank_bonus("fire_rate") + (0.75 if overdrive_left > 0 else 0.0)) * float(Catalog.ship(ship_id).fire_rate) * stage_fire_rate
 	if rank_at("autoloader", 5): rate += 0.15
 	if rank_at("autoloader", 10): rate += 0.25
 	if aftercast_left > 0.0:
@@ -3399,7 +3767,7 @@ func daredevil_active() -> bool:
 	return pilot_id == "daredevil" and hull < max_hull * 0.5
 
 func weapon_power() -> float:
-	var power: float = (1.0 + meta.damage * 0.08 + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
+	var power: float = (1.0 + meta.damage * hangar_rank_bonus("damage") + upgrades.munitions * 0.08 + (0.14 if rank_at("munitions", 5) else 0.0) + (0.22 if rank_at("munitions", 10) else 0.0) + (0.05 if passive_link_active("guided_payload") else 0.0)) * (1.85 if focus_left > 0.0 else 1.0) * (0.85 if heat_left > 0.0 else 1.0) * stage_power
 	if artifact_id == "glass_fleet":
 		power *= 1.50
 	if daredevil_active():
@@ -3448,7 +3816,7 @@ func weapon_power() -> float:
 	return power
 
 func ability_power() -> float:
-	var power: float = 1.0 + meta.ability_power * 0.06 + upgrades.amplifier * 0.06
+	var power: float = 1.0 + meta.ability_power * hangar_rank_bonus("ability_power") + upgrades.amplifier * 0.06
 	if rank_at("amplifier", 5): power += 0.15
 	if rank_at("amplifier", 10): power += 0.25
 	if passive_link_active("quick_charge"): power *= 1.15
@@ -3546,6 +3914,8 @@ func _update_bullets() -> void:
 				bullet.hp = 0.0
 		var bullet_pace: float = (0.45 if chrono_left > 0 else 1.0) * control_pace
 		bullet.p += bullet.v * DT * bullet_pace
+		if _hijack_intercept(bullet):
+			continue
 		var hit_radius := 18.0 if bullet.kind == "ordnance" else (13.0 if bullet.kind in ["mine", "slag"] else 10.0)
 		if bullet.p.distance_squared_to(ship) < hit_radius * hit_radius and int(bullet.get("hp", 1)) > 0:
 			if not (barrier_left > 0.0 and _is_small_shot(str(bullet.kind))):
@@ -3799,7 +4169,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	elif _has_prototype("breach_optics"):
 		amount *= 0.90
 	if enemy.kind == "boss2" and _alive_modules("launch_bay") > 0:
-		amount *= 0.85
+		amount *= (0.55 if _alive_modules("launch_bay") == 2 else 0.78) if campaign_choreography_active() else 0.85
 	if enemy.kind == "boss3" and _alive_modules("vent") > 0:
 		amount *= 0.28 if _alive_modules("vent") > 1 else 0.58
 	if enemy.kind == "boss4" and _alive_modules("pylon") > 0:
@@ -3835,6 +4205,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		elif weapon == "arc" and evolution_id("arc") == "tempest" and not _engine_priority_target(enemy):
 			_evolution_feedback("tempest", enemy.p)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
+	# A strong build can cross the entire capture band in a single hit.
+	# Convert the same enemy instead of requiring a lucky one-tick window.
+	# Only real auto-weapons qualify; ally damage cannot chain captures.
+	if actual_damage >= float(enemy.hp) and weapon in ["pulse", "seeker", "arc", "lance"] and int(upgrades.get("jammer", 0)) >= 5 and not boss_spawned and time >= hijack_ready_at:
+		var capacity: int = hijack_capacity()
+		if capacity >= 2 and hijacked_ships.size() < capacity and _hijack_eligible(enemy, 1.0, true):
+			_convert_hijacked_ship(enemy, capacity)
+			return
 	enemy.hp -= amount
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		_evolution_on_weapon_hit(enemy, actual_damage, weapon)
@@ -3920,6 +4298,13 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	if not bool(enemy.get("no_reward", false)):
 		hull = minf(max_hull, hull + passive_bonus("field_medic", 0.10, 0.25, 0.50))
 	if enemy.kind == "boss_module":
+		if campaign_choreography_active() and str(enemy.get("role", "")) == "vent":
+			var core := _boss_core()
+			if not core.is_empty():
+				core["vent_cooling_until"] = time + 2.5
+				heat_left = 0.0
+				effects.append({"kind":"vent-release", "p":enemy.p, "life":1.05, "max_life":1.05, "born":tick})
+				_log("COOLING VENT DOWN - WEAPONS RESTORED")
 		effects.append({"kind":"boss-module-break", "p":enemy.p, "role":str(enemy.get("role", "module")), "life":0.85, "max_life":0.85, "born":tick})
 		if not bool(enemy.get("no_reward", false)):
 			bonus_cores += int(meta.module_salvage)
@@ -3960,11 +4345,7 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 	beams_cancelled += before - charges.size()
 	if charges.size() < before:
 		_log("Beam canceled - charging enemy destroyed")
-	xp += enemy.xp * (1.0 + meta.xp * 0.06 + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * _route_value("xp", 1.50 if route_choice == "bounty" else 1.0)
-	while xp >= xp_needed():
-		xp -= xp_needed()
-		level += 1
-		pending_levels += 1
+	_award_enemy_xp(float(enemy.xp))
 	if enemy.kind == "splitter" and _crowd_count() < _enemy_limit() - 2:
 		for i in range(2):
 			_add_enemy("drone", enemy.p + Vector2((i * 2 - 1) * 22, 14))
@@ -3984,6 +4365,13 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		stage_clears = stage
 		stage_transition_queued = true
 		_log("%s destroyed · Stage %d complete" % [boss_name(), stage])
+
+func _award_enemy_xp(base_xp: float) -> void:
+	xp += base_xp * (1.0 + meta.xp * hangar_rank_bonus("xp") + upgrades.harvester * 0.08 + (0.15 if rank_at("harvester", 5) else 0.0) + (0.25 if rank_at("harvester", 10) else 0.0) + (0.20 if passive_link_active("field_recovery") else 0.0) + (0.25 if pilot_id == "scavenger" else 0.0)) * _route_value("xp", 1.50 if route_choice == "bounty" else 1.0)
+	while xp >= xp_needed():
+		xp -= xp_needed()
+		level += 1
+		pending_levels += 1
 
 func xp_needed() -> int:
 	# About two thirds as many level-ups as the old 25 + 9 per level, each
@@ -4038,7 +4426,8 @@ func _hit(amount: float, kind: String, source: String) -> void:
 	elif kind == "heat":
 		# Toned down: -15% automatic damage for 3.5s (was -25% for 5s), so
 		# World 3 heat stays a pressure to answer, not a near-permanent tax.
-		heat_left = maxf(heat_left, 3.5 * status_duration_scale())
+		if not _vent_cooling_active():
+			heat_left = maxf(heat_left, 3.5 * status_duration_scale())
 	elif kind == "gravity":
 		gravity_left = maxf(gravity_left, 4.5 * status_duration_scale())
 	elif kind == "void":
@@ -4134,7 +4523,7 @@ func activate(ability: String) -> bool:
 	if secret_entered and not archive_attack.is_empty():
 		_counter_archive_attack()
 	var effect_strength: float = ability_power() * _active_rank_scale(ability)
-	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * 0.03 - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
+	cooldowns[ability] = float(content.abilities[ability].cooldown) * maxf(0.4, 1.0 - upgrades.coolant * 0.08 - meta.ability_cooldown * hangar_rank_bonus("ability_cooldown") - (0.15 if pilot_id == "tactician" else 0.0)) * cooldown_multiplier() * _active_rank_cooldown(ability)
 	if ability in DRONE_ABILITIES and synergy_active("swarm"):
 		cooldowns[ability] *= 0.85
 	if not stage_casts.has(ability):
@@ -4180,6 +4569,8 @@ func activate(ability: String) -> bool:
 			_log("TACTICAL COUNTERBATTERY - %d enemies jammed" % suppressed)
 	if not fusion_spec(ability).is_empty():
 		_activate_fusion(ability, effect_strength)
+		if ability in ["ghost_signal", "stasis_lock"]:
+			_try_hijack(true)
 		return true
 	if ability == "aegis":
 		# A well-read telegraph earns a small resource rebate; blind cooldown
@@ -4347,6 +4738,8 @@ func activate(ability: String) -> bool:
 	elif ability == "salvage":
 		salvage_left = (10.0 + upgrades.salvage * 1.0) * effect_strength
 		salvage_window_cores = 0
+	if ability in ["jammer", "emp", "decoy"]:
+		_try_hijack(true)
 	if ability not in ["aegis", "nova", "ion_mine"]:
 		effects.append({"kind":ability, "p":ship_position(), "life":0.6, "max_life":0.6, "born":tick})
 	return true
@@ -4496,6 +4889,8 @@ func _recipe_rank(id: String, picked: String, old_gain: int = 2) -> int:
 	return current + old_gain
 
 func _engine_recipe_progress(spec: Dictionary, picked: String = "") -> int:
+	if str(spec.id) == "hijacker" and not campaign_choreography_active():
+		return 0
 	var primary: String = str(spec.primary)
 	var secondary: String = str(spec.secondary)
 	var primary_rank: int = _recipe_rank(primary, picked)
@@ -4539,6 +4934,8 @@ func _engine_relevance_score(id: String) -> int:
 			continue
 		var primary: String = str(spec.primary)
 		var secondary: String = str(spec.secondary)
+		if str(spec.id) == "hijacker" and not campaign_choreography_active():
+			continue
 		var focus: int = int(upgrades.get(primary, 0)) + int(upgrades.get(secondary, 0))
 		if focus < 2:
 			continue
@@ -4906,10 +5303,20 @@ func snapshot() -> Dictionary:
 			state["intro_clear_at"] = intro_clear_at
 	for key in ["archive_challenge_version", "signal_count", "signal_status", "signal_until", "secret_entered", "secret_intro_pending", "secret_payout", "archive_next_attack", "archive_attack_until", "archive_exposed_until", "archive_phase", "archive_phase_released", "archive_attack", "archive_attack_x"]:
 		state[key] = get(key)
-	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
+	for key in ["capacity_milestones", "prototypes", "prototype_offers", "intermission_step", "route_choice", "stage_power", "stage_risk", "stage_defense", "stage_fire_rate", "bounty_earned", "safeguard_used", "shieldstorm_pulse_used", "boss_spawn_time", "late_boss_phase", "seed_value", "ship_id", "pilot_id", "artifact_id", "mutations", "mutation_feedback_next_tick", "lance_refund_ready", "merchant_enabled", "merchant_state", "merchant_offers", "merchant_selected", "merchant_next_at", "merchant_seen_stages", "merchant_visits", "merchant_trade_count", "merchant_pact_power", "merchant_trade_log", "sentry_left", "sentry_timer", "engineer_service_used", "ace_chain", "ace_chain_left", "hunter_target_id", "hunter_mark_left", "hunter_mark_cooldown", "tactician_counter_used", "pilot_procs", "engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs", "hijacked_ships", "hijack_ready_at", "hijack_lost", "hijack_blocked", "rival_record", "rival_stage", "rival_spawn_at", "rival_spawned", "rival_intro_pending", "rival_retire_pending", "rival_outcome", "last_killing_source", "movement_version", "difficulty", "daily_day", "daily_attempt", "stage", "start_world", "catch_up_levels", "draft_rng_ready", "endless_enabled", "campaign_choreography_version", "encounter_index", "encounter_queue", "next_encounter_at", "next_pressure_wave_at", "spawn_rhythm_slot", "pressure_waves", "opening_scout_wave", "boss_attack_pattern", "cooldown_totals", "stage_start", "stage_clears", "stage_transition_queued", "active_slots", "build_choices_active", "weapon_evolutions", "pending_build_choices", "fusion_declined", "evolution_lifeline_tick", "evolution_cue_next_tick", "next_hazard", "tick", "time", "hull", "max_hull", "shield", "max_shield", "shield_offline", "aegis_left", "cooldowns", "upgrades", "enemies", "bullets", "shots", "effects", "charges", "events", "damage_taken", "damage_dealt", "xp", "level", "kills", "cards", "pending_levels", "ended", "won", "next_spawn", "wave_drift", "hive_timer", "codex_seen", "pulse_timer", "seeker_timer", "heavy_ready_at", "boss_spawned", "next_id", "ability_uses", "prevented", "beams_fired", "beams_cancelled", "last_heavy_hit_tick", "meta"]:
 		state[key] = get(key)
 	for key in ["expedition_rules", "destination_rules_version", "smuggler_draft_pending", "smuggler_draft_open", "destination_choice", "route_offers", "mutation_offers", "mutation_lab_seen", "stage_casts", "escort_left", "escort_timer", "escort_count", "escort_damage", "ion_mines", "guard_left", "guard_timer", "guard_count", "aftercast_left", "overdrive_left", "chrono_left", "emp_left", "barrier_left", "focus_left", "decoy_left", "jammer_left", "salvage_left", "corrosion_left", "heat_left", "gravity_left", "last_boss_position", "bonus_cores", "choice_cores", "mend_left", "mend_rate", "emergency_used", "second_wind_used", "salvage_window_cores", "arc_timer", "lance_timer", "rerolls_left", "pilot_rerolls_left", "banishes_left", "skips_left", "banished"]:
 		state[key] = get(key)
+	# Pre-choreography flights are intentionally version 0. Keep their exact
+	# checkpoint representation, including the frozen Archive qualification
+	# gates, rather than serializing unsupported feature defaults into them.
+	# Runtime engine counters still contain all current IDs for safe access.
+	if campaign_choreography_version == 0:
+		for key in ["campaign_choreography_version", "hijacked_ships", "hijack_ready_at", "hijack_lost", "hijack_blocked"]:
+			state.erase(key)
+		var old_procs: Dictionary = engine_procs.duplicate(true)
+		old_procs.erase("hijacker")
+		state["engine_procs"] = old_procs
 	return state.duplicate(true)
 
 func restore(state: Dictionary) -> bool:
@@ -4930,6 +5337,13 @@ func restore(state: Dictionary) -> bool:
 				set(key, state[key].duplicate(true))
 			else:
 				set(key, state[key])
+	if not state.has("campaign_choreography_version"):
+		campaign_choreography_version = 0
+	if not state.has("hijacked_ships"):
+		hijacked_ships.clear()
+		hijack_ready_at = 0.0
+		hijack_lost = 0
+		hijack_blocked = 0
 	if not state.has("intro_campaign_waves"):
 		intro_campaign_waves = false
 		intro_clear_at = -1.0

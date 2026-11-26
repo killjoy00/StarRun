@@ -1224,6 +1224,7 @@ func _test_roguelike_variation() -> void:
 func _test_elite_squad_counterplay() -> void:
 	# Promote existing normal spawn slots, never additional enemies/XP.
 	var opener := Sim.new(7600, {}, "vanguard", "rookie", "hard")
+	opener.campaign_choreography_version = 0 # Explicit legacy queue fixture.
 	opener._spawn_encounter()
 	check(opener.encounter_queue.size() == 3 and opener.encounter_queue[0] is String, "Hard World 1 retains its old staggered, non-elite formation queue")
 	var normal_opener := Sim.new(7600, {}, "vanguard", "rookie", "normal")
@@ -1274,7 +1275,7 @@ func _test_elite_squad_counterplay() -> void:
 	late.stage = 3
 	late.encounter_index = 1
 	late._spawn_encounter()
-	check(late.encounter_queue.size() == 3 and late.encounter_queue[0] is String, "Other formations remain ordinary and World 3 encounters alternate")
+	check(late.encounter_queue.size() == 3 and not late.encounter_queue[0].has("squad"), "Other formations remain ordinary and World 3 encounters alternate")
 	late.encounter_queue.clear()
 	late.stage = 4
 	late.encounter_index = 0
@@ -1657,7 +1658,7 @@ func _test_boss_scaling_and_hangar_expansion() -> void:
 	var held := Sim.new(18802, saved_hangar)
 	var resumed := Sim.new(1)
 	check(resumed.restore(held.snapshot()) and resumed.snapshot() == held.snapshot(), "Expanded Hangar track values and newly introduced tracks round-trip in existing save schema")
-	check(is_equal_approx(held.max_hull, float(Catalog.ship("vanguard").hull) + 70.0) and is_equal_approx(held.max_shield, float(Catalog.ship("vanguard").shield) + 56.0), "One more Hull and Shield capacitor rank increases actual starting survival")
+	check(is_equal_approx(held.max_hull, float(Catalog.ship("vanguard").hull) + 84.0) and is_equal_approx(held.max_shield, float(Catalog.ship("vanguard").shield) + 70.0), "One more Hull and Shield capacitor rank increases actual starting survival")
 	# On the same stage, the new boss-specific difficulty curve must rise
 	# faster than the ordinary enemy difficulty curve, without new enemies.
 	for stage_number in [1, 2, 3, 4]:
@@ -1976,11 +1977,44 @@ func _test_homing_and_modules() -> void:
 	check(sim.damage_dealt.arc > 0 and sim.damage_dealt.lance > 0, "Both new automatic weapons must actually damage enemies")
 
 func _test_hangar_and_tactics() -> void:
+	# Compare the actual seven earned effects on the same ship and seed.
+	var plain := Sim.new(5001)
+	var legacy_plain := Sim.new(5001, {}, "vanguard", "rookie", "normal", "standard", false)
+	var ranks := {"hull":10, "shield":10, "damage":10, "fire_rate":10, "ability_power":5, "ability_cooldown":5, "xp":5, "cores":3, "rerolls":2, "beam_plating":4, "repair":3}
+	var revised := Sim.new(5001, ranks)
+	var legacy := Sim.new(5001, ranks, "vanguard", "rookie", "normal", "standard", false)
+	check(is_equal_approx(plain.max_hull, legacy_plain.max_hull) and is_equal_approx(plain.weapon_power(), legacy_plain.weapon_power()), "Zero Hangar retains base stats")
+	check(is_equal_approx(revised.max_hull - plain.max_hull, 120.0) and is_equal_approx(revised.max_shield - plain.max_shield, 100.0), "Revised Hangar grants exactly 12 hull and 10 shield per rank")
+	check(is_equal_approx(revised.weapon_power(), plain.weapon_power() * 2.0), "Ten Munitions ranks add 100 percent weapon damage")
+	check(is_equal_approx(revised.gun_rate(), plain.gun_rate() * 1.60), "Ten Feed accelerator ranks add 60 percent gun fire rate")
+	check(is_equal_approx(revised.ability_power(), plain.ability_power() * 1.40), "Five Flux amplifier ranks add 40 percent ability power")
+	check(revised.activate("aegis") and plain.activate("aegis") and legacy.activate("aegis"), "Compare real ability activations")
+	check(is_equal_approx(revised.cooldowns.aegis, plain.cooldowns.aegis * 0.80) and is_equal_approx(legacy.cooldowns.aegis, plain.cooldowns.aegis * 0.85), "Five Reactor cooling ranks reduce cooldowns by 20 percent instead of 15")
+	revised._award_enemy_xp(10.0)
+	legacy._award_enemy_xp(10.0)
+	check(is_equal_approx(revised.xp, 12.5) and is_equal_approx(legacy.xp, 13.0), "Data harvester adds 5 percent XP per rank instead of 6")
+	check(revised.meta == legacy.meta and revised.payout() == legacy.payout() and revised.rerolls_left == legacy.rerolls_left, "Ranks, Core payout and draft uses unchanged")
+	for fixture in [revised, legacy]:
+		fixture.aegis_left = 0.0
+		fixture.shield = 0.0
+	var revised_hp: float = revised.hull
+	var legacy_hp: float = legacy.hull
+	revised._hit(20.0, "heavy", "test beam")
+	legacy._hit(20.0, "heavy", "test beam")
+	check(is_equal_approx(revised_hp - revised.hull, legacy_hp - legacy.hull), "Unlisted beam plating effect remains unchanged")
+	legacy.daily_day = "2026-11-26"
+	check(is_equal_approx(legacy.hangar_rank_bonus("xp"), 0.06) and is_equal_approx(legacy.max_hull, plain.max_hull + 100.0), "Daily retains the original XP and hull effects")
+	var legacy_state: Dictionary = legacy.snapshot()
+	var legacy_loaded := Sim.new()
+	check(legacy_loaded.restore(legacy_state) and legacy_loaded.snapshot() == legacy_state and is_equal_approx(legacy_loaded.hangar_rank_bonus("damage"),0.08), "Old Daily and regular checkpoints retain their exact previous balance")
+	var revised_state: Dictionary = revised.snapshot()
+	var revised_loaded := Sim.new()
+	check(revised_loaded.restore(revised_state) and revised_loaded.snapshot() == revised_state and is_equal_approx(revised_loaded.hangar_rank_bonus("damage"),0.10), "Revised Hangar flight saves and resumes with new balance")
 	var hangar := Catalog.defaults()
 	for id in hangar:
 		hangar[id] = 1
 	var sim := Sim.new(555, hangar)
-	check(sim.max_hull == float(Catalog.ship("vanguard").hull) + 10.0 and sim.max_shield == float(Catalog.ship("vanguard").shield) + 8.0, "Hangar defenses must apply at launch")
+	check(is_equal_approx(sim.max_hull, float(Catalog.ship("vanguard").hull) + 12.0) and is_equal_approx(sim.max_shield, float(Catalog.ship("vanguard").shield) + 10.0), "Hangar defenses must apply at launch")
 	check(sim.upgrades.pulse == 2 and sim.upgrades.seeker == 2, "Starting weapon upgrades must apply to new flights")
 	check(sim.weapon_power() > 1 and sim.payout() > Sim.new().payout(), "Armory and salvage tracks must change actual damage and rewards")
 	sim._offer_cards()
@@ -2446,7 +2480,7 @@ func _test_extended_hangar() -> void:
 	for item in Catalog.HANGAR:
 		full[str(item.id)] = int(item.max)
 	var strong := Sim.new(5150, full)
-	check(is_equal_approx(strong.max_hull, float(Catalog.ship("vanguard").hull) + 150.0), "Fifteen hull ranks add 150 hull")
+	check(is_equal_approx(strong.max_hull, float(Catalog.ship("vanguard").hull) + 180.0), "Fifteen hull ranks add 180 hull")
 	# Second wind: one killing blow is survived per run.
 	var survivor := Sim.new(5151, {"second_wind": 1})
 	survivor.shield = 0.0
@@ -2503,6 +2537,7 @@ func _test_stage_difficulty_and_pressure() -> void:
 	var hard_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "hard")
 	var insane_boss_volley := Sim.new(8091, {}, "vanguard", "rookie", "insane")
 	for pilot in [hard_boss_volley, insane_boss_volley]:
+		pilot.campaign_choreography_version = 0 # Legacy simultaneous-volley cadence.
 		pilot._spawn_boss()
 		pilot.enemies[0].fire = 0.0
 		pilot._update_enemies()
@@ -2661,6 +2696,10 @@ func _test_boss_components_and_phases() -> void:
 	void_boss._damage_enemy(regent, 100.0, "nova")
 	check(shielded_hp - regent.hp < 40.0, "Shield pylons protect the Regent before the modules are destroyed")
 	void_boss.heavy_ready_at = 0.0
+	regent["campaign_attack_index"] = 2
+	regent.erase("arrive_y")
+	regent.p.y = 135.0
+	regent.fire = 0.0
 	void_boss._update_enemies()
 	check(void_boss.charges.size() == 2, "Both pylons still sustain two telegraphed heavy attack lanes")
 	void_boss._damage_enemy(regent, 99999999.0, "nova")
@@ -3198,9 +3237,16 @@ func _test_new_stage_threats() -> void:
 	sim.enemies.clear()
 	sim.bullets.clear()
 	sim._spawn_boss()
+	# In regular flights the Regent alternates status barrages and the beam
+	# attack. Exercise the beam turn after visible entry, not at spawn.
+	var regent_core: Dictionary = sim._boss_core()
+	regent_core["campaign_attack_index"] = 2
+	regent_core.erase("arrive_y")
+	regent_core.p.y = 135.0
+	regent_core.fire = 0.0
 	sim.heavy_ready_at = 0.0
 	sim._update_enemies()
-	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0, "Final boss must telegraph two distinct heavy lanes")
+	check(sim.charges.size() == 2 and sim.charges[0].remaining >= 1.0 and sim.charges[0].x != sim.charges[1].x and sim.charges[0].source != sim.charges[1].source, "Final boss must telegraph two distinct heavy lanes")
 	sim._hit(2.0, "void", "test")
 	check(sim.hull < sim.max_hull, "Void shots must meaningfully bypass shields")
 	var bleed := Sim.new(9081)

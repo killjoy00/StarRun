@@ -1198,7 +1198,8 @@
       "secondary": "repair_bots",
       "third": "wing_drones",
       "description": "Kills and boss fights charge drones that shoot and repair you."
-    }
+    },
+    {"id":"hijacker","name":"Hijacker","primary":"jammer","secondary":"emp","third":"decoy","description":"Capture weakened enemy ships. Jammer and EMP enable one capture on cast; add Decoy Beacon for two automatic captures, then master all three for a fleet of three. Captured ships fight until destroyed."}
   ],
   "boss_modules": {
     "boss2": [

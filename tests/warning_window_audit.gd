@@ -33,19 +33,34 @@ func _run() -> void:
 			var sim := Sim.new(70102 + stage, {}, "vanguard", "rookie", difficulty)
 			sim.stage = stage
 			sim._spawn_boss()
+			var core: Dictionary = sim._boss_core()
 			sim.heavy_ready_at = sim.time
-			sim._update_enemies()
+			# Audit the real attack rotation after entry. Harvester and Regent
+			# each fire two ordinary attacks before their first charged beam.
+			if stage in [1, 4]:
+				core.erase("arrive_y")
+				core.p.y = 135.0
+				for turn in range(3):
+					core.fire = 0.0
+					sim._update_enemies()
+					if turn < 2:
+						check(sim.charges.is_empty() and int(core.campaign_attack_index) == turn + 1, "World %d ordinary attack %d precedes the beam" % [stage, turn + 1])
+				if stage == 4:
+					check(sim.charges.size() == 2 and int(sim.charges[0].source) != int(sim.charges[1].source), "Regent's two intact pylons charge distinct lanes")
+			else:
+				sim._update_enemies()
 			check(not sim.charges.is_empty(), "World %d boss has a charge lane" % stage)
 			if sim.charges.is_empty():
 				continue
-			var charge: Dictionary = sim.charges[0]
-			var warning: float = float(charge.remaining)
-			for speed in [1.0, 3.0]:
-				_record("world_%d_heavy_beam" % stage, difficulty, warning, speed, "charged_warning")
+			for lane in range(sim.charges.size()):
+				var charge: Dictionary = sim.charges[lane]
+				var warning: float = float(charge.remaining)
+				check(warning >= 1.0, "World %d charged beam retains a full second of game-time warning" % stage)
+				for speed in [1.0, 3.0]:
+					_record("world_%d_heavy_beam_%d" % [stage, lane + 1], difficulty, warning, speed, "charged_warning")
 			# Actual surge projectiles are dodgeable; this travel estimate is
 			# explicitly NOT a warning or a guarantee of on-screen visibility.
 			if stage in [3, 4]:
-				var core: Dictionary = sim._boss_core()
 				sim._late_boss_phase_surge(core)
 				var shot: Dictionary = sim.bullets[-1]
 				var travel: float = shot.p.distance_to(sim.ship_position()) / shot.v.length()

@@ -94,6 +94,8 @@ func _equip_engine(sim: RefCounted, id: String) -> void:
 		sim.upgrades[third] = 2
 		if third == "wing_drones" and third not in sim.active_slots:
 			sim.active_slots.append(third)
+		if id == "hijacker":
+			sim.active_slots = ["jammer", "emp", "decoy"]
 		return
 
 func _engine_cell(ship: String, stage: int, id: String, seed: int) -> void:
@@ -117,6 +119,10 @@ func _engine_cell(ship: String, stage: int, id: String, seed: int) -> void:
 		"fortress_reactor":
 			for i in range(490):
 				sim._update_build_engines()
+		"hijacker":
+			target.hp = target.max_hp * 0.30
+			sim._update_build_engines()
+			check(sim.hijacked_ships.size() == 1 and not sim.enemies.has(target), "Hijacker converts a genuine weakened enemy")
 		"salvage_carrier":
 			# Earn all six support charges from real, damageable enemies.
 			for i in range(6):
@@ -166,7 +172,7 @@ func _run() -> void:
 				_engine_cell(ship, stage, str(spec.id),
 					980000 + ship_index * 10000 + stage * 1000 + engine_cells)
 				engine_cells += 1
-	check(evolution_cells == ships.size() * 3 * 8 and engine_cells == ships.size() * 3 * 6, "%d ships × 3 worlds × 8 evolutions and 6 engines" % ships.size())
+	check(evolution_cells == ships.size() * 3 * 8 and engine_cells == ships.size() * 3 * 7, "%d ships × 3 worlds × 8 evolutions and 7 engines" % ships.size())
 	# The debrief credits observed mechanisms only and never attributes
 	# generic escort damage to the Salvage engine.
 	var recap := Sim.new(990000)

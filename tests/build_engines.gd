@@ -36,7 +36,7 @@ func _target(sim: RefCounted, id: int = 1, elite: bool = false) -> Dictionary:
 
 func _run() -> void:
 	var catalog := Sim.new(71000)
-	check(catalog.content.build_engines.size() == 6, "six engines defined in the live content catalog")
+	check(catalog.content.build_engines.size() == 7, "seven engines defined in the live content catalog")
 	var ids: Array = []
 	for spec in catalog.content.build_engines:
 		var id: String = str(spec.id)
@@ -65,7 +65,7 @@ func _run() -> void:
 		for k in ["engine_execution_target", "engine_execution_hits", "engine_execution_ready_tick", "engine_siege_target", "engine_siege_stacks", "engine_siege_expires", "engine_storm_marks", "engine_storm_ready_tick", "engine_prism_target", "engine_prism_hits", "engine_prism_ready_tick", "engine_fortress_charge", "engine_salvage_charge", "engine_salvage_ready_tick", "engine_procs"]:
 			old.erase(k)
 		var migrated := Sim.new()
-		check(migrated.restore(old) and migrated.engine_procs.size() == 6, id + " accepts older save without engine state")
+		check(migrated.restore(old) and migrated.engine_procs.size() == 7, id + " accepts older save without engine state")
 	var execution := Sim.new(72001)
 	execution.stage = 2
 	_equip(execution, "execution_network")

@@ -44,27 +44,37 @@ const SHIPS := [
 	{"id":"lancer", "signature":"prism", "name":"Lancer · Beam frigate", "cost":120, "buy_only":true, "description":"Beams. Starts with Prism lance instead of Pulse. The lance fires twice as often and hits twice as hard. Starts with Prism reversal.", "hull":100, "shield":50, "pulse":0, "seeker":0, "arc":0, "lance":1, "mend":0, "movement":1.05, "fire_rate":1.0}
 ]
 
+# Per-rank permanent bonuses for new regular runs. Old checkpoints and
+# Daily use the original values so their balance/replays are not changed.
+const HANGAR_RANK_BONUSES := {
+	"hull":12.0, "shield":10.0, "damage":0.10, "fire_rate":0.06,
+	"ability_power":0.08, "ability_cooldown":0.04, "xp":0.05
+}
+const LEGACY_HANGAR_RANK_BONUSES := {
+	"hull":10.0, "shield":8.0, "damage":0.08, "fire_rate":0.05,
+	"ability_power":0.06, "ability_cooldown":0.03, "xp":0.06
+}
 const GROUPS := ["Hull", "Weapons", "Abilities", "Tactics", "Salvage"]
 const HANGAR := [
-	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+10 starting hull per rank.", "max":15, "tier_from":7, "tier_step":4, "tier_scale":10, "cost":5, "step":0},
-	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+8 starting shield per rank.", "max":15, "tier_from":7, "tier_step":4, "tier_scale":10, "cost":5, "step":2},
+	{"id":"hull", "name":"Hull plating", "group":"Hull", "description":"+12 starting hull per rank.", "max":15, "tier_from":7, "tier_step":4, "tier_scale":10, "cost":5, "step":0},
+	{"id":"shield", "name":"Shield capacitor", "group":"Hull", "description":"+10 starting shield per rank.", "max":15, "tier_from":7, "tier_step":4, "tier_scale":10, "cost":5, "step":2},
 	{"id":"armor", "name":"Ceramic mesh", "group":"Hull", "description":"Small bullets do 0.12 less damage per rank.", "max":6, "tier_from":4, "tier_step":6, "tier_scale":10, "cost":6, "step":2},
 	{"id":"regen", "name":"Shield lab", "group":"Hull", "description":"Shield recharges faster: +0.25 per second at rank 1, then +0.30 per rank.", "max":10, "tier_from":6, "tier_step":4, "tier_scale":10, "cost":5, "step":0},
 	{"id":"repair", "name":"Maintenance bots", "group":"Hull", "description":"Slowly repair hull: 0.15 per second at rank 1, then +0.20 per rank.", "max":8, "tier_from":4, "tier_step":5, "tier_scale":10, "cost":8, "step":3},
-	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"Guns do 8% more damage per rank.", "max":12, "tier_from":5, "tier_step":6, "tier_scale":10, "cost":5, "step":0},
-	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"Guns fire 5% faster per rank.", "max":10, "tier_from":5, "tier_step":6, "tier_scale":10, "cost":7, "step":2},
+	{"id":"damage", "name":"Munitions lab", "group":"Weapons", "description":"Guns do 10% more damage per rank.", "max":12, "tier_from":5, "tier_step":6, "tier_scale":10, "cost":5, "step":0},
+	{"id":"fire_rate", "name":"Feed accelerator", "group":"Weapons", "description":"Guns fire 6% faster per rank.", "max":10, "tier_from":5, "tier_step":6, "tier_scale":10, "cost":7, "step":2},
 	{"id":"guidance", "name":"Guidance array", "group":"Weapons", "description":"Pulse aims wider and curves more toward enemies.", "max":4, "cost":6, "step":2},
 	{"id":"pulse_start", "name":"Pulse precharge", "group":"Weapons", "description":"Start every run with Pulse at rank 2.", "max":1, "cost":15, "step":0},
 	{"id":"seeker_start", "name":"Loaded pods", "group":"Weapons", "description":"Start every run with Seeker at rank 2.", "max":1, "cost":15, "step":0},
-	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Abilities recharge 3% faster per rank.", "max":10, "tier_from":6, "tier_step":5, "tier_scale":10, "cost":7, "step":3},
-	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 6% more damage, healing and duration per rank.", "max":10, "tier_from":5, "tier_step":5, "tier_scale":10, "cost":7, "step":3},
+	{"id":"ability_cooldown", "name":"Reactor cooling", "group":"Abilities", "description":"Ability cooldowns are 4% shorter per rank.", "max":10, "tier_from":6, "tier_step":5, "tier_scale":10, "cost":7, "step":3},
+	{"id":"ability_power", "name":"Flux amplifier", "group":"Abilities", "description":"Abilities do 8% more damage, healing and duration per rank.", "max":10, "tier_from":5, "tier_step":5, "tier_scale":10, "cost":7, "step":3},
 	{"id":"reserve_shield", "name":"Cast capacitor", "group":"Abilities", "description":"Get 5 shield every time you use an ability.", "max":3, "cost":10, "step":4},
 	{"id":"emergency", "name":"Emergency field", "group":"Abilities", "description":"Once per run, become immune for 1.5 seconds when your hull gets low. +0.5 seconds at rank 2.", "max":2, "cost":12, "step":8},
 	{"id":"extra_card", "name":"Extra choice", "group":"Tactics", "description":"Pick from 4 upgrades instead of 3.", "max":1, "cost":15, "step":0},
 	{"id":"rerolls", "name":"Rerolls", "group":"Tactics", "description":"1 reroll per rank for the whole run. A reroll swaps the upgrade choices for new ones.", "max":6, "cost":5, "step":2},
 	{"id":"banishes", "name":"Removes", "group":"Tactics", "description":"Take an upgrade out of this run so it never shows up. 1 per rank.", "max":3, "cost":7, "step":3},
 	{"id":"skips", "name":"Skips", "group":"Tactics", "description":"Skip an upgrade pick and repair 12 hull. 1 per rank.", "max":3, "cost":5, "step":2},
-	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"6% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "tier_scale":10, "cost":6, "step":2},
+	{"id":"xp", "name":"Data harvester", "group":"Salvage", "description":"5% more XP from kills per rank.", "max":8, "tier_from":5, "tier_step":4, "tier_scale":10, "cost":6, "step":2},
 	{"id":"cores", "name":"Salvage rig", "group":"Salvage", "description":"8% more Cores after every run per rank.", "max":5, "cost":6, "step":2},
 	{"id":"stipend", "name":"Recovery contract", "group":"Salvage", "description":"Every run pays at least 2 more Cores per rank.", "max":3, "cost":8, "step":3},
 	{"id":"bounty", "name":"Harvester bounty", "group":"Salvage", "description":"5 more Cores per rank for beating a boss.", "max":3, "cost":8, "step":4},

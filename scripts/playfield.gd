@@ -163,7 +163,7 @@ func _draw() -> void:
 		var p: Vector2 = sim.ship_position(sim.time + i / 12.0)
 		draw_circle(p, 1.7, Color(0.4, 0.95, 0.85, (24 - i) / 90.0))
 	for shot in sim.shots:
-		var color := CYAN if shot.weapon in ["pulse", "escort"] else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
+		var color := CYAN if shot.weapon in ["pulse", "escort", "engine_hijacker"] else (Color("d8a4ff") if shot.weapon == "barrage" else AMBER)
 		if shot.has("fusion"):
 			color = FusionArt.PALETTES[str(shot.fusion)][0]
 		var direction: Vector2 = shot.v.normalized()
@@ -182,6 +182,7 @@ func _draw() -> void:
 	if sim.intro_run and sim.time < 2.1 and not profile.reduced:
 		_draw_first_flight_launch(ship)
 	_draw_support()
+	_draw_hijacked_ships()
 	# Friendly effects can be bright; all live threats are composited above them.
 	for effect in sim.effects:
 		if effect.kind not in ["beam", "shield-break", "fusion-formed", "beam-canceled", "elite-broken", "mutation-installed", "mutation-proc", "boss-module-break", "boss-phase-break", "engine-online", "engine-proc", "evolution-proc", "custodian-shield", "archive-feedback"]:
@@ -1080,6 +1081,18 @@ func _draw_effect(effect: Dictionary) -> void:
 			draw_arc(p,radius,angle,angle+TAU/9,20,Color("bba5ef",alpha),2.5,true)
 			var point := p+Vector2.from_angle(angle)*radius*0.75
 			draw_circle(point,2,Color(CYAN,alpha))
+	elif effect.kind == "hijack-capture":
+		var mint := Color("75efd1")
+		var radius := 25.0 + age * 40.0
+		draw_arc(p, radius, 0.0, TAU, 40, Color(mint, alpha), 3.0, true)
+		draw_string(ThemeDB.fallback_font, p + Vector2(-55.0,-45.0), "HIJACKED", HORIZONTAL_ALIGNMENT_CENTER, 110, 16, Color(mint, alpha))
+	elif effect.kind == "vent-release":
+		# Orange heat expanding away from the destroyed vent, with no flash.
+		for i in range(6):
+			var axis := Vector2.from_angle(TAU * float(i) / 6.0)
+			var distance := 16.0 + age * 84.0
+			draw_line(p + axis * distance, p + axis * (distance + 22.0), Color(AMBER, alpha * 0.85), 3.0, true)
+		draw_arc(p, 25.0 + age * 58.0, 0.0, TAU, 40, Color(AMBER, alpha * 0.68), 2.5, true)
 	elif effect.kind == "wing_drones":
 		for side in [-1,1]:
 			draw_arc(p+Vector2(side*46,8),18+age*24,-PI,0,24,Color(CYAN,alpha),2,true)
@@ -1326,6 +1339,35 @@ func _glow(p: Vector2, radius: float, color: Color) -> void:
 func _bar(rect: Rect2, fraction: float, color: Color) -> void:
 	draw_rect(rect, Color("1d2a3b"))
 	draw_rect(Rect2(rect.position, Vector2(rect.size.x * clampf(fraction, 0, 1), rect.size.y)), color)
+
+func _draw_hijacked_ships() -> void:
+	var tint := Color("75efd1")
+	for ally in sim.hijacked_ships:
+		var p: Vector2 = ally.p
+		var kind: String = str(ally.kind)
+		var role: String = str(ally.role)
+		# The same silhouettes as enemy ships, rotated toward the enemy and
+		# unmistakably identified by a mint outline, health bar and reticle.
+		draw_set_transform(p, PI, Vector2(0.72, 0.72))
+		if _custom_enemy(kind):
+			_draw_custom_enemy(kind)
+		else:
+			var art_key: String = kind if SHIPS.has(kind) else ("gunship" if role in ["bomber", "guard", "carrier", "disruptor"] else "drone")
+			draw_texture_rect(SHIPS[art_key], Rect2(-33,-33,66,66), false, tint)
+		draw_set_transform(Vector2.ZERO)
+		draw_arc(p, 31.0, 0.0, TAU, 40, Color(tint, 0.9), 2.2, true)
+		if role == "guard":
+			draw_arc(p, 68.0, PI * 1.10, PI * 1.90, 22, Color(tint,0.55), 2.0, true)
+		if role == "carrier" and float(ally.get("sortie_until", 0.0)) > sim.time:
+			for side in [-1,1]:
+				var wing: Vector2 = p + Vector2(side * 40.0,-24.0)
+				var hull := PackedVector2Array([wing+Vector2(0,-10),wing+Vector2(8,8),wing,wing+Vector2(-8,8)])
+				draw_colored_polygon(hull, Color("194f45"))
+				FusionArt.outline(self,hull,tint,1.5)
+		var hp_fraction: float = clampf(float(ally.hp) / maxf(1.0, float(ally.max_hp)), 0.0, 1.0)
+		draw_rect(Rect2(p+Vector2(-23,34),Vector2(46,4)), Color("152531"))
+		draw_rect(Rect2(p+Vector2(-23,34),Vector2(46*hp_fraction,4)), tint)
+		draw_string(ThemeDB.fallback_font, p+Vector2(-43,50), role.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, 86, 12, tint)
 
 func _draw_support() -> void:
 	# Engineer's field sentry is a visible ship-mounted turret, separate from
