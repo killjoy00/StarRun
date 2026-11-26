@@ -91,6 +91,14 @@ func _run() -> void:
 			check(sim.shots.size() == 2 and float(sim.hijacked_ships[0].sortie_until) > sim.time, "carrier launches a visible two-fighter sortie")
 		if kind == "arc_spire" or kind == "void_lancer":
 			check(float(sim.damage_dealt.get("engine_hijacker",0.0)) > 0.0, "direct damage is attributed to captured ship")
+	var burst := _setup(2)
+	var incoming: Dictionary = _enemy(burst,"gunship",1.0)
+	incoming.p.y = -35.0
+	burst._damage_enemy(incoming,99999999.0,"pulse")
+	check(burst.hijacked_ships.size() == 1 and incoming.hp == 0.0 and burst.kills == 0, "lethal automatic hits still capture incoming ships")
+	var once: float = burst.xp
+	burst._damage_enemy(incoming,99999999.0,"pulse")
+	check(burst.xp == once and burst.hijacked_ships.size() == 1, "lethal-hit capture cannot repeat rewards")
 	var protected := _setup()
 	var leader: Dictionary = _enemy(protected,"gunship")
 	leader["elite_role"] = "leader"

@@ -1564,9 +1564,9 @@ func hijack_capacity() -> int:
 		return 1
 	return tier
 
-func _hijack_eligible(enemy: Dictionary, threshold: float) -> bool:
+func _hijack_eligible(enemy: Dictionary, threshold: float, incoming: bool = false) -> bool:
 	var kind: String = str(enemy.kind)
-	return HIJACK_ROLES.has(kind) and float(enemy.hp) > 0.0 and float(enemy.hp) <= float(enemy.max_hp) * threshold and not enemy.has("arrive_y") and enemy.p.y >= 20.0 and enemy.p.y < 720.0 and not enemy.has("pack_id") and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)) and not bool(enemy.get("no_reward", false)) and not bool(enemy.get("pressure_wing", false)) and str(enemy.get("elite_role", "")) != "leader"
+	return HIJACK_ROLES.has(kind) and float(enemy.hp) > 0.0 and float(enemy.hp) <= float(enemy.max_hp) * threshold and (incoming or not enemy.has("arrive_y")) and enemy.p.y >= (-140.0 if incoming else 20.0) and enemy.p.y < 720.0 and not enemy.has("pack_id") and not bool(enemy.get("rival", false)) and not bool(enemy.get("rival_escort", false)) and not bool(enemy.get("no_reward", false)) and not bool(enemy.get("pressure_wing", false)) and str(enemy.get("elite_role", "")) != "leader"
 
 func _try_hijack(manual: bool = false) -> bool:
 	var capacity: int = hijack_capacity()
@@ -1584,6 +1584,13 @@ func _try_hijack(manual: bool = false) -> bool:
 			target = enemy
 	if target.is_empty():
 		return false
+	_convert_hijacked_ship(target, capacity)
+	enemies.erase(target)
+	return true
+
+# Do not remove from the enemy array inside damage loops; lethal-hit
+# captures leave a zero-HP record for the normal simulation cleanup.
+func _convert_hijacked_ship(target: Dictionary, capacity: int) -> void:
 	var origin: Vector2 = target.p
 	var kind: String = str(target.kind)
 	var identity: int = int(target.id)
@@ -1596,13 +1603,12 @@ func _try_hijack(manual: bool = false) -> bool:
 	charges = charges.filter(func(c): return int(c.source) != identity)
 	beams_cancelled += before - charges.size()
 	target.hp = 0.0
-	enemies.erase(target)
 	hijack_ready_at = time + (7.0 if capacity == 3 else 10.0)
 	engine_procs.hijacker += 1
-	_engine_cue("hijacker", false, origin)
-	effects.append({"kind":"hijack-capture", "p":origin, "life":1.0, "max_life":1.0, "born":tick})
+	var cue_position := Vector2(origin.x, maxf(30.0, origin.y))
+	_engine_cue("hijacker", false, cue_position)
+	effects.append({"kind":"hijack-capture", "p":cue_position, "life":1.0, "max_life":1.0, "born":tick})
 	_log("%s HIJACKED · %d/%d" % [kind.replace("_", " ").to_upper(), hijacked_ships.size(), capacity])
-	return true
 
 func hijack_position(index: int) -> Vector2:
 	var offsets: Array[Vector2] = [Vector2(-103,-92), Vector2(103,-92), Vector2(0,-153)]
@@ -2938,6 +2944,10 @@ func _update_enemies() -> void:
 				_hit(17.0, "hazard", "Boulder collision")
 				enemy.hp = -1.0
 			continue
+		# Authored enemies enter the visible field before opening fire or
+		# issuing a beam warning. Old Daily and opener scripts are unchanged.
+		if bool(enemy.get("authored_formation", false)) and (arriving or enemy.p.y < 0.0):
+			continue
 		enemy.fire -= DT * pace * float(stage_spec().get("fire_scale", 1.0))
 		if campaign_choreography_active() and enemy.has("campaign_attack_index"):
 			if not arriving and enemy.fire <= 0.0:
@@ -4186,6 +4196,14 @@ func _damage_enemy(enemy: Dictionary, amount: float, weapon: String) -> void:
 		elif weapon == "arc" and evolution_id("arc") == "tempest" and not _engine_priority_target(enemy):
 			_evolution_feedback("tempest", enemy.p)
 	damage_dealt[weapon] = float(damage_dealt.get(weapon, 0.0)) + actual_damage
+	# A strong build can cross the entire capture band in a single hit.
+	# Convert the same enemy instead of requiring a lucky one-tick window.
+	# Only real auto-weapons qualify; ally damage cannot chain captures.
+	if actual_damage >= float(enemy.hp) and weapon in ["pulse", "seeker", "arc", "lance"] and int(upgrades.get("jammer", 0)) >= 5 and not boss_spawned and time >= hijack_ready_at:
+		var capacity: int = hijack_capacity()
+		if capacity >= 2 and hijacked_ships.size() < capacity and _hijack_eligible(enemy, 1.0, true):
+			_convert_hijacked_ship(enemy, capacity)
+			return
 	enemy.hp -= amount
 	if weapon in ["pulse", "seeker", "arc", "lance"]:
 		_evolution_on_weapon_hit(enemy, actual_damage, weapon)

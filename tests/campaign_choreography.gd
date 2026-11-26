@@ -56,6 +56,11 @@ func _run() -> void:
 			wave._spawn_enemy()
 		check(wave.enemies.size() == 3 and wave.encounter_queue.is_empty(), "no extra wave slots")
 		check(wave.enemies.all(func(e): return float(e.p.y) < 0.0 and int(e.xp) == int(wave.content.enemies[str(e.kind)].xp)), "entries are visible fly-ins with ordinary XP")
+		for enemy in wave.enemies:
+			enemy.fire = 0.0
+		wave.heavy_ready_at = 0.0
+		wave._update_enemies()
+		check(wave.bullets.is_empty() and wave.charges.is_empty(), "formation enemies do not fire or charge while offscreen")
 	for difficulty in ["normal", "hard", "insane"]:
 		var harvester := Sim.new(15, {}, "vanguard", "rookie", difficulty)
 		harvester._spawn_boss()
