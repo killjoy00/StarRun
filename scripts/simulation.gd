@@ -15,6 +15,10 @@ const MAXED_DRAFT_CORES := 5
 const REGULAR_CORE_MULTIPLIER := 1.30
 const NORMAL_WORLD2_WAVE_HEALTH := 0.98
 const NORMAL_WORLD3_WAVE_HEALTH := 1.10
+# Shift ordinary wave pressure from the Ion Storm bottleneck into the Foundry.
+# These multiply existing Normal wave HP only, preserving spawn/reward budgets.
+const NORMAL_WORLD2_WAVE_REBALANCE := 0.90
+const NORMAL_WORLD3_WAVE_REBALANCE := 1.10
 const NORMAL_WORLD3_BOSS_HEALTH_FACTOR := 1.15
 const REROLLS_PER_RANK := 1 # Hangar rerolls are a per-run total; they do not refill each world.
 # Starting later: the level a player has, on average, when they reach each
@@ -105,7 +109,7 @@ var draft_rng := RandomNumberGenerator.new()
 var draft_rng_ready := false
 var endless_enabled := false
 var endless_stage_spec: Dictionary = {}
-var campaign_choreography_version := 2 # v2 adds revised Hangar ranks; v0/v1 keep their rules.
+var campaign_choreography_version := 3 # v3 redistributes Normal W2/W3 wave health; earlier saves retain their rules.
 var encounter_index := 0
 var encounter_queue: Array = []
 var next_encounter_at := 50.0
@@ -1141,12 +1145,12 @@ func advanced_wave_health() -> float:
 	if stage not in [2, 3, 4]:
 		return 1.0
 	# The regular Normal World 2 wall was steeper than Worlds 3 and 4.
-	# Leave Daily, boss HP, World 1 and the harder difficulties untouched.
+	# Leave Daily, boss HP and boss-spawned escorts, World 1 and the harder difficulties untouched.
 	if difficulty == "normal" and daily_day.is_empty():
 		if stage == 2:
-			return NORMAL_WORLD2_WAVE_HEALTH
+			return NORMAL_WORLD2_WAVE_HEALTH * (NORMAL_WORLD2_WAVE_REBALANCE if campaign_choreography_version >= 3 and not boss_spawned else 1.0)
 		if stage == 3:
-			return NORMAL_WORLD3_WAVE_HEALTH
+			return NORMAL_WORLD3_WAVE_HEALTH * (NORMAL_WORLD3_WAVE_REBALANCE if campaign_choreography_version >= 3 and not boss_spawned else 1.0)
 	return {"normal": 1.06, "hard": 0.85, "insane": 0.85}[difficulty]
 
 func enemy_damage_multiplier() -> float:

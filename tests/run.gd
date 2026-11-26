@@ -2910,7 +2910,7 @@ func _test_route_prototype_balance_grid() -> void:
 		balanced.stage = late_stage
 		check(is_equal_approx(balanced.enemy_health_multiplier(), 0.90) and is_equal_approx(balanced.enemy_damage_multiplier(), 1.05), "World %d enemies have 10%% less health and 5%% more damage" % late_stage)
 		balanced._add_enemy("drone", Vector2(250, 100))
-		var wave_hp := 0.98 if late_stage == 2 else (1.10 if late_stage == 3 else 1.06)
+		var wave_hp := 0.882 if late_stage == 2 else (1.21 if late_stage == 3 else 1.06)
 		var expected_enemy_hp: float = float(balanced.content.enemies.drone.hp) * float(balanced.stage_spec().health_scale) * balanced.threat_scale() * 0.90 * wave_hp
 		check(is_equal_approx(balanced.advanced_wave_health(), wave_hp), "World %d uses the intended Normal wave health" % late_stage)
 		check(is_equal_approx(balanced.enemies[0].max_hp, expected_enemy_hp), "World %d regular enemies apply the intended health scaling" % late_stage)
@@ -2920,6 +2920,32 @@ func _test_route_prototype_balance_grid() -> void:
 		var module_spec: Dictionary = balanced.content.boss_modules[str(balanced.stage_spec().boss)][0]
 		var expected_module_hp: float = float(module_spec.hp) * balanced.threat_scale() * float(balanced.stage_spec().module_scale) * 0.90 * balanced.boss_health_pressure()
 		check(is_equal_approx(balanced.enemies[1].max_hp, expected_module_hp), "World %d boss parts scale alongside their core" % late_stage)
+	# Matched, real enemy spawns measure the exact balance shift without
+	# changing XP, initial fire times, spawn rate, or existing saved flights.
+	for world in [1, 2, 3, 4, 5]:
+		var new_flight := Sim.new(9342)
+		var prior_flight := Sim.new(9342)
+		prior_flight.campaign_choreography_version = 2
+		new_flight.stage = world
+		prior_flight.stage = world
+		var expected: float = 0.90 if world == 2 else (1.10 if world == 3 else 1.0)
+		new_flight._add_enemy("ion_frigate", Vector2(250, 100))
+		prior_flight._add_enemy("ion_frigate", Vector2(250, 100))
+		var new_enemy: Dictionary = new_flight.enemies[0]
+		var prior_enemy: Dictionary = prior_flight.enemies[0]
+		check(is_equal_approx(float(new_enemy.max_hp), float(prior_enemy.max_hp) * expected), "World %d shifts only regular enemy HP" % world)
+		check(new_enemy.xp == prior_enemy.xp and new_enemy.fire == prior_enemy.fire and new_flight.rng.state == prior_flight.rng.state, "World %d retains XP and spawn RNG" % world)
+		check(new_flight.stage_spec().spawn_scale == prior_flight.stage_spec().spawn_scale and is_equal_approx(new_flight.stage_damage_scale(), prior_flight.stage_damage_scale()) and is_equal_approx(new_flight.enemy_fire_scale(), prior_flight.enemy_fire_scale()), "World %d retains spawn, damage and fire pressure" % world)
+		if world in [2, 3]:
+			var prior_state: Dictionary = prior_flight.snapshot()
+			var resumed := Sim.new()
+			check(resumed.restore(prior_state) and resumed.snapshot() == prior_state and is_equal_approx(resumed.advanced_wave_health(), prior_flight.advanced_wave_health()), "Suspended World %d retains original wave balance" % world)
+			new_flight._spawn_boss()
+			prior_flight._spawn_boss()
+			check(is_equal_approx(new_flight._boss_core().max_hp, prior_flight._boss_core().max_hp) and is_equal_approx(new_flight.advanced_wave_health(), prior_flight.advanced_wave_health()), "World %d boss and boss escorts retain old HP" % world)
+			new_flight._add_enemy("drone", Vector2(250, 100))
+			prior_flight._add_enemy("drone", Vector2(250, 100))
+			check(is_equal_approx(new_flight.enemies[-1].max_hp, prior_flight.enemies[-1].max_hp), "World %d boss-spawned minions stay unchanged" % world)
 	var daily_balance := Sim.new(9342)
 	daily_balance.stage = 2
 	daily_balance.daily_day = "2026-11-23"
