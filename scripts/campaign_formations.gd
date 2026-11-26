@@ -86,9 +86,9 @@ static func pick(world: int, elapsed: float, seed_value: int, index: int) -> Arr
 	for formation in WORLDS[world - 1]:
 		if elapsed >= float(formation[1]):
 			eligible.append(formation)
-	# Seven is coprime to the full library of fifteen. The seed changes
-	# the start, not the combat or draft RNG stream.
-	return eligible[posmod(seed_value + world * 13 + index * 7, eligible.size())]
+	# Step one visits every eligible entry even when the time gate changes.
+	# The seed changes the start, not the combat or draft RNG stream.
+	return eligible[posmod(seed_value + world * 13 + index, eligible.size())]
 
 static func position(formation: Array, slot: int) -> Vector2:
 	return LANES[int(formation[2])][slot]

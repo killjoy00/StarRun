@@ -53,6 +53,14 @@ jobs:
             exit 1
           fi
           grep -q "CAMPAIGN_CHOREOGRAPHY_RESULT" /tmp/starrun-choreography.log
+      - name: Hijacker specialization checks
+        run: |
+          set -o pipefail
+          godot --headless --path . --script tests/hijacker.gd 2>&1 | tee /tmp/starrun-hijacker.log
+          if grep -Eq "SCRIPT ERROR:|ERROR: Failed to load script|HIJACKER FAIL" /tmp/starrun-hijacker.log; then
+            exit 1
+          fi
+          grep -q "HIJACKER_RESULT" /tmp/starrun-hijacker.log
       - name: First flight scripted combat and settlement
         run: |
           set -o pipefail

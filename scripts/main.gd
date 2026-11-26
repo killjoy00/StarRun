@@ -2487,7 +2487,10 @@ func _show_build() -> void:
 		for i in range(engines.size() if build_show_all else mini(3, engines.size())):
 			var engine: Dictionary = engines[i]
 			var rank_label := "MASTERED" if int(engine.tier) == 3 else "ONLINE"
-			_info_card(body, str(engine.name) + " · " + rank_label, str(engine.description), Kit.CYAN)
+			var detail: String = str(engine.description)
+			if str(engine.id) == "hijacker":
+				detail += "\nFleet: %d/%d · %d lost" % [sim.hijacked_ships.size(), sim.hijack_capacity(), sim.hijack_lost]
+			_info_card(body, str(engine.name) + " · " + rank_label, detail, Kit.CYAN)
 	var combos: Array = sim.active_synergies()
 	if not combos.is_empty():
 		_section(body, "Build bonuses")
