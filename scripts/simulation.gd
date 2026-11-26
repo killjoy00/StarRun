@@ -1671,7 +1671,8 @@ func boss_phase_label() -> String:
 		if not charges.is_empty():
 			return "BEAM CHARGING - INTERRUPT"
 		if campaign_choreography_active():
-			return str(_boss_core().get("campaign_attack_label", "MISSILES PREPARING"))
+			var last_attack: String = str(_boss_core().get("campaign_attack_label", "MISSILES PREPARING"))
+			return "MISSILES PREPARING" if last_attack == "BEAM CHARGING - INTERRUPT" else last_attack
 		return "LASER PREPARING"
 	if stage == 2:
 		if campaign_choreography_active() and _alive_modules("launch_bay") == 1:
@@ -1680,7 +1681,9 @@ func boss_phase_label() -> String:
 	if stage == 3:
 		var factor := crucible_attack_factor()
 		var vents_alive := _alive_modules("vent") > 0
-		if _vent_cooling_active():
+		# Newly reconfigured vents take precedence in the HUD. The heat release
+		# itself remains visible via its effect and event log.
+		if _vent_cooling_active() and _alive_modules("vent") < 2:
 			return "VENT DOWN - WEAPONS COOLING" if vents_alive else "HEAT RELEASED - CORE EXPOSED"
 		# The existing boss HUD updates from this label, so the danger is
 		# visible even at the final 10% threshold (no new cooldown or timer).
