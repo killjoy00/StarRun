@@ -135,6 +135,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Replay, fairness, draft, save, and matched-seed balance checks
+        # Preview pushes do not duplicate the full PR/main/manual regression.
+        if: ${{ github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/codex/') }}
         run: |
           set -o pipefail
           godot --headless --path . --script tests/run.gd 2>&1 | tee /tmp/starrun-simulation.log
@@ -144,7 +146,7 @@ jobs:
           fi
   balance_smoke:
     needs: scope
-    if: needs.scope.outputs.ordinary == 'true'
+    if: ${{ needs.scope.outputs.ordinary == 'true' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/codex/')) }}
     name: Full campaign / ${{ matrix.ship }} / ${{ matrix.difficulty }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -184,7 +186,7 @@ jobs:
           retention-days: 14
   real_campaign:
     needs: scope
-    if: needs.scope.outputs.ordinary == 'true'
+    if: ${{ needs.scope.outputs.ordinary == 'true' && (github.event_name != 'push' || !startsWith(github.ref, 'refs/heads/codex/')) }}
     name: Real four-world completion (no forced boss kills)
     runs-on: ubuntu-latest
     timeout-minutes: 45

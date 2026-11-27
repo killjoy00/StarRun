@@ -75,7 +75,10 @@ def select(paths, read_pair):
             active.add("progression")
         elif path in {".github/difficulty-experiment.json", "tools/difficulty_summary.py", ".github/workflows/difficulty-experiment.yml"}:
             active.add("fleet")
-        elif path.startswith(("tools/ios-", "tools/android-", "tools/generate-", "native/", "ios/", "android/")) or path in {".github/workflows/ios-build.yml", ".github/workflows/android.yml", ".github/workflows/playable.yml"}:
+        elif path == ".github/workflows/playable.yml":
+            # CI policy changes must exercise the full ordinary campaign and exports on PR/main.
+            active |= {"ordinary", "native"}
+        elif path.startswith(("tools/ios-", "tools/android-", "tools/generate-", "native/", "ios/", "android/")) or path in {".github/workflows/ios-build.yml", ".github/workflows/android.yml"}:
             active.add("native")
         elif path.startswith(("docs/", "tests/", ".github/")) or path.endswith((".md", ".txt")):
             pass  # Core regression remains unconditional.
@@ -101,6 +104,7 @@ def self_test():
     assert select(["unknown.runtime"], pair) == set(FLAGS)
     assert select([".github/difficulty-experiment.json"], pair) == {"fleet"}
     assert select(["tests/balance_matrix.gd"], pair) == BALANCE
+    assert select([".github/workflows/playable.yml"], pair) == {"ordinary", "native"}
     print("CI scope contract passed")
 
 

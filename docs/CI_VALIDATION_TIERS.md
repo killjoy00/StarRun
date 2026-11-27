@@ -6,6 +6,24 @@ was still running. Sample individual route jobs spent 21.8–31.2 minutes in
 simulation alone, plus substantial runner queues. Source: run 45509801237,
 jobs 138854633458, 138854633535, 138854633619, 138854633663.
 
+## Event responsibilities
+
+- Development preview pushes (existing `codex/**` trigger): import/strict parsing,
+  startup, persistence, campaign choreography, specialization, first flight,
+  layout/visual regression and screenshots remain. Desktop/web preview exports
+  still run when native scope requires them. Only the long replay/fairness/
+  matched-seed suite and the ordinary campaign matrices defer to the PR.
+- Every PR: the complete pre-existing core suite, including the long replay
+  suite, and all applicable campaign matrices, native builds and other
+  regression workflows. A Playable workflow change itself selects ordinary
+  campaign smoke plus native exports so the policy is exercised.
+- Main pushes and manual Playable runs: retain the previous core, scoped
+  campaign and export checks; manual runs use full scope. Full research
+  workflows and release acceptance remain unchanged.
+
+No PR or main regression step is replaced by a development-branch result.
+The merge-ref is still validated independently, and no cached pass is reused.
+
 ## Routine PR checks
 
 - Playable simulation / parse / first flight / persistence / UI and layout
